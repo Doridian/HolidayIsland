@@ -82,7 +82,9 @@ files, storage, clock), so they run headless in tests.
   the two structs, and once the initial port is done and checked against the
   original, a cleanup pass makes it more idiomatic Rust: split the structs,
   replace raw indices and flag integers with types and enums, and turn the
-  remaining Delphi-isms into ordinary Rust.
+  remaining Delphi-isms into ordinary Rust. That pass keeps the original's
+  integer widths and wraparound and the determinism rules below: `World` must
+  still replay bit for bit, or saves, replays and lockstep multiplayer break.
 - **The UI changes the world only through commands.** Building, demolishing,
   setting prices, bidding, sabotage, the game speed: anything a player does to
   the world is a `Command { player, action }`. Commands are applied at a tick
