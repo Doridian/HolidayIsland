@@ -1,0 +1,41 @@
+# Copyrighted game data: never commit. Users supply their own CD.
+*.bin
+*.cue
+*.iso
+*.img
+*.mdf
+*.mds
+*.ccd
+/orig/
+_FILES.1
+_SETUP.1
+*.EXE
+*.exe
+*.DLL
+*.dll
+*.DAT
+*.HIS
+*.MAP
+*.AVI
+*.BMP
+*.WAV
+*.MID
+
+# Build output
+/target/
+/dist/
+
+# Ghidra project (contains the original binaries). Share knowledge through
+# exported symbol files in the repo instead.
+/ghidra/
+*.gpr
+*.rep/
+
+# Python
+__pycache__/
+*.pyc
+
+# Python venv for tools
+/.venv/
+
+.playwright-mcp
