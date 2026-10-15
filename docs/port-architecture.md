@@ -71,6 +71,18 @@ files, storage, clock), so they run headless in tests.
   practical. Where an original routine mixes the two, it gets split at that
   seam. That split is what [network multiplayer](#stretch-goal-network-multiplayer)
   needs, and it costs little to do from the start.
+- **`World` and `View` shouldn't stay two god objects.** Putting every global
+  into two structs is the simplest 1:1 mapping, but it turns into two giant
+  structs that every function takes whole. When porting starts, the first step
+  is to check whether the original's state splits cleanly into smaller parts
+  (island map, buildings, guests, finances per player, auctions, the RNG and
+  clock; forms and tool state on the view side), with routines taking only the
+  parts they touch. That's only worth it if the units' globals already group
+  that way without fighting the 1:1 mapping. If they don't, the port starts with
+  the two structs, and once the initial port is done and checked against the
+  original, a cleanup pass makes it more idiomatic Rust: split the structs,
+  replace raw indices and flag integers with types and enums, and turn the
+  remaining Delphi-isms into ordinary Rust.
 - **The UI changes the world only through commands.** Building, demolishing,
   setting prices, bidding, sabotage, the game speed: anything a player does to
   the world is a `Command { player, action }`. Commands are applied at a tick
