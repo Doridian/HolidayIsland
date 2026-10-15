@@ -147,6 +147,13 @@ symbols/        what we know about HOLIDAY.EXE, as text
 - Name functions after what they do. Note the original address in a comment
   (`// 10f0:6e7b`) so it can be traced back. Original units become modules, and
   Delphi methods keep their form's name (`hauptschirm::timer1_timer`).
+- Keep the simulation (`World`) and the player's UI (`View`) apart, change the
+  world only through commands, and keep world code deterministic: no wall
+  clock, no stray randomness, no `HashMap` iteration, no platform math functions.
+  Mark places where the original assumes one human (player 1), and anywhere
+  the simulation waits on a dialog. These rules keep the
+  [multiplayer stretch goal](port-architecture.md#stretch-goal-network-multiplayer)
+  possible.
 - Parse all data files field by field, little-endian, with bounds checks:
   no `unsafe` in the parsers or the game crate.
 - `cargo fmt` and `cargo clippy` clean.

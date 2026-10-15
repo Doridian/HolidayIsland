@@ -45,9 +45,11 @@ crates/formats/    pure parsers, no I/O: ISO9660, the installer archive (LZHUF),
 crates/vcl/        the subset of Delphi's VCL/RTL the game uses: components built from the
                    DFMs, TCanvas over the indexed framebuffer, timers, modal flows,
                    ShortString, Delphi's Random
-crates/game/       the decompiled game, one module per original unit; no platform deps
+crates/game/       the decompiled game, one module per original unit; no platform deps.
+                   World (simulation, commands) and View (one player's UI) kept apart
 crates/platform/   winit/wgpu/cpal glue, the data source and storage backends
 crates/holiday/    the binary (native) and the wasm entry point
+crates/net/        later: lockstep session, transport trait, WebSocket relay client
 ```
 
 `game` and `vcl` see the platform only through traits (display, audio, data
@@ -55,19 +57,35 @@ files, storage, clock), so they run headless in tests.
 
 ## Design points
 
-- **Game state lives in one `Game` struct.** The original's units share global
-  variables and form objects that call into each other. In the port those are
-  fields of `Game`, and each original routine is a function or method taking
-  `&mut Game`. That keeps a 1:1 mapping to the original routines (with an
-  address comment on each), which is what makes checking against the original
-  practical.
-- **Modal flows are `async`.** Win16 code blocks freely: `ShowModal`,
-  `MessageBox`, `Application.ProcessMessages` loops, waiting for a video to end.
-  The browser can't block. Instead of rewriting those routines as state
-  machines, the port writes them as `async fn`, with `.await` where the
-  original blocked. A tiny single-threaded executor is polled once per
-  frame by the platform loop. The code keeps the original's shape and runs the
-  same way everywhere.
+- **State is split into the world and the player's view.** The original's
+  units share global variables and form objects that call into each other.
+  In the port those become fields of two structs:
+  - `World`: the simulation, including the island, buildings, guests, every
+    player's money, the date and the RNG.
+  - `View`: one human player's UI, including open forms, scroll position, the
+    selected tool and hover state.
+  
+  Each original routine is a function taking `&mut World` or `&mut View` (plus
+  `&World` to read), with the original address in a comment. That keeps a 1:1
+  mapping to the original routines, which makes checking against the original
+  practical. Where an original routine mixes the two, it gets split at that
+  seam. That split is what [network multiplayer](#stretch-goal-network-multiplayer)
+  needs, and it costs little to do from the start.
+- **The UI changes the world only through commands.** Building, demolishing,
+  setting prices, bidding, sabotage, the game speed: anything a player does to
+  the world is a `Command { player, action }`. Commands are applied at a tick
+  boundary by `World::apply`. Computer players produce the same commands from
+  their AI. The UI never writes to `World` directly. In single player the
+  command queue is local and the extra step costs nothing.
+- **Modal flows are `async`, in the UI only.** Win16 code blocks freely:
+  `ShowModal`, `MessageBox`, `Application.ProcessMessages` loops, waiting for a
+  video to end. The browser can't block. Instead of rewriting those routines as
+  state machines, the port writes them as `async fn`, with `.await` where the
+  original blocked. A tiny single-threaded executor is polled once per frame by
+  the platform loop. Only `View` code awaits. The simulation never waits on a
+  dialog: where the original stops the simulation for one player's decision,
+  that becomes a world state (paused, or waiting for that player's command), not
+  a blocked call stack.
 - **Delphi integer semantics are explicit.** Delphi 1 `Integer` is 16-bit, so the
   port uses `i16`/`u16`/`i32`/`u8` exactly where the original did, and
   `wrapping_*` operations where the original relies on wraparound. Debug builds
@@ -77,8 +95,22 @@ files, storage, clock), so they run headless in tests.
   advances, and randomness from a port of Delphi's `Random`: `RandSeed`
   (`1110:4a06`) steps as `RandSeed * 0x08088405 + 1` (`1108:1de9`, the multiplier
   at `CS:1e1f`). `Randomize` (`1108:1e21`) seeds it from the DOS time. Given the
-  same inputs, a session replays exactly, which is what differential tests and
-  bug reports need.
+  same seed and command stream, `World` replays exactly, bit for bit, on every
+  target. Differential tests, bug reports, replays and lockstep multiplayer all
+  rely on that. Rules for code that touches `World`:
+  - It never reads the wall clock and never draws randomness from anywhere but
+    the world's RNG. If the original also calls `Random` for purely cosmetic
+    things (animations, sound variation), those calls get a separate view-side
+    RNG. That's a deviation, noted at each call site, made because a player's
+    local UI must not change the world.
+  - Iteration order is defined: `Vec`, or `BTreeMap` rather than `HashMap`.
+  - Floating point only where the original used it. Only IEEE basic
+    operations are allowed. Transcendental functions go through one
+    pure-Rust implementation (the `libm` crate, or Borland's own algorithms),
+    because platform math libraries differ in the last bit. Borland's 6-byte
+    `Real` is integer arithmetic anyway.
+  - `World` is serializable (save games, joining a game in progress) and
+    hashable (desync detection).
 - **Screen size follows the window.** The original doesn't have a fixed
   resolution. It maximizes its background form and lays out for whatever the
   Windows desktop is: at least 640×480, with 800×600 recommended. The port treats
@@ -105,6 +137,57 @@ files, storage, clock), so they run headless in tests.
   platform's data directory natively, and to browser storage on the web.
 - **Assets from the EXE** (DFMs, cursors, icon) are read from the user's
   `HOLIDAY.EXE` at runtime and never committed.
+
+## Stretch goal: network multiplayer
+
+The original is already a multiplayer game with one human in it. The start
+screen asks for a player colour and a number of computer opponents
+(`Computergegner:`, `TEXTE\START.TXT`). Everyone builds on the same island,
+competes for guests, bids in auctions, and sabotages the others (piranhas in a
+competitor's pool, stink bombs, `SABOTAGE.TXT`). One scenario, "Monopolus", is
+won by putting every other player out of business. The goal, after the initial
+port: let humans take some or all of the computer opponents' seats over the
+network.
+
+The intended model is **deterministic lockstep**, the usual approach for
+simulation games (Age of Empires, OpenTTD):
+
+- Every peer runs the same `World`. Only commands travel over the network:
+  `(tick, player, action)`. The simulation advances to tick *n* once it has every
+  seat's commands for *n* (an empty set is a valid "no command" message).
+  Computer seats are simulated by everyone, from the same `World`, so they cost
+  no bandwidth.
+- A host (one of the players) assigns seats, picks the scenario and
+  settings, and decides the game speed and pause. Speed and pause are commands
+  too. Joining or resyncing a game in progress sends a serialized `World` plus the
+  command log from that point.
+- Each peer sends a hash of `World` every few ticks. A mismatch is a desync bug,
+  and the command log reproduces it.
+- Transport: browsers can only use WebSocket and WebRTC, so the baseline is a
+  small relay server, WebSocket for both native and web clients. Peer-to-peer
+  WebRTC data channels are a later option. The game talks to a transport trait,
+  not to sockets.
+- All world state is visible to every peer. That's fine for playing with
+  friends; it isn't cheat-proof, and doesn't try to be.
+
+What this asks of the port long before any networking exists, already reflected
+in the design points above:
+
+- The `World`/`View` split and command-only world changes. Several players each
+  have their own `View`; there is no global "current player" inside `World`.
+  Places where the original assumes the human is player 1 get marked
+  when they're ported.
+- Bit-exact determinism across native and wasm.
+- No world-side blocking on one player's UI. Interactions that are modal for
+  the one human today need a multiplayer behaviour, decided per case when
+  they're decompiled: auctions (`TAuktionsform`, which already runs on
+  timers), the "what now?" dialog (`TWasNunForm`), events, the end-of-game forms.
+  Typical answers: the dialog becomes per-player and non-blocking, a decision
+  gets a timeout with a default, or the game pauses for everyone.
+- Save games store seats and keep the original format readable. Single-player
+  saves of the original load as a game with one human seat.
+
+Not in scope: matchmaking, accounts, or play with the original Windows version.
 
 ## Open questions
 

@@ -14,7 +14,9 @@ The plan is a non-matching decompilation like the
 [Afterlife](https://github.com/Doridian/Afterlife) port: the code should behave
 like the original, not compile to the same bytes. The planned stack is winit,
 wgpu and cpal, with a resizable window and a fullscreen toggle; see
-[docs/port-architecture.md](docs/port-architecture.md). `HOLIDAY.EXE` is a 16-bit
+[docs/port-architecture.md](docs/port-architecture.md). A stretch goal for
+after the initial port is network multiplayer: humans taking the seats the
+original gives to computer opponents. `HOLIDAY.EXE` is a 16-bit
 Windows 3.1 program written in **Borland Delphi 1**; [docs/binaries.md](docs/binaries.md)
 has the details.
 
