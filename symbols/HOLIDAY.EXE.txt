@@ -2,6 +2,8 @@
 # Format: symbols/README.md. Addresses are Ghidra selector:offset; NE segment n
 # is selector 1000 + 8*(n-1), so segment 1 is 1000 and DGROUP (segment 35) is 1110.
 1008:55ee func load_abrechne
+1010:000e func load_modatyp
+1010:0414 func load_modatyp_txt_and_namen
 1010:3ab4 func load_ereignis
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:2972 func load_fontdat
@@ -31,6 +33,7 @@
 1108:070b func sys_close_text
 1108:08ef func sys_readln
 1108:095a func sys_read_end  # called after each Read(f, ...) item; I/O check
+1108:0996 func sys_read_char
 1108:0a31 func sys_read_pstr
 1108:0aa2 func sys_read_longint
 1108:0b47 func sys_eof_text
@@ -57,6 +60,12 @@
 1110:54ee data flusspos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54f2 data hausnr | pointer32  # far pointer to the table loaded from the file of that name
 1110:54f6 data hauspos | pointer32  # far pointer to the table loaded from the file of that name
+1110:64b0 data werbung_to_text
+1110:64b4 data renovierung_to_text
+1110:64be data land
+1110:64ca data kreditgroesse
+1110:64d6 data startgeld
+1110:6502 data klassenmischung
 1110:6536 data ereignis | pointer32  # 41 records of 0x34 bytes: 12 Longints from EREIGNIS.DAT + 1 more
 1110:65da data fontdat1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:65de data fontdat2 | pointer32  # far pointer to the table loaded from the file of that name

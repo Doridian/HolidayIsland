@@ -546,6 +546,204 @@ pub fn monate(data: &[u8]) -> Result<Strings> {
         .collect()
 }
 
+/// The country setting at the top of `MODATYP.DAT`. // 1110:64be
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Land {
+    /// `D`, and anything else the game doesn't know.
+    Deutschland = 0,
+    /// `A`
+    Amerika = 1,
+    /// `E`
+    England = 2,
+    /// `F`
+    Frankreich = 3,
+}
+
+/// `MODATYP.DAT`: game constants. The file labels each value; the labels
+/// are in the doc comments. // 1010:000e, into 1110:64be to 1110:6510
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Modatyp {
+    /// `Land`. // 1110:64be
+    pub land: Land,
+    /// `MaxLageeinfluss`: radius of an event's effect on the location quality map. // 1110:64bf
+    pub max_lageeinfluss: u8,
+    /// `MaxGrueneinfluss`. // 1110:64c0
+    pub max_grueneinfluss: i16,
+    /// `Renovierungskosten`. // 1110:64c2
+    pub renovierungskosten: i32,
+    /// `Werbungskosten`. // 1110:64c6
+    pub werbungskosten: i32,
+    /// `Kreditgroesse`. // 1110:64ca
+    pub kreditgroesse: i32,
+    /// `MaxSchulden`. // 1110:64ce
+    pub max_schulden: i32,
+    /// `Zinssatz in Prozent im Jahr`. // 1110:64d2
+    pub zinssatz: i32,
+    /// `Startgeld`. // 1110:64d6
+    pub startgeld: i32,
+    /// `LandausWasserhebekosten`. // 1110:64da
+    pub land_aus_wasser_hebekosten: i32,
+    /// `Landhebekosten`. // 1110:64de
+    pub landhebekosten: i32,
+    /// `LandinWassersenkkosten`. // 1110:64e2
+    pub land_in_wasser_senkkosten: i32,
+    /// `Landsenkkosten`. // 1110:64e6
+    pub landsenkkosten: i32,
+    /// `Strassenabrisskosten`. // 1110:64ea
+    pub strassenabrisskosten: i32,
+    /// `Strassenbaukosten`. // 1110:64ee
+    pub strassenbaukosten: i32,
+    /// `Palmenabrisskosten`. // 1110:64f2
+    pub palmenabrisskosten: i32,
+    /// `Fundamentbaukosten`. // 1110:64f6
+    pub fundamentbaukosten: i32,
+    /// `Lebenshaltungskosten im Monat`. // 1110:64fa
+    pub lebenshaltungskosten: i32,
+    /// `Klassenmischungdivisor`. // 1110:64fe
+    pub klassenmischungdivisor: i32,
+    /// `Klassenmischung: array[0..BesteKlasse, 0..BesteKlasse] of Integer`. // 1110:6502
+    pub klassenmischung: [[i16; 10]; 10],
+    /// `Angeschlossendivisor`. // 1110:6506
+    pub angeschlossendivisor: i16,
+    /// `Angeschlossenumrechnung: array[-1..AbwoistStrassezuweitweg-1] of Byte`. // 1110:6508
+    pub angeschlossenumrechnung: [u8; 6],
+    /// `Verfallwahrscheinlichkeit: array[GAASchlaf..GAAKommerz2] of Byte`, in percent. // 1110:650e
+    pub verfallwahrscheinlichkeit: [u8; 3],
+}
+
+/// Parses `MODATYP.DAT`. // 1010:000e
+///
+/// # Errors
+/// If a number is malformed.
+pub fn modatyp(data: &[u8]) -> Result<Modatyp> {
+    let mut f = TextReader::new(data);
+    // Each value sits on the line after its label.
+    let value = |f: &mut TextReader| -> Result<i32> {
+        f.readln();
+        let v = f.read_longint()?;
+        f.readln();
+        Ok(v)
+    };
+    f.readln();
+    let land = match f.read_char() {
+        b'A' => Land::Amerika,
+        b'E' => Land::England,
+        b'F' => Land::Frankreich,
+        _ => Land::Deutschland,
+    };
+    f.readln();
+    let max_lageeinfluss = byte(value(&mut f)?);
+    let max_grueneinfluss = integer(value(&mut f)?);
+    let mut longs = [0; 16];
+    for v in &mut longs {
+        *v = value(&mut f)?;
+    }
+    f.readln();
+    let mut klassenmischung = [[0; 10]; 10];
+    for row in &mut klassenmischung {
+        for cell in row.iter_mut() {
+            *cell = integer(f.read_longint()?);
+        }
+        f.readln();
+    }
+    let angeschlossendivisor = integer(value(&mut f)?);
+    f.readln();
+    let mut angeschlossenumrechnung = [0; 6];
+    for cell in &mut angeschlossenumrechnung {
+        *cell = byte(f.read_longint()?);
+    }
+    f.readln();
+    f.readln();
+    let mut verfallwahrscheinlichkeit = [0; 3];
+    for cell in &mut verfallwahrscheinlichkeit {
+        *cell = byte(f.read_longint()?);
+    }
+    let [
+        renovierungskosten,
+        werbungskosten,
+        kreditgroesse,
+        max_schulden,
+        zinssatz,
+        startgeld,
+        land_aus_wasser_hebekosten,
+        landhebekosten,
+        land_in_wasser_senkkosten,
+        landsenkkosten,
+        strassenabrisskosten,
+        strassenbaukosten,
+        palmenabrisskosten,
+        fundamentbaukosten,
+        lebenshaltungskosten,
+        klassenmischungdivisor,
+    ] = longs;
+    Ok(Modatyp {
+        land,
+        max_lageeinfluss,
+        max_grueneinfluss,
+        renovierungskosten,
+        werbungskosten,
+        kreditgroesse,
+        max_schulden,
+        zinssatz,
+        startgeld,
+        land_aus_wasser_hebekosten,
+        landhebekosten,
+        land_in_wasser_senkkosten,
+        landsenkkosten,
+        strassenabrisskosten,
+        strassenbaukosten,
+        palmenabrisskosten,
+        fundamentbaukosten,
+        lebenshaltungskosten,
+        klassenmischungdivisor,
+        klassenmischung,
+        angeschlossendivisor,
+        angeschlossenumrechnung,
+        verfallwahrscheinlichkeit,
+    })
+}
+
+/// `MODATYP.TXT`: `WerbungToText: array[0..7] of string[20]` (advertising
+/// levels) and `RenovierungToText: array[0..5] of string[20]` (renovation
+/// intervals), each after a heading. // 1010:0414, into 1110:64b0 and 1110:64b4
+#[must_use]
+pub fn modatyp_txt(data: &[u8]) -> (Strings, Strings) {
+    let mut f = TextReader::new(data);
+    f.readln();
+    let first = (0..8).map(|_| f.read_line_max(20)).collect();
+    f.readln();
+    let second = (0..6).map(|_| f.read_line_max(20)).collect();
+    (first, second)
+}
+
+/// How many names the original's stack array in [`namen`] holds.
+const NAMEN_MAX: usize = 51;
+
+/// `NAMEN.TXT`: the name for no player (`keiner`, stored at 1110:0902), the
+/// human player's default name (`Spieler1`, 1110:0a02), then a list of
+/// `string[12]` names up to an empty line, from which the game picks the
+/// computer players' names at random. // 1010:0414
+///
+/// # Errors
+/// If the list is longer than the original has room for (51).
+pub fn namen(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Strings)> {
+    let mut f = TextReader::new(data);
+    let first = f.read_line();
+    let second = f.read_line();
+    let mut names = Vec::new();
+    loop {
+        let line = f.read_line();
+        if line.is_empty() {
+            break;
+        }
+        if names.len() == NAMEN_MAX {
+            return Err(Error::Missing("empty line after the names"));
+        }
+        names.push(short_string(line, 12));
+    }
+    Ok((first, second, names))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

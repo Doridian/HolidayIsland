@@ -93,6 +93,18 @@ impl<'a> TextReader<'a> {
         s
     }
 
+    /// `Read(f, c)` with `c: Char`: the next character, which may be part of a
+    /// line end; Ctrl-Z at the end of the file.
+    pub fn read_char(&mut self) -> u8 {
+        match self.peek() {
+            Some(c) => {
+                self.advance();
+                c
+            }
+            None => EOF_MARK,
+        }
+    }
+
     /// `Readln(f)`: skips to the start of the next line.
     pub fn readln(&mut self) {
         while let Some(c) = self.peek() {
@@ -111,7 +123,12 @@ impl<'a> TextReader<'a> {
 
     /// `Readln(f, s)` with `s: string`.
     pub fn read_line(&mut self) -> Vec<u8> {
-        let s = self.read_str(MAX_SHORT_STRING);
+        self.read_line_max(MAX_SHORT_STRING)
+    }
+
+    /// `Readln(f, s)` with `s: string[max]`.
+    pub fn read_line_max(&mut self, max: usize) -> Vec<u8> {
+        let s = self.read_str(max);
         self.readln();
         s
     }

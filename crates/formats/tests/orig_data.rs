@@ -63,6 +63,20 @@ fn data_tables() {
     assert_eq!(compbau[12], [50, 0, 1, 255, 255, 255, 255]);
     let maperste = data::maperste(&read("DATA/MAPERSTE.DAT").unwrap()).unwrap();
     assert_eq!(maperste[0][0], [35, 28, 28, 28, 35]);
+    let modatyp = data::modatyp(&read("DATA/MODATYP.DAT").unwrap()).unwrap();
+    assert_eq!(modatyp.land, data::Land::Deutschland);
+    assert_eq!(
+        (
+            modatyp.max_lageeinfluss,
+            modatyp.startgeld,
+            modatyp.klassenmischungdivisor
+        ),
+        (30, 500_000, 20)
+    );
+    assert_eq!(modatyp.klassenmischung[9], [0, 0, 0, 0, 0, 0, 0, 2, 4, 14]);
+    assert_eq!(modatyp.angeschlossendivisor, 10);
+    assert_eq!(modatyp.angeschlossenumrechnung, [0, 100, 100, 80, 55, 30]);
+    assert_eq!(modatyp.verfallwahrscheinlichkeit, [25; 3]);
     let names = data::message_media_names(&read("DATA/FILENAME.DAT").unwrap());
     assert_eq!(names[0], b"osterv  .bmp");
 }
