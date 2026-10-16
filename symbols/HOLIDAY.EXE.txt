@@ -6,6 +6,9 @@
 1010:0414 func load_modatyp_txt_and_namen
 1010:3ab4 func load_ereignis
 1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
+1020:3dc4 func load_sonstige
+1028:2449 func load_auktion
+1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:2972 func load_fontdat
 1048:1ffd func init_messages
@@ -23,6 +26,7 @@
 1048:375e func load_sabotext
 1048:387c func load_fehler
 1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
+1080:1141 func load_umenu
 1088:80a7 func load_animdat
 10a8:37da func load_compbau
 10b0:5653 func load_maperste_table
@@ -70,18 +74,24 @@
 1110:64d6 data startgeld
 1110:6502 data klassenmischung
 1110:6536 data ereignis | pointer32  # 41 records of 0x34 bytes: 12 Longints from EREIGNIS.DAT + 1 more
+1110:65b0 data auktion_texts
+1110:65bc data sabotage_kinds
+1110:65d2 data sabotage_labels
 1110:65da data fontdat1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:65de data fontdat2 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
 1110:663e data nachrich_lines  # 3 far pointers to 90 x string
+1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fda data animdat2 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fde data neintrag | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fe2 data animdat3 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fea data animdat1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
+1110:7346 data waehrungsfaktor
 1110:734a data fehler_texts | pointer32  # far pointer to the table loaded from the file of that name
+1110:734e data sonstige_texts
 1110:7356 data sabotext_1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:735a data sabotext_2 | pointer32  # far pointer to the table loaded from the file of that name
 1110:735e data sabotext_3 | pointer32  # far pointer to the table loaded from the file of that name
@@ -90,3 +100,4 @@
 1110:736a data hausname_list2 | pointer32  # far pointer to the table loaded from the file of that name
 1110:736e data hausprei | pointer32  # far pointer to the table loaded from the file of that name
 1110:7372 data hausdata | pointer32  # far pointer to the table loaded from the file of that name
+1110:737a data sonstige_short_texts

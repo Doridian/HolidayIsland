@@ -913,6 +913,110 @@ pub fn uebermap_dat(data: &[u8]) -> Result<UebermapData> {
     Ok(UebermapData { pressed, layouts })
 }
 
+/// `SONSTIGE.TXT`: miscellaneous texts. // 1020:3dc4
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sonstige {
+    /// `Waehrungsfaktor`, the currency factor. // 1110:7346
+    pub waehrungsfaktor: i32,
+    /// 24 labelled texts (`_TXTSpielname_`, `_TXTExitmenuueberschrift_`,
+    /// ...); the labels are skipped. // 1110:734e
+    pub texts: Strings,
+    /// 35 `string[30]`s after a heading. // 1110:737a
+    pub short_texts: Strings,
+}
+
+/// Parses `SONSTIGE.TXT`. // 1020:3dc4
+///
+/// # Errors
+/// If the currency factor is malformed.
+pub fn sonstige(data: &[u8]) -> Result<Sonstige> {
+    let mut f = TextReader::new(data);
+    f.readln();
+    let waehrungsfaktor = f.read_longint()?;
+    f.readln();
+    let texts = (0..24)
+        .map(|_| {
+            f.readln();
+            f.read_line()
+        })
+        .collect();
+    f.readln();
+    let short_texts = (0..35).map(|_| f.read_line_max(30)).collect();
+    Ok(Sonstige {
+        waehrungsfaktor,
+        texts,
+        short_texts,
+    })
+}
+
+/// `AUKTION.TXT`: 12 `string[30]`s for the auction. // 1028:2449, into 1110:65b0
+#[must_use]
+pub fn auktion(data: &[u8]) -> Strings {
+    let mut f = TextReader::new(data);
+    (0..12).map(|_| short_string(f.read_line(), 30)).collect()
+}
+
+/// One kind of sabotage in `SABOTAGE.TXT` (a 0x232-byte record).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sabotage {
+    /// `string[20]`. // +0x00
+    pub name: Vec<u8>,
+    /// The picture, `string[12]`. // +0x15
+    pub bitmap: Vec<u8>,
+    /// // +0x22
+    pub description: Vec<u8>,
+    /// What it can be used on, as text. // +0x122
+    pub targets_text: Vec<u8>,
+    /// // +0x222
+    pub cost: i32,
+    /// Six building types it can be used on, 255 for none. // +0x226
+    pub targets: [i16; 6],
+}
+
+/// `SABOTAGE.TXT`: two labels (`Anwendbar auf:`, `Kosten:`, `string[20]`,
+/// into 1110:65d2) and 9 kinds of sabotage (1110:65bc). The same routine
+/// then loads `SABOTEXT.TXT` ([`sabotext`]). // 1028:361f
+///
+/// # Errors
+/// If the file is short or a number is malformed.
+pub fn sabotage(data: &[u8]) -> Result<([Vec<u8>; 2], Vec<Sabotage>)> {
+    let mut c = Columns::new(data, true);
+    let labels = [short_string(c.f.read_line(), 20), short_string(c.f.read_line(), 20)];
+    let kinds = (0..9)
+        .map(|_| {
+            if c.f.eof() {
+                return Err(Error::UnexpectedEof { line: c.f.line() });
+            }
+            let name = short_string(c.f.read_line(), 20);
+            let bitmap = short_string(c.f.read_line(), 12);
+            let description = c.f.read_line();
+            let targets_text = c.f.read_line();
+            let cost = str_to_int(&c.f.read_line())?;
+            c.line = c.f.read_line();
+            let mut targets = [0; 6];
+            for cell in &mut targets {
+                *cell = integer(c.cell(5)?);
+            }
+            Ok(Sabotage {
+                name,
+                bitmap,
+                description,
+                targets_text,
+                cost,
+                targets,
+            })
+        })
+        .collect::<Result<_>>()?;
+    Ok((labels, kinds))
+}
+
+/// `UMENU.TXT`: 11 texts. // 1080:1141, into 1110:6fba
+#[must_use]
+pub fn umenu(data: &[u8]) -> Strings {
+    let mut f = TextReader::new(data);
+    (0..11).map(|_| f.read_line()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
