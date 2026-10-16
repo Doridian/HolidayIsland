@@ -1,0 +1,13 @@
+[package]
+name = "vcl"
+version = "0.1.0"
+description = "The subset of Delphi 1's VCL that Holiday Island uses"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+formats = { path = "../formats" }
+
+[lints]
+workspace = true

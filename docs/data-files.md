@@ -9,7 +9,7 @@ Windows-1252.
 |---|---|---|
 | `DATA\` | 39 `*.DAT`, 364 KB | Game tables, all plain text, mostly numbers and names in fixed-width columns (`HAUSDATA.DAT`: buildings, `HAUSPREI.DAT`: prices, `FILENAME.DAT`: bitmap names, `*POS.DAT`: positions, `EREIGN*.DAT`: events, `ANIMDAT*.DAT`: animations, `FONTDAT*.DAT`: fonts). |
 | `TEXTE\` | 23 `*.TXT` | UI texts, one string per line (`AUKTION.TXT`, `BAUMENU.TXT`, `NACHRICH.TXT`, ...). |
-| `GRAFIK\` | 322 `*.BMP`, 19 MB | Uncompressed 8-bit Windows 3.x BMPs. Tiles are mostly 128×125, icons 16×16. The installer can copy it to the hard disk (`SETUP.LST`). |
+| `GRAFIK\` | 322 `*.BMP`, 19 MB | Uncompressed 8-bit Windows 3.x BMPs (`formats::bmp`). Tiles are mostly 128×125, icons 16×16. 310 share one palette; the five title pictures (`TIT*.BMP`) have their own. `GFXGROU2.BMP` is a cut-off copy of `GFXGROUN.BMP` that the game never loads. The installer can copy it to the hard disk (`SETUP.LST`). |
 | `MAPS\` | `TUTORIAL.MAP` | The tutorial island. Same format as the scenarios and presumably the save games (`*.map`, `Last.map`). |
 | `SZENARIO\` | 6 `*.HIS`, ~770 KB each | Scenarios: `GELD`, `KOENIG`, `LUXUS`, `OEKO`, `SURFER`, `URLAUBER`. Start with a Pascal string `1.000` (a version) and map dimensions. |
 | `MUSIK\` | 10 `*.MID` | Type 1 Standard MIDI, played through MCI. |

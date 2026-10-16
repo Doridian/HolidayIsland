@@ -39,9 +39,10 @@ Ported as [`formats::setup`](../crates/formats/src/setup.rs).
 
 `THintergrund` has a timer at `+0x184`. Its handler is a state machine on the
 timer's `Tag`; each state does its work, sets the next `Tag` and the
-`Interval` until the next tick. The other components it uses: a media player
-for the videos (`+0x17c`), a full-screen image (`+0x180`), a media player for
-the music (`+0x188`) and the control the video plays in (`+0x18c`).
+`Interval` until the next tick. The other components it uses:
+`FilmMediaPlayer` (`+0x17c`), `backgroundimage` (`+0x180`), `MusikMediaPlayer`
+(`+0x188`) and `FilmPanel` (`+0x18c`), which the video plays in. `Timer1` is
+`+0x184`.
 
 | Tag | Does | Next | Interval (ms) |
 |---|---|---|---|

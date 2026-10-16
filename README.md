@@ -7,8 +7,9 @@ Status: **early.** The Cargo workspace exists with a `formats` crate that
 parses all the text tables in `DATA\` and `TEXTE\` the way the original's
 loaders read them, and splits maps, scenarios and saved games into their
 fields, along with the high-score table and `SETUP.DAT`. The startup
-sequence is mapped ([docs/startup.md](docs/startup.md)). No game logic is
-ported yet. Also here:
+sequence is mapped ([docs/startup.md](docs/startup.md)). The `vcl` crate
+builds the forms from the layouts in `HOLIDAY.EXE` and draws them with their
+bitmaps into an 8-bit framebuffer. No game logic is ported yet. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable
