@@ -1356,6 +1356,24 @@ pub fn infobox_txt(data: &[u8]) -> Result<InfoboxTexts> {
     })
 }
 
+/// All lines of a `TEXTE` file that its form reads line by line with
+/// `Readln(f, s)` and stores into its fields, often skipping lines or
+/// choosing them by the game's state. The forms index into this list, and
+/// lines past the end are empty, as `Readln` at the end of a file gives.
+///
+/// Used for `HIGHSCOR.TXT` (16 lines, 1040:284c), `START.TXT` (27 lines) and
+/// `SZENARIO.TXT` (13 lines, both 1058:1ed0), `OPTIONEN.TXT` (26 lines,
+/// 1060:0ed0) and `SCHLUSS.TXT` (1068:0288).
+#[must_use]
+pub fn text_lines(data: &[u8]) -> Strings {
+    let mut f = TextReader::new(data);
+    let mut lines = Vec::new();
+    while !f.eof() {
+        lines.push(f.read_line());
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1370,6 +1388,12 @@ mod tests {
         // ... unless the previous line had more columns than were read.
         let t: Vec<[i16; 1]> = fixed_columns(b"    1    2\r\n", 2, false).unwrap();
         assert_eq!(t, [[1], [2]]);
+    }
+
+    #[test]
+    fn lines() {
+        assert_eq!(text_lines(b"a\r\n\r\nb"), [b"a".to_vec(), vec![], b"b".to_vec()]);
+        assert_eq!(text_lines(b""), Strings::new());
     }
 
     #[test]
