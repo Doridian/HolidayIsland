@@ -54,6 +54,14 @@ fn data_tables() {
     }
     let ereignis = data::ereignis(&read("DATA/EREIGNIS.DAT").unwrap()).unwrap();
     assert_eq!(ereignis[0], [1_100_000, 3802, 3900, 0, 0, 100_000, 7, 0, 0, 0, 0, 0]);
+    for n in 1..=6 {
+        assert_eq!(
+            data::ereignis(&read(&format!("DATA/EREIGN{n}.DAT")).unwrap())
+                .unwrap()
+                .len(),
+            41
+        );
+    }
     let abrechnung = data::abrechne(&read("DATA/ABRECHNE.DAT").unwrap()).unwrap();
     assert_eq!(abrechnung.factors[0], [1, 2, 0, 255]);
     assert_eq!((abrechnung.min_rent, abrechnung.max_rent), (0, 800));

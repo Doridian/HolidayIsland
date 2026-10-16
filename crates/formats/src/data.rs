@@ -407,6 +407,9 @@ pub fn sabotext(data: &[u8]) -> [Vec<u8>; 3] {
 /// a name the game ignores. The original's records have room for a 13th
 /// value that the game fills later. // 1010:3ab4, into 1110:6536
 ///
+/// `EREIGN1.DAT` to `EREIGN6.DAT` have the same format: starting scenario
+/// *n* reloads the table from `EREIGNn.DAT` (1010:36f8, called from 1000:2466).
+///
 /// # Errors
 /// If the file is short or a cell isn't a number.
 pub fn ereignis(data: &[u8]) -> Result<Vec<[i32; 12]>> {
@@ -1015,6 +1018,13 @@ pub fn sabotage(data: &[u8]) -> Result<([Vec<u8>; 2], Vec<Sabotage>)> {
 pub fn umenu(data: &[u8]) -> Strings {
     let mut f = TextReader::new(data);
     (0..11).map(|_| f.read_line()).collect()
+}
+
+/// `WASNUN.TXT`: 4 texts. Read by a form method at 1040:34af into Self+0x282.
+#[must_use]
+pub fn wasnun(data: &[u8]) -> Strings {
+    let mut f = TextReader::new(data);
+    (0..4).map(|_| f.read_line()).collect()
 }
 
 #[cfg(test)]

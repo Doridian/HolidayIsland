@@ -1,9 +1,11 @@
 # Symbols for HOLIDAY.EXE (Holiday Island, German retail, 1996-11-11 build).
 # Format: symbols/README.md. Addresses are Ghidra selector:offset; NE segment n
 # is selector 1000 + 8*(n-1), so segment 1 is 1000 and DGROUP (segment 35) is 1110.
+1000:2466 func start_scenario  # guess: sets up the scenario in DAT_1110_006e (1..6): money, EREIGNn.DAT, ...; Ghidra missed this function
 1008:55ee func load_abrechne
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
+1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
 1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
 1020:3dc4 func load_sonstige
@@ -11,6 +13,7 @@
 1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:2972 func load_fontdat
+1040:34af func wasnun_load_texts  # form method (Self); WASNUN.TXT; Ghidra missed this function
 1048:1ffd func init_messages
 1048:2dff func load_hauspos
 1048:2ed8 func load_hausnr
