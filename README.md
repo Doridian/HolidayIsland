@@ -3,8 +3,10 @@
 A decompilation and native port of **Holiday Island** (Sunflowers, 1996) to
 Rust, for Linux, macOS and WebAssembly.
 
-Status: **research and tooling only.** No game code has been decompiled or
-ported yet. What's here:
+Status: **early.** The Cargo workspace exists with a `formats` crate that
+parses the first data tables (the building tables in `DATA\` and a few
+`TEXTE\` lists) the way the original's loaders read them. No game logic is
+ported yet. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable

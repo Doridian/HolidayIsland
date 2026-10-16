@@ -1,3 +1,44 @@
 # Symbols for HOLIDAY.EXE (Holiday Island, German retail, 1996-11-11 build).
 # Format: symbols/README.md. Addresses are Ghidra selector:offset; NE segment n
 # is selector 1000 + 8*(n-1), so segment 1 is 1000 and DGROUP (segment 35) is 1110.
+1048:2dff func load_hauspos
+1048:2ed8 func load_hausnr
+1048:2fbd func load_grounpos
+1048:3098 func load_groundnr
+1048:3172 func load_gfxpos
+1048:3256 func load_straspos
+1048:3339 func load_flusspos
+1048:341c func load_hauspreis
+1048:34ee func load_hausdata  # DATA\HAUSDATA.DAT; formats::data::hausdata
+1048:358f func load_hausname
+1048:36b2 func load_auswahl
+1048:387c func load_fehler
+1100:0795 func str_to_int
+1108:0093 func sys_halt  # Halt: exit code in AX
+1108:0625 func sys_assign_text
+1108:06ac func sys_reset_text
+1108:070b func sys_close_text
+1108:08ef func sys_readln
+1108:095a func sys_read_end  # called after each Read(f, ...) item; I/O check
+1108:0a31 func sys_read_pstr
+1108:0aa2 func sys_read_longint
+1108:0b47 func sys_eof_text
+1108:15cd func sys_pstr_load  # guess: loads a string into the temp (here the data/text dir prefix)
+1108:15e7 func sys_pstr_store
+1108:160b func sys_pstr_copy
+1108:164c func sys_pstr_concat  # guess: appends a string to the temp
+1108:1775 func sys_pstr_delete
+1108:1f5c func sys_val_longint
+1110:54de data gfxpos | pointer32  # far pointer to the table loaded from the file of that name
+1110:54e2 data grounpos | pointer32  # far pointer to the table loaded from the file of that name
+1110:54e6 data groundnr | pointer32  # far pointer to the table loaded from the file of that name
+1110:54ea data straspos | pointer32  # far pointer to the table loaded from the file of that name
+1110:54ee data flusspos | pointer32  # far pointer to the table loaded from the file of that name
+1110:54f2 data hausnr | pointer32  # far pointer to the table loaded from the file of that name
+1110:54f6 data hauspos | pointer32  # far pointer to the table loaded from the file of that name
+1110:734a data fehler_texts | pointer32  # far pointer to the table loaded from the file of that name
+1110:7362 data auswahl_texts | pointer32  # far pointer to the table loaded from the file of that name
+1110:7366 data hausname_list1 | pointer32  # far pointer to the table loaded from the file of that name
+1110:736a data hausname_list2 | pointer32  # far pointer to the table loaded from the file of that name
+1110:736e data hausprei | pointer32  # far pointer to the table loaded from the file of that name
+1110:7372 data hausdata | pointer32  # far pointer to the table loaded from the file of that name
