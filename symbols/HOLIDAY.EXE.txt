@@ -13,6 +13,7 @@
 1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:2972 func load_fontdat
+1038:0e13 func infobox_load_data
 1040:34af func wasnun_load_texts  # form method (Self); WASNUN.TXT; Ghidra missed this function
 1048:1ffd func init_messages
 1048:2dff func load_hauspos
@@ -52,6 +53,7 @@
 1108:15e7 func sys_pstr_store
 1108:160b func sys_pstr_copy
 1108:164c func sys_pstr_concat  # guess: appends a string to the temp
+1108:16be func sys_pstr_compare
 1108:1775 func sys_pstr_delete
 1108:1f5c func sys_val_longint
 1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
@@ -83,6 +85,11 @@
 1110:65d2 data sabotage_labels
 1110:65da data fontdat1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:65de data fontdat2 | pointer32  # far pointer to the table loaded from the file of that name
+1110:65e8 data ib_buttonzeile
+1110:65ec data ib_button
+1110:65f0 data welche_button
+1110:65f4 data welche_buttonzeile
+1110:65f8 data infobox_short_texts
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
 1110:663e data nachrich_lines  # 3 far pointers to 90 x string

@@ -1133,6 +1133,229 @@ pub fn darstell(data: &[u8]) -> Result<Darstell> {
     })
 }
 
+/// `n <> 0`, the way the loaders store `Boolean`s read as numbers.
+fn flags<const N: usize>(f: &mut TextReader) -> Result<[bool; N]> {
+    Ok(read_row::<N>(f)?.map(|n| n != 0))
+}
+
+/// `if not Eof(f) then` read `n` lines `else Halt`: one check for a group
+/// of heading lines.
+fn headings(f: &mut TextReader, n: usize) -> Result<()> {
+    heading(f)?;
+    for _ in 1..n {
+        f.readln();
+    }
+    Ok(())
+}
+
+/// Info box kinds (`TIBArt`: `IBHotel`, `IBHaus`, ..., `IBInsel`).
+pub const IB_ARTEN: usize = 15;
+/// Info box lines (`TIBZeilen`).
+pub const IB_ZEILEN: usize = 17;
+
+/// Alignment of a text in an info box line, from `Textzentriert`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    /// ` left`
+    Left = 0,
+    /// `cente`
+    Center = 1,
+    /// Anything else (`right`).
+    Right = 2,
+}
+
+/// An `IBButtonzeile` (`TIBButtonzeile`), a row of the info box with a button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IbButtonzeile {
+    /// // +0x00
+    pub breite: i16,
+    /// // +0x02
+    pub hoehe: i16,
+    /// // +0x04
+    pub mit_text: bool,
+    /// // +0x38
+    pub textlinks: i16,
+    /// // +0x3a
+    pub textbreite: i16,
+    /// // +0x3c
+    pub mit_wert: bool,
+    /// // +0x3d
+    pub wertlinks: i16,
+    /// // +0x3f
+    pub wertbreite: i16,
+}
+
+/// `INFOBOX.DAT`: the layout of the info boxes for buildings and the
+/// island. The fields keep the names from the file's headings.
+/// Read by a form method at 1038:0e13.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfoboxData {
+    /// `WelcheZeilen: array[TIBArt, TIBZeilen] of Boolean`. // Self+0x181
+    pub welche_zeilen: [[bool; IB_ZEILEN]; IB_ARTEN],
+    /// `ZeilenLage: array[TIBZeilen, TIBZeilenlage] of Integer`. // Self+0x185
+    pub zeilen_lage: [[i16; 9]; IB_ZEILEN],
+    /// `MaxBoxbreite`. // Self+0x189
+    pub max_boxbreite: i16,
+    /// `MaxBoxHoehe`. // Self+0x18d
+    pub max_box_hoehe: i16,
+    /// `Textzentriert: array[TIBZeilen, TIBTextart2]`. // Self+0x195
+    pub textzentriert: [[TextAlign; 3]; IB_ZEILEN],
+    /// `IBButtonzeile`, 8 entries (`TIBButtonzeilenart`). // 1110:65e8
+    pub ib_buttonzeile: Vec<IbButtonzeile>,
+    /// `IBButton`: left, width, height of 9 buttons. // 1110:65ec
+    pub ib_button: [[i16; 3]; 9],
+    /// `WelcheButton`. // 1110:65f0
+    pub welche_button: [[bool; 9]; 8],
+    /// `WelcheButtonzeile: array[TIBArt, Buttonzeile] of Boolean`. // 1110:65f4
+    pub welche_buttonzeile: [[bool; 8]; IB_ARTEN],
+}
+
+/// Parses `INFOBOX.DAT`. // 1038:0e13
+///
+/// # Errors
+/// If the file is short or a number is malformed.
+pub fn infobox_dat(data: &[u8]) -> Result<InfoboxData> {
+    let mut c = Columns::new(data, true);
+    c.f.readln();
+    let mut welche_zeilen = [[false; IB_ZEILEN]; IB_ARTEN];
+    for row in &mut welche_zeilen {
+        *row = flags(&mut c.f)?;
+    }
+    headings(&mut c.f, 2)?;
+    let mut zeilen_lage = [[0; 9]; IB_ZEILEN];
+    for row in &mut zeilen_lage {
+        *row = c.row::<9>(5)?.map(integer);
+    }
+    headings(&mut c.f, 2)?;
+    let max_boxbreite = integer(c.row::<1>(5)?[0]);
+    headings(&mut c.f, 2)?;
+    let max_box_hoehe = integer(c.row::<1>(5)?[0]);
+    headings(&mut c.f, 2)?;
+    let mut textzentriert = [[TextAlign::Left; 3]; IB_ZEILEN];
+    for row in &mut textzentriert {
+        c.next_line()?;
+        for cell in row.iter_mut() {
+            let n = c.line.len().min(5);
+            *cell = match &c.line[..n] {
+                b"cente" => TextAlign::Center,
+                b" left" => TextAlign::Left,
+                _ => TextAlign::Right,
+            };
+            c.line.drain(..c.line.len().min(6));
+        }
+    }
+    let f = &mut c.f;
+    for _ in 0..3 {
+        f.readln();
+    }
+    let ib_buttonzeile = (0..8)
+        .map(|_| {
+            let [
+                breite,
+                hoehe,
+                mit_text,
+                textlinks,
+                textbreite,
+                mit_wert,
+                wertlinks,
+                wertbreite,
+            ] = read_row::<8>(f)?;
+            Ok(IbButtonzeile {
+                breite: integer(breite),
+                hoehe: integer(hoehe),
+                mit_text: mit_text != 0,
+                textlinks: integer(textlinks),
+                textbreite: integer(textbreite),
+                mit_wert: mit_wert != 0,
+                wertlinks: integer(wertlinks),
+                wertbreite: integer(wertbreite),
+            })
+        })
+        .collect::<Result<_>>()?;
+    for _ in 0..3 {
+        f.readln();
+    }
+    let mut ib_button = [[0; 3]; 9];
+    for row in &mut ib_button {
+        *row = read_row::<3>(f)?.map(integer);
+    }
+    f.readln();
+    f.readln();
+    let mut welche_button = [[false; 9]; 8];
+    for row in &mut welche_button {
+        *row = flags(f)?;
+    }
+    f.readln();
+    f.readln();
+    let mut welche_buttonzeile = [[false; 8]; IB_ARTEN];
+    for row in &mut welche_buttonzeile {
+        *row = flags(f)?;
+    }
+    Ok(InfoboxData {
+        welche_zeilen,
+        zeilen_lage,
+        max_boxbreite,
+        max_box_hoehe,
+        textzentriert,
+        ib_buttonzeile,
+        ib_button,
+        welche_button,
+        welche_buttonzeile,
+    })
+}
+
+/// `INFOBOX.TXT`: the info boxes' texts. // 1038:0e13
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfoboxTexts {
+    /// Two texts per line (`TIBZeilen`). // Self+0x191
+    pub zeilen: Vec<[Vec<u8>; 2]>,
+    /// 10 texts. // Self+0x199
+    pub texts: Strings,
+    /// The 8 `IBButtonzeile` texts, `string[50]`. // 1110:65e8 records, +0x05
+    pub buttonzeilen: Strings,
+    /// The 9 `IBButton` captions, `string[30]`. // 1110:65ec records, +0x06
+    pub buttons: Strings,
+    /// 10 `string[25]`s. // 1110:65f8
+    pub short_texts: Strings,
+}
+
+/// Parses `INFOBOX.TXT`. // 1038:0e13
+///
+/// # Errors
+/// If the file is short.
+pub fn infobox_txt(data: &[u8]) -> Result<InfoboxTexts> {
+    let mut c = Columns::new(data, true);
+    skip_heading(&mut c)?;
+    let zeilen = (0..IB_ZEILEN)
+        .map(|_| {
+            let mut pair = lines(&mut c, 2)?;
+            let second = pair.pop().unwrap_or_default();
+            Ok([pair.pop().unwrap_or_default(), second])
+        })
+        .collect::<Result<_>>()?;
+    skip_heading(&mut c)?;
+    let texts = lines(&mut c, 10)?;
+    let f = &mut c.f;
+    for _ in 0..3 {
+        f.readln();
+    }
+    let buttonzeilen = (0..8).map(|_| f.read_line_max(50)).collect();
+    for _ in 0..3 {
+        f.readln();
+    }
+    let buttons = (0..9).map(|_| f.read_line_max(30)).collect();
+    f.readln();
+    f.readln();
+    let short_texts = (0..10).map(|_| f.read_line_max(25)).collect();
+    Ok(InfoboxTexts {
+        zeilen,
+        texts,
+        buttonzeilen,
+        buttons,
+        short_texts,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

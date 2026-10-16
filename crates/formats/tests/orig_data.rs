@@ -63,7 +63,16 @@ fn data_tables() {
         );
     }
     let darstell = data::darstell(&read("DATA/DARSTELL.DAT").unwrap()).unwrap();
-    assert_eq!(darstell.spielerzeiger_pos[2][7], [16, 32, 340, 128, 340, 0, -16, 30, 0, 0, 0, 0]);
+    assert_eq!(
+        darstell.spielerzeiger_pos[2][7],
+        [16, 32, 340, 128, 340, 0, -16, 30, 0, 0, 0, 0]
+    );
+    let infobox = data::infobox_dat(&read("DATA/INFOBOX.DAT").unwrap()).unwrap();
+    assert_eq!(
+        infobox.textzentriert[2],
+        [data::TextAlign::Center, data::TextAlign::Left, data::TextAlign::Right]
+    );
+    assert_eq!(infobox.ib_buttonzeile.len(), 8);
     let abrechnung = data::abrechne(&read("DATA/ABRECHNE.DAT").unwrap()).unwrap();
     assert_eq!(abrechnung.factors[0], [1, 2, 0, 255]);
     assert_eq!((abrechnung.min_rent, abrechnung.max_rent), (0, 800));
