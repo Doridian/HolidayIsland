@@ -3,7 +3,9 @@
 //! states 430–450), and then the start menu on top (state 500). Start
 //! loads the scenario (or, until island generation is ported, the tutorial
 //! island) and shows the main screen with the island, which the arrow keys
-//! scroll and Insert and Delete turn. Loading a game is only logged.
+//! scroll and Insert and Delete turn, and runs the simulation's clock
+//! (`World::tick`, every 100 ms), with the date and money on the info bar.
+//! Loading a game is only logged.
 //!
 //! `holiday [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`, `GRAFIK`,
 //! `DATA` and `TEXTE` (default `orig`).
@@ -13,21 +15,23 @@ use std::time::Duration;
 
 use formats::bmp::Bitmap;
 use formats::data::{
-    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausnr, hauspos, sonstige, start_txt, straspos,
-    szenario_txt,
+    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausnr, hauspos, modatyp, monate, sonstige, start_txt,
+    straspos, szenario_txt,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
 use game::darstellung::{self, Camera, Tiles};
-use game::hauptschirm::{self, Hauptschirm};
+use game::hauptschirm::{self, Hauptschirm, InfoTexts};
 use game::hintergrund::{self, Island};
+use game::simulation::TICK_MS;
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
 use game::widgets::ShiftState;
 use game::world::World;
 use platform::{App, Button, Frame, Input};
 use vcl::form::{Form, Kind};
+use vcl::random::Random;
 use vcl::surface::Surface;
 use vcl::{Palette, Rect};
 
@@ -98,11 +102,29 @@ struct Game {
     world: World,
     tiles: Tiles,
     screen: Hauptschirm,
+    font: Font,
+    info: InfoTexts,
+    /// Time since the last tick of the clock.
+    since_tick: Duration,
     /// `THauptschirm`'s VCL form, whose images show `screen`'s.
     form: Form,
 }
 
 impl Game {
+    /// Runs the clock's ticks that are due (`AnimationsTimer`, 1020:1e9b)
+    /// and says whether the screen changed.
+    fn update(&mut self, elapsed: Duration) -> bool {
+        let tick = Duration::from_millis(u64::from(TICK_MS));
+        self.since_tick += elapsed;
+        let mut ticked = false;
+        while self.since_tick >= tick {
+            self.since_tick -= tick;
+            self.world.tick();
+            ticked = true;
+        }
+        ticked && self.screen.show_info(&self.world, &self.font, &self.info)
+    }
+
     fn paint(&mut self, screen: &mut Surface, palette: &Palette) {
         for (name, image) in self.screen.images() {
             if let Some(c) = self.form.component_mut(name)
@@ -223,6 +245,11 @@ impl Holiday {
 impl App for Holiday {
     fn update(&mut self, elapsed: Duration) {
         self.elapsed += elapsed;
+        if let Some(game) = &mut self.game
+            && game.update(elapsed)
+        {
+            self.repaint();
+        }
         if self.showing_title && self.elapsed >= TITLE_TIME {
             // States 450 and 500.
             self.showing_title = false;
@@ -353,7 +380,14 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         }
     };
     let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
-    let world = hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut world = hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
+    // `Randomize` (1108:1e21) seeds RandSeed from the clock.
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| {
+            d.subsec_nanos() ^ u32::try_from(d.as_secs() & 0xffff_ffff).unwrap_or(0)
+        });
+    world.random = Random::new(seed);
     let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
     let origin = map.field("1110:5530").map_or((0, 0), |d| {
         (i16::from_le_bytes([d[0], d[1]]), i16::from_le_bytes([d[2], d[3]]))
@@ -380,6 +414,13 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
     let mut screen = Hauptschirm::new(camera, origin, bitmaps, &font, &title);
     let tiles = load_tiles(dir);
     screen.paint_map(&world, &tiles);
+    let info = InfoTexts {
+        months: monate(&read(dir, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
+        land: modatyp(&read(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT").land,
+        currency_factor: texts.waehrungsfaktor,
+        currency: texts.texts.get(5).cloned().unwrap_or_default(), // 1020:3ea6
+    };
+    screen.show_info(&world, &font, &info);
 
     // 1020:1ce9 and 1020:283b: centred, laid out and shown.
     let mut form = load_form(exe, "THAUPTSCHIRM");
@@ -397,6 +438,9 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         world,
         tiles,
         screen,
+        font,
+        info,
+        since_tick: Duration::ZERO,
         form,
     }
 }

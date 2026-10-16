@@ -1,0 +1,185 @@
+//! Runs the simulation's clock on the tutorial island and each scenario.
+//! Skipped when `orig/` isn't there.
+
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+
+use formats::bmp::Bitmap;
+use formats::data::{fontdat, modatyp, monate, sonstige};
+use formats::savegame::SaveGame;
+use game::darstellung::Camera;
+use game::hauptschirm::{BITMAP_FILES, Hauptschirm, InfoTexts};
+use game::hintergrund::{SCENARIO_FILES, load_world};
+use game::monate::Date;
+use game::startform::Settings;
+use game::text::Font;
+use game::world::World;
+use vcl::random::Random;
+use vcl::surface::Surface;
+
+fn orig() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orig")
+}
+
+/// Reads `name` from `orig/`, whatever the case of its letters.
+fn read(name: &str) -> Vec<u8> {
+    let mut path = orig();
+    for part in name.split('/') {
+        let found = std::fs::read_dir(&path)
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(part))
+            .unwrap_or_else(|| panic!("{name} not found"));
+        path = found.path();
+    }
+    std::fs::read(path).unwrap()
+}
+
+/// How long each world runs: a bit over a month at the scenarios' speed.
+const TICKS: usize = 5000;
+
+fn hash(world: &World) -> u64 {
+    let mut h = DefaultHasher::new();
+    world.hash(&mut h);
+    h.finish()
+}
+
+/// Ticks `world` `n` times and returns the hash after each 100.
+fn run(mut world: World, n: usize) -> (World, Vec<u64>) {
+    let mut hashes = Vec::new();
+    for i in 1..=n {
+        world.tick();
+        if i % 100 == 0 {
+            hashes.push(hash(&world));
+        }
+    }
+    (world, hashes)
+}
+
+/// The number of days `n` ticks move a date on from the start of a day.
+fn days_after(world: &World, n: usize) -> usize {
+    let speed = usize::try_from(world.clock.speed).unwrap();
+    let left = 6 * speed - usize::from(world.clock.day_ticks);
+    if n < left { 0 } else { 1 + (n - left) / (6 * speed) }
+}
+
+#[test]
+fn deterministic() {
+    if !orig().join("MAPS").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let mut worlds = vec![(
+        "TUTORIAL.MAP".to_owned(),
+        World::from_map(&SaveGame::parse(&read("MAPS/TUTORIAL.MAP")).unwrap()).unwrap(),
+    )];
+    for (n, file) in (1..=6).zip(SCENARIO_FILES) {
+        let settings = Settings {
+            scenario: n,
+            difficulty: 1,
+            ..Settings::default()
+        };
+        let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+        worlds.push((file.to_owned(), load_world(&map, &settings, true).unwrap()));
+    }
+    for (name, mut world) in worlds {
+        world.random = Random::new(0x1234_5678);
+        let start = world.date;
+        assert!(world.clock.speed > 0, "{name}: speed {}", world.clock.speed);
+        assert!((1..=12).contains(&start.month) && start.day >= 1, "{name}: {start:?}");
+        let (a, hashes_a) = run(world.clone(), TICKS);
+        let (b, hashes_b) = run(world.clone(), TICKS);
+        assert_eq!(hashes_a, hashes_b, "{name}");
+        assert_eq!(a, b, "{name}");
+        assert_ne!(hash(&a), hash(&world), "{name}: nothing changed");
+
+        let mut expected = start;
+        if world.clock.paused {
+            assert_eq!(a.date, start, "{name}");
+            continue;
+        }
+        for _ in 0..days_after(&world, TICKS) {
+            expected.advance();
+        }
+        assert_eq!(a.date, expected, "{name}");
+        assert_ne!(a.date, Date { ..start }, "{name}");
+    }
+}
+
+#[test]
+fn scenario_start_money() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let map = SaveGame::parse(&read("SZENARIO/Geld.his")).unwrap();
+    let base = World::from_map(&map).unwrap().finances.max_debt;
+    for (difficulty, debt) in [(0, base * 2), (1, base), (2, base / 2)] {
+        let settings = Settings {
+            scenario: 1,
+            difficulty,
+            ..Settings::default()
+        };
+        let world = load_world(&map, &settings, true).unwrap();
+        let f = &world.finances;
+        assert_eq!(f.max_debt, debt);
+        assert_eq!(f.money[0], debt / 2);
+        assert_eq!(f.loan[0], debt / 2);
+        assert_eq!(f.interest_rate, 6);
+        assert_eq!(world.player_count, 2);
+        assert_eq!(world.disasters, difficulty != 0);
+    }
+}
+
+#[test]
+fn info_bar() {
+    if !orig().join("MAPS").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let bitmap = |name: &str| Bitmap::parse(&read(&format!("GRAFIK/{name}"))).unwrap();
+    let font = Font::new(
+        &bitmap("FONT.BMP"),
+        &fontdat(&read("DATA/FONTDAT1.DAT")).unwrap(),
+        &fontdat(&read("DATA/FONTDAT2.DAT")).unwrap(),
+    );
+    let texts = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
+    let info = InfoTexts {
+        months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
+        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        currency_factor: texts.waehrungsfaktor,
+        currency: texts.texts[5].clone(),
+    };
+    assert_eq!(info.currency, b"DM");
+    let bitmaps = BITMAP_FILES.iter().map(|f| Surface::from_bitmap(&bitmap(f))).collect();
+    let camera = Camera {
+        view: 0,
+        origin: (100, 100),
+        parity: 0,
+        mode_0086: false,
+        owner_pointers: false,
+        occupancy_pointers: false,
+    };
+    let mut h = Hauptschirm::new(camera, (100, 100), bitmaps, &font, &texts.texts[0]);
+    let mut world = World::from_map(&SaveGame::parse(&read("MAPS/TUTORIAL.MAP")).unwrap()).unwrap();
+    let blank = h.info.clone();
+    assert!(h.show_info(&world, &font, &info));
+    assert_ne!(h.info, blank);
+    assert!(!h.show_info(&world, &font, &info));
+    let with_date = h.info.clone();
+    world.date.advance();
+    assert!(h.show_info(&world, &font, &info));
+    assert_ne!(h.info, with_date);
+    // The money's half of the bar didn't change.
+    let left = |s: &Surface| {
+        (0..s.height)
+            .flat_map(|y| (0..152).map(move |x| (x, y)))
+            .map(|(x, y)| s.pixel(x, y))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(left(&h.info), left(&with_date));
+    world.add_money(1, -2_000_000);
+    assert!(h.show_info(&world, &font, &info));
+    assert_ne!(left(&h.info), left(&with_date));
+}

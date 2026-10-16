@@ -12,10 +12,13 @@
 //! coordinates. The camera's origin on the map is worked out from them
 //! (1020:0697).
 
+use formats::data::Land;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::darstellung::{self, Camera, Tiles, VIEW_HEIGHT, VIEW_WIDTH};
+use crate::monate::Date;
+use crate::money::format_money;
 use crate::text::{Align, Font};
 use crate::widgets::ShiftState;
 use crate::world::{Pos, World};
@@ -134,6 +137,20 @@ pub enum KeyResult {
     Ignored,
 }
 
+/// What the info bar's texts need besides the world.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfoTexts {
+    /// `MONATE.TXT`. // [1110:65d6]
+    pub months: Vec<Vec<u8>>,
+    /// The country from `MODATYP.DAT`, for the date's and the money's
+    /// format. // 1110:64be
+    pub land: Land,
+    /// `Waehrungsfaktor` from `SONSTIGE.TXT`. // 1110:7346
+    pub currency_factor: i32,
+    /// The currency's name, `SONSTIGE.TXT`'s sixth text. // *1110:7352
+    pub currency: Vec<u8>,
+}
+
 /// The main screen's state and images.
 #[derive(Debug, Clone)]
 pub struct Hauptschirm {
@@ -148,6 +165,8 @@ pub struct Hauptschirm {
     /// which keeps it, instead of 1020:0697, until the next scroll.
     /// // 1110:133e
     keep_origin: bool,
+    /// The date and player 1's money the info bar shows, once drawn.
+    info_shown: Option<(Date, i32)>,
     bitmaps: Vec<Surface>,
     pub title: Surface,
     pub info: Surface,
@@ -207,6 +226,7 @@ impl Hauptschirm {
                 position: START_WO,
             },
             keep_origin: false,
+            info_shown: None,
             title: bitmaps
                 .get(MENULEI)
                 .cloned()
@@ -250,6 +270,46 @@ impl Hauptschirm {
             let all = dst.bounds();
             dst.draw(0, 0, &b[index], all);
         }
+    }
+
+    /// Puts the info bar's background back from `x` on, `width` wide.
+    /// // 1030:213f
+    fn restore_info_bar(&mut self, x: i32, width: i32) {
+        let all = self.info.bounds();
+        let from = Rect::new(x, 0, width, all.height());
+        self.info.blit(x, 0, &self.bitmaps[INFO], from, Rop::Copy, all);
+    }
+
+    /// Shows the world's date and player 1's money on the info bar if they
+    /// changed since it last did, and says whether it did. The original
+    /// draws them where they change: the money in `add_money` (1078:01e7)
+    /// and the date in the clock's tick (1020:1e9b); both at the start of
+    /// a game (1010:26fa).
+    pub fn show_info(&mut self, world: &World, font: &Font, texts: &InfoTexts) -> bool {
+        let (date, money) = (world.date, world.finances.money[0]);
+        let shown = self.info_shown;
+        if shown.is_some_and(|(_, m)| m == money) && shown.is_some_and(|(d, _)| d == date) {
+            return false;
+        }
+        if shown.is_none_or(|(_, m)| m != money) {
+            // 1078:01e7, 1030:2211: the amount, a space, the currency;
+            // in colour 11 when it's negative.
+            let mut text = format_money(money, texts.currency_factor, texts.land);
+            text.push(b' '); // 1078:01e5
+            text.extend_from_slice(&texts.currency);
+            text.truncate(255);
+            self.restore_info_bar(0, 152);
+            let colour = if text.first() == Some(&b'-') { 11 } else { 10 };
+            font.draw(&mut self.info, &text, (4, 1), 120, Align::Right, colour);
+        }
+        if shown.is_none_or(|(d, _)| d != date) {
+            // 1030:0148, 1030:228d
+            let text = date.text(&texts.months, texts.land);
+            self.restore_info_bar(400, 640);
+            font.draw(&mut self.info, &text, (450, 1), 182, Align::Right, 10);
+        }
+        self.info_shown = Some((date, money));
+        true
     }
 
     /// The scroll position for a map origin. // 1020:074d

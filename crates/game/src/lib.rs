@@ -4,6 +4,9 @@
 pub mod darstellung;
 pub mod hauptschirm;
 pub mod hintergrund;
+pub mod monate;
+pub mod money;
+pub mod simulation;
 pub mod startform;
 pub mod text;
 pub mod widgets;

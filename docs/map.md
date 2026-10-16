@@ -124,6 +124,8 @@ laid out from the table at `1110:1572`:
 
 The thumbs sit at `16 + (pos - min) * (length - 51) div (max - min)`.
 
-Not ported yet: the `AnimationsTimer` (animations, the simulation's ticks,
-scrolling while the mouse is held at the scroll bars), the buttons, the
-texts on the info and status bars, mouse input, the overview map.
+The `AnimationsTimer` drives the simulation: see
+[simulation.md](simulation.md). The info bar shows the money (left) and
+the date (right). Not ported yet: the timer's view parts (scrolling while
+the mouse is held at the scroll bars, the people's sprites), the buttons,
+the status bar's messages, mouse input, the overview map.

@@ -7,6 +7,7 @@
 
 pub mod color;
 pub mod form;
+pub mod random;
 pub mod surface;
 
 pub use formats::bmp::Rgb;

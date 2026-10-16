@@ -116,8 +116,9 @@ map file's view position into the main screen's scroll position
 
 Not ported yet: the video, the progress window, generating an island (the
 port shows `MAPS\TUTORIAL.MAP` instead, segment `10b0` is about 22 KB of
-generator), the money, the events and everything else `game_start_setup`
-and 1030:36e5 set up for the simulation.
+generator), the events, the players' flags and everything else
+`game_start_setup` and 1030:36e5 set up for the simulation. A scenario's
+start money is ported ([simulation.md](simulation.md#money-107801e7)).
 
 ## Back to the start menu (1010:25dc)
 
