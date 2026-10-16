@@ -4,10 +4,15 @@
 1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
 1000:1ea0 func init_game_defaults  # guess: the defaults for a new game (island_shape 1, relief 2, land 2, rivers 5, player_colours 1..8, ...)
 1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
-1000:3d9e func event_chance  # (chance: Longint): Random(65000) + 1 < chance; whether an event starts
+1000:3d9e func event_chance  # (chance: Longint): Random(65000) always; true from 65536 on, false below 1, else Random + 1 < chance; game::events
 1008:0512 func january_second
-1008:1aea func rating_step
-1008:1b4b func ratings_tick
+1008:179f func is_beach_square  # (plot, i, j): on the map, on that plot, ground 0, form 16, no building, no owner, height 1
+1008:1848 func find_beach_square  # (j, i, var pos): the first is_beach_square in rings 1..6 around the building at (i, j); game::beach_life
+1008:19ea func add_beach_life  # the house at 1110:4c8a gets one more beach life square (find_beach_square, place_beach_life)
+1008:1a52 func remove_beach_life  # clear_square on the house's last beach life square
+1008:1a81 func change_beach_life  # one of the house's beach life squares (Random(n)) gets a random look
+1008:1aea func beach_life_step  # (class): add below the class, remove above it, at it Random(5): add / remove / change
+1008:1b4b func beach_life_tick  # every house in *1110:6f10, Random(30) = 0: beach_life_step(class of +0x10); game::beach_life
 1008:1bf7 func settlement_step  # (step): the monthly settlement, one if-branch per step 2..~0x50; docs/simulation.md
 1008:4f64 func year_end
 1008:5212 func construction_tick
@@ -16,8 +21,10 @@
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
 1010:08d7 func load_window_positions
-1010:1129 func plant_palm
-1010:129e func vegetation_tick  # 30 random squares: palms grow, seed, die; empty squares may get a palm
+1010:1129 func plant_palm  # (j, i): counts it on the square's plot (+0x354), location effect, part := part * stages + 8, redraws; game::vegetation
+1010:11cd func place_beach_life  # (j, i, owner): building 36 with part Random(hausnr[36][0]); owner unused
+1010:122f func clear_square  # (j, i): building 255, part Random(1), owner 0, redraws
+1010:129e func vegetation_tick  # 30 random squares: young palms grow, grown ones age, old ones die (60 %), empty sand/grass gets a palm (30 %); game::vegetation
 1010:1432 func ui_button_draw  # (image): VMT+0x14 of every button: button_draw, then the caption centred, 1 px down-right when pressed; game::widgets
 1010:14c1 func ui_button_mouse_down  # (x, y, image): VMT+0x1c of every button: button_mouse_down, play_sound(8) on a hit
 1010:14f7 func ui_button_mouse_up  # (x, y, image): VMT+0x20 of every button: button_mouse_up, play_sound(10) if it was pressed
@@ -40,7 +47,7 @@
 1010:2820 func game_start_setup  # after load_map: scroll position from the map, scroll bars, button bar, draws the island
 1010:2a0c func enable_forms  # re-enables the forms in 1110:646c except 10 and 11
 1010:2af5 func draw_button_bar
-1010:3084 func events_tick  # once a day: counts event_days and starts, shows and ends the events at *1110:6536
+1010:3084 func events_tick  # once a day: counts event_days, starts the due events of *1110:6536 by kind (auction, news, disaster, new building type), ends them after their duration; game::events
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
 1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
@@ -95,6 +102,7 @@
 1020:32c0 func hauptschirm_kleinbild_mousedown
 1020:32fa func hauptschirm_kleinbild_mouseup
 1020:3dc4 func load_sonstige
+1028:08ac func start_auction  # (item: Longint, price: Longint): 1110:654a, 659c := price, 656e := item, starts auktionsform's timer
 1028:2449 func load_auktion
 1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
@@ -107,6 +115,12 @@
 1030:0fdd func group_digits
 1030:11a0 func format_money  # (n: Longint; var s): n * waehrungsfaktor with digit groups; game::money
 1030:1418 func get_tile_dcs
+1030:185d func change_location  # (i, j, value, radius: Longint, remove): location map * value % around (i div 2, j div 2), fading with distance; then the overview map; game::location
+1030:1ae9 func change_location_quiet  # same as change_location without redrawing the overview map
+1030:1d10 func add_location_effect  # (i, j, building, remove): a building type's effect (HAUSDATA col 9) on the location map, through change_location_quiet
+1030:1dc6 func remove_location_effect  # (i, j, building, remove): the same through change_location (called with remove = 1)
+1030:1e62 func plot_at  # (i, j): the plot number of a square from *1110:5528, or its neighbour's by the form 0..3; 0 off the map
+1030:1f93 func on_map  # (i, j): 0 <= both <= 250
 1030:1fdb func highest_corner
 1030:208d func lowest_corner
 1030:213f func draw_info_bar
@@ -134,6 +148,8 @@
 1040:284c func load_highscor_txt
 1040:34af func wasnun_load_texts  # form method (Self); WASNUN.TXT; Ghidra missed this function
 1040:3748 func wasnun_set_page
+1048:0a54 func post_message  # (number, a, b, x: Longint, y: Longint, j, i, centre): news archive entry (text number*3 + Random(3)), the TV if the options say so; game::news
+1048:12e9 func fernseher_show  # guess: (entry): opens the TV for a news entry and pauses the game (1110:0067)
 1048:1b3e func fernseher_tick  # the TV news: plays its film, closes after 3 s of GetTickCount
 1048:1ffd func init_messages
 1048:2a19 func load_map
@@ -158,6 +174,7 @@
 1050:0811 func turn_part
 1050:0997 func turn_building  # (part, var type): the part and type to draw for the view rotation
 1050:0e68 func draw_columns  # (first, last, rows): draws the island view column by column; game::darstellung
+1050:21f9 func redraw_area  # (i, j, w, h): redraws the columns showing that area, if in view
 1050:2697 func draw_bottom_rows
 1050:26ae func draw_top_rows
 1050:26c8 func draw_column_range
@@ -205,22 +222,37 @@
 1060:0ed0 func optionen_load_texts
 1068:023a func schluss_skip_lines
 1068:0288 func schluss_load_texts
+1068:2591 func find_plot  # (id: Word): the plot record in the list at *1110:6f0c with that number, or nil
+1068:2e05 func load_houses  # unit routine: the house list *1110:6f10 (count 1110:6f1a, 0x2c-byte records)
+1068:313e func load_plots  # unit routine: the plot list *1110:6f0c (count 1110:552c, 0x364-byte records)
 1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
 1078:0002 func building_slice  # (n): buildings with (x + y) mod 30 = n may send out a person (1090:1a25)
 1078:01e7 func add_money  # (player: Byte; amount: Longint): saturating; player 1 redraws the info bar; game::money
 1078:0466 func set_loan  # (player, amount): loan and its monthly interest amount div 24 * zinssatz div 50
+1078:1995 func find_building_site  # (i, j): the record in *1110:6f08 whose area holds (i, j), if building 31 is there; else nil
 1080:1141 func load_umenu
+1088:2d2a func remove_people_at  # (i, j): the people (*1110:6fd6) of kinds 0x11..0x16, 0x20, 0x21 at that square leave
 1088:80a7 func load_animdat
 1090:2373 func spawn_people
 1090:2ce5 func person_step
 1090:5293 func people_tick  # the people and cars at *1110:6fd6, entities 0x24..0x640; about 3850 bytes, Ghidra sees 123
+10a0:0026 func replace_building  # (building, i, j): the area gets the type, its record (1078:169a) too; for 0x6f/0x79/0x7a the people inside leave
+10a0:0691 func make_available  # (building, kind): kind 0: the build menu (1018:23f8) and the computer players (10a8:0523) get the type, some with the next ones of its group; 1: the menu only; 2..7: 10a8:2cc1
+10a0:074d func oil_slick_start  # (var pos): a random sea square next to land (Random(250) twice, up to 1000 tries), 51 steps of oil (Random(3)), location map * 50 % radius 30; damage from 1008:0b0b
+10a0:0915 func oil_slick_end  # location map back, insurance payout, the oil (people kinds 0x2b..0x2d) gone
+10a0:0b49 func flood_start  # damage 0, insured := 1110:0072; demolishes everything at sea level (lowest corner < 2) not on the grounds at 1110:1358, counting player 1's (HAUSPREI.DAT) as damage
+10a0:0cce func flood_end  # insured: add_money(1, damage) and the money menu's books (1070:1419 kind 0x6a)
+10a0:0d09 func quake_start  # damage 0, insured := 1110:0072
 10a0:0d1c func quake_damage
-10a0:117e func effects_tick
+10a0:0ddc func quake_end  # same as flood_end
+10a0:10c6 func send_surfers  # (i, j): five tries, Random(2): a surfer (people kind 0x20 or 0x21) from there, counted in *1110:551c
+10a0:117e func effects_tick  # once a day: the five sabotage slots *1110:705a and three championships *1110:705e count down and act; game::sabotage
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
 10a8:37da func load_compbau
 10b0:52d4 func generate_island  # makes a new island from the start menu settings (segment 10b0); not ported
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
+10b8:1624 func uebersichtsmap_redraw_area  # guess: (self, i, j, w, h): redraws an area of the overview map
 10b8:41ad func uebermap_load_data  # form method (Self); UEBERMAP.TXT + UEBERMAP.DAT
 10c0:0002 func widget_init  # constructor of the widget object (Turbo Pascal object, VMT word at +9): (left, top, width, height, visible); fields +0 top, +2 left, +4 width, +6 height, +8 visible. Segment 10c0 is the widget toolkit, docs/widgets.md
 10c0:003e func widget_done
@@ -324,10 +356,12 @@
 1110:0067 data paused  # Boolean: the clock stands while the TV shows a message
 1110:006e data scenario  # Byte: 1..6, 0 for a normal game
 1110:0070 data money_frozen
+1110:0072 data insured  # guess: whether player 1 is insured; copied to 1110:7054 when a disaster starts
 1110:0074 data player_colours  # array[1..8] of Byte: each player's colour, the human first
 1110:007c data view_rotation
-1110:0086 data view_mode_0086
+1110:0086 data flood  # a flood is going on: the drawing lowers the land and drowns sea-level squares; was view_mode_0086
 1110:0087 data earthquake
+1110:0088 data oil_slick  # an oil slick is going on; not saved
 1110:008a data island_shape  # Integer: 0 atoll, 1 group of islands, 2 one island
 1110:008c data difficulty  # Integer 0..2
 1110:008e data relief  # Integer 0..4
@@ -342,6 +376,7 @@
 1110:12be data view_height
 1110:1322 data load_map_name  # string: the file state 1500 loads from MAPS when hintergrund+0x190 is set, Last.map
 1110:133e data view_keep_origin
+1110:13b8 data palm_ground  # set of Byte: the ground kinds palms grow on (0, 1, 4)
 1110:1478 data computer_opponents  # Byte 0..7, initially 7
 1110:1479 data player_count  # Byte: computer_opponents + 1
 1110:1492 data ui_label_vmt  # VMT of plain labels. Ghidra shows wrong bytes here: DGROUP is stored as iterated data in the NE file and the loader does not expand it
@@ -362,6 +397,7 @@
 1110:4c72 data abrechne_factor2 | pointer32  # 38 Longints, column of ABRECHNE.DAT
 1110:4c76 data abrechne_factor3 | pointer32  # 38 Longints, column of ABRECHNE.DAT
 1110:4c7a data abrechne_factor4 | pointer32  # 38 Longints, column of ABRECHNE.DAT
+1110:4c8a data beach_life_house | pointer32  # the house beach_life_tick is at
 1110:4d50 data base_dir | char[144]  # string[0x90], line 1 of SETUP.DAT
 1110:4de2 data data_dir | char[144]  # base_dir + "Data\"
 1110:4e74 data texte_dir | char[144]  # base_dir + "Texte\"
@@ -393,6 +429,9 @@
 1110:5510 data map_parts
 1110:5514 data map_owners
 1110:5518 data map_occupancy
+1110:5524 data location_map | pointer32  # 126x126 bytes, [i div 2 * 126 + j div 2]: Lage, around 100; game::world::LocationMap
+1110:5528 data plot_map | pointer32  # 126x251 Words, [i div 2 * 251 + j]: plot numbers; game::world::PlotMap
+1110:552c data plot_count
 1110:5530 data view_origin_i
 1110:5532 data view_origin_j
 1110:5534 data view_parity
@@ -401,6 +440,7 @@
 1110:64b0 data werbung_to_text
 1110:64b4 data renovierung_to_text
 1110:64be data land
+1110:64bf data max_lageeinfluss  # MODATYP.DAT MaxLageeinfluss
 1110:64ca data kreditgroesse
 1110:64ce data max_schulden
 1110:64d2 data zinssatz
@@ -411,6 +451,9 @@
 1110:6536 data ereignis | pointer32  # 41 records of 0x34 bytes: 12 Longints from EREIGNIS.DAT + 1 more
 1110:653a data event_days
 1110:6544 data auktionsform
+1110:654a data auction_price  # Longint
+1110:656e data auction_item
+1110:659c data auction_start_price  # Longint
 1110:65b0 data auktion_texts
 1110:65bc data sabotage_kinds
 1110:65c0 data sabowin
@@ -433,6 +476,7 @@
 1110:6628 data fernseher
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
+1110:663a data news_archive | pointer32  # 26 records of 0x11c: +0 day, +4/+6/+8/+0xc values, +0x10 text, +0x12 message, +0x14 date text, +0x114 square, +0x118 view origin
 1110:663e data nachrich_lines  # 3 far pointers to 90 x string
 1110:667e data ansicht_formkorrektur
 1110:6682 data ansicht_flusskorrektur
@@ -456,6 +500,10 @@
 1110:6eea data highscor_texts
 1110:6eee data schlussform
 1110:6f04 data geldmenuform
+1110:6f08 data building_sites | pointer32  # list of 13-byte records: +1 i, +3 j, +5 days left, +7 type, +9 next
+1110:6f0c data plots | pointer32  # list of 0x364-byte plot records: +0 number, +0x354 palms planted, +0x360 next
+1110:6f10 data houses | pointer32  # list of 0x2c-byte records of finished buildings: +3 i, +5 j, +8 next, +0x10 ?, +0x13+4n beach life squares, +0x2b their number
+1110:6f24 data player_block | pointer32  # 0x88 bytes per-player values; +0x2f+player reputation (50 at first)
 1110:6f30 data money  # array[1..8] of Longint
 1110:6f50 data loan
 1110:6f70 data loan_interest
@@ -466,6 +514,11 @@
 1110:6fde data neintrag | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fe2 data animdat3 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fea data animdat1 | pointer32  # far pointer to the table loaded from the file of that name
+1110:7050 data disaster_damage  # Longint
+1110:7054 data disaster_insured
+1110:7056 data oil_slick_pos  # i, j
+1110:705a data sabotage_slots | pointer32  # 5 records of 10 bytes: attacker, victim, kind, i, j, countdown (Word), active
+1110:705e data championships | pointer32  # 3 records of 8 bytes: kind (tennis, surfing, Miss HI), i, j, countdown (Word), active
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
 1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
 1110:723a data uebersichtsmap2

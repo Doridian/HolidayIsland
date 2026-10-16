@@ -11,12 +11,13 @@
 //! `DATA` and `TEXTE` (default `orig`).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use formats::bmp::Bitmap;
 use formats::data::{
-    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausnr, hauspos, modatyp, monate, sonstige, start_txt,
-    straspos, szenario_txt,
+    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, modatyp, monate, sonstige,
+    start_txt, straspos, szenario_txt,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
@@ -28,7 +29,7 @@ use game::simulation::TICK_MS;
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
 use game::widgets::ShiftState;
-use game::world::World;
+use game::world::{Tables, World};
 use platform::{App, Button, Frame, Input};
 use vcl::form::{Form, Kind};
 use vcl::random::Random;
@@ -117,12 +118,20 @@ impl Game {
         let tick = Duration::from_millis(u64::from(TICK_MS));
         self.since_tick += elapsed;
         let mut ticked = false;
+        let mut changed = false;
         while self.since_tick >= tick {
             self.since_tick -= tick;
-            self.world.tick();
+            let t = self.world.tick();
+            if t.redraw_all {
+                self.screen.paint_map(&self.world, &self.tiles);
+                changed = true;
+            } else {
+                changed |= self.screen.redraw_squares(&t.redraw, &self.world, &self.tiles);
+            }
             ticked = true;
         }
-        ticked && self.screen.show_info(&self.world, &self.font, &self.info)
+        let info = ticked && self.screen.show_info(&self.world, &self.font, &self.info);
+        changed || info
     }
 
     fn paint(&mut self, screen: &mut Surface, palette: &Palette) {
@@ -388,6 +397,10 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
             d.subsec_nanos() ^ u32::try_from(d.as_secs() & 0xffff_ffff).unwrap_or(0)
         });
     world.random = Random::new(seed);
+    world.tables = Arc::new(Tables {
+        hausnr: hausnr(&read(dir, "DATA/HAUSNR.DAT")).expect("HAUSNR.DAT"),
+        hausdata: hausdata(&read(dir, "DATA/HAUSDATA.DAT")).expect("HAUSDATA.DAT"),
+    });
     let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
     let origin = map.field("1110:5530").map_or((0, 0), |d| {
         (i16::from_le_bytes([d[0], d[1]]), i16::from_le_bytes([d[2], d[3]]))
@@ -396,7 +409,6 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         view: byte("1110:007c"),
         origin,
         parity: 0,
-        mode_0086: byte("1110:0086") != 0,
         owner_pointers: byte("1110:0058") != 0,
         occupancy_pointers: byte("1110:0059") != 0,
     };

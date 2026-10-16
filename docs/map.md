@@ -53,8 +53,10 @@ state is all in globals, and a map file saves it:
   (1050:0144); diagonal or long moves redraw everything.
 - `1110:0058`/`0059`: buildings show a pointer with their owner's colour, or
   else (with `0059`) one for how full they are.
-- `1110:0086`: a mode not identified yet that draws everything a step lower
-  and turns squares at sea level into water without buildings (palms stay).
+- `1110:0086`: a flood is going on (an event, [simulation.md](simulation.md#events-10103084)).
+  The drawing then puts everything a step lower and turns squares at sea
+  level into water without buildings (palms stay). It's world state
+  (`World::flood`), not the view's.
 
 ## Drawing (1050:0e68)
 

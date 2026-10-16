@@ -9,11 +9,15 @@
 //! The map's two axes have no names in the code; `i` is the one the
 //! drawing multiplies by 251.
 
+use std::sync::Arc;
+
 use formats::savegame::{MAP_SIZE, SaveGame};
 use vcl::random::Random;
 
+use crate::events::{Auction, Damage, Event, parse_events};
 use crate::monate::Date;
 use crate::money::Finances;
+use crate::sabotage::{Championship, Sabotage, parse_championships, parse_sabotage};
 use crate::simulation::{Accounting, Clock, Options};
 
 /// A map position. Coordinates are `Integer`s in the original and may be
@@ -64,6 +68,231 @@ impl Layer {
     }
 }
 
+/// Side of the location quality map: one cell for each 2 × 2 squares.
+pub const LOCATION_SIZE: usize = 126;
+
+/// How good each 2 × 2 block of squares is as a place to build, around
+/// 100 (`Lage`): buildings, palms, sabotage and disasters raise and lower
+/// it around themselves (1030:185d). Indexed `[i div 2][j div 2]`.
+/// // *1110:5524
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LocationMap(Vec<u8>);
+
+impl LocationMap {
+    fn from_bytes(data: &[u8]) -> Option<Self> {
+        (data.len() == LOCATION_SIZE * LOCATION_SIZE).then(|| LocationMap(data.to_vec()))
+    }
+
+    /// A map filled with `value`.
+    #[must_use]
+    pub fn filled(value: u8) -> Self {
+        LocationMap(vec![value; LOCATION_SIZE * LOCATION_SIZE])
+    }
+
+    /// The cell `(a, b)`, or `None` off the map.
+    #[must_use]
+    pub fn get(&self, (a, b): Pos) -> Option<u8> {
+        let (a, b) = (usize::try_from(a).ok()?, usize::try_from(b).ok()?);
+        (a < LOCATION_SIZE && b < LOCATION_SIZE).then(|| self.0[a * LOCATION_SIZE + b])
+    }
+
+    /// Sets the cell `(a, b)`; nothing off the map.
+    pub fn set(&mut self, (a, b): Pos, value: u8) {
+        if let (Ok(a), Ok(b)) = (usize::try_from(a), usize::try_from(b))
+            && a < LOCATION_SIZE
+            && b < LOCATION_SIZE
+        {
+            self.0[a * LOCATION_SIZE + b] = value;
+        }
+    }
+}
+
+/// Which plot (`Grundstück`, [`Plot`]) each square belongs to, 0 for
+/// none, with one row for every two rows of squares: `[i div 2][j]`.
+/// // *1110:5528
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlotMap(Vec<u16>);
+
+impl PlotMap {
+    fn from_bytes(data: &[u8]) -> Option<Self> {
+        (data.len() == LOCATION_SIZE * MAP_SIZE * 2)
+            .then(|| PlotMap(data.as_chunks::<2>().0.iter().map(|w| u16::from_le_bytes(*w)).collect()))
+    }
+
+    /// No plots anywhere.
+    #[must_use]
+    pub fn empty() -> Self {
+        PlotMap(vec![0; LOCATION_SIZE * MAP_SIZE])
+    }
+
+    /// The entry for the squares `(i, j)` and `(i ± 1, j)`, or `None` off
+    /// the table. Like the original, a `j` just off a row reads the next
+    /// or previous row's end.
+    #[must_use]
+    pub fn get(&self, (i, j): Pos) -> Option<u16> {
+        let index = usize::try_from(i32::from(i / 2) * 251 + i32::from(j)).ok()?;
+        self.0.get(index).copied()
+    }
+
+    /// Sets the entry for `(i, j)`; nothing off the table.
+    pub fn set(&mut self, (i, j): Pos, plot: u16) {
+        if let (Ok(a), Ok(j)) = (usize::try_from(i / 2), usize::try_from(j))
+            && a < LOCATION_SIZE
+            && j < MAP_SIZE
+        {
+            self.0[a * MAP_SIZE + j] = plot;
+        }
+    }
+}
+
+/// The size of a [`Plot`] record. // 1068:313e
+pub const PLOT_SIZE: usize = 0x364;
+
+/// A plot of land, the record as the map file stores it. Only the fields
+/// the ported code uses are known; the list's far pointer to the next
+/// record (`+0x360`) means nothing here, the `Vec`'s order is the list's.
+/// // *1110:6f0c
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Plot(Vec<u8>);
+
+impl Plot {
+    /// A record of zeros with the number `id`.
+    #[must_use]
+    pub fn new(id: i16) -> Self {
+        let mut plot = Plot(vec![0; PLOT_SIZE]);
+        plot.0[..2].copy_from_slice(&id.to_le_bytes());
+        plot
+    }
+
+    fn word(&self, at: usize) -> i16 {
+        i16::from_le_bytes([self.0[at], self.0[at + 1]])
+    }
+
+    /// The plot's number in the [`PlotMap`]. // +0
+    #[must_use]
+    pub fn id(&self) -> i16 {
+        self.word(0)
+    }
+
+    /// How many palms were planted on it. // +0x354
+    #[must_use]
+    pub fn palms(&self) -> i16 {
+        self.word(0x354)
+    }
+
+    pub fn set_palms(&mut self, palms: i16) {
+        self.0[0x354..0x356].copy_from_slice(&palms.to_le_bytes());
+    }
+}
+
+/// The size of a [`House`] record. // 1068:2e05
+pub const HOUSE_SIZE: usize = 0x2c;
+
+/// The most beach life a house gets.
+pub const MAX_BEACH_LIFE: u8 = 5;
+
+/// A finished building, the record as the map file stores it. Only the
+/// fields the ported code uses are known; the list's far pointer to the
+/// next record (`+8`) means nothing here. // *1110:6f10
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct House(Vec<u8>);
+
+impl House {
+    /// A record of zeros at `pos`.
+    #[must_use]
+    pub fn new(pos: Pos) -> Self {
+        let mut house = House(vec![0; HOUSE_SIZE]);
+        house.set_word(3, pos.0);
+        house.set_word(5, pos.1);
+        house
+    }
+
+    fn word(&self, at: usize) -> i16 {
+        i16::from_le_bytes([self.0[at], self.0[at + 1]])
+    }
+
+    fn set_word(&mut self, at: usize, value: i16) {
+        self.0[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// The square the building starts at. // +3, +5
+    #[must_use]
+    pub fn pos(&self) -> Pos {
+        (self.word(3), self.word(5))
+    }
+
+    /// Not known yet, maybe its guests: how much beach life it gets
+    /// follows it. // +0x10
+    #[must_use]
+    pub fn value_10(&self) -> i16 {
+        self.word(0x10)
+    }
+
+    pub fn set_value_10(&mut self, value: i16) {
+        self.set_word(0x10, value);
+    }
+
+    /// How many squares of beach life (building type 36) it has around
+    /// it, up to [`MAX_BEACH_LIFE`]. // +0x2b
+    #[must_use]
+    pub fn beach_life(&self) -> u8 {
+        self.0[0x2b]
+    }
+
+    pub fn set_beach_life(&mut self, n: u8) {
+        self.0[0x2b] = n;
+    }
+
+    /// The square of its beach life number `n`, 1 to [`MAX_BEACH_LIFE`].
+    /// // +0x13 + 4n
+    ///
+    /// # Panics
+    /// If `n` is more than that.
+    #[must_use]
+    pub fn beach_life_square(&self, n: u8) -> Pos {
+        let at = 0x13 + 4 * usize::from(n);
+        (self.word(at), self.word(at + 2))
+    }
+
+    /// Sets the square of beach life number `n`.
+    ///
+    /// # Panics
+    /// If `n` is more than [`MAX_BEACH_LIFE`].
+    pub fn set_beach_life_square(&mut self, n: u8, (i, j): Pos) {
+        let at = 0x13 + 4 * usize::from(n);
+        self.set_word(at, i);
+        self.set_word(at + 2, j);
+    }
+}
+
+/// The size of [`World::player_block`]. // 1078:34ad
+pub const PLAYER_BLOCK_SIZE: usize = 0x88;
+
+/// The `DATA\` tables the simulation reads. They come from the CD when the
+/// game starts (1030:3932), not from the map file, and never change.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct Tables {
+    /// `HAUSNR.DAT`, one row per building type. // *1110:54f2
+    pub hausnr: Vec<[i16; 8]>,
+    /// `HAUSDATA.DAT`, one row per building type. // *1110:7372
+    pub hausdata: Vec<[i16; 10]>,
+}
+
+impl Tables {
+    /// A `HAUSNR.DAT` cell, 0 for a type the table doesn't have (the
+    /// original reads past it).
+    #[must_use]
+    pub fn hausnr(&self, building: u8, column: usize) -> i16 {
+        self.hausnr.get(usize::from(building)).map_or(0, |r| r[column])
+    }
+
+    /// A `HAUSDATA.DAT` cell, 0 for a type the table doesn't have.
+    #[must_use]
+    pub fn hausdata(&self, building: u8, column: usize) -> i16 {
+        self.hausdata.get(usize::from(building)).map_or(0, |r| r[column])
+    }
+}
+
 /// No building on a square (`buildings`).
 pub const NO_BUILDING: u8 = 0xff;
 /// The building type of a palm. // 1050:0e68
@@ -97,6 +326,8 @@ pub struct Island {
     pub layer_551c: Layer,
     /// Not known yet: 255 everywhere in the CD's maps. // *1110:5520
     pub layer_5520: Layer,
+    pub location: LocationMap,
+    pub plot_map: PlotMap,
 }
 
 impl Island {
@@ -114,6 +345,8 @@ impl Island {
             occupancy: Layer::filled(0),
             layer_551c: Layer::filled(0xff),
             layer_5520: Layer::filled(0xff),
+            location: LocationMap::filled(100),
+            plot_map: PlotMap::empty(),
         }
     }
 
@@ -135,6 +368,29 @@ impl Island {
     #[must_use]
     pub fn lowest_corner(&self, pos: Pos) -> u8 {
         self.corners(pos).map_or(0, |c| c.into_iter().min().unwrap_or(0))
+    }
+
+    /// The plot `(i, j)` belongs to: the [`PlotMap`]'s entry, or for a
+    /// square without one, its neighbour's in the direction its form
+    /// (0–3) gives. 0 off the map. // 1030:1e62
+    #[must_use]
+    pub fn plot_at(&self, (i, j): Pos) -> u16 {
+        if !(0..=250).contains(&i) || !(0..=250).contains(&j) {
+            return 0;
+        }
+        let map = &self.plot_map;
+        match map.get((i, j)) {
+            Some(0) => match self.forms.at((i, j)) {
+                // `(i - 1) div 2` rounds towards zero, like `i div 2` for 0.
+                0 => map.get((i - 1, j)),
+                1 => map.get((i, j + 1)),
+                2 => map.get((i + 1, j)),
+                3 => map.get((i, j - 1)),
+                _ => Some(0),
+            }
+            .unwrap_or(0),
+            plot => plot.unwrap_or(0),
+        }
     }
 
     fn corners(&self, (i, j): Pos) -> Option<[u8; 4]> {
@@ -165,6 +421,7 @@ impl std::error::Error for Error {}
 
 /// Everyone's game: the island and the players.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(clippy::struct_excessive_bools)] // The original's flags, one global each.
 pub struct World {
     pub island: Island,
     /// Each player's colour, 1–8 (`START.TXT`'s order: yellow, orange,
@@ -188,7 +445,41 @@ pub struct World {
     pub disasters: bool,
     /// An earthquake is going on. // 1110:0087
     pub earthquake: bool,
+    /// A flood is going on: the drawing lowers the land by a step, and
+    /// squares at sea level lose their buildings (but not palms) and turn
+    /// to water. // 1110:0086
+    pub flood: bool,
+    /// An oil slick is going on. Not in the map file. // 1110:0088
+    pub oil_slick: bool,
+    /// Probably whether the player is insured against disasters: a
+    /// disaster that begins while it's set pays its damage back at the end.
+    /// // 1110:0072
+    pub insured: bool,
+    /// The damage of the disaster going on.
+    pub damage: Damage,
+    /// The scenario's events. // *1110:6536
+    pub events: Vec<Event>,
+    /// The auction an event started last.
+    pub auction: Auction,
     pub options: Options,
+    /// The plots of land, in the list's order. // *1110:6f0c
+    pub plots: Vec<Plot>,
+    /// The finished buildings, in the list's order. // *1110:6f10
+    pub houses: Vec<House>,
+    /// A block of per-player values, mostly not known yet; `+0x2f +
+    /// player` is the player's reputation ([`World::reputation`]).
+    /// // *1110:6f24, 0x88 bytes
+    pub player_block: Vec<u8>,
+    /// Sabotage under way. // *1110:705a
+    pub sabotage: [Sabotage; 5],
+    /// Championships under way. // *1110:705e
+    pub championships: [Championship; 3],
+    /// `MaxLageeinfluss` (`MODATYP.DAT`): twice the largest radius a
+    /// building's effect on the location map can have. // 1110:64bf
+    pub max_location_effect: u8,
+    /// The tables from the CD the simulation reads; empty until the game's
+    /// data is loaded.
+    pub tables: Arc<Tables>,
     /// `RandSeed`. Not in the map file: the original seeds it from the
     /// clock (`Randomize`, 1108:1e21) when it loads the game's data
     /// (1030:38a3), so whoever starts a game picks the seed.
@@ -211,7 +502,20 @@ impl Default for World {
             days: 0,
             disasters: true,
             earthquake: false,
+            flood: false,
+            oil_slick: false,
+            insured: false,
+            damage: Damage::default(),
+            events: Vec::new(),
+            auction: Auction::default(),
             options: Options::default(),
+            plots: Vec::new(),
+            houses: Vec::new(),
+            player_block: vec![0; PLAYER_BLOCK_SIZE],
+            sabotage: Default::default(),
+            championships: Default::default(),
+            max_location_effect: 0,
+            tables: Arc::default(),
             random: Random::default(),
         }
     }
@@ -251,6 +555,21 @@ fn longints(save: &SaveGame, dest: &'static str) -> Result<[i32; 8], Error> {
 }
 
 impl World {
+    /// `player`'s reputation, 0–100, 50 at first. The original reads any
+    /// byte from `+0x2f` on for players outside 1..8; the port says 0 past
+    /// the block. // *1110:6f24 + 0x2f + player
+    #[must_use]
+    pub fn reputation(&self, player: u8) -> u8 {
+        self.player_block.get(0x2f + usize::from(player)).copied().unwrap_or(0)
+    }
+
+    /// Sets `player`'s reputation; nothing past the block.
+    pub fn set_reputation(&mut self, player: u8, value: u8) {
+        if let Some(r) = self.player_block.get_mut(0x2f + usize::from(player)) {
+            *r = value;
+        }
+    }
+
     /// The state `load_map` leaves behind, as far as it's ported.
     /// // 1048:2a19, 1000:0c6a
     ///
@@ -268,6 +587,8 @@ impl World {
                 occupancy: layer(save, "*1110:5518")?,
                 layer_551c: layer(save, "*1110:551c")?,
                 layer_5520: layer(save, "*1110:5520")?,
+                location: LocationMap::from_bytes(field(save, "*1110:5524")?).ok_or(Error::Field("*1110:5524"))?,
+                plot_map: PlotMap::from_bytes(field(save, "*1110:5528")?).ok_or(Error::Field("*1110:5528"))?,
             },
             player_colours: bytes(save, "1110:0074")?,
             player_count: byte(save, "1110:1479")?,
@@ -303,11 +624,50 @@ impl World {
             days: longint(save, "1110:653a")?,
             disasters: byte(save, "1110:0065")? != 0,
             earthquake: byte(save, "1110:0087")? == 1,
+            flood: byte(save, "1110:0086")? != 0,
+            oil_slick: false,
+            insured: byte(save, "1110:0072")? != 0,
+            // Unit 10a0:23c9.
+            damage: Damage {
+                amount: longint(save, "1110:7050")?,
+                insured: byte(save, "1110:7054")? != 0,
+                slick: {
+                    let d: [u8; 4] = bytes(save, "1110:7056")?;
+                    (i16::from_le_bytes([d[0], d[1]]), i16::from_le_bytes([d[2], d[3]]))
+                },
+            },
+            // Unit 1010:3e8a.
+            events: parse_events(field(save, "*1110:6536")?).ok_or(Error::Field("*1110:6536"))?,
+            // Unit 1028:2506.
+            auction: Auction {
+                price: longint(save, "1110:654a")?,
+                start_price: longint(save, "1110:659c")?,
+                item: word(save, "1110:656e")?.cast_signed(),
+            },
             options: Options {
                 animations: byte(save, "1110:0054")? != 0,
                 people_move: byte(save, "1110:0055")? != 0,
                 people_spawn: byte(save, "1110:0056")? == 1,
             },
+            // Unit 1068:313e.
+            plots: save
+                .fields("*1110:6f0c")
+                .map(|r| (r.len() == PLOT_SIZE).then(|| Plot(r.to_vec())))
+                .collect::<Option<_>>()
+                .ok_or(Error::Field("*1110:6f0c"))?,
+            // Unit 1068:2e05.
+            houses: save
+                .fields("*1110:6f10")
+                .map(|r| (r.len() == HOUSE_SIZE).then(|| House(r.to_vec())))
+                .collect::<Option<_>>()
+                .ok_or(Error::Field("*1110:6f10"))?,
+            // Unit 1078:34ad.
+            player_block: bytes::<PLAYER_BLOCK_SIZE>(save, "*1110:6f24")?.to_vec(),
+            // Unit 10a0:23c9.
+            sabotage: parse_sabotage(field(save, "*1110:705a")?).ok_or(Error::Field("*1110:705a"))?,
+            championships: parse_championships(field(save, "*1110:705e")?).ok_or(Error::Field("*1110:705e"))?,
+            max_location_effect: byte(save, "1110:64bf")?,
+            tables: Arc::default(),
             random: Random::default(),
         })
     }

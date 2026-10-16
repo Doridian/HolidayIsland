@@ -8,7 +8,8 @@
 //! original must draw them from [`World::random`] in the same order once
 //! it's ported.
 
-use crate::world::World;
+use crate::news::Message;
+use crate::world::{Pos, World};
 
 /// How often the original's timer fires.
 pub const TICK_MS: u32 = 100; // THauptschirm.AnimationsTimer.Interval
@@ -79,11 +80,22 @@ pub struct Accounting {
 }
 
 /// What a tick did that the view shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Tick {
     /// The date moved on: the original redraws it (1030:228d) and starts
     /// the next music track if the last has ended (1018:367e).
     pub new_day: bool,
+    /// Squares that changed, in order, which the original redraws one by
+    /// one (1050:21f9 with a 1 × 1 area).
+    pub redraw: Vec<Pos>,
+    /// The news, in order (1048:0a54).
+    pub messages: Vec<Message>,
+    /// The whole island needs redrawing: a flood began or ended
+    /// (1020:0d48).
+    pub redraw_all: bool,
+    /// An auction of [`World::auction`]'s item begins: the original starts
+    /// `TAuktionsform`'s timer (1028:08ac).
+    pub auction: bool,
 }
 
 impl World {
@@ -101,10 +113,10 @@ impl World {
             c.hour_ticks = c.hour_ticks.wrapping_add(1);
             c.day_ticks = c.day_ticks.wrapping_add(1);
             match c.day_ticks {
-                1 => self.events_tick(),
-                2 => self.effects_tick(),
-                3 | 5 => self.vegetation_tick(),
-                4 => self.ratings_tick(),
+                1 => self.events_tick(&mut tick),
+                2 => self.effects_tick(&mut tick),
+                3 | 5 => self.vegetation_tick(&mut tick),
+                4 => self.beach_life_tick(&mut tick),
                 _ => {}
             }
             // Compared as Longints: a speed of 0 or less ends every tick.
@@ -162,36 +174,6 @@ impl World {
 /// calls; most don't touch the world yet.
 #[allow(clippy::unused_self)]
 impl World {
-    /// The scenario's events: counts [`World::days`], starts due events
-    /// (with a `Random(65000)` chance each, 1000:3d9e), shows their
-    /// messages on the TV (1048:0a54), applies their effects (1028:08ac)
-    /// and ends them. // 1010:3084, 809 bytes
-    fn events_tick(&mut self) {
-        // TODO: port 1010:3084 once the events' records (`*1110:6536`)
-        // are mapped. Until then only the day counter runs.
-        self.days = self.days.wrapping_add(1);
-    }
-
-    /// Counts down sabotage and disasters (`*1110:705a`, `*1110:705e`)
-    /// and applies their effects. // 10a0:117e, 1495 bytes
-    fn effects_tick(&mut self) {
-        // TODO: port 10a0:117e.
-    }
-
-    /// Palms grow, seed and die on 30 random squares (`Random(250)`).
-    /// // 1010:129e, 404 bytes
-    fn vegetation_tick(&mut self) {
-        // TODO: port 1010:129e with 1010:1129 (plant a palm), 1030:1dc6 and
-        // 1030:1d10 (the location map).
-    }
-
-    /// Buildings' ratings drift towards their class, one chance in 30
-    /// each. // 1008:1b4b, 172 bytes
-    fn ratings_tick(&mut self) {
-        // TODO: port 1008:1b4b and 1008:1aea once the building list
-        // (`1110:6f10`) is loaded.
-    }
-
     /// Building sites count down and finish (1078:203d). // 1008:5212,
     /// 245 bytes
     fn construction_tick(&mut self) {
@@ -249,7 +231,7 @@ mod tests {
         let mut w = World::default();
         let ticks = 6 * 4;
         for n in 1..ticks {
-            assert_eq!(w.tick(), Tick::default(), "tick {n}");
+            assert!(!w.tick().new_day, "tick {n}");
         }
         assert_eq!(w.date, START);
         assert!(w.tick().new_day);

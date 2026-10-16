@@ -370,6 +370,17 @@ impl Hauptschirm {
         darstellung::draw_view(&mut self.map, world, tiles, &self.camera);
     }
 
+    /// Redraws the squares the simulation changed, and says whether there
+    /// were any. The original redraws the columns each square covers, if
+    /// they're in view (1050:21f9); this redraws the whole island once.
+    pub fn redraw_squares(&mut self, squares: &[Pos], world: &World, tiles: &Tiles) -> bool {
+        if squares.is_empty() {
+            return false;
+        }
+        self.paint_map(world, tiles);
+        true
+    }
+
     /// Moves the view by `ns` half rows and `wo` columns on the screen,
     /// which the view's rotation turns into the map's directions, as far as
     /// the scroll bars go. // 1020:07dc

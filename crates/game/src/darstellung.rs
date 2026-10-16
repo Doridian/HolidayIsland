@@ -223,10 +223,6 @@ pub struct Camera {
     pub origin: Pos,
     /// Whether the columns' halves start the other way round. // 1110:5534
     pub parity: i16,
-    /// A display mode not identified yet: the drawing lowers everything by
-    /// a step, and squares with a corner at sea level lose their buildings
-    /// (but not palms) and turn to water. // 1110:0086
-    pub mode_0086: bool,
     /// Buildings show their owner's colour on a pointer. // 1110:0058
     pub owner_pointers: bool,
     /// Without `owner_pointers`: buildings show how full they are.
@@ -465,7 +461,7 @@ pub fn draw_columns(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camer
                 draw_square(&mut c, world, cam, (i, j), y)
             } else {
                 // The sea around the map.
-                let top = if cam.mode_0086 { y - STEP } else { y };
+                let top = if world.flood { y - STEP } else { y };
                 if top <= c.bottom {
                     if let Some(sea) = tiles.gfxpos.get(SEA) {
                         let sea = Tile::ground(sea);
@@ -517,7 +513,7 @@ fn draw_square(c: &mut Column, world: &World, cam: &Camera, pos: Pos, y: i32) ->
     let mut part = island.parts.at(pos); // 1110:66c1
     let mut drawn = false;
 
-    if cam.mode_0086 {
+    if world.flood {
         let lowest = island.lowest_corner(pos);
         if lowest <= 1 {
             if lowest == 0 {

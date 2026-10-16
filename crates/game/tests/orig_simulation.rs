@@ -4,9 +4,10 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use formats::bmp::Bitmap;
-use formats::data::{fontdat, modatyp, monate, sonstige};
+use formats::data::{fontdat, hausdata, hausnr, modatyp, monate, sonstige};
 use formats::savegame::SaveGame;
 use game::darstellung::Camera;
 use game::hauptschirm::{BITMAP_FILES, Hauptschirm, InfoTexts};
@@ -14,7 +15,7 @@ use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::monate::Date;
 use game::startform::Settings;
 use game::text::Font;
-use game::world::World;
+use game::world::{Tables, World};
 use vcl::random::Random;
 use vcl::surface::Surface;
 
@@ -34,6 +35,14 @@ fn read(name: &str) -> Vec<u8> {
         path = found.path();
     }
     std::fs::read(path).unwrap()
+}
+
+/// The tables the simulation reads from `DATA\`.
+fn tables() -> Arc<Tables> {
+    Arc::new(Tables {
+        hausnr: hausnr(&read("DATA/HAUSNR.DAT")).unwrap(),
+        hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
+    })
 }
 
 /// How long each world runs: a bit over a month at the scenarios' speed.
@@ -83,8 +92,10 @@ fn deterministic() {
         let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
         worlds.push((file.to_owned(), load_world(&map, &settings, true).unwrap()));
     }
+    let tables = tables();
     for (name, mut world) in worlds {
         world.random = Random::new(0x1234_5678);
+        world.tables = Arc::clone(&tables);
         let start = world.date;
         assert!(world.clock.speed > 0, "{name}: speed {}", world.clock.speed);
         assert!((1..=12).contains(&start.month) && start.day >= 1, "{name}: {start:?}");
@@ -157,7 +168,6 @@ fn info_bar() {
         view: 0,
         origin: (100, 100),
         parity: 0,
-        mode_0086: false,
         owner_pointers: false,
         occupancy_pointers: false,
     };
@@ -182,4 +192,32 @@ fn info_bar() {
     world.add_money(1, -2_000_000);
     assert!(h.show_info(&world, &font, &info));
     assert_ne!(left(&h.info), left(&with_date));
+}
+
+#[test]
+fn events_happen() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let map = SaveGame::parse(&read("SZENARIO/Geld.his")).unwrap();
+    let settings = Settings {
+        scenario: 1,
+        difficulty: 1,
+        ..Settings::default()
+    };
+    let mut world = load_world(&map, &settings, true).unwrap();
+    world.tables = tables();
+    world.random = Random::new(0x1234_5678);
+    assert_eq!(world.events.len(), 41);
+    // Three years.
+    let end = world.days + 3 * 365;
+    let (mut messages, mut auctions) = (Vec::new(), 0);
+    while world.days < end {
+        let tick = world.tick();
+        messages.extend(tick.messages.iter().map(|m| m.number));
+        auctions += usize::from(tick.auction);
+    }
+    assert_ne!(messages, []);
+    assert!(auctions > 0);
 }

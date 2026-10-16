@@ -1,12 +1,16 @@
 //! Starts a game on the tutorial island and each scenario, and draws the
 //! main screen. Skipped when `orig/` isn't there. With `ISLAND_PPM=path` it
 //! writes the tutorial's main screen to `path`, and each scenario's next
-//! to it (`path` with `-geld` and so on before the extension).
+//! to it (`path` with `-geld` and so on before the extension), and the
+//! first scenario after two years of palm growth (`-palms`).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use formats::bmp::Bitmap;
-use formats::data::{darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausnr, hauspos, sonstige, straspos};
+use formats::data::{
+    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, sonstige, straspos,
+};
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
@@ -16,8 +20,9 @@ use game::hintergrund::{Island, SCENARIO_FILES, load_world, new_island};
 use game::startform::Settings;
 use game::text::Font;
 use game::widgets::ShiftState;
-use game::world::World;
+use game::world::{PALM, Tables, World};
 use vcl::form::{Form, Kind};
+use vcl::random::Random;
 use vcl::surface::Surface;
 use vcl::{Palette, Rect};
 
@@ -71,7 +76,6 @@ fn main_screen(map: &SaveGame) -> Hauptschirm {
         view: byte("1110:007c"),
         origin: (0, 0),
         parity: 0,
-        mode_0086: byte("1110:0086") != 0,
         owner_pointers: byte("1110:0058") != 0,
         occupancy_pointers: byte("1110:0059") != 0,
     };
@@ -200,4 +204,81 @@ fn draws_the_islands() {
             write_ppm(&with_suffix(out, &stem), &compose(&h, &palette), &palette);
         }
     }
+}
+
+/// The palm squares' parts, by stage (`part mod 10`).
+fn palm_stages(world: &World) -> [usize; 10] {
+    let mut stages = [0; 10];
+    for i in 0..251 {
+        for j in 0..251 {
+            if world.island.buildings.at((i, j)) == PALM {
+                stages[usize::from(world.island.parts.at((i, j)) % 10)] += 1;
+            }
+        }
+    }
+    stages
+}
+
+#[test]
+fn palms_grow() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tiles = tiles();
+    let palette = bitmap("GFXGROUN.BMP").palette;
+    let file = SCENARIO_FILES[0];
+    let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+    let settings = Settings {
+        scenario: 1,
+        ..Settings::default()
+    };
+    let mut world = load_world(&map, &settings, true).unwrap();
+    world.tables = Arc::new(Tables {
+        hausnr: hausnr(&read("DATA/HAUSNR.DAT")).unwrap(),
+        hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
+    });
+    world.random = Random::new(0xdead_beef);
+    let before = palm_stages(&world);
+    let planted_before: i32 = world.plots.iter().map(|p| i32::from(p.palms())).sum();
+    let location_before = world.island.location.clone();
+    let mut h = main_screen(&map);
+    h.paint_map(&world, &tiles);
+    let picture_before = h.map.clone();
+
+    // Two years.
+    let days = world.days + 730;
+    let mut redrawn = 0;
+    while world.days < days {
+        let tick = world.tick();
+        redrawn += tick.redraw.len();
+        if h.redraw_squares(&tick.redraw, &world, &tiles) {
+            assert_ne!(tick.redraw, []);
+        }
+    }
+    let after = palm_stages(&world);
+    assert_ne!(before, after);
+    assert!(redrawn > 0);
+    // About 60 squares a day, a quarter of them land, 30 % of the empty
+    // ones get a palm: thousands in two years.
+    let planted: i32 = world.plots.iter().map(|p| i32::from(p.palms())).sum();
+    assert!(planted - planted_before > 1000, "{planted_before} -> {planted}");
+    assert!(after.iter().sum::<usize>() > before.iter().sum::<usize>());
+    assert_ne!(world.island.location, location_before);
+    assert_ne!(h.map, picture_before);
+    if let Some(out) = std::env::var_os("ISLAND_PPM").map(PathBuf::from) {
+        write_ppm(
+            &with_suffix(&out, "palms-before"),
+            &compose_map(&picture_before, &h, &palette),
+            &palette,
+        );
+        write_ppm(&with_suffix(&out, "palms"), &compose(&h, &palette), &palette);
+    }
+}
+
+/// The main screen with `map` in place of the island's picture.
+fn compose_map(map: &Surface, h: &Hauptschirm, palette: &Palette) -> Surface {
+    let mut h = h.clone();
+    h.map = map.clone();
+    compose(&h, palette)
 }

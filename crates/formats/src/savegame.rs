@@ -217,6 +217,16 @@ impl SaveGame {
             .map(|f| &f.data[..])
     }
 
+    /// Every field stored at `dest`, in the file's order: the records of a
+    /// list.
+    pub fn fields<'a>(&'a self, dest: &'a str) -> impl Iterator<Item = &'a [u8]> {
+        self.units
+            .iter()
+            .flat_map(|u| &u.fields)
+            .filter(move |f| f.dest == dest)
+            .map(|f| &f.data[..])
+    }
+
     /// The number of players, the human one included.
     #[must_use]
     pub fn players(&self) -> u8 {
