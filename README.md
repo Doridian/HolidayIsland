@@ -5,7 +5,8 @@ Rust, for Linux, macOS and WebAssembly.
 
 Status: **early.** The Cargo workspace exists with a `formats` crate that
 parses all the text tables in `DATA\` and `TEXTE\` the way the original's
-loaders read them. No game logic is ported yet. Also here:
+loaders read them, and splits maps, scenarios and saved games into their
+fields. No game logic is ported yet. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable

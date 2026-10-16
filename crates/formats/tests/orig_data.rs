@@ -124,3 +124,25 @@ fn text_tables() {
             .all(|s| !s.is_empty())
     );
 }
+
+#[test]
+fn maps_and_scenarios() {
+    use formats::savegame::{SaveGame, VERSION};
+    let files = [
+        "MAPS/TUTORIAL.MAP",
+        "SZENARIO/GELD.HIS",
+        "SZENARIO/KOENIG.HIS",
+        "SZENARIO/LUXUS.HIS",
+    ];
+    let more = ["SZENARIO/OEKO.HIS", "SZENARIO/SURFER.HIS", "SZENARIO/URLAUBER.HIS"];
+    for (name, players) in files.into_iter().chain(more).zip([3, 2, 8, 3, 1, 4, 4]) {
+        let Some(data) = read(name) else {
+            return;
+        };
+        let save = SaveGame::parse(&data).unwrap();
+        assert_eq!(save.version, VERSION, "{name}");
+        assert!(save.trailing.is_empty(), "{name}");
+        assert_eq!(save.players(), players, "{name}");
+        assert!(save.to_bytes() == data, "{name} doesn't round-trip");
+    }
+}

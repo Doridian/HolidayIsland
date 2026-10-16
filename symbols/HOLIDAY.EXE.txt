@@ -6,6 +6,7 @@
 1008:55ee func load_abrechne
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
+1010:08d7 func load_window_positions
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
 1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
@@ -18,6 +19,8 @@
 1040:284c func load_highscor_txt
 1040:34af func wasnun_load_texts  # form method (Self); WASNUN.TXT; Ghidra missed this function
 1048:1ffd func init_messages
+1048:2a19 func load_map
+1048:2bae func save_map
 1048:2dff func load_hauspos
 1048:2ed8 func load_hausnr
 1048:2fbd func load_grounpos
@@ -55,6 +58,13 @@
 1108:0a31 func sys_read_pstr
 1108:0aa2 func sys_read_longint
 1108:0b47 func sys_eof_text
+1108:0b88 func sys_assign_file
+1108:0bcc func sys_reset_file
+1108:0bd5 func sys_rewrite_file
+1108:0c4d func sys_close_file
+1108:0cb7 func sys_blockread
+1108:0cbe func sys_blockwrite
+1108:0d1f func sys_seek
 1108:15cd func sys_pstr_load  # guess: loads a string into the temp (here the data/text dir prefix)
 1108:15e7 func sys_pstr_store
 1108:160b func sys_pstr_copy
@@ -62,6 +72,7 @@
 1108:16be func sys_pstr_compare
 1108:1775 func sys_pstr_delete
 1108:1f5c func sys_val_longint
+1108:1fa4 func sys_filesize
 1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
 1110:4a8a data min_miete | long  # MinMiete from ABRECHNE.DAT
 1110:4a8e data max_miete | long  # MaxMiete

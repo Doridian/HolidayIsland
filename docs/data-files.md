@@ -52,4 +52,22 @@ Still open:
 - `HAUPTSCH.TXT` isn't named anywhere in the EXE and may be unused.
 - `SETUP.DAT` (written by the installer) only matters for the original's
   CD/hard disk paths, and the port won't need it.
-- The maps, scenarios and the high-score table are binary and not decoded yet.
+- The high-score table is binary and not decoded yet.
+
+## Maps, scenarios and saved games
+
+`MAPS\*.MAP`, `SZENARIO\*.HIS` and saved games share one format: a dump of
+the game's globals. `load_map` (1048:2a19) reads a `string[5]` version
+(`1.000`, never checked), then calls 26 unit routines that `BlockRead` their
+variables one after the other, with no tags or lengths. `formats::savegame`
+follows the same sequence of reads (a table generated from the decompiled
+routines) and keeps each read as a field named after the address it goes
+to. All seven files on the CD parse to their exact length and write back
+identically. Most of it is fixed-size; the variable parts are four counted
+record lists (1068:32b5), the window positions of the forms (1010:08d7)
+and 0x600 bytes per computer player (10a8:32ec).
+
+The biggest blocks are nine 63001-byte map layers (251 × 251). A save also
+carries copies of tables from `DATA\` (`ABRECHNE`, `MODATYP`, `ANIMDAT2/3`,
+`NEINTRAG`, `COMPBAU`, `DARSTELL`, `EREIGNIS`), so a scenario can override
+them. What the fields mean comes with porting the code that uses them.
