@@ -1,6 +1,7 @@
 # Symbols for HOLIDAY.EXE (Holiday Island, German retail, 1996-11-11 build).
 # Format: symbols/README.md. Addresses are Ghidra selector:offset; NE segment n
 # is selector 1000 + 8*(n-1), so segment 1 is 1000 and DGROUP (segment 35) is 1110.
+1000:17bc func init_paths  # reads SETUP.DAT: base path, then flags for which asset dirs are on the hard disk vs the CD; halts with "Bitte starten Sie zunaechst SETUP.EXE" without it
 1000:2466 func start_scenario  # guess: sets up the scenario in DAT_1110_006e (1..6): money, EREIGNn.DAT, ...; Ghidra missed this function
 1008:55ee func load_abrechne
 1010:000e func load_modatyp
@@ -71,6 +72,18 @@
 1110:4c72 data abrechne_factor2 | pointer32  # 38 Longints, column of ABRECHNE.DAT
 1110:4c76 data abrechne_factor3 | pointer32  # 38 Longints, column of ABRECHNE.DAT
 1110:4c7a data abrechne_factor4 | pointer32  # 38 Longints, column of ABRECHNE.DAT
+1110:4d50 data base_dir | char[144]  # string[0x90], line 1 of SETUP.DAT
+1110:4de2 data data_dir | char[144]  # base_dir + "Data\"
+1110:4e74 data texte_dir | char[144]  # base_dir + "Texte\"
+1110:4f06 data musik_dir
+1110:4f98 data grafik_dir
+1110:502a data film_dir  # "Filmlo\" or "Filmhi\"
+1110:50bc data maps_dir
+1110:514e data szenario_dir
+1110:51e0 data sound_dir  # "Sound\" or "SoundLo\"
+1110:5304 data spradeu1_dir
+1110:5395 data spradeu2_dir
+1110:5426 data spradeu3_dir
 1110:54de data gfxpos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54e2 data grounpos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54e6 data groundnr | pointer32  # far pointer to the table loaded from the file of that name

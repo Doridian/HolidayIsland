@@ -1,6 +1,6 @@
 # Game data on the CD
 
-A first survey, not reverse-engineered yet. File names are 8.3 upper case on
+File names are 8.3 upper case on
 the CD, but `HOLIDAY.EXE` spells them in mixed case (`Hausdata.dat`, `Grafik\`,
 `Filmhi\`), so the port needs case-insensitive file lookup. All text is German,
 Windows-1252.
@@ -21,3 +21,35 @@ Windows-1252.
 (component layout, captions, event bindings), cursors, the icon, and the VCL's
 button glyphs. Like the CD's files, those aren't committed. The port reads them
 from the user's EXE.
+
+## How the game reads the tables
+
+Every `DATA\*.DAT` and `TEXTE\*.TXT` file is a Delphi `Text` file, read by
+a loader routine with `Read`, `Readln`, `Eof` and `StrToInt`. The loaders
+define the formats, so `crates/formats` ports each one (`formats::data`,
+with the routine's address in its doc comment) on top of `formats::pascal`,
+which reproduces those RTL routines. Things the loaders have in common:
+
+- They read a fixed number of rows. The files often have notes after them,
+  which the game never reads.
+- Headings and comments are skipped by line count, not by content. Many
+  headings are the original Pascal declarations
+  (`Klassenmischung : array [0..BesteKlasse, 0..BesteKlasse] of Integer`),
+  which give the parsed fields their names.
+- Numbers are either read with `Read` (blank-separated, may span lines) or
+  cut out of the line in fixed-width columns (`Copy(line, 1, 5)`, usually 5
+  characters, 3 or 10 in some files). Values go into `Integer`, `Byte` or
+  `Longint` without range checks.
+- Most loaders halt the game when the file is too short. The parsers
+  return an error instead.
+- The directories are `SETUP.DAT`'s base path plus `Data\` and `Texte\`
+  (1000:17bc).
+
+Still open:
+- `ANIMDAT3.DAT`'s group sizes come from uninitialized memory at 1110:3620
+  that something fills before the loader runs; the parser takes them as an
+  argument.
+- `HAUPTSCH.TXT` isn't named anywhere in the EXE and may be unused.
+- `SETUP.DAT` (written by the installer) only matters for the original's
+  CD/hard disk paths, and the port won't need it.
+- The maps, scenarios and the high-score table are binary and not decoded yet.
