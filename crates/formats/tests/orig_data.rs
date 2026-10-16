@@ -170,3 +170,26 @@ fn high_scores() {
     assert_eq!((first.name.as_bytes(), first.score), (&b"Spieler1"[..], 58));
     assert_eq!(first.money_text.as_bytes(), b"5.893.223.530");
 }
+
+#[test]
+fn forms() {
+    use formats::dfm::Object;
+    use formats::ne::{RT_RCDATA, ResId, resources};
+    let Some(exe) = read("HOLIDAY.EXE") else {
+        return;
+    };
+    let forms: Vec<_> = resources(&exe)
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.kind == ResId::Id(RT_RCDATA))
+        .collect();
+    assert_eq!(forms.len(), 23);
+    for res in forms {
+        let form = Object::parse(res.data).unwrap();
+        assert_eq!(ResId::Name(form.class.to_ascii_uppercase()), res.name);
+        if form.class == b"THintergrund" {
+            let caption = form.property("Caption").and_then(|v| v.as_bytes());
+            assert_eq!(caption, Some(&b"Holiday Island"[..]));
+        }
+    }
+}

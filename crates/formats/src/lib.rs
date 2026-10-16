@@ -2,7 +2,9 @@
 //! file's bytes.
 
 pub mod data;
+pub mod dfm;
 pub mod highscore;
+pub mod ne;
 pub mod pascal;
 pub mod savegame;
 pub mod setup;
