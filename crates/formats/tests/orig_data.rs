@@ -33,6 +33,27 @@ fn data_tables() {
     assert_eq!(data::gfxpos(&read("DATA/GFXPOS.DAT").unwrap()).unwrap().len(), 133);
     assert_eq!(data::straspos(&read("DATA/STRASPOS.DAT").unwrap()).unwrap().len(), 45);
     assert_eq!(data::flusspos(&read("DATA/FLUSSPOS.DAT").unwrap()).unwrap().len(), 40);
+    assert_eq!(data::fontdat(&read("DATA/FONTDAT1.DAT").unwrap()).unwrap()[0], [74; 8]);
+    assert_eq!(data::fontdat(&read("DATA/FONTDAT2.DAT").unwrap()).unwrap().len(), 32);
+    assert_eq!(data::animdat1(&read("DATA/ANIMDAT1.DAT").unwrap()).unwrap().len(), 683);
+    assert_eq!(data::animdat2(&read("DATA/ANIMDAT2.DAT").unwrap()).unwrap().len(), 40);
+    assert_eq!(
+        data::neintrag(&read("DATA/NEINTRAG.DAT").unwrap()).unwrap()[0],
+        [0, 0, 2, 3]
+    );
+    assert_eq!(data::animdat4(&read("DATA/ANIMDAT4.DAT").unwrap()).unwrap().len(), 8);
+    // The group sizes from the file's own notes; the game's come from memory.
+    let mut last_row = [-1; data::ANIMDAT3_GROUPS];
+    last_row[..2].copy_from_slice(&[7, 15]);
+    let animdat3 = data::animdat3(&read("DATA/ANIMDAT3.DAT").unwrap(), &last_row).unwrap();
+    assert_eq!(animdat3[0][0], [47, 23, 0]);
+    assert_eq!(animdat3[1][0], [31, 31, 1]);
+    for name in ["FILENAME", "FILMNAME", "SOUNNAME"] {
+        let names = data::message_media_names(&read(&format!("DATA/{name}.DAT")).unwrap());
+        assert_eq!(names.len(), data::MESSAGES);
+    }
+    let names = data::message_media_names(&read("DATA/FILENAME.DAT").unwrap());
+    assert_eq!(names[0], b"osterv  .bmp");
 }
 
 #[test]
@@ -44,4 +65,11 @@ fn text_tables() {
     assert!(!first.is_empty() && !second.is_empty());
     assert_eq!(data::auswahl(&read("TEXTE/AUSWAHL.TXT").unwrap()).len(), 8);
     assert_eq!(data::fehler(&read("TEXTE/FEHLER.TXT").unwrap()).unwrap().len(), 31);
+    let (title, messages) = data::nachrich(&read("TEXTE/NACHRICH.TXT").unwrap());
+    assert!(!title.is_empty() && messages.len() == data::MESSAGES);
+    assert!(
+        data::sabotext(&read("TEXTE/SABOTEXT.TXT").unwrap())
+            .iter()
+            .all(|s| !s.is_empty())
+    );
 }

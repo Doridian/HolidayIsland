@@ -17,32 +17,70 @@ fn integer(n: i32) -> i16 {
     n as i16
 }
 
-/// Reads `rows` lines of `COLS` fixed-width integer columns, 5 characters each
-/// (`StrToInt(Copy(line, 1, 5)); Delete(line, 1, 5)`), stored as `Integer`.
-///
-/// With `halt_on_eof`, a missing line halts the game. Without it the loader
-/// keeps going with what's left of the previous line, which is usually nothing
-/// and then fails in `StrToInt`.
-fn fixed_columns<const COLS: usize>(data: &[u8], rows: usize, halt_on_eof: bool) -> Result<Vec<[i16; COLS]>> {
-    const WIDTH: usize = 5;
-    let mut f = TextReader::new(data);
-    let mut line = Vec::new();
-    let mut table = Vec::with_capacity(rows);
-    for _ in 0..rows {
-        if !f.eof() {
-            line = f.read_line();
-        } else if halt_on_eof {
-            return Err(Error::UnexpectedEof { line: f.line() });
+/// Stores a `Longint` into a `Byte`: the low 8 bits.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn byte(n: i32) -> u8 {
+    n as u8
+}
+
+/// A text file of fixed-width integer columns, read the way most loaders do:
+/// `if not Eof(f) then Readln(f, line)`, then for each cell
+/// `StrToInt(Copy(line, 1, width)); Delete(line, 1, width)`.
+struct Columns<'a> {
+    f: TextReader<'a>,
+    line: Vec<u8>,
+    halt_on_eof: bool,
+}
+
+impl<'a> Columns<'a> {
+    /// With `halt_on_eof`, a missing line halts the game. Without it the
+    /// loader keeps going with what's left of the previous line, which is
+    /// usually nothing and then fails in `StrToInt`.
+    fn new(data: &'a [u8], halt_on_eof: bool) -> Self {
+        Self {
+            f: TextReader::new(data),
+            line: Vec::new(),
+            halt_on_eof,
         }
-        let mut row = [0; COLS];
-        for cell in &mut row {
-            let n = WIDTH.min(line.len());
-            *cell = integer(str_to_int(&line[..n])?);
-            line.drain(..n);
-        }
-        table.push(row);
     }
-    Ok(table)
+
+    fn next_line(&mut self) -> Result<()> {
+        if !self.f.eof() {
+            self.line = self.f.read_line();
+        } else if self.halt_on_eof {
+            return Err(Error::UnexpectedEof { line: self.f.line() });
+        }
+        Ok(())
+    }
+
+    fn cell(&mut self, width: usize) -> Result<i32> {
+        let n = width.min(self.line.len());
+        let v = str_to_int(&self.line[..n])?;
+        self.line.drain(..n);
+        Ok(v)
+    }
+
+    /// The next line's first `N` cells.
+    fn row<const N: usize>(&mut self, width: usize) -> Result<[i32; N]> {
+        self.next_line()?;
+        let mut row = [0; N];
+        for cell in &mut row {
+            *cell = self.cell(width)?;
+        }
+        Ok(row)
+    }
+}
+
+/// `rows` lines of `COLS` 5-character columns, stored as `Integer`.
+fn fixed_columns<const COLS: usize>(data: &[u8], rows: usize, halt_on_eof: bool) -> Result<Vec<[i16; COLS]>> {
+    let mut c = Columns::new(data, halt_on_eof);
+    (0..rows).map(|_| Ok(c.row::<COLS>(5)?.map(integer))).collect()
+}
+
+/// `rows` lines of `COLS` columns of `width` characters, stored as `Byte`.
+fn byte_columns<const COLS: usize>(data: &[u8], rows: usize, width: usize) -> Result<Vec<[u8; COLS]>> {
+    let mut c = Columns::new(data, true);
+    (0..rows).map(|_| Ok(c.row::<COLS>(width)?.map(byte))).collect()
 }
 
 /// `HAUSPOS.DAT`: 673 rows of 12 columns. // 1048:2dff, into 1110:54f6
@@ -222,6 +260,147 @@ pub fn fehler(data: &[u8]) -> Result<Strings> {
         table.push(line);
     }
     Ok(table)
+}
+
+/// `s := line` into a `string[max]`: longer strings are cut.
+fn short_string(mut line: Vec<u8>, max: usize) -> Vec<u8> {
+    line.truncate(max);
+    line
+}
+
+/// `FONTDAT1.DAT` and `FONTDAT2.DAT`: 32 rows of 8 `Byte`s, 5 characters
+/// each. // 1030:2972, into 1110:65da and 1110:65de
+///
+/// # Errors
+/// If the file is short or a cell isn't a number.
+pub fn fontdat(data: &[u8]) -> Result<Vec<[u8; 8]>> {
+    byte_columns(data, 32, 5)
+}
+
+/// `ANIMDAT1.DAT`: 683 rows of 11 columns. // 1088:80a7, into 1110:6fea
+///
+/// # Errors
+/// If the file is short or a cell isn't a number.
+pub fn animdat1(data: &[u8]) -> Result<Vec<[i16; 11]>> {
+    fixed_columns(data, 683, true)
+}
+
+/// Groups in `ANIMDAT2.DAT`, and the most rows one group has room for.
+const ANIMDAT2_GROUPS: usize = 40;
+const ANIMDAT2_ROWS: usize = 47;
+
+/// `ANIMDAT2.DAT`: 40 groups of rows of 4 `Byte`s, 5 characters each. Each
+/// group ends with the row whose fourth byte is 255 (-1), which is kept.
+/// // 1088:80a7, into 1110:6fda
+///
+/// # Errors
+/// If the file is short, a cell isn't a number, or a group is longer than
+/// the 47 rows the original has room for.
+pub fn animdat2(data: &[u8]) -> Result<Vec<Vec<[u8; 4]>>> {
+    let mut c = Columns::new(data, true);
+    let mut groups = Vec::with_capacity(ANIMDAT2_GROUPS);
+    for _ in 0..ANIMDAT2_GROUPS {
+        let mut group = Vec::new();
+        loop {
+            if group.len() == ANIMDAT2_ROWS {
+                // The original would run into the next group's memory.
+                return Err(Error::Missing("ANIMDAT2 group end"));
+            }
+            let row = c.row::<4>(5)?.map(byte);
+            group.push(row);
+            if row[3] == 0xff {
+                break;
+            }
+        }
+        groups.push(group);
+    }
+    Ok(groups)
+}
+
+/// `NEINTRAG.DAT`: 101 rows of 4 `Byte`s, 3 characters each.
+/// // 1088:80a7, into 1110:6fde
+///
+/// # Errors
+/// If the file is short or a cell isn't a number.
+pub fn neintrag(data: &[u8]) -> Result<Vec<[u8; 4]>> {
+    byte_columns(data, 101, 3)
+}
+
+/// Groups in `ANIMDAT3.DAT`, and the most rows one group has room for.
+pub const ANIMDAT3_GROUPS: usize = 16;
+const ANIMDAT3_ROWS: usize = 31;
+
+/// `ANIMDAT3.DAT`: 16 groups (`-schiene N` in the file's notes: track
+/// pieces) of rows of 3 columns. Group `i` has `last_row[i] + 1` rows, or
+/// none if `last_row[i]` is negative. // 1088:80a7, into 1110:6fe2
+///
+/// The original takes `last_row` from the first word of each 4-byte entry at
+/// 1110:3620, which is uninitialized data. What fills it before the loader
+/// runs isn't known yet.
+///
+/// # Errors
+/// If the file is short, a cell isn't a number, or a group is longer than
+/// the 31 rows the original has room for.
+pub fn animdat3(data: &[u8], last_row: &[i16; ANIMDAT3_GROUPS]) -> Result<Vec<Vec<[i16; 3]>>> {
+    let mut c = Columns::new(data, true);
+    let mut groups = Vec::with_capacity(ANIMDAT3_GROUPS);
+    for &last in last_row {
+        let rows = usize::try_from(i32::from(last) + 1).unwrap_or(0);
+        if rows > ANIMDAT3_ROWS {
+            return Err(Error::Missing("room for ANIMDAT3 group"));
+        }
+        let group = (0..rows)
+            .map(|_| Ok(c.row::<3>(5)?.map(integer)))
+            .collect::<Result<_>>()?;
+        groups.push(group);
+    }
+    Ok(groups)
+}
+
+/// `ANIMDAT4.DAT`: 8 groups of 16 rows of 3 columns. // 1088:80a7, into 1110:6fc6
+///
+/// # Errors
+/// If the file is short or a cell isn't a number.
+pub fn animdat4(data: &[u8]) -> Result<Vec<Vec<[i16; 3]>>> {
+    let mut c = Columns::new(data, true);
+    (0..8)
+        .map(|_| (0..16).map(|_| Ok(c.row::<3>(5)?.map(integer))).collect())
+        .collect()
+}
+
+/// Number of messages: entries in `NACHRICH.TXT` and the media name files.
+pub const MESSAGES: usize = 90;
+
+/// `NACHRICH.TXT`: a title (`string[30]`), then three lines of text per
+/// message. // 1048:1ffd, into 1110:6634 and 1110:663e
+#[must_use]
+pub fn nachrich(data: &[u8]) -> (Vec<u8>, Vec<[Vec<u8>; 3]>) {
+    let mut f = TextReader::new(data);
+    let title = short_string(f.read_line(), 30);
+    let messages = (0..MESSAGES)
+        .map(|_| [f.read_line(), f.read_line(), f.read_line()])
+        .collect();
+    (title, messages)
+}
+
+/// `FILENAME.DAT`, `FILMNAME.DAT` and `SOUNNAME.DAT`: per message, the
+/// bitmap, video and sound it shows or plays, as `string[12]`.
+/// // 1048:1ffd, into the record array at 1110:6630
+#[must_use]
+pub fn message_media_names(data: &[u8]) -> Strings {
+    let mut f = TextReader::new(data);
+    (0..MESSAGES).map(|_| short_string(f.read_line(), 12)).collect()
+}
+
+/// `SABOTEXT.TXT`: six lines, of which the game keeps the 2nd, 4th and 6th.
+/// // 1048:375e, into 1110:7356, 1110:735a, 1110:735e
+#[must_use]
+pub fn sabotext(data: &[u8]) -> [Vec<u8>; 3] {
+    let mut f = TextReader::new(data);
+    [(); 3].map(|()| {
+        f.readln();
+        f.read_line()
+    })
 }
 
 #[cfg(test)]
