@@ -744,6 +744,175 @@ pub fn namen(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Strings)> {
     Ok((first, second, names))
 }
 
+/// A screen rectangle as the layout tables store it: one `Integer` per
+/// `TFormRaender` (form edge), left, top, right, bottom.
+pub type Rect = [i16; 4];
+
+/// Reads the next line (halting at the end) and drops it: the loaders do
+/// this for heading lines.
+fn skip_heading(c: &mut Columns) -> Result<()> {
+    c.next_line()
+}
+
+/// `n` `Readln(f, s)` with the halt at the end of the file.
+fn lines(c: &mut Columns, n: usize) -> Result<Strings> {
+    (0..n)
+        .map(|_| {
+            c.next_line()?;
+            Ok(std::mem::take(&mut c.line))
+        })
+        .collect()
+}
+
+/// `BAUMENU.TXT`: the build menu's texts. Read by a form method at 1018:080f.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaumenuTexts {
+    /// The 12 submenu headings (`HÄUSER`, `HOTELS`, ...), indices 9 to 20
+    /// in the original. // Self+0x1f5
+    pub headings: Strings,
+    /// 10 other texts (`Preis:`, ...). // Self+0x1f1
+    pub texts: Strings,
+}
+
+/// Parses `BAUMENU.TXT`. // 1018:080f
+///
+/// # Errors
+/// If the file is short.
+pub fn baumenu_txt(data: &[u8]) -> Result<BaumenuTexts> {
+    let mut c = Columns::new(data, true);
+    skip_heading(&mut c)?;
+    let headings = lines(&mut c, 12)?;
+    skip_heading(&mut c)?;
+    let texts = lines(&mut c, 10)?;
+    Ok(BaumenuTexts { headings, texts })
+}
+
+/// One of the build menu's 12 submenus in `BAUMENU.DAT`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaumenuEntries {
+    /// 20 rows of 4 numbers; the first is a building type, or -1. // Self+0x184
+    pub rows: [[i16; 4]; 20],
+    /// How many rows don't start with -1, as the loader counts them. // Self+0x180
+    pub count: u8,
+}
+
+/// `BAUMENU.DAT`: the build menu's contents and layout. // 1018:080f
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaumenuData {
+    /// The 12 submenus, indices 9 to 20 in the original.
+    pub menus: Vec<BaumenuEntries>,
+    /// Two layouts of 32 rectangles. // Self+0x1fa
+    pub layouts: [Vec<Rect>; 2],
+}
+
+/// Parses `BAUMENU.DAT`. // 1018:080f
+///
+/// # Errors
+/// If the file is short or a number is malformed.
+pub fn baumenu_dat(data: &[u8]) -> Result<BaumenuData> {
+    let mut c = Columns::new(data, true);
+    let mut menus = Vec::with_capacity(12);
+    for _ in 0..12 {
+        skip_heading(&mut c)?;
+        let mut rows = [[0; 4]; 20];
+        let mut count = 0u8;
+        for row in &mut rows {
+            for cell in row.iter_mut() {
+                *cell = integer(c.f.read_longint()?);
+            }
+            if row[0] != -1 {
+                count = count.wrapping_add(1);
+            }
+            c.f.readln();
+        }
+        menus.push(BaumenuEntries { rows, count });
+    }
+    skip_heading(&mut c)?;
+    let mut layout = || {
+        (0..32)
+            .map(|_| Ok(c.row::<4>(5)?.map(integer)))
+            .collect::<Result<Vec<_>>>()
+    };
+    let layouts = [layout()?, layout()?];
+    Ok(BaumenuData { menus, layouts })
+}
+
+/// `GELDMENU.TXT`: a heading, 25 texts (indices 28 to 52 in the original,
+/// Self+0x189), and one more text (Self+0x18d). // 1070:2bfa
+///
+/// # Errors
+/// If the file is short.
+pub fn geldmenu_txt(data: &[u8]) -> Result<(Strings, Vec<u8>)> {
+    let mut c = Columns::new(data, true);
+    skip_heading(&mut c)?;
+    let texts = lines(&mut c, 25)?;
+    // The last line is read without the end-of-file check.
+    let last = c.f.read_line();
+    Ok((texts, last))
+}
+
+/// `GELDMENU.DAT`: `Lage: array[TGrundDing, TFormRaender] of Integer`, 118
+/// rectangles. Each one is read as `Readln(f); Read(f, a, b, c, d)`, so the
+/// first `Readln` skips the heading and the later ones end the previous
+/// row's line. // 1070:2bfa, into Self+0x692
+///
+/// # Errors
+/// If the file is short or a number is malformed.
+pub fn geldmenu_dat(data: &[u8]) -> Result<Vec<Rect>> {
+    let mut f = TextReader::new(data);
+    (0..118)
+        .map(|_| {
+            if f.eof() {
+                return Err(Error::UnexpectedEof { line: f.line() });
+            }
+            f.readln();
+            let mut rect = [0; 4];
+            for cell in &mut rect {
+                *cell = integer(f.read_longint()?);
+            }
+            Ok(rect)
+        })
+        .collect()
+}
+
+/// `UEBERMAP.TXT`: a heading and the overview map's title. // 10b8:41ad, into Self+0x1ac
+///
+/// # Errors
+/// If the file is short.
+pub fn uebermap_txt(data: &[u8]) -> Result<Vec<u8>> {
+    let mut c = Columns::new(data, true);
+    skip_heading(&mut c)?;
+    Ok(lines(&mut c, 1)?.remove(0))
+}
+
+/// `UEBERMAP.DAT`: the overview map's layout. // 10b8:41ad
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UebermapData {
+    /// `PressedLage: array[UEBesitzermapbutton..UESchliessenbutton,
+    /// TFormraender]`: 6 buttons (indices 16 to 21 in the original). // Self+0x1a8
+    pub pressed: Vec<Rect>,
+    /// Two layouts of 22 rectangles. // Self+0x20e
+    pub layouts: [Vec<Rect>; 2],
+}
+
+/// Parses `UEBERMAP.DAT`. // 10b8:41ad
+///
+/// # Errors
+/// If the file is short or a number is malformed.
+pub fn uebermap_dat(data: &[u8]) -> Result<UebermapData> {
+    let mut c = Columns::new(data, true);
+    skip_heading(&mut c)?;
+    let pressed = (0..6).map(|_| Ok(c.row::<4>(5)?.map(integer))).collect::<Result<_>>()?;
+    skip_heading(&mut c)?;
+    let mut layout = || {
+        (0..22)
+            .map(|_| Ok(c.row::<4>(5)?.map(integer)))
+            .collect::<Result<Vec<_>>>()
+    };
+    let layouts = [layout()?, layout()?];
+    Ok(UebermapData { pressed, layouts })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

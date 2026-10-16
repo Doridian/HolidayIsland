@@ -5,6 +5,7 @@
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
 1010:3ab4 func load_ereignis
+1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:2972 func load_fontdat
 1048:1ffd func init_messages
@@ -21,10 +22,12 @@
 1048:36b2 func load_auswahl
 1048:375e func load_sabotext
 1048:387c func load_fehler
+1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
 1088:80a7 func load_animdat
 10a8:37da func load_compbau
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
+10b8:41ad func uebermap_load_data  # form method (Self); UEBERMAP.TXT + UEBERMAP.DAT
 1100:0795 func str_to_int
 1108:0093 func sys_halt  # Halt: exit code in AX
 1108:0182 func sys_getmem

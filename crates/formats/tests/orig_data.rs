@@ -77,6 +77,13 @@ fn data_tables() {
     assert_eq!(modatyp.angeschlossendivisor, 10);
     assert_eq!(modatyp.angeschlossenumrechnung, [0, 100, 100, 80, 55, 30]);
     assert_eq!(modatyp.verfallwahrscheinlichkeit, [25; 3]);
+    let baumenu = data::baumenu_dat(&read("DATA/BAUMENU.DAT").unwrap()).unwrap();
+    assert_eq!(baumenu.menus[0].rows[0], [0, -1, -1, -1]);
+    assert_eq!(baumenu.menus[1].rows[0], [54, -1, -1, -1]);
+    let geldmenu = data::geldmenu_dat(&read("DATA/GELDMENU.DAT").unwrap()).unwrap();
+    assert_eq!(geldmenu[..2], [[0, 0, 440, 386], [0, 0, 440, 15]]);
+    let uebermap = data::uebermap_dat(&read("DATA/UEBERMAP.DAT").unwrap()).unwrap();
+    assert_eq!(uebermap.pressed[..2], [[0, 0, 31, 31], [36, 0, 67, 31]]);
     let names = data::message_media_names(&read("DATA/FILENAME.DAT").unwrap());
     assert_eq!(names[0], b"osterv  .bmp");
 }
