@@ -403,6 +403,149 @@ pub fn sabotext(data: &[u8]) -> [Vec<u8>; 3] {
     })
 }
 
+/// `EREIGNIS.DAT`: 41 events, 12 `Longint` columns of 10 characters each, then
+/// a name the game ignores. The original's records have room for a 13th
+/// value that the game fills later. // 1010:3ab4, into 1110:6536
+///
+/// # Errors
+/// If the file is short or a cell isn't a number.
+pub fn ereignis(data: &[u8]) -> Result<Vec<[i32; 12]>> {
+    let mut c = Columns::new(data, true);
+    (0..41).map(|_| c.row::<12>(10)).collect()
+}
+
+/// `ABRECHNE.DAT`: the accounting constants. // 1008:55ee
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Abrechnung {
+    /// 38 rows of four values, each under a heading line naming the factor
+    /// (`Sterne der Haeuser und Hotels: Verfall`, ...). Into the four arrays
+    /// at 1110:4c6e, 1110:4c72, 1110:4c76, 1110:4c7a.
+    pub factors: Vec<[i32; 4]>,
+    /// `MinMiete`, rent per head per month. // 1110:4a8a
+    pub min_rent: i32,
+    /// `MaxMiete`. // 1110:4a8e
+    pub max_rent: i32,
+    /// `MinPreis: array[TKommerzsachen]`, price per customer per day in
+    /// Groschen. The file has 11 values; the game reads the first 10.
+    /// // 1110:4a96
+    pub min_price: [i32; 10],
+    /// `MaxPreis: array[TKommerzsachen]`. // 1110:4ac2
+    pub max_price: [i32; 10],
+}
+
+impl Abrechnung {
+    /// `MaxMiete - MinMiete`, which the loader stores too. // 1110:4a92
+    #[must_use]
+    pub fn rent_range(&self) -> i32 {
+        self.max_rent.wrapping_sub(self.min_rent)
+    }
+}
+
+/// Parses `ABRECHNE.DAT`. // 1008:55ee
+///
+/// # Errors
+/// If a number is malformed.
+pub fn abrechne(data: &[u8]) -> Result<Abrechnung> {
+    let mut f = TextReader::new(data);
+    let mut factors = Vec::with_capacity(38);
+    for _ in 0..38 {
+        f.readln();
+        let mut row = [0; 4];
+        for cell in &mut row {
+            *cell = f.read_longint()?;
+        }
+        f.readln();
+        factors.push(row);
+    }
+    f.readln();
+    let min_rent = f.read_longint()?;
+    f.readln();
+    f.readln();
+    let max_rent = f.read_longint()?;
+    f.readln();
+    f.readln();
+    let mut min_price = [0; 10];
+    for cell in &mut min_price {
+        *cell = f.read_longint()?;
+    }
+    f.readln();
+    f.readln();
+    let mut max_price = [0; 10];
+    for cell in &mut max_price {
+        *cell = f.read_longint()?;
+    }
+    Ok(Abrechnung {
+        factors,
+        min_rent,
+        max_rent,
+        min_price,
+        max_price,
+    })
+}
+
+/// `COMPBAU.DAT`: 13 rows of 7 `Byte`s, read as one stream of numbers
+/// without regard to lines; negative numbers become 255.
+/// // 10a8:37da, into 1110:70ee
+///
+/// # Errors
+/// If a number is malformed.
+pub fn compbau(data: &[u8]) -> Result<Vec<[u8; 7]>> {
+    let mut f = TextReader::new(data);
+    (0..13)
+        .map(|_| {
+            let mut row = [0; 7];
+            for cell in &mut row {
+                let n = f.read_longint()?;
+                *cell = if n < 0 { 0xff } else { byte(n) };
+            }
+            Ok(row)
+        })
+        .collect()
+}
+
+/// A `TMapersteumrechnung`: 5 rows of 5 `Integer`s.
+pub type MapersteTable = [[i16; 5]; 5];
+
+/// `MAPERSTE.DAT`: 11 tables for generating the first map (`IGMinLeere`,
+/// `IGMinRadius`, ...), each after a heading line.
+/// // 10b0:56ce with 10b0:5653, into 1110:71f2 to 1110:721a
+///
+/// # Errors
+/// If a number is malformed.
+pub fn maperste(data: &[u8]) -> Result<Vec<MapersteTable>> {
+    let mut f = TextReader::new(data);
+    f.readln();
+    (0..11)
+        .map(|_| {
+            let mut table = [[0; 5]; 5];
+            for row in &mut table {
+                for cell in row.iter_mut() {
+                    *cell = integer(f.read_longint()?);
+                }
+                f.readln();
+            }
+            f.readln();
+            Ok(table)
+        })
+        .collect()
+}
+
+/// `MONATE.TXT`: the 12 month names, as `string[15]`. // 1030:000d
+///
+/// # Errors
+/// If the file has fewer than 12 lines.
+pub fn monate(data: &[u8]) -> Result<Strings> {
+    let mut f = TextReader::new(data);
+    (0..12)
+        .map(|_| {
+            if f.eof() {
+                return Err(Error::UnexpectedEof { line: f.line() });
+            }
+            Ok(short_string(f.read_line(), 15))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

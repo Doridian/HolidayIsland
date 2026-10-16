@@ -52,6 +52,17 @@ fn data_tables() {
         let names = data::message_media_names(&read(&format!("DATA/{name}.DAT")).unwrap());
         assert_eq!(names.len(), data::MESSAGES);
     }
+    let ereignis = data::ereignis(&read("DATA/EREIGNIS.DAT").unwrap()).unwrap();
+    assert_eq!(ereignis[0], [1_100_000, 3802, 3900, 0, 0, 100_000, 7, 0, 0, 0, 0, 0]);
+    let abrechnung = data::abrechne(&read("DATA/ABRECHNE.DAT").unwrap()).unwrap();
+    assert_eq!(abrechnung.factors[0], [1, 2, 0, 255]);
+    assert_eq!((abrechnung.min_rent, abrechnung.max_rent), (0, 800));
+    assert_eq!(abrechnung.max_price, [2000, 1000, 1000, 500, 1000, 100, 200, 4, 4, 4]);
+    let compbau = data::compbau(&read("DATA/COMPBAU.DAT").unwrap()).unwrap();
+    assert_eq!(compbau[0], [255, 9, 10, 255, 255, 255, 255]);
+    assert_eq!(compbau[12], [50, 0, 1, 255, 255, 255, 255]);
+    let maperste = data::maperste(&read("DATA/MAPERSTE.DAT").unwrap()).unwrap();
+    assert_eq!(maperste[0][0], [35, 28, 28, 28, 35]);
     let names = data::message_media_names(&read("DATA/FILENAME.DAT").unwrap());
     assert_eq!(names[0], b"osterv  .bmp");
 }
