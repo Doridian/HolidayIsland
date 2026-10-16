@@ -1020,6 +1020,23 @@ pub fn umenu(data: &[u8]) -> Strings {
     (0..11).map(|_| f.read_line()).collect()
 }
 
+/// `START.TXT`: the start menu's 27 texts, read line by line by
+/// `startform_load_texts`. // 1058:1ed0
+#[must_use]
+pub fn start_txt(data: &[u8]) -> Strings {
+    let mut f = TextReader::new(data);
+    (0..27).map(|_| f.read_line()).collect()
+}
+
+/// `SZENARIO.TXT`: the six scenarios' names and descriptions, alternating,
+/// then the caption of the button that goes back to a normal game. Read by
+/// `startform_load_texts` after `START.TXT`. // 1058:1ed0
+#[must_use]
+pub fn szenario_txt(data: &[u8]) -> Strings {
+    let mut f = TextReader::new(data);
+    (0..13).map(|_| f.read_line()).collect()
+}
+
 /// `WASNUN.TXT`: 4 texts. Read by a form method at 1040:34af into Self+0x282.
 #[must_use]
 pub fn wasnun(data: &[u8]) -> Strings {

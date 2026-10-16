@@ -2,6 +2,7 @@
 # Format: symbols/README.md. Addresses are Ghidra selector:offset; NE segment n
 # is selector 1000 + 8*(n-1), so segment 1 is 1000 and DGROUP (segment 35) is 1110.
 1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
+1000:1ea0 func init_game_defaults  # guess: the defaults for a new game (island_shape 1, relief 2, land 2, rivers 5, player_colours 1..8, ...)
 1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
 1008:55ee func load_abrechne
 1010:000e func load_modatyp
@@ -36,6 +37,7 @@
 1030:2972 func load_fontdat
 1030:2b19 func text_init  # unit init: font_bitmap := GRAFIK\font.bmp, then load_fontdat
 1030:2b7e func text_done  # unit exit: frees font_bitmap and the fontdat tables
+1030:38da func game_done  # calls the units' done routines (text_done, ...) before Application.Terminate
 1038:0e13 func infobox_load_data
 1040:1bdf func add_highscore
 1040:1ca7 func reset_highscores
@@ -61,9 +63,40 @@
 1048:375e func load_sabotext
 1048:387c func load_fehler
 1050:271b func load_darstell
-1058:19df func startform_maperstbuttonclick
+1058:014d func startform_relief_click  # Click of the relief scroll bar (VMT 1110:1ada): relief := position; game::startform
+1058:015e func startform_land_click  # Click of the land scroll bar (VMT 1110:1b02): land_amount := position
+1058:016f func startform_opponents_click  # Click of the opponents scroll bar (VMT 1110:1b2a): computer_opponents, player_count, redraws the count label
+1058:01f8 func startform_rivers_click  # Click of the rivers scroll bar (VMT 1110:1b52)
+1058:0209 func startform_difficulty_click  # Click of the difficulty scroll bar (VMT 1110:1c6a)
+1058:021a func startform_start_click  # Click of Start (VMT 1110:1b7a): stores the name, hides the form, hintergrund Timer1.Tag := 1000, +0x191 := scenario page
+1058:02b0 func startform_version_click  # Click of the never-shown "Version" button (VMT 1110:1ab6): empty
+1058:02cf func startform_mode_click  # Click of the Szenarien/Standardspiel button (VMT 1110:1b9e): swaps start1.bmp/startsze.bmp and the widgets on them
+1058:0c7d func startform_load_click  # Click of "Altes Spiel fortsetzen" (VMT 1110:1bc2): disables the form, creates TLadenForm and shows it (1038:3b46)
+1058:0cbb func startform_close_click  # Click of the close button (VMT 1110:1be6): hide, game_done, Application.Terminate
+1058:0cdd func startform_atoll_click  # Click of the Atoll box (VMT 1110:1c0a): island_shape := 0, unticks the others
+1058:0d23 func startform_island_group_click  # Click of the Inselgruppe box (VMT 1110:1c2a): island_shape := 1
+1058:0d6a func startform_one_island_click  # Click of the Eine Insel box (VMT 1110:1c4a): island_shape := 2
+1058:0db1 func take_colour  # (colour): player 1 takes the colour, swapping with whoever in player_colours[2..8] had it
+1058:0ded func startform_colour1_click  # Click of colour box n (VMTs 1110:1c92..1d72, 0x20 apart): take_colour(n), unticks the other seven
+1058:0ec4 func startform_colour2_click
+1058:0f9b func startform_colour3_click
+1058:1072 func startform_colour4_click
+1058:1149 func startform_colour5_click
+1058:1220 func startform_colour6_click
+1058:12f7 func startform_colour7_click
+1058:13ce func startform_colour8_click
+1058:14a5 func startform_scenario1_click  # Click of scenario box n (VMTs 1110:1d92..1e32): scenario := n, unticks the others, shows its description
+1058:1584 func startform_scenario2_click
+1058:1663 func startform_scenario3_click
+1058:1742 func startform_scenario4_click
+1058:1821 func startform_scenario5_click
+1058:1900 func startform_scenario6_click
+1058:19df func startform_maperstbuttonclick  # published but unreachable: no component in the DFM uses it; hides the form and sets hintergrund Timer1.Tag := 700
 1058:1a29 func startform_sprachbuttonclick
+1058:1a30 func startform_show  # centres the form, draws start1.bmp into Bild, Show (VMT+0xc) of the normal page widgets, refresh, Form.Show
 1058:1ed0 func startform_load_texts
+1058:27e6 func startform_init  # TStartform setup after Create: loads the 26 bitmaps, builds about 45 widgets, sets the form and Bild to 500x334, load_texts, widget values from the globals
+1058:3b61 func startform_free_bitmaps  # frees the bitmaps; called from hintergrund_timer state 1000
 1058:3cfd func startform_bildmousedown
 1058:412f func startform_bildmousemove
 1058:41fb func startform_bildmouseup
@@ -129,9 +162,18 @@
 10c0:1c1b func edit_mouse_down  # (x, y, image, background): focuses on a hit, unfocuses on any click when focused
 10c0:1cc1 func edit_insert_char
 10d0:07bf func vcl_messagedlg
+10e8:177b func tcontrol_set_left  # probably; with set_top/width/height (+0x1e..+0x24)
+10e8:179d func tcontrol_set_top
+10e8:17bf func tcontrol_set_width
+10e8:17e1 func tcontrol_set_height
+10e8:1cb8 func tcontrol_set_enabled  # (Boolean): sets +0x2a and sends CM_ENABLEDCHANGED (0xf0c)
+10e8:22c6 func tcontrol_refresh  # probably: what the forms call after drawing into their TImage
+10f0:56ce func tcustomform_hide  # probably
+10f0:56e1 func tcustomform_show  # probably
 10f0:6aa7 func vcl_application_settitle  # guess: entry passes it 'Holiday Island' (1000:0002)
 10f0:6e7b func vcl_application_createform
 10f0:6f16 func vcl_application_run
+1100:0764 func sys_str_int  # guess: Str(n:width, s)
 1100:0795 func str_to_int
 1100:08e1 func sys_fileexists
 1108:0093 func sys_halt  # Halt: exit code in AX
@@ -163,6 +205,17 @@
 1108:1f5c func sys_val_longint
 1108:1fa4 func sys_filesize
 1110:0062 data sound_enabled  # SETUP.DAT line 5 is not N
+1110:006e data scenario  # Byte: 1..6, 0 for a normal game
+1110:0074 data player_colours  # array[1..8] of Byte: each player's colour, the human first
+1110:008a data island_shape  # Integer: 0 atoll, 1 group of islands, 2 one island
+1110:008c data difficulty  # Integer 0..2
+1110:008e data relief  # Integer 0..4
+1110:0090 data land_amount  # Integer 0..4
+1110:0092 data rivers  # Integer 0..10
+1110:0102 data player_names  # guess: array of string[255], player 1 first ("Holiday", "Moritz", ..., "Lisa", then "keiner")
+1110:0a02 data last_player_name  # string: the name the start menu offers
+1110:1478 data computer_opponents  # Byte 0..7, initially 7
+1110:1479 data player_count  # Byte: computer_opponents + 1
 1110:1492 data ui_label_vmt  # VMT of plain labels. Ghidra shows wrong bytes here: DGROUP is stored as iterated data in the NE file and the loader does not expand it
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
 1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
@@ -188,6 +241,8 @@
 1110:5304 data spradeu1_dir
 1110:5395 data spradeu2_dir
 1110:5426 data spradeu3_dir
+1110:54b8 data close_bmp  # TBitmap close.bmp, loaded in hintergrund_timer state 100
+1110:54bc data closepre_bmp  # TBitmap closepre.bmp
 1110:54dc data sound_lo  # SETUP.DAT line 5 is L: sound_dir is SoundLo\
 1110:54de data gfxpos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54e2 data grounpos | pointer32  # far pointer to the table loaded from the file of that name
@@ -243,6 +298,10 @@
 1110:66c2 data gfx_auslastungszeigerpos
 1110:66c6 data gfx_spielerzeigerpos
 1110:66ca data startform
+1110:66ce data startform_scenarios_caption  # string: "Szenarien" from START.TXT
+1110:67ce data startform_normal_game_caption  # string: "Standardspiel" from SZENARIO.TXT
+1110:68ce data scenario_descriptions  # 6 x string[255] from SZENARIO.TXT
+1110:6ece data startform_scenario_page  # Boolean: the start menu shows the scenarios
 1110:6ed0 data ladenform
 1110:6ee0 data highscoreform
 1110:6ee4 data highscores

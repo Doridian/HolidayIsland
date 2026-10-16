@@ -56,11 +56,11 @@ timer's `Tag`; each state does its work, sets the next `Tag` and the
 | 430 | Loads the title picture `tit<size>.BMP` into the image | 440 | 1 |
 | 440 | Brings the image to the front | 450 | 3000 |
 | 450 | Loads the background `bck<size>.BMP` | 500 | 1 |
-| 500 | Stops the timer, creates `TStartform` (`startform`) and shows it | | |
+| 500 | Stops the timer, disables the form (`tcontrol_set_enabled`), creates `TStartform` (`startform`), sets it up and shows it ([below](#the-start-menu-tstartform)) | | |
 
 States 700 and 1000–1500 (`titel.avi`, the `TWasNunForm`, loading
 `MAPS\` or one of the six `SZENARIO\*.HIS` and `EREIGN1-6.DAT`) start a game
-from the start menu; they come with the start menu's port.
+from the start menu. They aren't ported yet.
 
 ### Screen size
 
@@ -83,3 +83,78 @@ The result is in `screen_width`/`screen_height` (`1110:54fc`/`54fe`).
 The other place that creates `TStartform`. It saves the game to
 `Maps\Last.map`, hides the forms in `1110:646c` except 10 and 11, restarts
 `holiday.mid`, and shows a new `TStartform`.
+
+## The start menu: `TStartform`
+
+Ported as [`game::startform`](../crates/game/src/startform.rs); the
+`holiday` binary shows it over the background.
+
+State 500 does `startform := TStartform.Create(Application)`, then
+`startform_init` (1058:27e6), activates WaveMix (`10a0:254f`) and calls
+`startform_show` (1058:1a30).
+
+- `startform_init` loads 26 bitmaps from `GRAFIK` (`start1.bmp`, the scroll
+  bar's six, the button's two, the check box's two and the eight colours
+  with their selected versions), builds the widgets, and sets the form and
+  its one image, `Bild`, to 500×334 (the DFM says 424×352). It centres the
+  form on the screen, reads the texts (`startform_load_texts`, 1058:1ed0:
+  `START.TXT` and `SZENARIO.TXT`, line by line) and sets the widgets from
+  the globals below.
+- `startform_show` centres the form again, draws `start1.bmp` into `Bild`,
+  shows the normal page's widgets, refreshes and shows the form.
+- `Bild`'s `OnMouseDown` (only with the left button), `OnMouseMove` (only
+  with exactly the left button) and `OnMouseUp` (any button) offer the event
+  to the widgets in a fixed order until one takes it; the name field comes
+  last, so clicking another widget doesn't unfocus it. `FormKeyDown` quits
+  on Alt+F4 and passes every other key to the name field.
+
+The menu has two pages. The normal page sets up a random island; the mode
+button swaps the background for `startsze.bmp` and the island settings for
+the six scenarios. What's on both pages:
+
+| Widget | Where | Does |
+|---|---|---|
+| Close button (`close.bmp`, the background form's) | 0,0 | Hides the form, `game_done`, `Application.Terminate` (1058:0cbb) |
+| Name (edit, 12 characters) | 74,174 | Starts as `last_player_name` (`1110:0a02`, "Holiday") |
+| Difficulty (scroll bar 0–2) | 322,194 | `difficulty` (`1110:008c`) |
+| Eight colour boxes (radio buttons) | 74,194 | The player takes the colour from whoever had it (`take_colour`, `player_colours`, `1110:0074`). Yellow is ticked at the start whatever the player's colour is |
+| "Szenarien" / "Standardspiel" | 18,306 | Switches pages (1058:02cf), and `scenario` (`1110:006e`) to 1 or 0 |
+| "Altes Spiel fortsetzen" | 178,306 | Disables the form and opens `TLadenForm` (1058:0c7d) |
+| "Start" | 338,306 | Copies the name into `player_names[1]` and `last_player_name`, hides the form and sets `hintergrund`'s `Timer1.Tag` to 1000 with `+0x191` set on the scenario page (1058:021a) |
+
+The normal page:
+
+| Widget | Global |
+|---|---|
+| Opponents (scroll bar 0–7, with the number beside it) | `computer_opponents` (`1110:1478`), and `player_count` one more |
+| Relief, flat to hilly (0–4) | `relief` (`1110:008e`) |
+| Land, little to much (0–4) | `land_amount` (`1110:0090`) |
+| Rivers, none to many (0–10) | `rivers` (`1110:0092`) |
+| Atoll, Inselgruppe, Eine Insel (check boxes used as radio buttons) | `island_shape` (`1110:008a`): 0, 1, 2 |
+
+The scenario page has six check boxes used as radio buttons, which set
+`scenario` and put the scenario's description under them.
+
+The scroll bars' `Click`s store their positions whenever they repaint. The
+defaults come from `init_game_defaults` (1000:1ea0) and the initialised
+data: a group of islands, relief 2, land 2, rivers 5, easy, seven
+opponents.
+
+Quirks:
+
+- The check boxes of the island shapes and the scenarios are pressed like
+  radio buttons, so a click only ticks them.
+- Switching pages sets `scenario` to 1 (or 0), but the boxes and the
+  description stay as they were: after going back and forth, a different
+  scenario can be ticked than the one that starts.
+- Letting go of the right mouse button also releases, and clicks, a button
+  held down with the left.
+- Never shown: the credits as labels ("Moritz Baer", ...; the picture has
+  them), an empty label and a "Version: Deutsch" button with an empty
+  `Click`. The published `MaperstButtonClick` (hide the form and go to
+  state 700) and `SprachButtonClick` (empty) have no component in the DFM.
+
+Not ported yet: what Start (states 1000–1500), "Altes Spiel fortsetzen"
+(`TLadenForm`) and the sounds do. In state 1000 the game frees the menu's
+bitmaps (1058:3b61) and, for a scenario, copies the name, the colours and
+the difficulty over to the scenario's globals.

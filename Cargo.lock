@@ -584,6 +584,7 @@ name = "holiday"
 version = "0.1.0"
 dependencies = [
  "formats",
+ "game",
  "platform",
  "vcl",
 ]

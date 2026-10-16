@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 formats = { path = "../formats" }
+game = { path = "../game" }
 platform = { path = "../platform" }
 vcl = { path = "../vcl" }
 

@@ -10,8 +10,9 @@ fields, along with the high-score table and `SETUP.DAT`. The startup
 sequence is mapped ([docs/startup.md](docs/startup.md)). The `vcl` crate
 builds the forms from the layouts in `HOLIDAY.EXE` and draws them with their
 bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
-(`winit` and `wgpu`) that shows the end of the intro. The `game` crate has
-the first ported game code: text in the game's own bitmap font. Also here:
+(`winit` and `wgpu`) that shows the end of the intro and the start menu. The
+`game` crate has the first ported game code: text in the game's own bitmap
+font, its widget toolkit and the start menu. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable
@@ -61,8 +62,10 @@ been checked so far.
 cargo run --release -p holiday -- orig
 ```
 
-The argument is the directory with `HOLIDAY.EXE` and `GRAFIK\`. For now it
-shows the title picture and then the background; Escape quits.
+The argument is the directory with the game's files (`HOLIDAY.EXE`,
+`GRAFIK\`, `DATA\`, `TEXTE\`). For now it shows the title picture, then
+the background with the start menu on it. The menu's settings work; what
+its buttons lead to is only logged. Escape quits.
 
 ## Decompiling
 

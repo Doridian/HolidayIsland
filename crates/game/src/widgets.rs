@@ -295,8 +295,8 @@ pub struct Button {
     pub normal: BitmapId,
     /// +0x10
     pub down: BitmapId,
-    /// `string[255]` at +0x14. The start screen's buttons have none: their
-    /// bitmaps carry the label.
+    /// `string[255]` at +0x14. The start screen sets its captions from
+    /// `START.TXT` after construction.
     pub text: Vec<u8>,
     /// Colour row, +0x114.
     pub colour: i32,

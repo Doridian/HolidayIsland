@@ -115,6 +115,11 @@ fn text_tables() {
     let (first, second) = data::hausname(&hausname).unwrap();
     assert!(!first.is_empty() && !second.is_empty());
     assert_eq!(data::auswahl(&read("TEXTE/AUSWAHL.TXT").unwrap()).len(), 8);
+    let start = data::start_txt(&read("TEXTE/START.TXT").unwrap());
+    assert_eq!(start[2], b"Start");
+    let szenario = data::szenario_txt(&read("TEXTE/SZENARIO.TXT").unwrap());
+    assert_eq!(szenario[0], b"Money-Maker");
+    assert_eq!(szenario[12], b"Standardspiel");
     assert_eq!(data::fehler(&read("TEXTE/FEHLER.TXT").unwrap()).unwrap().len(), 31);
     let (title, messages) = data::nachrich(&read("TEXTE/NACHRICH.TXT").unwrap());
     assert!(!title.is_empty() && messages.len() == data::MESSAGES);
