@@ -196,6 +196,32 @@ pub fn str_to_int(s: &[u8]) -> Result<i32> {
     val_longint(s).ok_or_else(|| Error::NotAnInteger(s.to_vec()))
 }
 
+/// A `string[N - 1]` as stored in memory and in files: a length byte and
+/// `N - 1` characters. The bytes past the length are kept as they are, so a
+/// file writes back unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PString<const N: usize>(pub [u8; N]);
+
+impl<const N: usize> PString<N> {
+    /// The string's characters. A length byte larger than the capacity is
+    /// cut to it.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        let len = usize::from(self.0[0]).min(N - 1);
+        &self.0[1..=len]
+    }
+
+    /// `s := text`, cut to the capacity; the rest is zeroed.
+    #[must_use]
+    pub fn new(text: &[u8]) -> Self {
+        let len = text.len().min(N - 1);
+        let mut raw = [0; N];
+        raw[0] = u8::try_from(len).unwrap_or(u8::MAX);
+        raw[1..=len].copy_from_slice(&text[..len]);
+        Self(raw)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,6 +260,14 @@ mod tests {
         let mut r = TextReader::new(b"1\r\nx\r\n");
         assert_eq!(r.read_longint(), Ok(1));
         assert_eq!(r.read_longint(), Err(Error::InvalidNumericFormat { line: 2 }));
+    }
+
+    #[test]
+    fn pstring() {
+        let s = PString::<4>(*b"\x02abc");
+        assert_eq!(s.as_bytes(), b"ab");
+        assert_eq!(PString::<4>(*b"\xffabc").as_bytes(), b"abc");
+        assert_eq!(PString::<4>::new(b"hello").0, *b"\x03hel");
     }
 
     #[test]

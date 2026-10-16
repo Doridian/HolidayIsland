@@ -16,6 +16,11 @@
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:2972 func load_fontdat
 1038:0e13 func infobox_load_data
+1040:1bdf func add_highscore
+1040:1ca7 func reset_highscores
+1040:1d49 func highscoreform_draw_table
+1040:24a8 func load_highscores
+1040:2517 func save_highscores
 1040:284c func load_highscor_txt
 1040:34af func wasnun_load_texts  # form method (Self); WASNUN.TXT; Ghidra missed this function
 1048:1ffd func init_messages
@@ -133,6 +138,7 @@
 1110:669e data ansicht_zeilenykorrektur
 1110:66c2 data gfx_auslastungszeigerpos
 1110:66c6 data gfx_spielerzeigerpos
+1110:6ee4 data highscores
 1110:6eea data highscor_texts
 1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name

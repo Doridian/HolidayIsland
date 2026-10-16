@@ -146,3 +146,27 @@ fn maps_and_scenarios() {
         assert!(save.to_bytes() == data, "{name} doesn't round-trip");
     }
 }
+
+#[test]
+fn high_scores() {
+    use formats::highscore::HighScores;
+    let Some(cleared) = read("SOUND/HIGHSCOR.WAV") else {
+        return;
+    };
+    let table = HighScores::parse(&cleared).unwrap();
+    assert!(table.to_bytes() == cleared, "doesn't round-trip");
+    assert!(
+        table
+            .entries
+            .iter()
+            .flatten()
+            .all(|e| e.name.as_bytes().is_empty() && e.score == 0)
+    );
+
+    let test = read("SOUNDLO/HIGHSCOR.WAV").unwrap();
+    let table = HighScores::parse(&test).unwrap();
+    assert!(table.to_bytes() == test, "doesn't round-trip");
+    let first = &table.entries[0][0];
+    assert_eq!((first.name.as_bytes(), first.score), (&b"Spieler1"[..], 58));
+    assert_eq!(first.money_text.as_bytes(), b"5.893.223.530");
+}

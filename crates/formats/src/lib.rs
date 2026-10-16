@@ -2,5 +2,6 @@
 //! file's bytes.
 
 pub mod data;
+pub mod highscore;
 pub mod pascal;
 pub mod savegame;

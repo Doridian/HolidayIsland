@@ -13,7 +13,7 @@ Windows-1252.
 | `MAPS\` | `TUTORIAL.MAP` | The tutorial island. Same format as the scenarios and presumably the save games (`*.map`, `Last.map`). |
 | `SZENARIO\` | 6 `*.HIS`, ~770 KB each | Scenarios: `GELD`, `KOENIG`, `LUXUS`, `OEKO`, `SURFER`, `URLAUBER`. Start with a Pascal string `1.000` (a version) and map dimensions. |
 | `MUSIK\` | 10 `*.MID` | Type 1 Standard MIDI, played through MCI. |
-| `SOUND\`, `SOUNDLO\` | 40 `*.WAV` each | Effects, 8-bit mono PCM at 22 kHz (`SOUND`) or 11 kHz (`SOUNDLO`). Except `HIGHSCOR.WAV` and the installer-only `HH_HIGH.WAV`: those are the **high-score table** under a `.WAV` name (player names such as `Spieler1neu`, dates such as `30.10.1996`, in a binary layout not decoded yet). |
+| `SOUND\`, `SOUNDLO\` | 40 `*.WAV` each | Effects, 8-bit mono PCM at 22 kHz (`SOUND`) or 11 kHz (`SOUNDLO`). Except `HIGHSCOR.WAV` and the installer-only `HH_HIGH.WAV`: those are the **high-score table** under a `.WAV` name (see below). |
 | `SPRADEU1\`–`SPRADEU3\` | 271 `*.WAV`, 32 MB | German speech ("Sprache Deutsch"), 8-bit mono 22 kHz PCM. |
 | `FILMHI\`, `FILMLO\` | 23 `*.AVI` each | Cutscenes: Cinepak (`cvid`) 432×320 with MS ADPCM 22 kHz mono audio. `FILMLO` (46 MB vs 94 MB) is a lower-bitrate set of the same videos. |
 
@@ -52,7 +52,8 @@ Still open:
 - `HAUPTSCH.TXT` isn't named anywhere in the EXE and may be unused.
 - `SETUP.DAT` (written by the installer) only matters for the original's
   CD/hard disk paths, and the port won't need it.
-- The high-score table is binary and not decoded yet.
+- The high-score table (`HIGHSCOR.WAV`) is `formats::highscore`: 10 ranks ×
+  7 games of name, date, score and a money text (1040:24a8).
 
 ## Maps, scenarios and saved games
 
