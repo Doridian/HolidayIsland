@@ -7,6 +7,22 @@
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
 1010:08d7 func load_window_positions
+1010:1432 func ui_button_draw  # (image): VMT+0x14 of every button: button_draw, then the caption centred, 1 px down-right when pressed; game::widgets
+1010:14c1 func ui_button_mouse_down  # (x, y, image): VMT+0x1c of every button: button_mouse_down, play_sound(8) on a hit
+1010:14f7 func ui_button_mouse_up  # (x, y, image): VMT+0x20 of every button: button_mouse_up, play_sound(10) if it was pressed
+1010:152d func ui_label_draw  # (image): VMT+0x14 of every label: draw_text at (left, top+2)
+1010:1572 func ui_radio_draw  # (image): VMT+0x14 of radio buttons: radio_draw, then the text right of the box
+1010:15d2 func ui_radio_selected  # VMT+0x1c of radio buttons: play_sound(9)
+1010:15ea func ui_checkbox_draw  # (image): VMT+0x14 of check boxes: like ui_radio_draw, text in the second colour when checked
+1010:169d func ui_checkbox_selected  # VMT+0x1c of check boxes: play_sound(9)
+1010:16b5 func ui_radio_draw2  # same code as ui_radio_draw, used by other radio VMTs
+1010:1715 func ui_radio_selected2  # same code as ui_radio_selected
+1010:172f func ui_edit_draw  # (image): VMT+0x14 of edits: the text centred, with a | at the cursor when focused; Ghidra missed this function
+1010:17f0 func ui_scrollbar_arrow_pressed  # VMT+0x1c of scroll bars: play_sound(8)
+1010:1808 func ui_scrollbar_stepped  # VMT+0x20 of scroll bars: play_sound(10)
+1010:1820 func ui_scrollbar_paged  # VMT+0x24 of scroll bars: play_sound(9)
+1010:1838 func ui_listbox_draw  # (image): VMT+0x14 of list boxes: listbox_draw, then the visible rows centred
+1010:1919 func ui_listbox_selected  # VMT+0x1c of list boxes: play_sound(9)
 1010:25dc func back_to_start_menu  # guess: saves Maps\Last.map, hides the forms, restarts holiday.mid, shows a new TStartform
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
@@ -15,6 +31,7 @@
 1028:2449 func load_auktion
 1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
+1030:0f53 func min_longint  # (a, b: Longint): the smaller
 1030:23d3 func draw_text  # (image, colour row, x, y, width, refresh, align 0/1/2, text): wrapped FONT.BMP glyphs, SRCAND mask then SRCINVERT colour
 1030:2972 func load_fontdat
 1030:2b19 func text_init  # unit init: font_bitmap := GRAFIK\font.bmp, then load_fontdat
@@ -44,17 +61,73 @@
 1048:375e func load_sabotext
 1048:387c func load_fehler
 1050:271b func load_darstell
+1058:19df func startform_maperstbuttonclick
+1058:1a29 func startform_sprachbuttonclick
 1058:1ed0 func startform_load_texts
+1058:3cfd func startform_bildmousedown
+1058:412f func startform_bildmousemove
+1058:41fb func startform_bildmouseup
+1058:4381 func startform_formkeydown
 1060:0ed0 func optionen_load_texts
 1068:023a func schluss_skip_lines
 1068:0288 func schluss_load_texts
 1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
 1080:1141 func load_umenu
 1088:80a7 func load_animdat
+10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
 10a8:37da func load_compbau
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
 10b8:41ad func uebermap_load_data  # form method (Self); UEBERMAP.TXT + UEBERMAP.DAT
+10c0:0002 func widget_init  # constructor of the widget object (Turbo Pascal object, VMT word at +9): (left, top, width, height, visible); fields +0 top, +2 left, +4 width, +6 height, +8 visible. Segment 10c0 is the widget toolkit, docs/widgets.md
+10c0:003e func widget_done
+10c0:004d func widget_set_visible
+10c0:005c func widget_clear_visible
+10c0:006b func widget_hit  # (x, y): visible and inside, edges inclusive
+10c0:00b3 func widget_click  # VMT+8 Click: empty; descendants in the form units override it
+10c0:00ba func widget_show  # VMT+0xc (image): draws (VMT+0x14) unless visible, then visible := true
+10c0:00e4 func widget_hide  # VMT+0x10 (background, image): erases (VMT+0x18) if visible, then visible := false
+10c0:0116 func widget_draw  # VMT+0x14 (image): empty
+10c0:011d func widget_erase  # VMT+0x18 (background, image): copies the rect from the background bitmap
+10c0:0181 func gauge_init  # constructor (empty bmp, full bmp, left, top, width, height): bar filled to percent at +0x13
+10c0:01dc func gauge_draw
+10c0:02a2 func label_init  # constructor (text, align, colour, left, top, width, height): +0xb string, +0x10b align, +0x10d colour
+10c0:0316 func listbox_init  # constructor (background, colour, selected colour, row height, rect): 100 x string[255] on the heap
+10c0:039d func listbox_done
+10c0:03cc func listbox_can_scroll_up
+10c0:03e7 func listbox_can_scroll_down
+10c0:0409 func listbox_has_selection
+10c0:0431 func listbox_mouse_down  # (x, y, shift, image): {ssLeft} selects the row, {ssLeft,ssDouble} on the selected row calls Click
+10c0:04ed func listbox_draw
+10c0:0552 func listbox_selected
+10c0:0559 func radio_init  # constructor (off bmp, on bmp, text, align, colour, rect); label descendant, +0x10f selected
+10c0:05d6 func radio_draw
+10c0:0666 func radio_mouse_down  # (x, y, image): selects (sound hook, Click, draw) on a hit when not selected
+10c0:06c7 func radio_select
+10c0:06fe func radio_deselect
+10c0:0725 func radio_selected
+10c0:072c func checkbox_init  # constructor (off bmp, on bmp, text, align, colour, checked colour, rect); radio descendant, +0x118 checked colour
+10c0:0797 func checkbox_mouse_down
+10c0:07fa func checkbox_toggle
+10c0:083b func button_init  # constructor (normal bmp, pressed bmp, text, colour, rect): +0xb pressed, +0x14 caption, +0x114 colour
+10c0:08cb func button_draw
+10c0:0958 func button_mouse_down
+10c0:0998 func button_mouse_up  # (x, y, image): if pressed: release, draw, Click when still inside; returns whether it was pressed
+10c0:09eb func scrollbar_init  # constructor (6 bitmaps, rect): horizontal when height <= width; min 0, max 100, position 1, steps 1 and 10
+10c0:0aec func scrollbar_draw
+10c0:0e21 func scrollbar_press  # (part): what a press does: arrows only show pressed, page parts move at once
+10c0:0f10 func scrollbar_release  # (part): on release over the pressed arrow, steps by the small step
+10c0:0fe3 func scrollbar_mouse_down
+10c0:13b0 func scrollbar_mouse_move
+10c0:15f7 func scrollbar_mouse_up
+10c0:191b func scrollbar_arrow_pressed
+10c0:1922 func scrollbar_stepped
+10c0:1929 func scrollbar_paged
+10c0:1930 func edit_init  # constructor (max length, text, colour, focus colour, rect)
+10c0:19c0 func edit_draw
+10c0:19d7 func edit_key_down  # (key, shift, image, background): typing (German umlauts on OEM keys), cursor keys, Enter calls Click and unfocuses
+10c0:1c1b func edit_mouse_down  # (x, y, image, background): focuses on a hit, unfocuses on any click when focused
+10c0:1cc1 func edit_insert_char
 10d0:07bf func vcl_messagedlg
 10f0:6aa7 func vcl_application_settitle  # guess: entry passes it 'Holiday Island' (1000:0002)
 10f0:6e7b func vcl_application_createform
@@ -79,6 +152,8 @@
 1108:0cb7 func sys_blockread
 1108:0cbe func sys_blockwrite
 1108:0d1f func sys_seek
+1108:14a4 func sys_long_mul
+1108:14e1 func sys_long_div
 1108:15cd func sys_pstr_load  # guess: loads a string into the temp (here the data/text dir prefix)
 1108:15e7 func sys_pstr_store
 1108:160b func sys_pstr_copy
@@ -88,6 +163,8 @@
 1108:1f5c func sys_val_longint
 1108:1fa4 func sys_filesize
 1110:0062 data sound_enabled  # SETUP.DAT line 5 is not N
+1110:1492 data ui_label_vmt  # VMT of plain labels. Ghidra shows wrong bytes here: DGROUP is stored as iterated data in the NE file and the loader does not expand it
+1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
 1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
 1110:4a82 data module_handle  # entry quits when GetModuleUsage of it is above 1 (a second copy)
 1110:4a8a data min_miete | long  # MinMiete from ABRECHNE.DAT

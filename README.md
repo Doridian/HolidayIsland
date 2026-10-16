@@ -92,6 +92,7 @@ shared through [symbols/](symbols/README.md).
   built with (Delphi 1, 16-bit NE), segment map, OS surface, the VESA variant
 - [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
 - [docs/port-architecture.md](docs/port-architecture.md): the planned Rust port: stack, crates, design
+- [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)
 - [docs/data-files.md](docs/data-files.md): survey of the game's data files
 - [docs/formats/install-archive.md](docs/formats/install-archive.md): the installer archive format
 

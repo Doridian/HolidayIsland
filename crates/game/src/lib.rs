@@ -2,3 +2,4 @@
 //! Each routine notes its original address. No platform dependencies.
 
 pub mod text;
+pub mod widgets;

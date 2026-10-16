@@ -99,6 +99,9 @@ What to expect from Ghidra on this binary:
 - Far pointers show up as two 16-bit halves (`(int)x, (int)((ulong)x >> 0x10)`)
   until the parameters get 4-byte types. Ghidra's built-in `pointer32` works in
   signatures.
+- `DGROUP` (`1110`) is stored as iterated data in the NE file, and the loader
+  doesn't expand it, so Ghidra's initialised data in `1110` is wrong (strings,
+  tables, VMTs). Addresses are still right. See [widgets.md](widgets.md#finding-the-vmts).
 
 The Ghidra project is binary and contains copyrighted code, so it stays out of
 git. Knowledge belongs in the repo as text: names, signatures and notes go in
