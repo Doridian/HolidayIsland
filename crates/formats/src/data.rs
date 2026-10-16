@@ -1027,6 +1027,112 @@ pub fn wasnun(data: &[u8]) -> Strings {
     (0..4).map(|_| f.read_line()).collect()
 }
 
+/// `if not Eof(f) then Readln(f) else Halt`, for heading lines.
+fn heading(f: &mut TextReader) -> Result<()> {
+    if f.eof() {
+        return Err(Error::UnexpectedEof { line: f.line() });
+    }
+    f.readln();
+    Ok(())
+}
+
+/// `N` `Read(f, n)` in a row.
+fn read_longints<const N: usize>(f: &mut TextReader) -> Result<[i32; N]> {
+    let mut row = [0; N];
+    for cell in &mut row {
+        *cell = f.read_longint()?;
+    }
+    Ok(row)
+}
+
+/// One line of `N` numbers read with `Read`, then `Readln`.
+fn read_row<const N: usize>(f: &mut TextReader) -> Result<[i32; N]> {
+    let row = read_longints(f)?;
+    f.readln();
+    Ok(row)
+}
+
+/// Views of the island (`TAnsichtart`): the four rotations.
+pub const VIEWS: usize = 4;
+
+/// `DARSTELL.DAT`: drawing corrections per view, and pointer positions. Each
+/// table follows a heading line with its Pascal declaration, whose names
+/// the fields keep. // 1050:271b
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Darstell {
+    /// `AnsichtFormkorrektur: array[TAnsichtart, 0..18] of Byte`. // 1110:667e
+    pub form_korrektur: [[u8; 19]; VIEWS],
+    /// `AnsichtFlusskorrektur: array[TAnsichtart, 0..GfxPosFluesseAnzahl-1] of Byte`. // 1110:6682
+    pub fluss_korrektur: [[u8; 40]; VIEWS],
+    /// `AnsichtStrassenkorrektur: array[TAnsichtart, 0..GfxPosStrasseAnzahl-1] of Byte`. // 1110:6686
+    pub strassen_korrektur: [[u8; 45]; VIEWS],
+    /// `AnsichtExtratabxkorrektur: array[TAnsichtart, 0..1] of Integer`. // 1110:668a
+    pub extratab_x_korrektur: [[i16; 2]; VIEWS],
+    /// `AnsichtExtratabykorrektur: array[TAnsichtart, 0..1] of Integer`. // 1110:668e
+    pub extratab_y_korrektur: [[i16; 2]; VIEWS],
+    /// `AnsichtSpaltenxKorrektur: array[TAnsichtart, 0..1, 0..19] of Integer`. // 1110:6692
+    pub spalten_x_korrektur: [[[i16; 20]; 2]; VIEWS],
+    /// `AnsichtZeilenxKorrektur: array[TAnsichtart, 0..1, 0..Halbblockanzahly] of Integer`. // 1110:6696
+    pub zeilen_x_korrektur: [[[i16; 27]; 2]; VIEWS],
+    /// `AnsichtSpaltenyKorrektur: array[TAnsichtart, 0..1, 0..19] of Integer`. // 1110:669a
+    pub spalten_y_korrektur: [[[i16; 20]; 2]; VIEWS],
+    /// `AnsichtZeilenyKorrektur: array[TAnsichtart, 0..1, 0..Halbblockanzahly] of Integer`. // 1110:669e
+    pub zeilen_y_korrektur: [[[i16; 27]; 2]; VIEWS],
+    /// `gfxAuslastungszeigerpos: array[1..3, 0..10, Tgfxhausposindex] of Integer`. // 1110:66c2
+    pub auslastungszeiger_pos: [[[i16; 12]; 11]; 3],
+    /// `gfxspielerzeigerpos: array[1..3, 1..MaxSpielerzahl, Tgfxhausposindex] of Integer`. // 1110:66c6
+    pub spielerzeiger_pos: [[[i16; 12]; 8]; 3],
+}
+
+/// Parses `DARSTELL.DAT`. // 1050:271b
+///
+/// # Errors
+/// If a heading is missing or a number is malformed.
+pub fn darstell(data: &[u8]) -> Result<Darstell> {
+    fn bytes<const N: usize>(f: &mut TextReader) -> Result<[[u8; N]; VIEWS]> {
+        heading(f)?;
+        let mut t = [[0; N]; VIEWS];
+        for row in &mut t {
+            *row = read_row::<N>(f)?.map(byte);
+        }
+        Ok(t)
+    }
+    // Two numbers per view, all four views read as one stream.
+    fn pairs(f: &mut TextReader) -> Result<[[i16; 2]; VIEWS]> {
+        heading(f)?;
+        let mut t = [[0; 2]; VIEWS];
+        for row in &mut t {
+            *row = read_longints::<2>(f)?.map(integer);
+        }
+        f.readln();
+        Ok(t)
+    }
+    fn grid<const N: usize, const M: usize, const O: usize>(f: &mut TextReader) -> Result<[[[i16; N]; M]; O]> {
+        heading(f)?;
+        let mut t = [[[0; N]; M]; O];
+        for rows in &mut t {
+            for row in rows.iter_mut() {
+                *row = read_row::<N>(f)?.map(integer);
+            }
+        }
+        Ok(t)
+    }
+    let f = &mut TextReader::new(data);
+    Ok(Darstell {
+        form_korrektur: bytes(f)?,
+        fluss_korrektur: bytes(f)?,
+        strassen_korrektur: bytes(f)?,
+        extratab_x_korrektur: pairs(f)?,
+        extratab_y_korrektur: pairs(f)?,
+        spalten_x_korrektur: grid(f)?,
+        zeilen_x_korrektur: grid(f)?,
+        spalten_y_korrektur: grid(f)?,
+        zeilen_y_korrektur: grid(f)?,
+        auslastungszeiger_pos: grid(f)?,
+        spielerzeiger_pos: grid(f)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

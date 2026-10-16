@@ -62,6 +62,8 @@ fn data_tables() {
             41
         );
     }
+    let darstell = data::darstell(&read("DATA/DARSTELL.DAT").unwrap()).unwrap();
+    assert_eq!(darstell.spielerzeiger_pos[2][7], [16, 32, 340, 128, 340, 0, -16, 30, 0, 0, 0, 0]);
     let abrechnung = data::abrechne(&read("DATA/ABRECHNE.DAT").unwrap()).unwrap();
     assert_eq!(abrechnung.factors[0], [1, 2, 0, 255]);
     assert_eq!((abrechnung.min_rent, abrechnung.max_rent), (0, 800));

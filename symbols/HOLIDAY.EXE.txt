@@ -28,6 +28,7 @@
 1048:36b2 func load_auswahl
 1048:375e func load_sabotext
 1048:387c func load_fehler
+1050:271b func load_darstell
 1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
 1080:1141 func load_umenu
 1088:80a7 func load_animdat
@@ -85,6 +86,17 @@
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
 1110:663e data nachrich_lines  # 3 far pointers to 90 x string
+1110:667e data ansicht_formkorrektur
+1110:6682 data ansicht_flusskorrektur
+1110:6686 data ansicht_strassenkorrektur
+1110:668a data ansicht_extratabxkorrektur
+1110:668e data ansicht_extratabykorrektur
+1110:6692 data ansicht_spaltenxkorrektur
+1110:6696 data ansicht_zeilenxkorrektur
+1110:669a data ansicht_spaltenykorrektur
+1110:669e data ansicht_zeilenykorrektur
+1110:66c2 data gfx_auslastungszeigerpos
+1110:66c6 data gfx_spielerzeigerpos
 1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fda data animdat2 | pointer32  # far pointer to the table loaded from the file of that name
