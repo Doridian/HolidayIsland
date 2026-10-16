@@ -15,7 +15,10 @@
 1028:2449 func load_auktion
 1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
+1030:23d3 func draw_text  # (image, colour row, x, y, width, refresh, align 0/1/2, text): wrapped FONT.BMP glyphs, SRCAND mask then SRCINVERT colour
 1030:2972 func load_fontdat
+1030:2b19 func text_init  # unit init: font_bitmap := GRAFIK\font.bmp, then load_fontdat
+1030:2b7e func text_done  # unit exit: frees font_bitmap and the fontdat tables
 1038:0e13 func infobox_load_data
 1040:1bdf func add_highscore
 1040:1ca7 func reset_highscores
@@ -135,6 +138,8 @@
 1110:65d2 data sabotage_labels
 1110:65da data fontdat1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:65de data fontdat2 | pointer32  # far pointer to the table loaded from the file of that name
+1110:65e2 data font_bitmap  # TBitmap of GRAFIK\font.bmp
+1110:65e6 data font_dc  # font_bitmap.Canvas.Handle, set by draw_text
 1110:65e8 data ib_buttonzeile
 1110:65ec data ib_button
 1110:65f0 data welche_button

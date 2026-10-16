@@ -10,8 +10,8 @@ fields, along with the high-score table and `SETUP.DAT`. The startup
 sequence is mapped ([docs/startup.md](docs/startup.md)). The `vcl` crate
 builds the forms from the layouts in `HOLIDAY.EXE` and draws them with their
 bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
-(`winit` and `wgpu`) that shows the end of the intro. No game logic is ported
-yet. Also here:
+(`winit` and `wgpu`) that shows the end of the intro. The `game` crate has
+the first ported game code: text in the game's own bitmap font. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable
