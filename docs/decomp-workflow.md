@@ -18,7 +18,7 @@ byte-identical rebuild. The stack and structure are in
 
 ### The VCL and RTL are replaced, not decompiled
 
-About a third of the code (selectors `10c8`–`1108`, plus `1050`) is Borland's VCL
+About a third of the code (selectors `10c8`–`1108`, plus the end of `1050`) is Borland's VCL
 and RTL. The port doesn't decompile it. Instead the `vcl` crate reimplements the
 parts the game uses: forms, `TImage`, `TPanel`, `TLabel`, `TBitBtn`, `TTimer`,
 `TMediaPlayer`, the `TCanvas` drawing calls, the `Application` loop, and Pascal

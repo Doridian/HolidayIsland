@@ -58,9 +58,9 @@ timer's `Tag`; each state does its work, sets the next `Tag` and the
 | 450 | Loads the background `bck<size>.BMP` | 500 | 1 |
 | 500 | Stops the timer, disables the form (`tcontrol_set_enabled`), creates `TStartform` (`startform`), sets it up and shows it ([below](#the-start-menu-tstartform)) | | |
 
-States 700 and 1000–1500 (`titel.avi`, the `TWasNunForm`, loading
-`MAPS\` or one of the six `SZENARIO\*.HIS` and `EREIGN1-6.DAT`) start a game
-from the start menu. They aren't ported yet.
+State 700 (from the start menu's unreachable `MaperstButtonClick`) stops
+the timer, generates an island (1030:390e) and shows the menu again. States
+1000–1500 start a game; see [below](#starting-a-game-states-10001500).
 
 ### Screen size
 
@@ -77,6 +77,47 @@ no picture.
 | 1260–1300 × 1004–1044 | 1280×1024 | `tit12x10.BMP`, `bck12x10.BMP` |
 
 The result is in `screen_width`/`screen_height` (`1110:54fc`/`54fe`).
+
+## Starting a game: states 1000–1500
+
+The start menu's Start sets `Timer1.Tag` to 1000 with `+0x191` set on the
+scenario page and `+0x190` cleared. `+0x190` is the other way in: it loads
+the saved game named at `1110:1322` (`Last.map` unless something put
+another name there) from `MAPS\`. Ported in
+[`game::hintergrund`](../crates/game/src/hintergrund.rs) as far as the
+island goes; the `holiday` binary skips the video and the progress window.
+
+| Tag | Does | Next | Interval (ms) |
+|---|---|---|---|
+| 1000 | Frees the menu's bitmaps (1058:3b61) and the menu. For a scenario, keeps the menu's name (in `1110:6356`), colours (`1110:634e`) and difficulty (`1110:1330`), which the scenario's file would overwrite | 1111 | 1 |
+| 1111 | Enables the form, its image and the video panel, shows `dummyform`, opens `titel.avi` from the film directory and plays it; if the open failed, goes to 1120 | 1113 | 200 |
+| 1113 | Waits until the video's position reaches its length | 1120 | 1 |
+| 1120 | Stops and closes the video, hides the panel, disables the form and image, reactivates WaveMix and reloads the font (`text_done`, `text_init`) | 1200 | 10 |
+| 1130, 1140 | Reload the background `bck<size>.BMP` and show it. Nothing in the start path goes there | 1200 | 10 |
+| 1200 | Creates `TWasNunForm`, the progress window (1040:33e9), shows it and disables the form | 1210 | 10 |
+| 1210 | With the timer off: generates a new island from the start menu's settings (1030:390e, hourglass cursor around 10b0:52d4) | 1220 | 10 |
+| 1220 | With the timer off: loads the data tables (1030:2e48: `HAUSPOS.DAT`, `HAUSNR.DAT`, the other `*POS.DAT`, prices, names...), the bitmaps (1030:307a: the frame's and the island's, see [map.md](map.md)) and the rest (1030:36e5: months, events, sabotage, the forms' data...), moving the progress bar to 100 | 1500 | 2 |
+| 1500 | Sets up the main screen (`hauptschirm_init`, 1020:2501) and stops the timer. With `+0x190`: `load_map` of the saved game, then `game_start_setup` (1010:2820). With `+0x191`: `load_map` of the scenario's `SZENARIO\*.his`, puts the kept name, colours and difficulty back, sets the starting money from the difficulty, the scenario's number of computer players and its events (`EREIGNn.DAT`, 1010:36f8), then `game_start_setup`. Finally closes the progress window and shows the main screen (1020:283b: starts its `AnimationsTimer`, height 479) | | |
+
+So a normal game plays on the island state 1210 generated, and a scenario
+or a saved game replaces it with the file's. `game_start_setup` turns the
+map file's view position into the main screen's scroll position
+(1020:074d), draws the scroll bars and the button bar, and draws the island
+(1050:2700).
+
+| Scenario | File | Computer players | Events |
+|---|---|---|---|
+| 1 | `Geld.his` | 1 | `ereign1.dat` |
+| 2 | `Urlauber.his` | 3 | `ereign2.dat` |
+| 3 | `Koenig.his` | 7 | `ereign3.dat` |
+| 4 | `Luxus.his` | 2 | `ereign4.dat` |
+| 5 | `Surfer.his` | 3 | `ereign5.dat` |
+| 6 | `Oeko.his` | 0 | `ereign6.dat` |
+
+Not ported yet: the video, the progress window, generating an island (the
+port shows `MAPS\TUTORIAL.MAP` instead, segment `10b0` is about 22 KB of
+generator), the money, the events and everything else `game_start_setup`
+and 1030:36e5 set up for the simulation.
 
 ## Back to the start menu (1010:25dc)
 
@@ -154,7 +195,5 @@ Quirks:
   `Click`. The published `MaperstButtonClick` (hide the form and go to
   state 700) and `SprachButtonClick` (empty) have no component in the DFM.
 
-Not ported yet: what Start (states 1000–1500), "Altes Spiel fortsetzen"
-(`TLadenForm`) and the sounds do. In state 1000 the game frees the menu's
-bitmaps (1058:3b61) and, for a scenario, copies the name, the colours and
-the difficulty over to the scenario's globals.
+Not ported yet: what "Altes Spiel fortsetzen" (`TLadenForm`) and the
+sounds do. Start leads to [states 1000–1500](#starting-a-game-states-10001500).

@@ -1,7 +1,9 @@
 //! Holiday Island. For now this shows the main form with the title picture
 //! and then the background, like the end of the intro (`docs/startup.md`,
-//! states 430–450), and then the start menu on top (state 500). The menu
-//! works, but what its buttons lead to isn't there yet: those are logged.
+//! states 430–450), and then the start menu on top (state 500). Start
+//! loads the scenario (or, until island generation is ported, the tutorial
+//! island) and shows the main screen with the island, which the arrow keys
+//! scroll and Insert and Delete turn. Loading a game is only logged.
 //!
 //! `holiday [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`, `GRAFIK`,
 //! `DATA` and `TEXTE` (default `orig`).
@@ -10,12 +12,20 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use formats::bmp::Bitmap;
-use formats::data::{fontdat, start_txt, szenario_txt};
+use formats::data::{
+    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausnr, hauspos, sonstige, start_txt, straspos,
+    szenario_txt,
+};
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
+use formats::savegame::SaveGame;
+use game::darstellung::{self, Camera, Tiles};
+use game::hauptschirm::{self, Hauptschirm};
+use game::hintergrund::{self, Island};
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
 use game::widgets::ShiftState;
+use game::world::World;
 use platform::{App, Button, Frame, Input};
 use vcl::form::{Form, Kind};
 use vcl::surface::Surface;
@@ -83,8 +93,33 @@ impl StartMenu {
     }
 }
 
-struct Holiday {
+/// A game in progress: the world and the main screen showing it.
+struct Game {
+    world: World,
+    tiles: Tiles,
+    screen: Hauptschirm,
+    /// `THauptschirm`'s VCL form, whose images show `screen`'s.
     form: Form,
+}
+
+impl Game {
+    fn paint(&mut self, screen: &mut Surface, palette: &Palette) {
+        for (name, image) in self.screen.images() {
+            if let Some(c) = self.form.component_mut(name)
+                && let Kind::Image { picture } = &mut c.kind
+            {
+                *picture = Some(image.clone());
+            }
+        }
+        self.form.paint(screen, palette);
+    }
+}
+
+struct Holiday {
+    dir: PathBuf,
+    exe: Vec<u8>,
+    form: Form,
+    game: Option<Game>,
     background: Bitmap,
     start: StartMenu,
     palette: Palette,
@@ -113,6 +148,9 @@ impl Holiday {
     fn repaint(&mut self) {
         self.screen.pixels.fill(0);
         self.form.paint(&mut self.screen, &self.palette);
+        if let Some(game) = &mut self.game {
+            game.paint(&mut self.screen, &self.palette);
+        }
         self.start.paint(&mut self.screen, &self.palette);
     }
 
@@ -167,13 +205,10 @@ impl Holiday {
     fn respond(&mut self, response: startform::Response) {
         match response.action {
             Some(Action::Start { scenario }) => {
-                // `startform_start_click` hides the form; the game would
-                // start now (hintergrund states 1000-1500).
-                println!(
-                    "start a game (scenario page: {scenario}): {:?}",
-                    self.start.menu.settings()
-                );
+                // `startform_start_click` hides the form, and hintergrund's
+                // states 1000-1500 start the game.
                 self.start.hide();
+                self.game = Some(start_game(&self.dir, &self.exe, self.start.menu.settings(), scenario));
             }
             Some(Action::Load) => println!("load a saved game (TLadenForm): not ported yet"),
             Some(Action::Quit) => self.quit = true,
@@ -213,6 +248,12 @@ impl App for Holiday {
                     if self.start.visible() {
                         let response = self.start.menu.key_down(key, self.keys);
                         self.respond(response);
+                    } else if let Some(game) = &mut self.game {
+                        let shift = self.buttons | self.keys;
+                        if game.screen.key_down(key, shift, &game.world, &game.tiles) == hauptschirm::KeyResult::Redrawn
+                        {
+                            self.repaint();
+                        }
                     }
                 } else {
                     self.keys = ShiftState(self.keys.0 & !bit.0);
@@ -280,6 +321,86 @@ fn start_menu(dir: &Path, exe: &[u8]) -> StartMenu {
     }
 }
 
+/// The tables and bitmaps the island is drawn with (1030:3932).
+fn load_tiles(dir: &Path) -> Tiles {
+    let data = |name: &str| read(dir, &format!("DATA/{name}"));
+    Tiles::new(
+        hauspos(&data("HAUSPOS.DAT")).expect("HAUSPOS.DAT"),
+        hausnr(&data("HAUSNR.DAT")).expect("HAUSNR.DAT"),
+        grounpos(&data("GROUNPOS.DAT")).expect("GROUNPOS.DAT"),
+        groundnr(&data("GROUNDNR.DAT")).expect("GROUNDNR.DAT"),
+        gfxpos(&data("GFXPOS.DAT")).expect("GFXPOS.DAT"),
+        straspos(&data("STRASPOS.DAT")).expect("STRASPOS.DAT"),
+        flusspos(&data("FLUSSPOS.DAT")).expect("FLUSSPOS.DAT"),
+        darstell(&data("DARSTELL.DAT")).expect("DARSTELL.DAT"),
+        darstellung::BITMAP_FILES
+            .iter()
+            .map(|(_, f)| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
+            .collect(),
+    )
+}
+
+/// What hintergrund's timer does from state 1000 to 1500 once Start is
+/// clicked, without the video (`titel.avi`), the progress window
+/// (`TWasNunForm`) and what isn't ported yet: load the map, set up the
+/// main screen and show it. // 1000:2466
+fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) -> Game {
+    let path = match hintergrund::new_island(settings, scenario_page) {
+        Island::Scenario(file) => format!("SZENARIO/{}", file.to_ascii_uppercase()),
+        Island::Generated => {
+            println!("generating an island isn't ported yet (10b0:52d4); here's the tutorial island");
+            "MAPS/TUTORIAL.MAP".to_owned()
+        }
+    };
+    let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let world = hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
+    let origin = map.field("1110:5530").map_or((0, 0), |d| {
+        (i16::from_le_bytes([d[0], d[1]]), i16::from_le_bytes([d[2], d[3]]))
+    });
+    let camera = Camera {
+        view: byte("1110:007c"),
+        origin,
+        parity: 0,
+        mode_0086: byte("1110:0086") != 0,
+        owner_pointers: byte("1110:0058") != 0,
+        occupancy_pointers: byte("1110:0059") != 0,
+    };
+    let font = Font::new(
+        &bitmap(dir, "GRAFIK/FONT.BMP"),
+        &fontdat(&read(dir, "DATA/FONTDAT1.DAT")).expect("FONTDAT1.DAT"),
+        &fontdat(&read(dir, "DATA/FONTDAT2.DAT")).expect("FONTDAT2.DAT"),
+    );
+    let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+    let bitmaps = hauptschirm::BITMAP_FILES
+        .iter()
+        .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
+        .collect();
+    let title = texts.texts.first().cloned().unwrap_or_default();
+    let mut screen = Hauptschirm::new(camera, origin, bitmaps, &font, &title);
+    let tiles = load_tiles(dir);
+    screen.paint_map(&world, &tiles);
+
+    // 1020:1ce9 and 1020:283b: centred, laid out and shown.
+    let mut form = load_form(exe, "THAUPTSCHIRM");
+    let (w, h) = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
+    let (left, top) = Hauptschirm::position(w, h);
+    form.components[0].bounds = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT);
+    form.components[0].visible = true;
+    for (name, bounds) in hauptschirm::LAYOUT {
+        if let Some(c) = form.component_mut(name) {
+            c.bounds = bounds;
+            c.visible = true;
+        }
+    }
+    Game {
+        world,
+        tiles,
+        screen,
+        form,
+    }
+}
+
 fn main() {
     let dir = std::env::args_os()
         .nth(1)
@@ -297,10 +418,15 @@ fn main() {
     }
 
     let title = bitmap(&dir, "GRAFIK/TIT80X60.BMP");
+    let start = start_menu(&dir, &exe);
+    let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
     let mut holiday = Holiday {
+        dir,
+        exe,
         form,
-        background: bitmap(&dir, "GRAFIK/BCK80X60.BMP"),
-        start: start_menu(&dir, &exe),
+        game: None,
+        background,
+        start,
         palette: title.palette,
         rgb: [[0; 3]; 256],
         screen: Surface::new(SCREEN.0, SCREEN.1, 0),

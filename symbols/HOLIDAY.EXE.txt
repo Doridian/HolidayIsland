@@ -24,20 +24,83 @@
 1010:1820 func ui_scrollbar_paged  # VMT+0x24 of scroll bars: play_sound(9)
 1010:1838 func ui_listbox_draw  # (image): VMT+0x14 of list boxes: listbox_draw, then the visible rows centred
 1010:1919 func ui_listbox_selected  # VMT+0x1c of list boxes: play_sound(9)
+1010:254d func set_view
 1010:25dc func back_to_start_menu  # guess: saves Maps\Last.map, hides the forms, restarts holiday.mid, shows a new TStartform
+1010:2820 func game_start_setup  # after load_map: scroll position from the map, scroll bars, button bar, draws the island
+1010:2af5 func draw_button_bar
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
 1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
+1020:04b0 func hauptschirm_draw_view
+1020:05a7 func hauptschirm_update_scroll
+1020:0697 func hauptschirm_origin_from_scroll  # view_origin_i/j/parity from +0x408 (wo) and +0x40a (ns)
+1020:06f1 func hauptschirm_origin_from_scroll_exact
+1020:074d func hauptschirm_scroll_from_origin
+1020:07dc func hauptschirm_scroll  # (dns, dwo): turned by the view, clamped to the scroll bars
+1020:0a55 func hauptschirm_place_ns_bar
+1020:0b0f func hauptschirm_set_ns_bar
+1020:0b38 func hauptschirm_ns_thumb
+1020:0bf4 func hauptschirm_draw_ns_thumb
+1020:0c8b func hauptschirm_erase_ns_thumb
+1020:0cf7 func hauptschirm_scroll_ns
+1020:0d92 func hauptschirm_nsscrollbild_mousedown
+1020:0fa2 func hauptschirm_nsscrollbild_mousemove
+1020:10b6 func hauptschirm_nsscrollbild_mouseup
+1020:11dd func hauptschirm_place_wo_bar
+1020:1297 func hauptschirm_set_wo_bar
+1020:12c0 func hauptschirm_wo_thumb
+1020:137c func hauptschirm_draw_wo_thumb
+1020:1413 func hauptschirm_erase_wo_thumb
+1020:147f func hauptschirm_scroll_wo
+1020:151a func hauptschirm_woscrollbild_mousedown
+1020:172a func hauptschirm_woscrollbild_mousemove
+1020:181f func hauptschirm_woscrollbild_mouseup
+1020:1946 func hauptschirm_buttonimage_click
+1020:1952 func hauptschirm_buttonimage_mousemove
+1020:1984 func hauptschirm_hauptbild_mousedown
+1020:1ae6 func hauptschirm_hauptbild_mousemove
+1020:1b31 func hauptschirm_hauptbild_mouseup
+1020:1b8e func hauptschirm_ueberschriftbild_mousedown
+1020:1bd9 func hauptschirm_ueberschriftbild_mousemove
+1020:1c58 func hauptschirm_ueberschriftbild_mouseup
+1020:1c79 func hauptschirm_place
+1020:1ce9 func hauptschirm_layout
+1020:1df3 func hauptschirm_load_title
+1020:1e4f func hauptschirm_draw_title
+1020:1e9b func hauptschirm_animationstimer_timer
+1020:2501 func hauptschirm_init  # THauptschirm setup in hintergrund state 1500: layout, title, scroll bars, close/minimize/compass widgets
+1020:283b func hauptschirm_show
+1020:2866 func hauptschirm_formshow
+1020:28bf func hauptschirm_formclose
+1020:2d31 func hauptschirm_key_turn
+1020:2d4c func hauptschirm_key_scroll
+1020:2e09 func hauptschirm_formkeydown
+1020:3214 func hauptschirm_eckimage_mousedown
+1020:324c func hauptschirm_closebild_mousedown
+1020:3286 func hauptschirm_closebild_mouseup
+1020:32c0 func hauptschirm_kleinbild_mousedown
+1020:32fa func hauptschirm_kleinbild_mouseup
 1020:3dc4 func load_sonstige
 1028:2449 func load_auktion
 1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
+1030:0f19 func max_longint
 1030:0f53 func min_longint  # (a, b: Longint): the smaller
+1030:1418 func get_tile_dcs
+1030:1fdb func highest_corner
+1030:208d func lowest_corner
+1030:213f func draw_info_bar
+1030:21a8 func draw_status_bar
 1030:23d3 func draw_text  # (image, colour row, x, y, width, refresh, align 0/1/2, text): wrapped FONT.BMP glyphs, SRCAND mask then SRCINVERT colour
 1030:2972 func load_fontdat
 1030:2b19 func text_init  # unit init: font_bitmap := GRAFIK\font.bmp, then load_fontdat
 1030:2b7e func text_done  # unit exit: frees font_bitmap and the fontdat tables
+1030:2e48 func load_tables
+1030:307a func load_game_bitmaps
+1030:36e5 func load_game_rest
 1030:38da func game_done  # calls the units' done routines (text_done, ...) before Application.Terminate
+1030:390e func generate_island_busy
+1030:3932 func load_game_data
 1038:0e13 func infobox_load_data
 1040:1bdf func add_highscore
 1040:1ca7 func reset_highscores
@@ -46,6 +109,7 @@
 1040:2517 func save_highscores
 1040:284c func load_highscor_txt
 1040:34af func wasnun_load_texts  # form method (Self); WASNUN.TXT; Ghidra missed this function
+1040:3748 func wasnun_set_page
 1048:1ffd func init_messages
 1048:2a19 func load_map
 1048:2bae func save_map
@@ -62,6 +126,17 @@
 1048:36b2 func load_auswahl
 1048:375e func load_sabotext
 1048:387c func load_fehler
+1050:0002 func draw_button_down
+1050:0074 func draw_button_up
+1050:0144 func scroll_view  # (dns, dwo): BitBlts Hauptbild and redraws the strip that came into view, or everything
+1050:075e func ground_corner_height
+1050:0811 func turn_part
+1050:0997 func turn_building  # (part, var type): the part and type to draw for the view rotation
+1050:0e68 func draw_columns  # (first, last, rows): draws the island view column by column; game::darstellung
+1050:2697 func draw_bottom_rows
+1050:26ae func draw_top_rows
+1050:26c8 func draw_column_range
+1050:2700 func draw_view  # draw_columns(0, 19, 0)
 1050:271b func load_darstell
 1058:014d func startform_relief_click  # Click of the relief scroll bar (VMT 1110:1ada): relief := position; game::startform
 1058:015e func startform_land_click  # Click of the land scroll bar (VMT 1110:1b02): land_amount := position
@@ -109,6 +184,7 @@
 1088:80a7 func load_animdat
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
 10a8:37da func load_compbau
+10b0:52d4 func generate_island  # makes a new island from the start menu settings (segment 10b0); not ported
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
 10b8:41ad func uebermap_load_data  # form method (Self); UEBERMAP.TXT + UEBERMAP.DAT
@@ -204,9 +280,13 @@
 1108:1775 func sys_pstr_delete
 1108:1f5c func sys_val_longint
 1108:1fa4 func sys_filesize
+1110:0058 data view_owner_pointers
+1110:0059 data view_occupancy_pointers
 1110:0062 data sound_enabled  # SETUP.DAT line 5 is not N
 1110:006e data scenario  # Byte: 1..6, 0 for a normal game
 1110:0074 data player_colours  # array[1..8] of Byte: each player's colour, the human first
+1110:007c data view_rotation
+1110:0086 data view_mode_0086
 1110:008a data island_shape  # Integer: 0 atoll, 1 group of islands, 2 one island
 1110:008c data difficulty  # Integer 0..2
 1110:008e data relief  # Integer 0..4
@@ -214,10 +294,15 @@
 1110:0092 data rivers  # Integer 0..10
 1110:0102 data player_names  # guess: array of string[255], player 1 first ("Holiday", "Moritz", ..., "Lisa", then "keiner")
 1110:0a02 data last_player_name  # string: the name the start menu offers
+1110:12bc data view_width
+1110:12be data view_height
+1110:1322 data load_map_name  # string: the file state 1500 loads from MAPS when hintergrund+0x190 is set, Last.map
+1110:133e data view_keep_origin
 1110:1478 data computer_opponents  # Byte 0..7, initially 7
 1110:1479 data player_count  # Byte: computer_opponents + 1
 1110:1492 data ui_label_vmt  # VMT of plain labels. Ghidra shows wrong bytes here: DGROUP is stored as iterated data in the NE file and the loader does not expand it
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
+1110:1572 data hauptschirm_layout_table  # 11 x (hidden, left, top, width, height)
 1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
 1110:4a82 data module_handle  # entry quits when GetModuleUsage of it is above 1 (a second copy)
 1110:4a8a data min_miete | long  # MinMiete from ABRECHNE.DAT
@@ -253,6 +338,17 @@
 1110:54f6 data hauspos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54fc data screen_width  # the layout size picked from the form size, see docs/startup.md
 1110:54fe data screen_height
+1110:5500 data map_heights | pointer32  # 251x251 layers, [i*251+j]; game::world
+1110:5504 data map_ground
+1110:5508 data map_buildings
+1110:550c data map_forms
+1110:5510 data map_parts
+1110:5514 data map_owners
+1110:5518 data map_occupancy
+1110:5530 data view_origin_i
+1110:5532 data view_origin_j
+1110:5534 data view_parity
+1110:5fc0 data tile_dcs
 1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
 1110:64b0 data werbung_to_text
 1110:64b4 data renovierung_to_text

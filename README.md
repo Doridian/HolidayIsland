@@ -12,7 +12,8 @@ builds the forms from the layouts in `HOLIDAY.EXE` and draws them with their
 bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
 (`winit` and `wgpu`) that shows the end of the intro and the start menu. The
 `game` crate has the first ported game code: text in the game's own bitmap
-font, its widget toolkit and the start menu. Also here:
+font, its widget toolkit, the start menu, and starting a game: the island
+from a scenario is drawn on the main screen, which scrolls and turns. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable
@@ -64,8 +65,11 @@ cargo run --release -p holiday -- orig
 
 The argument is the directory with the game's files (`HOLIDAY.EXE`,
 `GRAFIK\`, `DATA\`, `TEXTE\`). For now it shows the title picture, then
-the background with the start menu on it. The menu's settings work; what
-its buttons lead to is only logged. Escape quits.
+the background with the start menu on it. The menu's settings work. Start
+shows the main screen with the scenario's island, or the tutorial island
+for a normal game until island generation is ported. The arrow keys and the
+number pad scroll it (Ctrl for bigger steps), Insert and Delete turn it.
+Loading a game is only logged. Escape quits.
 
 ## Decompiling
 
@@ -96,6 +100,7 @@ shared through [symbols/](symbols/README.md).
 - [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
 - [docs/port-architecture.md](docs/port-architecture.md): the planned Rust port: stack, crates, design
 - [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)
+- [docs/map.md](docs/map.md): the island's map layers, how the main screen draws them, and its layout
 - [docs/data-files.md](docs/data-files.md): survey of the game's data files
 - [docs/formats/install-archive.md](docs/formats/install-archive.md): the installer archive format
 

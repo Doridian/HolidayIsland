@@ -72,8 +72,8 @@ a segment, going by the class RTTI it contains:
 
 | Selector | NE seg | Contents |
 |---|---|---|
-| `1000`–`10b8` (except `1050`) | 1–24 | Game units, ~395 KB. Forms: `THintergrund` (1000), `TBaumenue` (1018), `THauptschirm`/`TEndeform` (1020), `TAuktionsform`/`TSabowin` (1028), `TCreditform` (1030), `TInfobox2`/`TKompassform`/`TLadenForm` (1038), `TDateimenue`/`THelpform`/`THighscoreform`/`TPauseform`/`TWasNunForm` (1040), `TFernseher` (1048), `TStartform` (1058), `TOptionenform` (1060), `TSchlussform` (1068), `TGeldmenuform` (1070), `TUmenuform` (1080), `TUebersichtsmap2` (10b8). `1088`–`10b0` have no classes: plain procedural units, `1088` is the largest segment (35 KB) |
-| `1050` | 11 | VCL `Printers` |
+| `1000`–`10b8` | 1–24 | Game units, ~395 KB. Forms: `THintergrund` (1000), `TBaumenue` (1018), `THauptschirm`/`TEndeform` (1020), `TAuktionsform`/`TSabowin` (1028), `TCreditform` (1030), `TInfobox2`/`TKompassform`/`TLadenForm` (1038), `TDateimenue`/`THelpform`/`THighscoreform`/`TPauseform`/`TWasNunForm` (1040), `TFernseher` (1048), `TStartform` (1058), `TOptionenform` (1060), `TSchlussform` (1068), `TGeldmenuform` (1070), `TUmenuform` (1080), `TUebersichtsmap2` (10b8). `1088`–`10b0` have no classes: plain procedural units, `1088` is the largest segment (35 KB) |
+| `1050` | 11 | Starts with a game unit up to about `34d6`: the island drawing and `DARSTELL.DAT` ([map.md](map.md)). The rest looks like VCL `Printers` |
 | `10c0` | 25 | Not identified yet |
 | `10c8` | 26 | VCL `MPlayer` (`TMediaPlayer`) |
 | `10d0`–`10f8` | 27–32 | VCL: `StdCtrls`/`Buttons` (10d0), `ExtCtrls`/`Menus` (10d8), `Graphics` (10e0), `Controls` (10e8), `Forms` (10f0), `Classes` (10f8) |

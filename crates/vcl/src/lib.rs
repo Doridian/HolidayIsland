@@ -25,7 +25,7 @@ pub struct Rect {
 
 impl Rect {
     #[must_use]
-    pub fn new(left: i32, top: i32, width: i32, height: i32) -> Self {
+    pub const fn new(left: i32, top: i32, width: i32, height: i32) -> Self {
         Rect {
             left,
             top,

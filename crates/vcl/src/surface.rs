@@ -92,6 +92,7 @@ impl Surface {
             match rop {
                 Rop::Copy => dst_row.copy_from_slice(src_row),
                 Rop::And => dst_row.iter_mut().zip(src_row).for_each(|(d, s)| *d &= s),
+                Rop::Paint => dst_row.iter_mut().zip(src_row).for_each(|(d, s)| *d |= s),
                 Rop::Invert => dst_row.iter_mut().zip(src_row).for_each(|(d, s)| *d ^= s),
             }
         }
@@ -105,6 +106,8 @@ pub enum Rop {
     Copy,
     /// `SRCAND`
     And,
+    /// `SRCPAINT`: inclusive or.
+    Paint,
     /// `SRCINVERT`: exclusive or.
     Invert,
 }
@@ -142,8 +145,12 @@ mod tests {
         assert_eq!(dst.pixels, [0b0100, 0b0000]);
         dst.blit(0, 0, &src, Rect::new(0, 0, 2, 1), Rop::Invert, all);
         assert_eq!(dst.pixels, [0b1110, 0b0110]);
+        dst.blit(0, 0, &src, Rect::new(1, 0, 2, 1), Rop::Paint, all);
+        assert_eq!(dst.pixels, [0b1110, 0b0111]);
+        dst.blit(0, 0, &src, Rect::new(0, 0, 2, 1), Rop::Invert, all);
+        assert_eq!(dst.pixels, [0b0100, 0b0001]);
         // A source rectangle hanging off the left edge moves the copy along.
         dst.blit(0, 0, &src, Rect::new(-1, 0, 2, 1), Rop::Copy, all);
-        assert_eq!(dst.pixels, [0b1110, 0b1010]);
+        assert_eq!(dst.pixels, [0b0100, 0b1010]);
     }
 }
