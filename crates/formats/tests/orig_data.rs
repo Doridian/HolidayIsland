@@ -193,3 +193,31 @@ fn forms() {
         }
     }
 }
+
+#[test]
+fn bitmaps() {
+    use formats::bmp::Bitmap;
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orig/GRAFIK");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        eprintln!("skipping: {} not found", dir.display());
+        return;
+    };
+    let mut count = 0;
+    for entry in entries {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("bmp")) {
+            let b = Bitmap::parse(&std::fs::read(&path).unwrap());
+            // A cut-off copy of GFXGROUN.BMP that the game doesn't use.
+            if path.ends_with("GFXGROU2.BMP") {
+                assert_eq!(b, Err(formats::bmp::Error::Truncated));
+            } else {
+                let b = b.unwrap();
+                assert_eq!(b.pixels.len(), b.width * b.height, "{}", path.display());
+            }
+            count += 1;
+        }
+    }
+    assert_eq!(count, 322);
+    let title = Bitmap::parse(&read("GRAFIK/TIT80X60.BMP").unwrap()).unwrap();
+    assert_eq!((title.width, title.height), (800, 600));
+}
