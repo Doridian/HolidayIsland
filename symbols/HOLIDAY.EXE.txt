@@ -1,12 +1,13 @@
 # Symbols for HOLIDAY.EXE (Holiday Island, German retail, 1996-11-11 build).
 # Format: symbols/README.md. Addresses are Ghidra selector:offset; NE segment n
 # is selector 1000 + 8*(n-1), so segment 1 is 1000 and DGROUP (segment 35) is 1110.
-1000:17bc func init_paths  # reads SETUP.DAT: base path, then flags for which asset dirs are on the hard disk vs the CD; halts with "Bitte starten Sie zunaechst SETUP.EXE" without it
-1000:2466 func start_scenario  # guess: sets up the scenario in DAT_1110_006e (1..6): money, EREIGNn.DAT, ...; Ghidra missed this function
+1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
+1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
 1008:55ee func load_abrechne
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
 1010:08d7 func load_window_positions
+1010:25dc func back_to_start_menu  # guess: saves Maps\Last.map, hides the forms, restarts holiday.mid, shows a new TStartform
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
 1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
@@ -51,7 +52,12 @@
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
 10b8:41ad func uebermap_load_data  # form method (Self); UEBERMAP.TXT + UEBERMAP.DAT
+10d0:07bf func vcl_messagedlg
+10f0:6aa7 func vcl_application_settitle  # guess: entry passes it 'Holiday Island' (1000:0002)
+10f0:6e7b func vcl_application_createform
+10f0:6f16 func vcl_application_run
 1100:0795 func str_to_int
+1100:08e1 func sys_fileexists
 1108:0093 func sys_halt  # Halt: exit code in AX
 1108:0182 func sys_getmem
 1108:0625 func sys_assign_text
@@ -78,7 +84,9 @@
 1108:1775 func sys_pstr_delete
 1108:1f5c func sys_val_longint
 1108:1fa4 func sys_filesize
+1110:0062 data sound_enabled  # SETUP.DAT line 5 is not N
 1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
+1110:4a82 data module_handle  # entry quits when GetModuleUsage of it is above 1 (a second copy)
 1110:4a8a data min_miete | long  # MinMiete from ABRECHNE.DAT
 1110:4a8e data max_miete | long  # MaxMiete
 1110:4a92 data miete_spanne | long  # MaxMiete - MinMiete
@@ -100,6 +108,7 @@
 1110:5304 data spradeu1_dir
 1110:5395 data spradeu2_dir
 1110:5426 data spradeu3_dir
+1110:54dc data sound_lo  # SETUP.DAT line 5 is L: sound_dir is SoundLo\
 1110:54de data gfxpos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54e2 data grounpos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54e6 data groundnr | pointer32  # far pointer to the table loaded from the file of that name
@@ -107,15 +116,22 @@
 1110:54ee data flusspos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54f2 data hausnr | pointer32  # far pointer to the table loaded from the file of that name
 1110:54f6 data hauspos | pointer32  # far pointer to the table loaded from the file of that name
+1110:54fc data screen_width  # the layout size picked from the form size, see docs/startup.md
+1110:54fe data screen_height
+1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
 1110:64b0 data werbung_to_text
 1110:64b4 data renovierung_to_text
 1110:64be data land
 1110:64ca data kreditgroesse
 1110:64d6 data startgeld
 1110:6502 data klassenmischung
+1110:6516 data baumenue
+1110:6532 data hauptschirm
 1110:6536 data ereignis | pointer32  # 41 records of 0x34 bytes: 12 Longints from EREIGNIS.DAT + 1 more
+1110:6544 data auktionsform
 1110:65b0 data auktion_texts
 1110:65bc data sabotage_kinds
+1110:65c0 data sabowin
 1110:65d2 data sabotage_labels
 1110:65da data fontdat1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:65de data fontdat2 | pointer32  # far pointer to the table loaded from the file of that name
@@ -124,6 +140,12 @@
 1110:65f0 data welche_button
 1110:65f4 data welche_buttonzeile
 1110:65f8 data infobox_short_texts
+1110:65fc data infobox2
+1110:6600 data dateimenue
+1110:6612 data endeform
+1110:6620 data kompassform
+1110:6624 data dummyform
+1110:6628 data fernseher
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
 1110:663e data nachrich_lines  # 3 far pointers to 90 x string
@@ -138,8 +160,14 @@
 1110:669e data ansicht_zeilenykorrektur
 1110:66c2 data gfx_auslastungszeigerpos
 1110:66c6 data gfx_spielerzeigerpos
+1110:66ca data startform
+1110:6ed0 data ladenform
+1110:6ee0 data highscoreform
 1110:6ee4 data highscores
 1110:6eea data highscor_texts
+1110:6eee data schlussform
+1110:6f04 data geldmenuform
+1110:6fb4 data umenuform
 1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fda data animdat2 | pointer32  # far pointer to the table loaded from the file of that name
@@ -147,6 +175,9 @@
 1110:6fe2 data animdat3 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fea data animdat1 | pointer32  # far pointer to the table loaded from the file of that name
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
+1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
+1110:723a data uebersichtsmap2
+1110:7342 data helpform
 1110:7346 data waehrungsfaktor
 1110:734a data fehler_texts | pointer32  # far pointer to the table loaded from the file of that name
 1110:734e data sonstige_texts
@@ -159,3 +190,4 @@
 1110:736e data hausprei | pointer32  # far pointer to the table loaded from the file of that name
 1110:7372 data hausdata | pointer32  # far pointer to the table loaded from the file of that name
 1110:737a data sonstige_short_texts
+1110:74ca data application

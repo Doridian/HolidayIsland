@@ -50,8 +50,8 @@ Still open:
   that something fills before the loader runs; the parser takes them as an
   argument.
 - `HAUPTSCH.TXT` isn't named anywhere in the EXE and may be unused.
-- `SETUP.DAT` (written by the installer) only matters for the original's
-  CD/hard disk paths, and the port won't need it.
+- `SETUP.DAT` (written by the installer) only picks the directories and
+  the sound/video quality: `formats::setup`, see [startup.md](startup.md).
 - The high-score table (`HIGHSCOR.WAV`) is `formats::highscore`: 10 ranks ×
   7 games of name, date, score and a money text (1040:24a8).
 

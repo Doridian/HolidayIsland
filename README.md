@@ -6,11 +6,13 @@ Rust, for Linux, macOS and WebAssembly.
 Status: **early.** The Cargo workspace exists with a `formats` crate that
 parses all the text tables in `DATA\` and `TEXTE\` the way the original's
 loaders read them, and splits maps, scenarios and saved games into their
-fields. No game logic is ported yet. Also here:
+fields, along with the high-score table and `SETUP.DAT`. The startup
+sequence is mapped ([docs/startup.md](docs/startup.md)). No game logic is
+ported yet. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable
-- notes on the binaries, the compiler and the data files
+- notes on the binaries, the compiler, the data files and startup
 
 The plan is a non-matching decompilation like the
 [Afterlife](https://github.com/Doridian/Afterlife) port: the code should behave

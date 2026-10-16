@@ -205,8 +205,9 @@ Not in scope: matchmaking, accounts, or play with the original Windows version.
 
 ## Open questions
 
-- Whether `SETUP.DAT` matters beyond the startup check, and what the port
-  writes or emulates in its place.
+- What the port uses in place of `SETUP.DAT`. It only picks directories
+  and the sound/video quality ([startup.md](startup.md)), so a default
+  `Setup` value should do.
 - Which General MIDI SoundFont to use, and how it reaches the player.
 - How much the game relies on Windows' palette manager (palette animation,
   `RealizePalette` timing), which decides how faithful the palette path must be.

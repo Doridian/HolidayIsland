@@ -5,3 +5,4 @@ pub mod data;
 pub mod highscore;
 pub mod pascal;
 pub mod savegame;
+pub mod setup;
