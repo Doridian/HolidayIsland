@@ -18,14 +18,16 @@
 //! skipped, missing ones keep their defaults.
 //!
 //! The enhancements' switches ([`EnhanceSettings`], `game::enhance`) are
-//! the player's to write by hand; the port only reads them:
+//! the player's, written by hand or by the game's list of them
+//! ([`EnhanceSettings::save`]):
 //!
 //! ```text
 //! original=false
 //! enhance.window_stacking=off
 //! ```
 //!
-//! Writing the window's state keeps every other line of the file.
+//! Writing the window's state keeps every other line of the file, and
+//! writing the switches keeps every line but theirs.
 
 use std::path::{Path, PathBuf};
 
@@ -150,6 +152,73 @@ impl EnhanceSettings {
     pub fn load(path: &Path) -> Self {
         std::fs::read_to_string(path).map_or_else(|_| EnhanceSettings::default(), |t| EnhanceSettings::parse(&t))
     }
+
+    /// `text` with switches changed: `original=true|false` if `original`
+    /// says, `enhance.<key>=on|off` for each of `set`, and no
+    /// `enhance.<key>` line for each of `remove`. A switch's first line
+    /// takes the new value where it is and its other lines go; a switch
+    /// without a line gets one at the end. Every other line stays as it
+    /// is.
+    #[must_use]
+    pub fn edit(text: &str, original: Option<bool>, set: &[(&str, bool)], remove: &[&str]) -> String {
+        let on_off = |on: bool| if on { "on" } else { "off" };
+        // Each switch's new line, until it's written.
+        let mut pending: Vec<(String, Option<String>)> = Vec::new();
+        if let Some(o) = original {
+            pending.push(("original".to_owned(), Some(format!("original={o}"))));
+        }
+        for &(key, on) in set {
+            let k = format!("enhance.{key}");
+            let line = format!("{k}={}", on_off(on));
+            pending.retain(|(p, _)| *p != k);
+            pending.push((k, Some(line)));
+        }
+        for &key in remove {
+            let k = format!("enhance.{key}");
+            if !pending.iter().any(|(p, _)| *p == k) {
+                pending.push((k, None));
+            }
+        }
+        let mut done: Vec<String> = Vec::new();
+        let mut out = String::new();
+        for line in text.lines() {
+            let key = line.split_once('=').map(|(k, _)| k.trim().to_owned());
+            let Some((k, new)) = key.and_then(|k| pending.iter().find(|(p, _)| *p == k).cloned()) else {
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            };
+            if !done.contains(&k) {
+                if let Some(new) = new {
+                    out.push_str(&new);
+                    out.push('\n');
+                }
+                done.push(k);
+            }
+        }
+        for (k, new) in pending {
+            if let Some(new) = new.filter(|_| !done.contains(&k)) {
+                out.push_str(&new);
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    /// Writes switches into the file at `path` ([`EnhanceSettings::edit`]),
+    /// making its directory.
+    ///
+    /// # Errors
+    /// If the directory or the file can't be written.
+    pub fn save(path: &Path, original: Option<bool>, set: &[(&str, bool)], remove: &[&str]) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        let temp = path.with_extension("ini.tmp");
+        std::fs::write(&temp, Self::edit(&text, original, set, remove))?;
+        std::fs::rename(&temp, path)
+    }
 }
 
 /// A switch's value: `on`/`off`, `1`/`0`, `true`/`false`, `yes`/`no`.
@@ -192,6 +261,24 @@ mod tests {
         assert_eq!(e.overrides, [("window_stacking".to_owned(), true)]);
         assert_eq!(e.bad, ["enhance.x=maybe"]);
         assert_eq!(EnhanceSettings::parse(""), EnhanceSettings::default());
+    }
+
+    #[test]
+    fn writing_switches() {
+        let text = "# mine\nwindow_width=3\nenhance.big_map=off\nenhance.x=on\nenhance.big_map=on\noriginal=1\n";
+        let edited = EnhanceSettings::edit(text, None, &[("big_map", true), ("music", false)], &[]);
+        assert_eq!(
+            edited,
+            "# mine\nwindow_width=3\nenhance.big_map=on\nenhance.x=on\noriginal=1\nenhance.music=off\n"
+        );
+        let e = EnhanceSettings::parse(&edited);
+        assert!(e.original);
+        assert_eq!(e.overrides.last(), Some(&("music".to_owned(), false)));
+        // Everything on: the master switch off, the keys' lines gone, the
+        // others kept.
+        let all = EnhanceSettings::edit(&edited, Some(false), &[], &["big_map", "music"]);
+        assert_eq!(all, "# mine\nwindow_width=3\nenhance.x=on\noriginal=false\n");
+        assert_eq!(EnhanceSettings::edit("", Some(true), &[], &["a"]), "original=true\n");
     }
 
     #[test]

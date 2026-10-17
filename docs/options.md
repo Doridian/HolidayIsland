@@ -48,7 +48,7 @@ labels. The tracks' names are the form's own (1060:14a1..).
 |---|---|---|---|---|
 | Close button (`+0x1c8`), "OK" (`+0x2de`) | | 1060:0151, 1060:0163: close | Escape, Enter, Alt+F4 | view |
 | "TOP" (`+0x3f4`) | | 1060:0175: `Thighscoreform` over the form, which is disabled | `T` | view |
-| "INFO" (`+0x50a`) | | 1060:01ab: `TCreditform` (`credits.bmp`) | Space | view |
+| "INFO" (`+0x50a`) | | 1060:01ab: `TCreditform` (`credits.bmp`); with `enhance.enhancements_screen` the port's [list of enhancements](#the-list-of-enhancements-port-extension) | Space | view |
 | "Musik" | `005b` | 1060:01dc: start (1018:3850) or stop (1018:38c5) | `M` | view |
 | The seven tracks' check boxes | `6ef2..6ef8` | 1060:01fa: the track playing stays ticked | `1`–`7` | view |
 | The tracks' radio buttons | `6efa` | 1060:02b7: an unticked track goes off again; else the others off, the music stops, the new file, and it plays if the music is on | keypad `1`–`7` | view |
@@ -84,6 +84,61 @@ caller keeps (with the camera's pointers and the music) and hands to the
 form when it opens; the form reports their changes
 ([`optionen::Change`]). The world's four come back as commands.
 
+## The credits (`TCreditform`, segment 1030)
+
+"INFO" creates the form (1060:01ab, `TApplication.CreateForm`) and shows
+it (`creditform_show`, 1030:3c42): `credits.bmp`, `stkn.bmp` and
+`stknpr.bmp` from `GRAFIK`, `Bild` 640 × 480 at the form's top left with
+`credits.bmp` in it (the names, a title bar and a close button's look are
+in the picture), the form as big and centred on the screen, the close
+button (16 × 16 at 0, 0, `close.bmp`) shown, and the options disabled.
+It also makes a "Schließen" button (`SONSTIGE.TXT`'s 14th text,
+`stkn.bmp`, 144 × 22 at 248, 452), but never shows it, and a hidden
+widget takes no press. Both buttons have the VMT `1110:3d5c`, whose
+`Click` (1030:3c0f) is `creditform_close` (1030:3e6f): hide, enable the
+options, free the bitmaps, `Release`. `BildMouseDown` (1030:3ec4) and
+`BildMouseUp` (1030:3f22) offer the close button, then "Schließen", the
+event, of any mouse button (with `enhance.mouse_buttons` the left one),
+and refresh `Bild` if one took it; `FormClose` (1030:3f80) frees the
+form. It has no keys, and no drag. Ported as
+[`game::creditform`](../crates/game/src/creditform.rs). The form is
+`fsStayOnTop`; while it's up only it takes the mouse, over the options or
+the list of enhancements.
+
+## The list of enhancements (port extension)
+
+With `enhance.enhancements_screen` (on by default) "INFO" opens the
+port's list of the [enhancements](original-bugs.md#options) instead of
+the credits: [`game::enhanceform`](../crates/game/src/enhanceform.rs).
+It's modal like the options (and stays on top like them in either
+stacking), 640 × 480 like the credits and centred, made of the game's
+own pieces: the high scores' background (its face mirrored down to
+480), the options' check boxes, the buildings' overview's scroll bar
+(its trough repeated, as it's 200 high), the credits' buttons, the
+game's font, and German texts:
+
+- "Spielkorrekturen" (the world's fixes, "für dieses Spiel und neue
+  Spiele") on the left, "Anzeige und Ton" (the view's) on the right:
+  each key's check box and German label, 18 rows at a time, scrolled by
+  its bar. The row under the mouse has its key and English description
+  shown under the lists.
+- The notes under it: whether the changes are saved in `settings.ini`;
+  with `--original` or `--enhance=` that the command line goes over the
+  file again at the next start; with `enhancements_screen` off that
+  "INFO" now opens the credits, and the line that brings the list back.
+- "Alle an", "Alle aus (Original)", "Mitwirkende" (the credits, over the
+  list) and "Schließen" (`SONSTIGE.TXT`'s), the close button, Escape,
+  Enter or Alt+F4.
+
+A tick on a fix is the human's `Action::SetFix` (`Command { player: 1 }`,
+applied by `World::apply` before the next tick, so the world's hash
+changes) and becomes the player's default for new games; a view
+enhancement is applied at once, the layout too. Each is saved in
+`settings.ini` (`EnhanceSettings::save`) as `enhance.<key>=on|off`;
+"Alle an" and "Alle aus" write `original=false|true` and drop the keys'
+lines. Single human: whoever switches a fix switches it for everybody; in
+a multiplayer game it would be the host's.
+
 ## Open questions
 
 - The map saves the player's settings (`005b`..`0066`) with the view:
@@ -92,8 +147,7 @@ form when it opens; the form reports their changes
   as `MapView`'s own fields, the rest through `Settings::store`).
 - The volumes start as the system's wave volume in the original
   (10a0:2f5e); the port starts them at 100.
-- `TCreditform` isn't ported; the form only asks for it. The high
-  scores are `Thighscoreform` ([endforms.md](endforms.md)).
+- The high scores are `Thighscoreform` ([endforms.md](endforms.md)).
 - After "Animationen" goes on, the original runs `people_refresh`
   (1088:7fb1) from the view, which calls `spawn_people` with the world's
   random numbers. The port only redraws, as after scrolling

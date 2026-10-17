@@ -328,6 +328,10 @@ pub enum Action {
     /// "INFO" (or Space): `TCreditform` (`credits.bmp`, 1030:3c42) opens
     /// over the form, which is disabled until it closes. // 1060:01ab
     Credits,
+    /// "INFO" with `enhancements_screen`: the list of the enhancements
+    /// (`crate::enhanceform`) opens over the form instead, with the
+    /// credits a button away. A port extension.
+    Enhancements,
 }
 
 /// A change to [`Settings`] the caller carries out at once.
@@ -867,7 +871,14 @@ impl Optionenform {
         match id {
             Id::Close | Id::Ok => r.action = Some(Action::Close), // 1060:0151, 1060:0163
             Id::Top => r.action = Some(Action::Highscores),       // 1060:0175
-            Id::Info => r.action = Some(Action::Credits),         // 1060:01ab
+            Id::Info => {
+                // 1060:01ab; the port's list of enhancements in its place.
+                r.action = Some(if self.enhance.has(Enhancement::EnhancementsScreen) {
+                    Action::Enhancements
+                } else {
+                    Action::Credits
+                });
+            }
             Id::Music => {
                 // 1060:01dc: 1018:3850 starts the music only if it's off,
                 // 1018:38c5 stops it only if it's on.
@@ -1238,6 +1249,10 @@ mod tests {
             Some(Action::Credits)
         );
         assert_eq!(f.key_down(0x54, ShiftState::CTRL).action, None);
+        // With `enhancements_screen`, "INFO" opens the list instead.
+        f.enhance.set(Enhancement::EnhancementsScreen, true);
+        assert_eq!(click(&mut f, 0x103 + 10, 0x13e + 5).action, Some(Action::Enhancements));
+        f.enhance = Enhancements::ORIGINAL;
         // Dragged by the title bar: rolled up meanwhile.
         let left = f.left;
         let _ = f.mouse_down(100, 5, ShiftState::LEFT);

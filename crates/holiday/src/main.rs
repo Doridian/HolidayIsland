@@ -74,6 +74,7 @@ use game::darstellung::{self, Camera, Tiles};
 use game::dateimenue::{self, Dateimenue};
 use game::endeform;
 use game::enhance::{self, Config, Fix, Fixes};
+use game::enhanceform;
 use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult};
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
@@ -473,8 +474,10 @@ impl Game {
 
     /// The player's view enhancements for this game: the stacking,
     /// `big_map`'s main screen, and each form's.
+    /// Also in the middle of a game, from the list of enhancements: the
+    /// windows keep their order.
     fn set_view_enhancements(&mut self, view: enhance::Enhancements) {
-        self.stack = Stack::new(view);
+        self.stack.enhanced = view.has(enhance::Enhancement::WindowStacking);
         self.screen.big_map = view.has(enhance::Enhancement::BigMap);
         self.screen.enhance = view;
         let f = &mut self.forms;
@@ -486,6 +489,8 @@ impl Game {
         f.infobox.enhance = view;
         f.umenu.enhance = view;
         f.ende.enhance = view;
+        f.credits.enhance = view;
+        f.enhance.enhance = view;
         self.auction.enhance = view;
         self.tools.enhance = view;
         self.tools.menu.set_enhance(view, self.size.1);
@@ -1125,6 +1130,11 @@ struct Holiday {
     /// The player's enhancements (`game::enhance`): the view's for each
     /// game, and the world's fixes a new game starts with.
     enhance: Config,
+    /// `settings.ini`, where the list of enhancements saves its switches;
+    /// none where there's no config directory.
+    settings_file: Option<PathBuf>,
+    /// `--original` or `--enhance=` was given.
+    command_line: bool,
 }
 
 impl Holiday {
@@ -1404,8 +1414,71 @@ impl Holiday {
                         eprintln!("can't save {}: {e}", path.display());
                     }
                 }
+                Request::Enhance(change) => self.enhance_changed(change),
             }
         }
+    }
+
+    /// What the list of enhancements says about saving.
+    fn enhance_notes(&self) -> enhanceform::Notes {
+        enhanceform::Notes {
+            saved: self.settings_file.is_some(),
+            command_line: self.command_line,
+        }
+    }
+
+    /// A switch from the list of enhancements (a port extension): the
+    /// player's settings change, a fix as the default for new games (the
+    /// form sent the running game's command), a view enhancement applied
+    /// at once; and `settings.ini` keeps it, the other lines as they are.
+    /// "Alle an" and "Alle aus" set the master switch and drop the keys'
+    /// lines. With `--original` or `--enhance=` this run has them too;
+    /// the next run's command line goes over the file again.
+    fn enhance_changed(&mut self, change: enhanceform::Change) {
+        use enhanceform::Change;
+        let mut config = self.enhance;
+        let (original, set, remove): (Option<bool>, Vec<(&str, bool)>, Vec<&str>) = match change {
+            Change::Fix(f, on) => {
+                config.fixes.set(f, on);
+                (None, vec![(f.info().key, on)], Vec::new())
+            }
+            Change::View(e, on) => {
+                config.view.set(e, on);
+                (None, vec![(e.info().key, on)], Vec::new())
+            }
+            Change::All(on) => {
+                config = if on { Config::default() } else { Config::ORIGINAL };
+                (Some(!on), Vec::new(), enhance::all().map(|i| i.key).collect())
+            }
+        };
+        if let Some(path) = &self.settings_file
+            && let Err(e) = platform::settings::EnhanceSettings::save(path, original, &set, &remove)
+        {
+            eprintln!("can't save {}: {e}", path.display());
+        }
+        let view_changed = config.view != self.enhance.view;
+        self.enhance = config;
+        if view_changed {
+            self.apply_view_enhancements();
+        }
+    }
+
+    /// The player's view enhancements changed in the middle of the
+    /// program: the start menu, the load form, the sound and the game get
+    /// them, and everything is laid out again (`big_map`,
+    /// `desktop_background`).
+    fn apply_view_enhancements(&mut self) {
+        let view = self.enhance.view;
+        self.start.menu.enhance = view;
+        if let Some(load) = &mut self.load {
+            load.menu.enhance = view;
+        }
+        self.sound.borrow_mut().set_view_enhancements(view);
+        if let Some(game) = &mut self.game {
+            game.set_view_enhancements(view);
+        }
+        let (w, h) = self.desktop;
+        self.layout(w, h);
     }
 
     /// A mouse event while the load form is open: the start menu is
@@ -1649,8 +1722,10 @@ impl Holiday {
         // `big_map`'s main screen fills the desktop, which can be a
         // little bigger or smaller than the screen size.
         let (size, desktop) = (self.size, self.desktop);
+        let notes = self.enhance_notes();
         if let Some(game) = &mut self.game {
             game.resize(size, desktop);
+            game.forms.enhance_notes = notes;
         }
         self.repaint();
     }
@@ -2267,6 +2342,8 @@ struct Args {
     no_audio: bool,
     window: platform::WindowOptions,
     enhance: Config,
+    /// `--original` or `--enhance=` was given.
+    command_line: bool,
 }
 
 /// The enhancements, one per line: key, whose, on or off in `config`, and
@@ -2406,6 +2483,7 @@ fn args() -> Args {
         no_audio,
         window,
         enhance,
+        command_line: original || !overrides.is_empty(),
     }
 }
 
@@ -2419,6 +2497,7 @@ fn main() {
         no_audio,
         window,
         enhance,
+        command_line,
     } = args();
     let audio = if no_audio {
         platform::audio::Audio::silent()
@@ -2435,6 +2514,8 @@ fn main() {
         game_maps: dir.join("MAPS"),
     };
     let mut holiday = Holiday::new(dir, saves, sound, enhance);
+    holiday.settings_file.clone_from(&window.settings_file);
+    holiday.command_line = command_line;
     holiday.start_intro();
     if let Err(e) = platform::run("Holiday Island", window, holiday) {
         eprintln!("{e}");
@@ -2479,6 +2560,8 @@ impl Holiday {
             options: Options::default(),
             sound,
             enhance,
+            settings_file: None,
+            command_line: false,
         };
         holiday.start.menu.enhance = enhance.view;
         holiday.sound.borrow_mut().set_view_enhancements(enhance.view);
@@ -3498,5 +3581,249 @@ mod tests {
             button: Button::Left,
         };
         assert_eq!(game.main_mouse(on_map, ShiftState::LEFT, false), (false, false));
+    }
+
+    /// A press and release of the left button at `x`, `y` on the screen.
+    fn click_at(h: &mut Holiday, (x, y): (i32, i32)) {
+        h.input(Input::MouseDown {
+            x,
+            y,
+            button: Button::Left,
+        });
+        h.input(Input::MouseUp {
+            x,
+            y,
+            button: Button::Left,
+        });
+    }
+
+    /// The options open and "INFO" pressed with its key, Space.
+    fn press_info(h: &mut Holiday) {
+        h.game.as_mut().unwrap().click_button(2);
+        assert!(h.game.as_ref().unwrap().forms.options.visible);
+        h.input(Input::KeyDown(0x20));
+        h.input(Input::KeyUp(0x20));
+    }
+
+    /// The middle of `r`.
+    fn middle(r: Rect) -> (i32, i32) {
+        (i32::midpoint(r.left, r.right), i32::midpoint(r.top, r.bottom))
+    }
+
+    /// The options' "INFO": in the original (every enhancement off) the
+    /// credits (`TCreditform`), which disable the options until their
+    /// close button closes them; with `enhancements_screen` the list of
+    /// enhancements, from which the credits are a button away. Both are
+    /// modal and lie on top in either stacking, with `big_map` too. With
+    /// `HOLIDAY_PNG` set, the screens go there as `enhance-screen-*.png`.
+    #[test]
+    fn info_opens_the_credits_or_the_enhancements() {
+        let Some(dir) = game_dir() else { return };
+        // The original.
+        let mut h = holiday_in_a_game(&dir, SIZE, Config::ORIGINAL);
+        press_info(&mut h);
+        let game = h.game.as_mut().unwrap();
+        assert!(game.forms.credits.visible && !game.forms.enhance.visible);
+        let credits = game.forms.credits.bounds();
+        assert_eq!(credits, Rect::new(80, 60, 640, 480), "centred");
+        assert_eq!(game.window_at(middle(credits).0, middle(credits).1), Win::Credits);
+        // The options are disabled, and keys do nothing.
+        let options = game.forms.options.bounds();
+        assert!(game.forms_key(0x1b, ShiftState::default()));
+        assert!(game.forms.credits.visible && game.forms.options.visible);
+        h.repaint();
+        write_png(&h, "enhance-screen-credits");
+        // The hidden "Schließen" doesn't close them; the close button does.
+        click_at(&mut h, (credits.left + 0xf8 + 20, credits.top + 0x1c4 + 8));
+        assert!(h.game.as_ref().unwrap().forms.credits.visible);
+        click_at(&mut h, (credits.left + 4, credits.top + 4));
+        let game = h.game.as_mut().unwrap();
+        assert!(!game.forms.credits.visible && game.forms.options.visible);
+        assert_eq!(game.window_at(middle(options).0, middle(options).1), Win::Options);
+
+        // Every enhancement on, `big_map` at a bigger size.
+        let mut h = holiday_in_a_game(&dir, (1024, 768), Config::default());
+        press_info(&mut h);
+        let game = h.game.as_mut().unwrap();
+        assert!(game.forms.enhance.visible && !game.forms.credits.visible);
+        assert!(game.stack.main_desktop, "big_map's main screen fills the screen");
+        let list = game.forms.enhance.bounds();
+        assert_eq!(list, Rect::new(192, 144, 640, 480));
+        assert_eq!(game.window_at(middle(list).0, middle(list).1), Win::Enhance);
+        assert!(game.clock_stopped());
+        h.repaint();
+        write_png(&h, "enhance-screen");
+        // "Mitwirkende": the credits over the list, then back to it.
+        let game = h.game.as_ref().unwrap();
+        let (bx, by) = game.forms.enhance.button_at(3).unwrap();
+        click_at(&mut h, (list.left + bx, list.top + by));
+        let game = h.game.as_mut().unwrap();
+        assert!(game.forms.credits.visible && game.forms.enhance.visible);
+        assert_eq!(game.window_at(middle(list).0, middle(list).1), Win::Credits);
+        h.repaint();
+        write_png(&h, "enhance-screen-credits-over-list");
+        let credits = h.game.as_ref().unwrap().forms.credits.bounds();
+        click_at(&mut h, (credits.left + 4, credits.top + 4));
+        let game = h.game.as_mut().unwrap();
+        assert!(!game.forms.credits.visible && game.forms.enhance.visible);
+        assert_eq!(game.window_at(middle(list).0, middle(list).1), Win::Enhance);
+        // Escape closes the list; the options are back.
+        h.input(Input::KeyDown(0x1b));
+        let game = h.game.as_mut().unwrap();
+        assert!(!game.forms.enhance.visible && game.forms.options.visible);
+
+        // The original's stacking, without `big_map`, keeps them on top too.
+        let mut config = Config::ORIGINAL;
+        config.view.set(enhance::Enhancement::EnhancementsScreen, true);
+        let mut h = holiday_in_a_game(&dir, (640, 480), config);
+        press_info(&mut h);
+        let game = h.game.as_mut().unwrap();
+        assert!(game.forms.enhance.visible);
+        assert_eq!(game.forms.enhance.bounds(), Rect::new(0, 0, 640, 480));
+        let tv = game.forms.tv.bounds();
+        assert_eq!(game.window_at(middle(tv).0, middle(tv).1), Win::Enhance);
+    }
+
+    /// The world's hash, as a desync check would take it.
+    fn world_hash(world: &World) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        world.hash(&mut h);
+        h.finish()
+    }
+
+    /// The list of enhancements in a game: a world fix goes through the
+    /// command path (`World::apply`, which changes the world's hash) and
+    /// becomes the default for new games; a view enhancement applies at
+    /// once (`big_map`'s main screen, `window_stacking`'s stack); each is
+    /// saved in `settings.ini`, the file's other lines kept, and read back
+    /// as the same settings. "Alle aus" is the original, also from the
+    /// file. With `HOLIDAY_PNG` set, the list scrolled to its last rows
+    /// goes there as `enhance-screen-scrolled.png`.
+    #[test]
+    #[allow(clippy::too_many_lines)] // One game, step by step.
+    fn switching_enhancements_in_a_game() {
+        let Some(dir) = game_dir() else { return };
+        let tmp = std::env::temp_dir().join(format!("holiday-enhance-screen-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let ini = tmp.join("settings.ini");
+        std::fs::write(&ini, "# mine\nwindow_width=1024\nenhance.music=off\n").unwrap();
+        let config = enhance_config(Some(&ini), false, &[]);
+        assert!(!config.view.has(enhance::Enhancement::Music));
+        let mut h = holiday_in_a_game(&dir, (1024, 768), config);
+        h.settings_file = Some(ini.clone());
+        h.command_line = true;
+        h.game.as_mut().unwrap().forms.enhance_notes = h.enhance_notes();
+        press_info(&mut h);
+        let list = h.game.as_ref().unwrap().forms.enhance.bounds();
+        let at = |h: &Holiday, key: &str| {
+            let (x, y) = h.game.as_ref().unwrap().forms.enhance.row_of(key).unwrap();
+            (list.left + x, list.top + y)
+        };
+
+        // A world fix: a command, applied before the next tick.
+        let game = h.game.as_mut().unwrap();
+        assert!(game.world.fixes.has(Fix::ShipDetour));
+        let before = world_hash(&game.world);
+        let p = at(&h, "ship_detour");
+        click_at(&mut h, p);
+        let game = h.game.as_mut().unwrap();
+        assert_eq!(
+            game.commands.last().map(|c| (c.player, &c.action)),
+            Some((1, &command::Action::SetFix(Fix::ShipDetour, false)))
+        );
+        assert!(game.world.fixes.has(Fix::ShipDetour), "not yet applied");
+        let _ = game.update(Duration::ZERO);
+        assert!(!game.world.fixes.has(Fix::ShipDetour));
+        assert_ne!(world_hash(&game.world), before);
+        assert!(!h.enhance.fixes.has(Fix::ShipDetour), "the default for new games");
+
+        // A view enhancement, at once: `big_map` off puts the original's
+        // main screen in the middle of the screen.
+        assert_ne!(
+            h.game.as_ref().unwrap().screen.size(),
+            (hauptschirm::WIDTH, hauptschirm::HEIGHT)
+        );
+        let p = at(&h, "big_map");
+        click_at(&mut h, p);
+        let game = h.game.as_ref().unwrap();
+        assert_eq!(game.screen.size(), (hauptschirm::WIDTH, hauptschirm::HEIGHT));
+        assert!(!game.stack.main_desktop && game.forms.enhance.visible);
+        assert!(!h.enhance.view.has(enhance::Enhancement::BigMap));
+        // `window_stacking`, in the middle of the game.
+        assert!(h.game.as_ref().unwrap().stack.enhanced);
+        let p = at(&h, "window_stacking");
+        click_at(&mut h, p);
+        assert!(!h.game.as_ref().unwrap().stack.enhanced);
+
+        // settings.ini: the three switches, the other lines kept, and
+        // the same settings read back.
+        let text = std::fs::read_to_string(&ini).unwrap();
+        assert!(
+            text.starts_with("# mine\nwindow_width=1024\nenhance.music=off\n"),
+            "{text}"
+        );
+        for line in [
+            "enhance.ship_detour=off",
+            "enhance.big_map=off",
+            "enhance.window_stacking=off",
+        ] {
+            assert!(text.lines().any(|l| l == line), "{line} in {text}");
+        }
+        assert_eq!(enhance_config(Some(&ini), false, &[]), h.enhance);
+        // The command line goes over the file at the next start.
+        assert_eq!(enhance_config(Some(&ini), true, &[]), Config::ORIGINAL);
+
+        // The right list scrolled to its end, by its scroll bar's trough.
+        let game = h.game.as_mut().unwrap();
+        for _ in 0..3 {
+            game.forms.enhance.scroll_to(1, usize::MAX);
+        }
+        assert!(game.forms.enhance.scrolled(1) > 0);
+        let p = at(&h, "enhancements_screen");
+        // The row under the mouse is described below the lists.
+        h.input(Input::MouseMove { x: p.0, y: p.1 });
+        h.repaint();
+        write_png(&h, "enhance-screen-scrolled");
+
+        // The list's own switch off: "INFO" opens the credits next time.
+        click_at(&mut h, p);
+        assert!(!h.enhance.view.has(enhance::Enhancement::EnhancementsScreen));
+        h.repaint();
+        write_png(&h, "enhance-screen-own-switch-off");
+        let game = h.game.as_ref().unwrap();
+        let (bx, by) = game.forms.enhance.button_at(1).unwrap();
+        // "Alle an", then "Alle aus (Original)".
+        click_at(&mut h, (list.left + bx, list.top + by));
+        assert_eq!(h.enhance, Config::default());
+        let (bx, by) = h.game.as_ref().unwrap().forms.enhance.button_at(2).unwrap();
+        click_at(&mut h, (list.left + bx, list.top + by));
+        assert_eq!(h.enhance, Config::ORIGINAL);
+        let game = h.game.as_mut().unwrap();
+        let _ = game.update(Duration::ZERO);
+        assert_eq!(game.world.fixes, Fixes::ORIGINAL);
+        assert!(!game.stack.enhanced);
+        let text = std::fs::read_to_string(&ini).unwrap();
+        assert_eq!(text, "# mine\nwindow_width=1024\noriginal=true\n");
+        assert_eq!(enhance_config(Some(&ini), false, &[]), Config::ORIGINAL);
+        // Closed, the options' "INFO" now opens the credits.
+        h.input(Input::KeyDown(0x0d));
+        h.input(Input::KeyDown(0x20));
+        let game = h.game.as_ref().unwrap();
+        assert!(game.forms.credits.visible && !game.forms.enhance.visible);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Every key's German label fits its row in one line of the game's
+    /// font.
+    #[test]
+    fn labels_fit_their_rows() {
+        let Some(dir) = game_dir() else { return };
+        let font = font(&dir);
+        for i in enhance::all() {
+            let text: Vec<u8> = i.label.chars().map(|c| u8::try_from(u32::from(c)).unwrap()).collect();
+            // A row's text is 280 - 16 - 3 wide (`ui_radio_draw`).
+            assert_eq!(font.wrap(&text, 261, game::text::Align::Left).len(), 1, "{}", i.label);
+        }
     }
 }

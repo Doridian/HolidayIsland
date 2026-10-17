@@ -47,11 +47,16 @@ pub(crate) enum Win {
     Help,
     /// `TDateimenue`.
     FileMenu,
+    /// `TCreditform`, the options' "INFO".
+    Credits,
+    /// The port's list of the enhancements (`game::enhanceform`), the
+    /// options' "INFO" with `enhancements_screen`.
+    Enhance,
 }
 
 /// Every window, where it starts, bottom first. Shown forms are raised,
 /// so this only orders the ones a game starts with.
-pub(crate) const ALL: [Win; 18] = [
+pub(crate) const ALL: [Win; 20] = [
     Win::Background,
     Win::Main,
     Win::Menu,
@@ -70,6 +75,8 @@ pub(crate) const ALL: [Win; 18] = [
     Win::High,
     Win::Help,
     Win::FileMenu,
+    Win::Enhance,
+    Win::Credits,
 ];
 
 /// `window_forms` (`1110:646c`) in its order, without the empty slots 10
@@ -125,15 +132,27 @@ impl Win {
                 | Win::High
                 | Win::Pause
                 | Win::Help
+                | Win::Credits
+                // The port's, like the options it opens from.
+                | Win::Enhance
         )
     }
 
     /// Disables the other forms while it's shown (`disable_forms`,
-    /// 1010:2970, and the file menu, 1040:12be).
+    /// 1010:2970, and the file menu, 1040:12be). The credits disable the
+    /// options (1030:3c42), which disable the others, and the list of
+    /// enhancements does as the credits.
     fn modal(self) -> bool {
         matches!(
             self,
-            Win::Pause | Win::Options | Win::Ende | Win::Schluss | Win::High | Win::FileMenu
+            Win::Pause
+                | Win::Options
+                | Win::Ende
+                | Win::Schluss
+                | Win::High
+                | Win::FileMenu
+                | Win::Credits
+                | Win::Enhance
         )
     }
 }

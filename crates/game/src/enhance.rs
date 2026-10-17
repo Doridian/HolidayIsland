@@ -46,6 +46,9 @@ pub struct Info {
     /// `fix.<key>` in a saved game). Never changed once released.
     pub key: &'static str,
     pub side: Side,
+    /// A short German name for the in-game list (`crate::enhanceform`),
+    /// in the game's language: a few words, as plain as they can be.
+    pub label: &'static str,
     /// One line for a list of them.
     pub description: &'static str,
 }
@@ -55,7 +58,7 @@ pub struct Info {
 /// 64), with `ORIGINAL` (all off) and `ALL_ON`.
 macro_rules! enhancements {
     ($(#[$m:meta])* $one:ident, $(#[$sm:meta])* $set:ident, $side:expr;
-     $( $(#[$vm:meta])* $variant:ident = $key:literal, $desc:literal; )*) => {
+     $( $(#[$vm:meta])* $variant:ident = $key:literal, $label:literal, $desc:literal; )*) => {
         $(#[$m])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub enum $one {
@@ -69,7 +72,7 @@ macro_rules! enhancements {
             #[must_use]
             pub fn info(self) -> Info {
                 match self {
-                    $( $one::$variant => Info { key: $key, side: $side, description: $desc }, )*
+                    $( $one::$variant => Info { key: $key, side: $side, label: $label, description: $desc }, )*
                 }
             }
 
@@ -133,122 +136,122 @@ enhancements! {
     Side::World;
     /// Demolishing a building site takes its effect off the location map
     /// (1078:280b).
-    SiteEffect = "site_effect",
+    SiteEffect = "site_effect", "Baustellenabriss nimmt Wirkung weg",
         "Demolishing a building site takes its effect off the location map";
     /// Demolishing a bridge over the sea costs `Strassenabrisskosten` a
     /// square, which the original adds up and never charges (1078:276f).
-    BridgeDemolitionCost = "bridge_demolition_cost",
+    BridgeDemolitionCost = "bridge_demolition_cost", "Brückenabriss im Meer kostet",
         "Demolishing a sea bridge costs the road demolition cost per square, as the original adds up but never charges";
     /// A facility's price class divides by the price range, not by
     /// `MaxPreis` (1008:0907).
-    PriceClassRange = "price_class_range",
+    PriceClassRange = "price_class_range", "Preisklasse nach Min- und Maxpreis",
         "A facility's price class is its place between MinPreis and MaxPreis, not divided by MaxPreis";
     /// Buildings of nobody (owner 0) earn and cost nobody: their takings,
     /// costs and guests no longer go into player 8's slots of the month's
     /// sums and interest (settlement, 1078:0172).
-    OwnerlessBuildings = "ownerless_buildings",
+    OwnerlessBuildings = "ownerless_buildings", "Herrenlose Gebäude zahlen an keinen",
         "Buildings of nobody no longer pay their takings, costs and guests into player 8's sums and interest";
     /// A palm that dies or that moving the land clears comes off its
     /// plot's count, and a cleared one off the location map, its owner
     /// and part (1010:129e, 10b0:069f, 10b0:1907).
-    PalmRemoval = "palm_removal",
+    PalmRemoval = "palm_removal", "Tote Palmen werden abgezogen",
         "Palms that die or are cleared by moving the land come off their plot's count and the location map";
     /// A computer looking for another area checks the area of the plot
     /// it moves to, not the one it leaves (10a8:21de).
-    ComputerAreaChange = "computer_area_change",
+    ComputerAreaChange = "computer_area_change", "Computer prüft das neue Gebiet",
         "A computer changing area checks the size of the plot it moves to, not the one it leaves";
     /// The computers' type lists keep to their 40 places a category
     /// (10a8:388b, 10a8:0523).
-    ComputerTypeLists = "computer_type_lists",
+    ComputerTypeLists = "computer_type_lists", "Computer-Baulisten bleiben begrenzt",
         "The computers' building lists stop at 40 types a category instead of running into the next";
     /// A blocked harbour ship's second detour checks the squares ahead,
     /// not its own square five times (1098:04f9).
-    ShipDetour = "ship_detour",
+    ShipDetour = "ship_detour", "Schiffe weichen richtig aus",
         "A blocked harbour ship's second detour looks at the squares ahead, not its own square";
     /// The stage spectators are looked for where they stand, so a stage
     /// doesn't get new ones every time (1090:2373).
-    StageSpectators = "stage_spectators",
+    StageSpectators = "stage_spectators", "Bühnen finden ihre Zuschauer",
         "Stages look for their spectators where they stand, not on the stage's first square";
     /// A plane's second approach needs both coordinates to match
     /// (1090:2c1f).
-    PlaneApproach = "plane_approach",
+    PlaneApproach = "plane_approach", "Flugzeuge landen richtig",
         "A plane's second approach needs both coordinates to match, not either";
     /// A corner rising from the sea between plots merges them by their
     /// whole numbers, not cut to a byte (1078:09f6).
-    PlotMergeNumbers = "plot_merge_numbers",
+    PlotMergeNumbers = "plot_merge_numbers", "Grundstücke verschmelzen richtig",
         "Land rising between plots merges them by their full numbers, not their numbers cut to a byte";
     /// The computers' roads start from their own start square's ground,
     /// not the human's last road drag's (1078:2396).
-    ComputerRoadGround = "computer_road_ground",
+    ComputerRoadGround = "computer_road_ground", "Computerstraßen nach eigenem Boden",
         "The computers' roads go by the ground they start on, not the human's last road drag";
     /// Moving the land takes neighbours along that are two steps or more
     /// off, so cliffs don't get steeper (10b0:03fa, 10b0:12c7).
-    LevellingCliffs = "levelling_cliffs",
+    LevellingCliffs = "levelling_cliffs", "Planieren ohne steilere Klippen",
         "Moving the land takes along neighbours two or more steps off, so existing cliffs don't get steeper";
     /// Raising and lowering the land report the first error: lowering
     /// stops looking at buildings after one, and the money check doesn't
     /// replace it (10b0:069f, 10b0:12c7).
-    LevellingErrors = "levelling_errors",
+    LevellingErrors = "levelling_errors", "Planieren meldet den ersten Fehler",
         "Raising and lowering the land report the first error, not a later building or the money";
     /// After a road is built, every building near it gets its connection
     /// again, by its first square, whatever its look (1078:2178).
-    RoadConnections = "road_connections",
+    RoadConnections = "road_connections", "Neue Straßen verbinden alle Gebäude",
         "A new road reconnects every building near it, not only those whose first square shows part 0";
     /// The info box's buttons (renovate, prices, sell, bribe) are only
     /// for the player's own squares, not nobody's (1038:1a75).
-    NobodysBuildings = "nobodys_buildings",
+    NobodysBuildings = "nobodys_buildings", "Infobox-Knöpfe nur für eigene Gebäude",
         "The info box's buttons work on the player's own buildings only, not on nobody's";
     /// A computer bids only when its bid (5 % more) is within its limit
     /// (1028:1973).
-    AuctionComputerLimit = "auction_computer_limit",
+    AuctionComputerLimit = "auction_computer_limit", "Computer bieten nur im Limit",
         "A computer bids at an auction only when its bid is within its limit, not just the price";
     /// Passing at an auction leaves a leading bid standing and doesn't
     /// give the item away a second time after the third call (1028:0c82).
-    AuctionPass = "auction_pass",
+    AuctionPass = "auction_pass", "Passen lässt das Höchstgebot stehen",
         "Passing at an auction keeps the leading bid and doesn't sell the item again after the third call";
     /// Enter bids at an auction with the same checks as the mouse: the
     /// money, and not after the third call (1028:26e4).
-    AuctionEnterBid = "auction_enter_bid",
+    AuctionEnterBid = "auction_enter_bid", "Gebot mit Enter wie mit der Maus",
         "Enter bids at an auction only with the money and before the third call, as the mouse does";
     /// Player 8 gets the building type it wins at an auction
     /// (`make_available`, 10a0:0691).
-    PrizePlayer8 = "prize_player8",
+    PrizePlayer8 = "prize_player8", "Spieler 8 bekommt Ersteigertes",
         "Player 8 gets the building it wins at an auction, as players 2 to 7 do";
     /// A computer's highest bid is worked out without overflowing
     /// (10a8:0167).
-    ComputerBidOverflow = "computer_bid_overflow",
+    ComputerBidOverflow = "computer_bid_overflow", "Computer-Limit ohne Überlauf",
         "A rich computer's auction limit no longer overflows and wraps";
     /// The atoll's small hills are centred by half of their own
     /// variation (10b0:3c5c).
-    AtollHills = "atoll_hills",
+    AtollHills = "atoll_hills", "Atoll-Hügel richtig verteilt",
         "The atoll's small hills are centred on the ring by their own variation, not the big hills'";
     /// A river's 1500th try at a start is checked like the others; with
     /// none found there's no river (10b0:4506).
-    RiverStart = "river_start",
+    RiverStart = "river_start", "Flüsse entspringen nur auf Hügeln",
         "The island generator's rivers only start on the hills, never on the flat or in the sea";
     /// The generator's raising and lowering change nothing on an error,
     /// as the player's tool (10b0:0e0c, 10b0:2053).
-    GeneratorLevelling = "generator_levelling",
+    GeneratorLevelling = "generator_levelling", "Inselbau: Flüsse ohne Klippen",
         "The island generator's land changes are undone on an error, so its rivers leave no cliffs";
     /// A river on the flat stops looking for its way at the map's edge,
     /// not round the other side (10b0:48d7).
-    RiverFlatWay = "river_flat_way",
+    RiverFlatWay = "river_flat_way", "Flüsse suchen nur bis zum Rand",
         "A river on the flat looks for its way up to the map's edge, not round the other side";
     /// Loading a game keeps the order of the building sites and of the
     /// plots' houses and facilities (1068:304f, 1068:2d49).
-    LoadOrder = "load_order",
+    LoadOrder = "load_order", "Laden behält die Reihenfolge",
         "Loading a game keeps the building sites and the plots' building lists in their saved order";
     /// Piranhas ordered for a building that isn't a pool show error 0x1a
     /// (10a0:1f65).
-    SabotagePoolError = "sabotage_pool_error",
+    SabotagePoolError = "sabotage_pool_error", "Piranhas nur in Pools",
         "Piranhas ordered for a building that isn't a pool say so, as the other sabotage kinds do";
     /// The news archive keeps its messages in order when it first wraps
     /// (1048:0a54).
-    NewsArchiveOrder = "news_archive_order",
+    NewsArchiveOrder = "news_archive_order", "Nachrichtenarchiv bleibt geordnet",
         "The news archive keeps its 26th and 27th messages in order when it first fills";
     /// The TV's lights don't draw from the game's random numbers, so the
     /// speech doesn't change the game (1048:1b3e).
-    TvLights = "tv_lights",
+    TvLights = "tv_lights", "Fernsehlichter ohne Spielzufall",
         "The TV's blinking lights no longer use the game's random numbers, so the speech doesn't change the game";
 }
 
@@ -263,122 +266,127 @@ enhancements! {
     /// main screen too, a new one opens on top, the pointer goes to the
     /// top one, and only the modal forms stay above the others
     /// (`docs/layout.md`, "Stacking").
-    WindowStacking = "window_stacking",
+    WindowStacking = "window_stacking", "Fenster stapeln wie unter Windows",
         "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top";
     /// On a screen bigger than 640 × 480 the main screen fills it and its
     /// map view shows more of the island, with the scroll bars' ends, the
     /// overview map's frame and the mouse following the bigger view; the
     /// world still sees the original's view in its middle
     /// (`docs/layout.md`, "`big_map`").
-    BigMap = "big_map",
+    BigMap = "big_map", "Großes Fenster zeigt mehr Insel",
         "A bigger screen shows more island: the main screen fills it and its map view grows";
     /// The scroll bars' arrows step when pressed, an arrow let go off
     /// itself is drawn up again, and a press only counts as a change when
     /// the position changed (10c0:0f10, 10c0:15f7, 10c0:0fe3).
-    ScrollBars = "scroll_bars",
+    ScrollBars = "scroll_bars", "Bildlaufpfeile reagieren sofort",
         "Scroll bar arrows step when pressed and come up wherever they're let go";
     /// A click on a focused text field keeps it focused, "Speichern"
     /// saves a name being typed, and a name picked from the file menu's
     /// list puts the cursor after it (10c0:1c1b, 1040:073c, 1040:0192).
-    EditField = "edit_field",
+    EditField = "edit_field", "Textfelder behalten den Fokus",
         "Text fields keep the focus when clicked, so the file menu's Speichern saves a typed name";
     /// Shift, Ctrl and a double click's second press don't stop a click
     /// on a list or with a tool (10c0:0431, 1020:1984).
-    ModifierClicks = "modifier_clicks",
+    ModifierClicks = "modifier_clicks", "Klicks auch mit Umschalt und Strg",
         "Clicks on lists and with the tools work with Shift or Ctrl held and on a double click";
     /// Only the left button clicks the start menu's buttons, ticks the
-    /// options' boxes and drags the money menu (1058:41fb, 1060:2404,
-    /// 1070:0820).
-    MouseButtons = "mouse_buttons",
-        "The right mouse button no longer clicks start menu buttons, ticks options or drags the money menu";
+    /// options' boxes, drags the money menu and presses the credits'
+    /// close button (1058:41fb, 1060:2404, 1070:0820, 1030:3ec4).
+    MouseButtons = "mouse_buttons", "Nur die linke Maustaste klickt",
+        "The right mouse button no longer clicks start menu buttons, ticks options, drags the money menu or closes the credits";
     /// Switching the start menu to its scenarios ticks the scenario that
     /// starts (1058:02cf).
-    StartMenuScenario = "start_menu_scenario",
+    StartMenuScenario = "start_menu_scenario", "Startmenü hakt das Szenario an",
         "The start menu's scenario page ticks the scenario that will start";
     /// The auction form's title stays on the row it opened with after a
     /// click on its title bar (1028:1ce0).
-    AuctionTitle = "auction_title",
+    AuctionTitle = "auction_title", "Auktionstitel springt nicht",
         "The auction form's title doesn't jump a row up after a click on its title bar";
     /// Forms open where they belong: the auction centred, the money menu
     /// whole on the screen at its full height, the build menu level with
     /// the island, the sabotage window and the file menu over the main
     /// screen (1028:0dde, 1070:2b3a, 1070:2e6c, 1018:2fa2, `1110:54fc`).
-    FormPositions = "form_positions",
+    FormPositions = "form_positions", "Fenster öffnen am richtigen Platz",
         "Forms open where they belong: the auction centred, the money menu whole, the others over the main screen";
     /// The lists of saved games are in the names' order (1038:3983,
     /// 1040:10e5).
-    SavedGamesOrder = "saved_games_order",
+    SavedGamesOrder = "saved_games_order", "Spielstände nach Namen sortiert",
         "The lists of saved games are sorted by name, not backwards";
     /// A dragged road ends where the mouse is let go, also with the
     /// animations or new people off (1090:124f, 1080:31ed).
-    RoadDrag = "road_drag",
+    RoadDrag = "road_drag", "Straße endet beim Loslassen",
         "A dragged road ends where the mouse is let go, also with the animations off";
     /// The build menu's close sound only plays when it's open, and the
     /// keys it doesn't use go on to the main screen (1010:2be1,
     /// 1018:3290).
-    BuildMenu = "build_menu",
+    BuildMenu = "build_menu", "Baumenü gibt Tasten weiter",
         "The build menu passes on the keys it doesn't use and makes no closing sound when it's closed";
     /// The money menu that the year's end opens presses its button
     /// (1008:4f64).
-    MoneyMenuButton = "money_menu_button",
+    MoneyMenuButton = "money_menu_button", "Jahresbilanz drückt den Geldknopf",
         "The year's end presses the money menu's button when it opens the menu";
     /// The overview map keeps the main screen within its scroll bars and
     /// its horizontal thumb off the right arrow (10b8:37f5, 10b8:2785).
-    OverviewScrolling = "overview_scrolling",
+    OverviewScrolling = "overview_scrolling", "Übersichtskarte scrollt richtig",
         "Clicks on the overview map keep the main view within its scroll bars; its thumb stays off the arrow";
     /// The overview map colours low grass, high sand and nobody's
     /// buildings with the bitmap's nearest colours (10b8:04b1, 10b8:07df,
     /// 10b8:0a0a).
-    OverviewColours = "overview_colours",
+    OverviewColours = "overview_colours", "Übersichtskarte zeigt alle Farben",
         "The overview map has a colour for low grass, high sand and nobody's buildings instead of none";
     /// A form's drag only starts on its title bar and ends when the mouse
     /// comes up, and the quit question stays whole on the screen
     /// (1038:34fc, 1028:2ecc, 1020:1bd9, 1020:38d4).
-    FormDrags = "form_drags",
+    FormDrags = "form_drags", "Fensterziehen endet beim Loslassen",
         "Form drags end when the mouse comes up and only move the form grabbed; the quit question stays on screen";
     /// The info box's and the overview's prices mark the thousands in the
     /// right place, and off the map the box names the sea (1030:108b,
     /// 1038:014b).
-    InfoboxText = "infobox_text",
+    InfoboxText = "infobox_text", "Infobox: Tausenderpunkte und Meer",
         "The info box puts the thousands marks in the right place and names the sea off the map";
     /// The info box takes the size of what it shows after a button's
     /// command (1038:24d6).
-    InfoboxSize = "infobox_size",
+    InfoboxSize = "infobox_size", "Infobox passt ihre Größe an",
         "The info box grows or shrinks to what it shows after a button";
     /// The buildings' overview clears its price with its own background,
     /// leaves its scroll bar's columns to the bar, and Up and Down only
     /// scroll as far as the selection needs (1080:02d9, 1080:1c3b,
     /// 1080:202b).
-    OverviewList = "overview_list",
+    OverviewList = "overview_list", "Gebäudeübersicht scrollt richtig",
         "The buildings' overview keeps the selection in view with Up and Down and draws its price cleanly";
     /// The TV's buttons click only on a press and release on them, its
     /// first button takes the view back where it was, browsing keeps it
     /// open and its title is centred over its bar (1048:1794, 1048:26f6,
     /// 1048:1b3e, 1048:12e9).
-    TvForm = "tv_form",
+    TvForm = "tv_form", "Fernsehknöpfe wie gedacht",
         "The TV's buttons, back button and title work as meant, and browsing keeps it open";
     /// Any desktop size lays out for itself, with the nearest background
     /// and title picture centred on it (1000:2466).
-    DesktopBackground = "desktop_background",
+    DesktopBackground = "desktop_background", "Hintergrundbild für jede Größe",
         "Any window size gets the nearest background picture, centred, and nothing is cut off at the edges";
     /// The auctioneer's calls are heard, from `SPRADEU1\` (10a0:2824).
-    AuctionCalls = "auction_calls",
+    AuctionCalls = "auction_calls", "Der Auktionator ist zu hören",
         "The auctioneer's three calls are heard";
     /// A sound's time runs down every tick, also with the animations off
     /// (1090:5293).
-    SoundTimes = "sound_times",
+    SoundTimes = "sound_times", "Geräusche auch ohne Animationen",
         "Sounds play again after their time with the animations off too";
     /// The music plays the playlist from its first track after the
     /// intro's, goes on to the next track as soon as one ends, and plays
     /// on after a game is loaded (1018:37de, 1018:367e, 1010:26fa).
-    Music = "music",
+    Music = "music", "Musik ohne Pausen, auch nach Laden",
         "The music starts at the playlist's first track, has no silence between tracks and plays on after loading";
     /// The TV's speech belongs to its message: a message without one
     /// stops the last, browsing doesn't keep it from starting, and a film
     /// after it plays at the sounds' volume and gives the sounds back
     /// when it ends (1048:0a54, 1048:1b3e, 1048:01bd, 1048:034f).
-    TvSound = "tv_sound",
+    TvSound = "tv_sound", "Fernsehton passt zur Nachricht",
         "The TV's speech belongs to its message, and its films don't leave the sounds silent or at the speech volume";
+    /// The options' "INFO" opens the list of these enhancements, to switch
+    /// them in the game, with the credits a button away; the original's
+    /// opens the credits (1060:01ab, `crate::enhanceform`).
+    EnhancementsScreen = "enhancements_screen", "INFO zeigt diese Liste",
+        "The options' INFO button opens this list of enhancements (the credits are a button away)";
 }
 
 /// Every enhancement's [`Info`], the world's first.
@@ -501,6 +509,7 @@ mod tests {
                     .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
             );
             assert_ne!(i.description, "");
+            assert!(!i.label.is_empty() && i.label.chars().count() <= 40, "{}", i.key);
         }
     }
 

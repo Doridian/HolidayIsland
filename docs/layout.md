@@ -130,7 +130,8 @@ coordinates; only the info box is placed relative to the main screen.
 | `TStartform` | centred | 1058:27e6 (`startform_init`), 1058:1a30 (`startform_show`) |
 | `TLadenForm` | centred across, at the bottom (`screen_height - Height`) | 1038:3b46 |
 | `FilmPanel` (432×320) | centred on the background form, the real desktop | 1000:2466, state 110 |
-| `TCreditform` (not ported) | 640×480, centred; disables the options | 1030:3c42 |
+| `TCreditform` | 640×480, centred; disables the options | 1030:3c42 |
+| The list of enhancements (port's) | 640×480, centred, over the options | `game::enhanceform` |
 | `TBaumenue` | created at `screen_width - Width - 1`, `(screen_height - 480) div 2 + 59` (with `enhance.form_positions` the main screen's top + 59, level with the island); opening keeps it left of `screen_width - Width - 1` | 1018:2fa2, 1018:2b01 |
 | `TAuktionsform` | `(screen_width - 0x154) div 2`, `(screen_height - 0xeb) div 2` (with `enhance.form_positions` by its own height, 316) | 1028:0dde |
 | `TSabowin` | the DFM's 300, 167 (with `enhance.form_positions` from the centred main screen's top left) | `Application.CreateForm` |
@@ -272,8 +273,8 @@ floating forms then stack like the windows of a window manager:
 - the pointer's events go to the top window under it;
 - the tiers are: the background at the bottom; the main screen and the
   non-modal forms; the modal ones (pause, options, quit question, end
-  form, high scores, file menu, and the info box while it has buttons);
-  the tooltip;
+  form, high scores, file menu, the credits, the port's list of
+  enhancements, and the info box while it has buttons); the tooltip;
 - closing a form, loading a game and a press on the background raise
   nothing;
 - the button of a form that's open but lies under another window (in the
@@ -383,8 +384,9 @@ overview map's clicks centre on the same squares as in the original.
   it's the original's picture.
 - **The bars**: the title bar's grass, the info bar's planks repeat;
   the date goes to the info bar's right end; the button bar keeps its 23
-  buttons at the left and is filled with the wooden piece between its
-  groups; the status bar keeps its 219 pixels, the lower scroll bar
+  buttons at the left; right of them, between two of the wooden pieces
+  that part its groups, the flat brown panel the overview map and money
+  menu have under their buttons; the status bar keeps its 219 pixels, the lower scroll bar
   takes the rest.
 - **Dragging**: the title bar doesn't move a main screen that fills the
   screen; a double click still rolls it up to its title bar, and the
@@ -480,5 +482,4 @@ size); `dragging_the_main_screen`.
 
 - Applying the saved windows of a map file (1010:08d7) when a game is
   loaded.
-- `TCreditform` (1030:3c42), the options' "INFO".
 - The web build's Fullscreen API and canvas sizing (no web build yet).

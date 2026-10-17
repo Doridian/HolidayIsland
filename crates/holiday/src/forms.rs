@@ -2,8 +2,8 @@
 //! form and the file menu: the pause (button 1), the options (2), the TV
 //! (3), the money menu (4), the overview map and the compass (5), the
 //! sabotage window (21), the pointer's info box and the buildings'
-//! overview (22), the quit question, the end of the game, the high scores
-//! and the tooltips. Each is a `game` view type and its VCL form from the
+//! overview (22), the quit question, the end of the game, the high scores,
+//! the credits, the port's list of enhancements and the tooltips. Each is a `game` view type and its VCL form from the
 //! DFM; this module loads them, routes the mouse and the keys to them,
 //! hands their commands to the world as the human's (player 1's) and
 //! paints them.
@@ -21,7 +21,9 @@ use formats::data::{
 use formats::highscore::HighScores;
 use game::auktionsform;
 use game::command::{self, Command};
+use game::creditform::{self, Creditform};
 use game::endeform::{self, Endeform};
+use game::enhanceform::{self, Enhanceform};
 use game::fernseher::{self, Fernseher};
 use game::geldmenu::{self, Geldmenuform};
 use game::hauptschirm::{self, Hauptschirm};
@@ -84,6 +86,8 @@ pub(crate) enum Grab {
     Ende,
     Schluss,
     High,
+    Credits,
+    Enhance,
 }
 
 /// What the caller (`Holiday`) does after an event, because it needs more
@@ -101,6 +105,9 @@ pub(crate) enum Request {
     NewGame,
     /// Write the high scores (`HIGHSCOR.WAV`).
     SaveHighScores,
+    /// The player switched an enhancement in the list of them: the
+    /// player's settings change, are applied and saved.
+    Enhance(enhanceform::Change),
 }
 
 /// The forms and their VCL forms.
@@ -129,6 +136,11 @@ pub(crate) struct Forms {
     schluss_form: Form,
     pub high: Highscoreform,
     high_form: Form,
+    pub credits: Creditform,
+    credits_form: Form,
+    pub enhance: Enhanceform,
+    /// What the list of enhancements says about saving (`Holiday`'s).
+    pub enhance_notes: enhanceform::Notes,
     help: Helpform,
     help_form: Form,
     pub focus: Focus,
@@ -372,6 +384,10 @@ impl Forms {
             picture(dir, helpform::BITMAP_FILE).expect("Help.bmp"),
             texts.short_texts.clone(),
         );
+        // 1030:3c42: "Schließen", `SONSTIGE.TXT`'s 14th text.
+        let schliessen = texts.texts.get(13).cloned().unwrap_or_default();
+        let credits = Creditform::new(font.clone(), bitmaps(dir, &creditform::BITMAP_FILES), &schliessen);
+        let enhance = Enhanceform::new(font.clone(), bitmaps(dir, &enhanceform::BITMAP_FILES), &schliessen);
         Forms {
             settings,
             pause,
@@ -397,6 +413,10 @@ impl Forms {
             schluss_form: load_form(exe, "TSCHLUSSFORM"),
             high,
             high_form: load_form(exe, "THIGHSCOREFORM"),
+            credits,
+            credits_form: load_form(exe, "TCREDITFORM"),
+            enhance,
+            enhance_notes: enhanceform::Notes::default(),
             help,
             help_form: load_form(exe, "THELPFORM"),
             focus: Focus::Main,
@@ -429,11 +449,18 @@ impl Forms {
     }
 
     /// A form is up that stops the clock (1020:24a0): the pause, the
-    /// options, the quit question, the end form and the high scores. Single
-    /// human: in the original this stops the game for everyone; the view
-    /// just doesn't tick meanwhile.
+    /// options, the quit question, the end form and the high scores (and
+    /// the credits and the list of enhancements, which only open over the
+    /// options). Single human: in the original this stops the game for
+    /// everyone; the view just doesn't tick meanwhile.
     pub fn clock_stopped(&self) -> bool {
-        self.pause.visible || self.options.visible || self.ende.visible || self.schluss.visible() || self.high.visible
+        self.pause.visible
+            || self.options.visible
+            || self.ende.visible
+            || self.schluss.visible()
+            || self.high.visible
+            || self.credits.visible
+            || self.enhance.visible
     }
 
     /// A form is up that disables the others (`disable_forms`, 1010:2970):
@@ -467,6 +494,10 @@ impl Forms {
         follow(s.bounds(), &mut s.left, &mut s.top);
         let h = &mut self.high;
         follow(h.bounds(), &mut h.left, &mut h.top);
+        let c = &mut self.credits;
+        follow(c.bounds(), &mut c.left, &mut c.top);
+        let e = &mut self.enhance;
+        follow(e.bounds(), &mut e.left, &mut e.top);
         let h = &mut self.help;
         follow(h.bounds(), &mut h.left, &mut h.top);
     }
@@ -616,6 +647,23 @@ impl Forms {
                 )];
                 paint_form(&mut self.help_form, h.bounds(), h.visible(), &images, screen, palette);
             }
+            Win::Credits => {
+                let c = &self.credits;
+                let images = [(
+                    creditform::IMAGE,
+                    Rect::new(0, 0, creditform::WIDTH, creditform::HEIGHT),
+                    Some(c.image()),
+                )];
+                paint_form(&mut self.credits_form, c.bounds(), c.visible, &images, screen, palette);
+            }
+            Win::Enhance => {
+                // The port's form has no DFM: its image is the form.
+                let e = &self.enhance;
+                if e.visible {
+                    let clip = screen.bounds();
+                    screen.draw(e.left, e.top, e.image(), clip);
+                }
+            }
             Win::Background | Win::Main | Win::Menu | Win::Auction | Win::FileMenu => {}
         }
     }
@@ -641,6 +689,8 @@ impl Forms {
             Grab::Ende => shown(self.ende.visible, self.ende.bounds()),
             Grab::Schluss => shown(self.schluss.visible(), self.schluss.bounds()),
             Grab::High => shown(self.high.visible, self.high.bounds()),
+            Grab::Credits => shown(self.credits.visible, self.credits.bounds()),
+            Grab::Enhance => shown(self.enhance.visible, self.enhance.bounds()),
         }
     }
 }
@@ -664,6 +714,8 @@ fn grab_of(w: Win) -> Option<Grab> {
         Win::Ende => Grab::Ende,
         Win::Schluss => Grab::Schluss,
         Win::High => Grab::High,
+        Win::Credits => Grab::Credits,
+        Win::Enhance => Grab::Enhance,
         Win::Background | Win::Main | Win::Menu | Win::Auction | Win::Help | Win::FileMenu => return None,
     })
 }
@@ -1195,8 +1247,42 @@ impl Game {
                 let r = self.forms.high.show(self.world.scenario, true, self.size);
                 self.high_response(&r);
             }
-            // `TCreditform` isn't ported.
-            Some(optionen::Action::Credits) | None => {}
+            Some(optionen::Action::Credits) => self.open_credits(),
+            Some(optionen::Action::Enhancements) => {
+                // `enhancements_screen`: over the options, which wait for
+                // it, with the world's fixes and the player's set.
+                let view = self.forms.options.enhance;
+                let notes = self.forms.enhance_notes;
+                let r = self.forms.enhance.show(self.world.fixes, view, notes, self.size);
+                self.enhance_response(r);
+            }
+            None => {}
+        }
+    }
+
+    /// `TCreditform` opens over the options or the list of enhancements,
+    /// which wait for it. // 1060:01ab, 1030:3c42
+    fn open_credits(&mut self) {
+        let r = self.forms.credits.show(self.size);
+        self.credits_response(&r);
+    }
+
+    /// The credits' sounds; their close enables the form under them
+    /// again (1030:3e6f), which [`Game::modal_grabs`] sees.
+    fn credits_response(&mut self, r: &creditform::Response) {
+        self.play(r.sounds.iter().map(|s| s.number()));
+    }
+
+    /// The list of enhancements: its sounds, the world's fixes as the
+    /// human's commands, the player's settings for the caller to change
+    /// and save, and the credits.
+    fn enhance_response(&mut self, r: enhanceform::Response) {
+        self.play(r.sounds.iter().map(|s| s.number()));
+        self.commands(r.commands);
+        self.forms.requests.extend(r.changes.into_iter().map(Request::Enhance));
+        match r.action {
+            Some(enhanceform::Action::Credits) => self.open_credits(),
+            Some(enhanceform::Action::Close) | None => {}
         }
     }
 
@@ -1349,6 +1435,10 @@ impl Game {
         let f = &self.forms;
         if f.high.visible {
             Some(&[Grab::High])
+        } else if f.credits.visible {
+            Some(&[Grab::Credits])
+        } else if f.enhance.visible {
+            Some(&[Grab::Enhance])
         } else if f.schluss.visible() {
             Some(&[Grab::Schluss])
         } else if f.ende.visible {
@@ -1528,6 +1618,17 @@ impl Game {
             (None, Input::MouseDown { .. }) => self.form_at(sx, sy),
             _ => None,
         };
+        if grab.is_none()
+            && let Input::MouseMove { .. } = input
+            && self.modal_grabs() == Some(&[Grab::Enhance])
+        {
+            // The list of enhancements describes the row under the mouse.
+            let e = &self.forms.enhance;
+            let r = self.forms.enhance.mouse_move(sx - e.left, sy - e.top);
+            let refresh = r.refresh;
+            self.enhance_response(r);
+            return refresh;
+        }
         let Some(grab) = grab else {
             // Over a modal form's back, nothing else takes the mouse.
             return self.forms.modal() && !matches!(input, Input::MouseMove { .. });
@@ -1670,6 +1771,26 @@ impl Game {
                 };
                 self.high_response(&r);
             }
+            Grab::Credits => {
+                let r = if down {
+                    self.forms.credits.mouse_down(x, y, shift)
+                } else if up {
+                    self.forms.credits.mouse_up(x, y)
+                } else {
+                    creditform::Response::default()
+                };
+                self.credits_response(&r);
+            }
+            Grab::Enhance => {
+                let r = if down {
+                    self.forms.enhance.mouse_down(x, y, shift)
+                } else if up {
+                    self.forms.enhance.mouse_up(x, y)
+                } else {
+                    self.forms.enhance.mouse_move(x, y)
+                };
+                self.enhance_response(r);
+            }
         }
         true
     }
@@ -1723,8 +1844,13 @@ impl Game {
     /// if not it goes to the build menu or the main screen.
     pub(crate) fn forms_key(&mut self, key: u16, shift: ShiftState) -> bool {
         let size = self.size;
-        if self.forms.high.visible {
-            // `Thighscoreform` has no keys.
+        if self.forms.high.visible || self.forms.credits.visible {
+            // `Thighscoreform` and `TCreditform` have no keys.
+            return true;
+        }
+        if self.forms.enhance.visible {
+            let r = self.forms.enhance.key_down(key, shift);
+            self.enhance_response(r);
             return true;
         }
         if self.forms.schluss.visible() {

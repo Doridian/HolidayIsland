@@ -51,13 +51,14 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   reacts: `road_drag` (where `Action::RoadDragEnd` ends), `tv_form` and
   `tv_sound` (when the TV sends `Action::TvPause` and `Action::Speaker`),
   `overview_scrolling` (the viewpoint the people code reads).
-- Each has a stable key, a one-line description and is on by default.
+- Each has a stable key, a short German label (for the in-game list),
+  a one-line description and is on by default.
   `enhance::Config::resolve` works them out: everything on, or off with
   the master switch, then each per-key override in order. The player
-  sets them in the port's `settings.ini`
-  (`platform::settings::EnhanceSettings`, written by hand; the port
-  keeps the lines when it writes the window's state) and on the command
-  line:
+  sets them in the game's list of them (below), in the port's
+  `settings.ini` (`platform::settings::EnhanceSettings`, by hand or
+  written by that list; the port keeps the other lines when it writes
+  the window's state or the switches) and on the command line:
 
   ```text
   original=true                 # settings.ini: everything off
@@ -78,11 +79,23 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 - Crashes and hangs have no "original" mode, because the port can't
   crash. It does the fallback listed below. The option there would be
   a better fallback, where one makes sense.
-- Not built: an in-game list to switch them. The cheap place would be
-  the options form, whose "INFO" button asks for `TCreditform`, which the
-  port doesn't have (a 640 × 480 form with one picture): a list of the
-  keys' descriptions drawn with the game's font in that form, a click
-  switching one, and the world's fixes sent as `Action::SetFix`.
+- **In the game**: the options' "INFO" (or Space) opens the list of
+  them (`game::enhanceform`, [options.md](options.md#the-list-of-enhancements-port-extension)),
+  itself a view enhancement, `enhancements_screen`, so with everything
+  off (`--original`) "INFO" opens the credits (`TCreditform`,
+  `game::creditform`) as in the original; the list has a button for
+  them. Two lists of check boxes, the world's fixes and the view's, each
+  key's German label, scrolled by their bars; "Alle an", "Alle aus
+  (Original)". A fix goes to the running game as `Action::SetFix`
+  through `World::apply` and becomes the player's default for new games;
+  a view enhancement applies at once (the layout too, for `big_map` and
+  `desktop_background`). Each change is saved in `settings.ini`
+  (`enhance.<key>=on|off`; "Alle an"/"Alle aus" write `original=` and
+  drop the keys' lines). With `--original` or `--enhance=` the changes
+  apply to this run and are saved all the same; the screen says that
+  the next start's command line goes over the file again. Switching off
+  `enhancements_screen` itself leaves the list open, and it says how to
+  get it back.
 
 ## Crashes and hangs
 
@@ -221,6 +234,8 @@ The widgets' are described in
 | 1010:2c8b | The road's button selects building type 1 for the build tools, until a submenu selects another | yes; not fixed: nothing reads it before a submenu sets its own |
 | 1018:3290 | With the build menu focused only F1–F12, 1–9 and Pause reach the main screen: the arrow keys and 0 do nothing | `build_menu`: every key it doesn't use (Left, Right, Escape, Enter, Space) |
 | 1060:2404 | The options form takes a press of any mouse button, so the right button ticks its boxes too | `mouse_buttons` |
+| 1030:3ec4 | The credits (`TCreditform`) take a press of any mouse button, so the right button presses and clicks their close button | `mouse_buttons` |
+| 1030:3c42 | The credits make a "Schließen" button (at 248, 452) but never show it, so it takes no click: only the close button in the corner closes them | yes; not fixed: the picture's last line of names lies under it, and the corner closes them |
 | 1070:2b3a | The money menu opens two pixels short of its menu bar's bottom (the first rectangle's bottom − 1); after a drag it's the bottom + 1 ([geldmenu.md](geldmenu.md#opening-and-closing)) | `form_positions`: the bottom + 1 |
 | 1070:2e6c | The money menu is placed one column further right than its width allows, so its last column is off the screen | `form_positions` |
 | 1070:0820 | Any mouse button drags the money menu by its title bar, and rolls it up meanwhile | `mouse_buttons`: the left one |

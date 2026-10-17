@@ -81,6 +81,17 @@ a right click moves it. The button bar's tool buttons (or F1 to F12)
 pick the tools; a click on the island uses them.
 Loading a game is only logged. Escape quits.
 
+### Enhancements
+
+Fixes of the original's bugs and the port's extensions (a bigger map in a
+bigger window, windows that stack like a desktop's) are on by default.
+In a game, the options' "INFO" button lists them to switch one by one,
+or all off for the original; the list saves them in the port's
+`settings.ini`. `--original` switches everything off for a run (and
+"INFO" shows the credits again), `--enhance=KEY=on|off` one of them, and
+`--enhancements` lists the keys. Details in
+[docs/original-bugs.md](docs/original-bugs.md#options).
+
 ### Music
 
 The game's music is MIDI, and the port renders it with a SoundFont, which
