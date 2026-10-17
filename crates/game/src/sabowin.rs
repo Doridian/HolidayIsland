@@ -23,6 +23,7 @@ use formats::data;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::text::{Align, Font};
@@ -183,6 +184,8 @@ pub struct Sabowin {
     /// Where the mouse grabbed the title bar, from the form's top left.
     /// // 1110:6046, 1110:6048
     grab: (i32, i32),
+    /// The player's view enhancements (`form_drags`).
+    pub enhance: Enhancements,
 }
 
 /// Whether `x`, `y` is in part `n`, edges included. // 1028:2ad7, 1030:1517
@@ -211,6 +214,7 @@ impl Sabowin {
             kind: 0,
             pressed: 0,
             grab: (0, 0),
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -465,6 +469,9 @@ impl Sabowin {
             }
             _ => {}
         }
+        if self.enhance.has(Enhancement::FormDrags) {
+            self.pressed = 0;
+        }
         r
     }
 
@@ -628,5 +635,18 @@ mod tests {
         assert_eq!((f.left, f.top), (800 - WIDTH, 600 - TITLE_HEIGHT));
         let _ = f.mouse_up(0, 0, true);
         assert_eq!(f.height, HEIGHT);
+    }
+
+    #[test]
+    fn the_drag_ends_with_the_fix() {
+        for fix in [false, true] {
+            let mut f = form();
+            f.enhance.set(Enhancement::FormDrags, fix);
+            let _ = f.show();
+            let _ = f.mouse_down(100, 5, true);
+            let _ = f.mouse_up(100, 5, true);
+            // A later left drag over the form.
+            assert_eq!(f.mouse_move(90, 0, ShiftState::LEFT, (800, 600)).moved, !fix);
+        }
     }
 }

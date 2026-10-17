@@ -26,6 +26,7 @@ use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::darstellung::{self, Camera, Tiles, VIEW_HEIGHT, VIEW_WIDTH, ViewSize};
+use crate::enhance::{Enhancement, Enhancements};
 use crate::monate::Date;
 use crate::money::format_money;
 use crate::people::Viewpoint;
@@ -233,6 +234,7 @@ pub struct InfoTexts {
 }
 
 /// The main screen's state and images.
+#[allow(clippy::struct_excessive_bools)] // The original's flags.
 #[derive(Debug, Clone)]
 pub struct Hauptschirm {
     /// The camera of the original's 20 × 27 view: what a map file saves
@@ -300,6 +302,11 @@ pub struct Hauptschirm {
     /// The font and the game's name, for the title bar.
     font: Font,
     title_text: Vec<u8>,
+    /// The player's view enhancements (`form_drags`, `overview_scrolling`).
+    pub enhance: Enhancements,
+    /// The title bar was pressed and the button hasn't come up yet
+    /// (`form_drags`; the original doesn't keep it).
+    title_held: bool,
 }
 
 /// `src` repeated over a `width` × `height` surface.
@@ -486,6 +493,8 @@ impl Hauptschirm {
             wo_trough,
             font: font.clone(),
             title_text: title.to_vec(),
+            enhance: Enhancements::ORIGINAL,
+            title_held: false,
         };
         // 1020:1e4f: the game's name over the title bar.
         let width = LAYOUT[0].1.width();
@@ -827,7 +836,20 @@ impl Hauptschirm {
     /// The overview map's click (10b8:37f5, `crate::uebersichtsmap`): the
     /// scroll position set as it is, past the scroll bars' ends too, the
     /// origin and bars from it (1020:05a7) and the island drawn.
+    ///
+    /// With `overview_scrolling` the position stays within the scroll
+    /// bars' ends, as [`Hauptschirm::scroll`] keeps it.
     pub fn set_scroll(&mut self, wo: i16, ns: i16, world: &World, tiles: &Tiles) {
+        // BUG(original): the overview map's click can put the position past the bars' ends (10b8:37f5).
+        let (wo, ns) = if self.enhance.has(Enhancement::OverviewScrolling) {
+            let (nsb, wob) = (self.ns_bar, self.wo_bar);
+            match self.camera.view & 3 {
+                0 | 2 => (wob.clamp(wo), nsb.clamp(ns)),
+                _ => (nsb.clamp(wo), wob.clamp(ns)),
+            }
+        } else {
+            (wo, ns)
+        };
         self.wo = wo;
         self.ns = ns;
         self.update_bars();
@@ -1053,6 +1075,7 @@ impl Hauptschirm {
     /// press with `ssDouble`) leaves it like that when let go.
     /// // 1020:1b8e
     pub fn title_mouse_down(&mut self, shift: ShiftState, cursor: (i32, i32)) {
+        self.title_held = true;
         self.rolled_up = shift.contains(ShiftState::DOUBLE);
         if self.filled() {
             self.height = if self.rolled_up { TITLE_HEIGHT } else { self.full_height };
@@ -1064,10 +1087,12 @@ impl Hauptschirm {
 
     /// `UeberschriftbildMouseMove` with the `cursor` on the screen: while
     /// the left button is down the form follows it, kept on the `screen`
-    /// by its width and its height then. Whether it moved. // 1020:1bd9
+    /// by its width and its height then. Whether it moved. With
+    /// `form_drags` only after a press on the title bar. // 1020:1bd9
     pub fn title_mouse_move(&mut self, shift: ShiftState, cursor: (i32, i32), screen: (i32, i32)) -> bool {
         // BUG(original): nothing says the press was on the title bar, so a left drag that started off every form and comes over it moves the form by the last grab.
-        if !shift.contains(ShiftState::LEFT) || self.filled() {
+        let held = self.title_held || !self.enhance.has(Enhancement::FormDrags);
+        if !shift.contains(ShiftState::LEFT) || self.filled() || !held {
             return false;
         }
         self.left = (cursor.0 - self.grab.0).max(0).min(screen.0 - WIDTH);
@@ -1078,6 +1103,7 @@ impl Hauptschirm {
     /// `UeberschriftbildMouseUp`: the form gets its height back, unless
     /// the press was a double click. // 1020:1c58
     pub fn title_mouse_up(&mut self) {
+        self.title_held = false;
         if !self.rolled_up {
             self.height = self.full_height;
         }

@@ -18,6 +18,7 @@ use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::auction::{Action, Change, SOLD};
+use crate::enhance::{Enhancement, Enhancements};
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::text::{Align, Font};
@@ -170,6 +171,9 @@ pub struct Auktionsform {
     grip: (i32, i32),
     /// A bid's paddle going up and down: its colour and how far it is.
     paddle: Option<(u16, u32)>,
+    /// The player's view enhancements (`auction_title`,
+    /// `form_positions`).
+    pub enhance: Enhancements,
 }
 
 impl Auktionsform {
@@ -195,6 +199,7 @@ impl Auktionsform {
             rolled_up: false,
             grip: (0, 0),
             paddle: None,
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -259,7 +264,12 @@ impl Auktionsform {
         screen: (i32, i32),
     ) {
         // BUG(original): centred by `AuktionsImage`'s height, not the form's, so it sits 40 pixels low.
-        self.top = (screen.1 - IMAGE_HEIGHT) / 2;
+        let height = if self.enhance.has(Enhancement::FormPositions) {
+            HEIGHT
+        } else {
+            IMAGE_HEIGHT
+        };
+        self.top = (screen.1 - height) / 2;
         self.left = (screen.0 - WIDTH) / 2;
         self.height = HEIGHT;
         copy(&mut self.image, &self.bitmaps[BILD]);
@@ -363,8 +373,9 @@ impl Auktionsform {
 
     /// The paddle's frame for how far it is: the background under it put
     /// back, then the mask and the colour. The background is the bare
-    /// one, so the paddle wipes the bottom of the item's picture.
-    /// // 1028:15ef
+    /// one: rows 167 to 234, below the item's picture (rows 42 to 166),
+    /// but the bottom of the auctioneer's waving hand (282, 149) for the
+    /// paddles of colours 7 and 8. // 1028:15ef
     fn draw_paddle(&mut self) {
         let Some((colour, ms)) = self.paddle else {
             return;
@@ -381,7 +392,7 @@ impl Auktionsform {
         let x = c * 40 - 20;
         let all = self.image.bounds();
         let (w, h) = PADDLE;
-        // BUG(original): the bare background goes back under the paddle, wiping the bottom rows of the item's picture.
+        // BUG(original): the bare background goes back under the paddle, wiping the bottom rows of the auctioneer's waving hand for colours 7 and 8.
         let under = Rect::new(x, PADDLE_TOP, w, h);
         self.image
             .blit(x, PADDLE_TOP, &self.bitmaps[BILD], under, Rop::Copy, all);
@@ -512,7 +523,8 @@ impl Auktionsform {
                 actions.push(Action::Close); // 1028:0476
             }
             // BUG(original): the title goes back one row higher than the form opened with.
-            self.draw_title(font, 0);
+            let row = i32::from(self.enhance.has(Enhancement::AuctionTitle));
+            self.draw_title(font, row);
         } else {
             let (kx, ky) = (x, y - LAYOUT[2].1.top);
             if hit(BID_BUTTON, kx, ky) && pressed == Pressed::Bid {

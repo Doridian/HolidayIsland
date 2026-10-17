@@ -9,6 +9,7 @@
 //! that runs with the caller's clock up to the file's length, which is all
 //! the game reads of them (`Position = Length` means it has ended).
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::optionen::{Settings, TRACK_FILES};
 
 /// `play_sound`'s waves, 1 to 42, in `SOUND\` or `SOUNDLO\` (`1110:51e0`).
@@ -309,6 +310,11 @@ pub struct Music {
     pub player: Mci,
     /// The player's position at the end of the last day. // 1110:6efc
     last_position: u32,
+    /// The player's view enhancements (`music`).
+    pub enhance: Enhancements,
+    /// With `music`: the intro's music plays, and the playlist's track is
+    /// the one to play after it, not the one before.
+    after_intro: bool,
 }
 
 impl Default for Music {
@@ -316,6 +322,8 @@ impl Default for Music {
         Music {
             player: Mci::default(),
             last_position: NO_POSITION,
+            enhance: Enhancements::ORIGINAL,
+            after_intro: false,
         }
     }
 }
@@ -334,11 +342,14 @@ impl Music {
     /// Each game's set-up (`music_init_playlist`, 1018:37de, from
     /// 1030:36e5): every track on the playlist, the first track, no
     /// position. The music that plays (the intro's) goes on.
+    ///
+    /// With `music` track 0 is the first to play after the intro's.
     pub fn init_playlist(&mut self, s: &mut Settings) {
         // BUG(original): track 0 while the intro's `holiday.mid` plays: the first track after it is `dub.mid`.
         s.playlist = [true; 7];
         s.track = 0;
         self.last_position = NO_POSITION;
+        self.after_intro = self.enhance.has(Enhancement::Music);
     }
 
     /// The file of track `track`.
@@ -351,6 +362,7 @@ impl Music {
     /// opens and plays from its start.
     pub fn start(&mut self, s: &Settings, length: impl Fn(&str) -> Option<u32>) {
         self.last_position = NO_POSITION;
+        self.after_intro = false;
         let file = Music::track_file(s.track);
         self.player.open(file, length(file));
         self.player.play();
@@ -367,6 +379,7 @@ impl Music {
     /// the player stops and closes (`Eject` does nothing to a sequencer),
     /// the track changes, and with the music on its file opens and plays.
     pub fn select_track(&mut self, s: &mut Settings, track: u8, length: impl Fn(&str) -> Option<u32>) {
+        self.after_intro = false;
         if s.music {
             self.player.stop();
             self.player.close();
@@ -390,27 +403,54 @@ impl Music {
         }
         // BUG(original): a track's end shows only after a whole day without the position moving.
         if self.player.position() == self.last_position {
-            let first = s.track;
-            let mut track = first;
+            self.next_track(s, &length);
+        }
+        self.last_position = self.player.position();
+    }
+
+    /// The next track on the playlist after `s.track` (wrapping, the same
+    /// one if none is ticked; with `music` right after the intro's,
+    /// `s.track` itself) opens and plays. // 1018:367e
+    fn next_track(&mut self, s: &mut Settings, length: &impl Fn(&str) -> Option<u32>) {
+        let first = s.track;
+        let mut track = first;
+        if std::mem::take(&mut self.after_intro) {
+            let ticked = |t: u8| s.playlist.get(usize::from(t)).copied().unwrap_or(false);
+            while !ticked(track) {
+                track = if track >= 6 { 0 } else { track + 1 };
+                if track == first {
+                    break;
+                }
+            }
+        } else {
             loop {
                 track = if track >= 6 { 0 } else { track + 1 };
                 if s.playlist.get(usize::from(track)).copied().unwrap_or(false) || track == first {
                     break;
                 }
             }
-            s.track = track;
-            // `Stop` and `Eject` only without an error.
-            if !self.player.error() {
-                self.player.stop();
-            }
-            self.player.close();
-            let file = Music::track_file(track);
-            self.player.open(file, length(file));
-            if !self.player.error() {
-                self.player.play();
-            }
         }
-        self.last_position = self.player.position();
+        s.track = track;
+        // `Stop` and `Eject` only without an error.
+        if !self.player.error() {
+            self.player.stop();
+        }
+        self.player.close();
+        let file = Music::track_file(track);
+        self.player.open(file, length(file));
+        if !self.player.error() {
+            self.player.play();
+        }
+    }
+
+    /// With `music`, each frame (also while the game is paused): a track
+    /// that has played to its end is followed by the next at once, not
+    /// after a day.
+    pub fn frame(&mut self, s: &mut Settings, length: impl Fn(&str) -> Option<u32>) {
+        if self.enhance.has(Enhancement::Music) && s.music && self.player.is_open() && self.player.at_end() {
+            self.next_track(s, &length);
+            self.last_position = self.player.position();
+        }
     }
 
     /// `game_start_setup` (1010:2820): with the music off it stops and
@@ -425,11 +465,15 @@ impl Music {
     /// `game_show_state` (1010:26fa), after the file menu loaded a game:
     /// with the music off the player closes, else its file opens again,
     /// which stops it at its start.
+    /// With `music` it plays on from the start.
     // BUG(original): loading a game with the music on stops it, until a day or two later the next track starts.
     pub fn game_loaded(&mut self, s: &Settings, length: impl Fn(&str) -> Option<u32>) {
         if s.music {
             if let Some(file) = self.player.file.clone() {
                 self.player.open(&file, length(&file));
+                if self.enhance.has(Enhancement::Music) && !self.player.error() {
+                    self.player.play();
+                }
             }
         } else {
             self.player.close();
@@ -552,6 +596,59 @@ mod tests {
         music.player.advance(300);
         music.game_loaded(&s, len);
         assert!(music.player.is_open() && !music.player.playing());
+        assert_eq!(music.player.position(), 0);
+    }
+
+    fn with_music() -> Music {
+        let mut m = Music::default();
+        m.enhance.set(Enhancement::Music, true);
+        m
+    }
+
+    #[test]
+    fn the_playlist_with_the_fix() {
+        let mut s = Settings::default();
+        let mut music = with_music();
+        music.intro(len);
+        music.init_playlist(&mut s);
+        // The intro's music ends: the first track follows at once, not
+        // after a day.
+        music.player.advance(1000);
+        music.frame(&mut s, len);
+        assert_eq!(s.track, 0);
+        assert!(music.player.playing());
+        assert_eq!(
+            music.player.take_events().last(),
+            Some(&MciEvent::Play {
+                file: TRACK_FILES[0].into(),
+                from: 0
+            })
+        );
+        music.player.advance(1000);
+        music.frame(&mut s, len);
+        assert_eq!(s.track, 1);
+        // While it plays nothing changes; the original's day goes on.
+        music.player.advance(10);
+        music.frame(&mut s, len);
+        music.next_day(&mut s, len);
+        assert_eq!(s.track, 1);
+        // The original: nothing between days.
+        let mut orig = Music::default();
+        orig.intro(len);
+        orig.init_playlist(&mut s);
+        orig.player.advance(1000);
+        orig.frame(&mut s, len);
+        assert!(!orig.player.playing());
+    }
+
+    #[test]
+    fn a_loaded_game_plays_on_with_the_fix() {
+        let s = Settings::default();
+        let mut music = with_music();
+        music.intro(len);
+        music.player.advance(300);
+        music.game_loaded(&s, len);
+        assert!(music.player.playing());
         assert_eq!(music.player.position(), 0);
     }
 }

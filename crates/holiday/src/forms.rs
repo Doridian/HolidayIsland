@@ -837,6 +837,11 @@ impl Game {
         }
         if t.new_year && self.forms.settings.year_balance {
             // 1008:4f87: the balance sheet.
+            // BUG(original): the button bar's button 4 stays up; `money_menu_button` presses it.
+            if self.tools.enhance.has(game::enhance::Enhancement::MoneyMenuButton) {
+                self.tools.down[usize::from(MONEY_BUTTON)] = true;
+                self.screen.draw_buttons(&self.tools.down);
+            }
             let r = self.forms.money.show(1, self.tools.button);
             self.money_response(r);
             changed = true;

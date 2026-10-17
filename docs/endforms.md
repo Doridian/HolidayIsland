@@ -28,7 +28,9 @@ close button, 2 the title bar, 3 the question, 4/5 "Abbruch" (drawn/hit),
 - Mouse down (left only): close button, "Abbruch", "OK" go down with sound
   8; the title bar grabs the form, which shrinks to 16 pixels (the title
   bar) while it's dragged.
-- Mouse move: drags it, kept on the screen by its current height.
+- Mouse move: drags it, kept on the screen by its current height (so its
+  bottom can go off the screen; with `enhance.form_drags` by its full
+  height).
 - Mouse up (left only): the button comes up (sound 10); on the button,
   "Abbruch" and the close button hide the form and start the clock
   (1020:24b7); "OK" hides it, sets `+0x180`, saves `MAPS\Last.map`

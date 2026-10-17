@@ -22,6 +22,7 @@ use game::auction;
 use game::baumenue::{self, Baumenue};
 use game::command::{Action, Command};
 use game::darstellung::{BITMAP_FILES, Camera, Tiles, square_at};
+use game::enhance::Enhancement;
 use game::hauptschirm::{self, Hauptschirm, InfoTexts, LAYOUT};
 use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::savegame::Fields;
@@ -486,8 +487,23 @@ fn the_player_builds_levels_and_demolishes() {
     if let Some(out) = &out {
         write_ppm(&with_suffix(out, "road"), &scene.picture(), &scene.palette);
     }
+    // `road_drag`: the original ends the road where the last tick's
+    // picture put it, the fix where the mouse is let go.
+    let mid = (ri + di * 3, rj + dj * 3);
+    let mid_mouse = seen(mid).unwrap();
+    let to_of = |a: &[Action]| match a {
+        [Action::RoadDragEnd { to, .. }] => *to,
+        other => panic!("{other:?}"),
+    };
+    let mut fixed = scene.tools.clone();
+    fixed.enhance.set(Enhancement::RoadDrag, true);
+    assert_eq!(
+        to_of(&fixed.release(true, &scene.world, &scene.tiles, &cam, mid_mouse)),
+        mid
+    );
     let money = scene.world.finances.money[0];
-    let actions = scene.tools.release(true);
+    let actions = scene.tools.release(true, &scene.world, &scene.tiles, &cam, mid_mouse);
+    assert_eq!(to_of(&actions), end, "the original's end");
     assert_eq!(
         actions,
         vec![Action::RoadDragEnd {

@@ -15,6 +15,7 @@
 use vcl::Rect;
 use vcl::surface::Surface;
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::text::{Align, Font};
 use crate::widgets::{BitmapId, Button, CheckBox, Frame, Label, Outcome, RadioButton, ShiftState, Skin, Widget};
 
@@ -109,6 +110,8 @@ pub struct Kompassform {
     /// The last press on the title row was a double click: the form stays
     /// shrunk. // +0x725
     double: bool,
+    /// The player's view enhancements (`form_drags`).
+    pub enhance: Enhancements,
 }
 
 fn label(left: i32, top: i32, size: i32) -> Label {
@@ -141,6 +144,7 @@ impl Kompassform {
             grab: (0, 0),
             saved_height: HEIGHT,
             double: false,
+            enhance: Enhancements::ORIGINAL,
         };
         if let Some(b) = k.bitmaps.get(BACKGROUND) {
             let clip = k.image.bounds();
@@ -296,9 +300,14 @@ impl Kompassform {
 
     /// `BildMouseUp` at `x`, `y`: the close button comes up and, over it,
     /// hides the form and lets the knob up; after a drag the form gets its
-    /// height back unless the press was a double click. // 1038:34fc
+    /// height back unless the press was a double click. With `form_drags`
+    /// the drag ends. // 1038:34fc
     pub fn mouse_up(&mut self, x: i32, y: i32) -> Response {
         let mut r = Response::default();
+        let dragging = self.dragging;
+        if self.enhance.has(Enhancement::FormDrags) {
+            self.dragging = false;
+        }
         let o = self.close.mouse_up(x, y); // 1010:14f7
         if o.handled {
             r.outcome(o);
@@ -310,7 +319,7 @@ impl Kompassform {
                 r.moved = true;
             }
             self.draw_widgets();
-        } else if self.dragging && !self.double {
+        } else if dragging && !self.double {
             self.height = self.saved_height;
             r.moved = true;
         }

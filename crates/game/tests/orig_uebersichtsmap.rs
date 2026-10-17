@@ -23,6 +23,7 @@ use formats::savegame::SaveGame;
 use game::auction;
 use game::command::{self, Command};
 use game::darstellung::{self, Camera, Tiles};
+use game::enhance::Enhancement;
 use game::hauptschirm::{self, Hauptschirm};
 use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::kompassform::{self, Kompassform};
@@ -680,4 +681,96 @@ fn the_compass() {
         None,
         "east is already on"
     );
+}
+
+/// `overview_colours`: low grass, high sand and nobody's buildings, which
+/// the original draws in no colour (leaving what was there), get the
+/// bitmap's nearest. The scenario has none, so some squares in view are
+/// made so: every eighth grass square lowered to 2, sand square raised to
+/// 7, and building given to nobody. With `UI_PPM=dir` the terrain and the
+/// owners go there as `ui-overview_colours-original.ppm` and `-fixed.ppm`
+/// (side by side).
+#[test]
+fn the_overview_colours_with_the_fix() {
+    if !orig().join("GRAFIK").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let palette = bitmap("GFXGROUN.BMP").palette;
+    let (mut world, camera, origin) = scenario();
+    let font = font();
+    let tiles = tiles();
+    let title = &sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap().texts[0];
+    let mut screen = Hauptschirm::new(camera, origin, surfaces(&hauptschirm::BITMAP_FILES), &font, title);
+    screen.paint_map(&world, &tiles);
+    let (wo, ns) = screen.scroll_position();
+    let mut seen: Vec<Pos> = owners(&overview_open(&world, (wo, ns)), &world)
+        .into_iter()
+        .flatten()
+        .map(|(p, _, _)| p)
+        .collect();
+    seen.sort_unstable();
+    seen.dedup();
+    let grassy = |g: u8| g == 1 || (0x19..0x28).contains(&g);
+    for (n, &p) in seen.iter().enumerate() {
+        let isl = &mut world.island;
+        if n % 8 != 0 {
+            continue;
+        }
+        let g = isl.ground.at(p);
+        if building_proper(isl.buildings.at(p)) {
+            isl.owners.set(p, 0);
+        } else if grassy(g) {
+            isl.heights.set(p, 2);
+        } else if g == 0 {
+            isl.heights.set(p, 7);
+        }
+    }
+    let mut pictures = Vec::new();
+    let mut differ = Vec::new();
+    for owner_mode in [false, true] {
+        let mut forms: Vec<Uebersichtsmap> = [false, true]
+            .into_iter()
+            .map(|fix| {
+                let mut form = overview((wo, ns, 0));
+                form.enhance.set(Enhancement::OverviewColours, fix);
+                form.game_start(&world);
+                let _ = form.open(&world);
+                if owner_mode {
+                    let _ = form.key_down(0x31, ShiftState::default(), &world);
+                }
+                form
+            })
+            .collect();
+        let (a, b) = (bare(&forms[0]), bare(&forms[1]));
+        differ.push(a.pixels.iter().zip(&b.pixels).filter(|(p, q)| p != q).count());
+        pictures.push(forms.iter_mut().map(|f| paint(f, &palette)).collect::<Vec<_>>());
+    }
+    assert!(differ[0] > 100 && differ[1] > 10, "{differ:?} pixels differ");
+    if let Some(dir) = std::env::var_os("UI_PPM") {
+        let dir = PathBuf::from(dir);
+        for (k, name) in ["original", "fixed"].iter().enumerate() {
+            let (a, b) = (&pictures[0][k], &pictures[1][k]);
+            let mut both = Surface::new(a.width + b.width, a.height, 0);
+            let all = both.bounds();
+            both.blit(0, 0, a, a.bounds(), vcl::surface::Rop::Copy, all);
+            both.blit(
+                i32::try_from(a.width).unwrap(),
+                0,
+                b,
+                b.bounds(),
+                vcl::surface::Rop::Copy,
+                all,
+            );
+            write_ppm(&dir.join(format!("ui-overview_colours-{name}.ppm")), &both, &palette);
+        }
+    }
+}
+
+/// The overview map, opened around the main view at `wo`, `ns`.
+fn overview_open(world: &World, (wo, ns): (i16, i16)) -> Uebersichtsmap {
+    let mut form = overview((wo, ns, 0));
+    form.game_start(world);
+    let _ = form.open(world);
+    form
 }

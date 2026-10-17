@@ -14,16 +14,20 @@ the balance are player 1's.
   closes (1070:2bb4). The year's end shows it at page 1 if the option
   `1110:0064` is on (1008:4f87, before the renovations): `Tick::new_year`,
   with the option the view's (`optionen::Settings::year_balance`).
+  Button 4 stays up then; with `enhance.money_menu_button` the year's
+  end presses it.
 - `geldmenu_show_page` (1070:2b11): another page is drawn first
   (1070:20e7), then `geldmenu_show` (1070:2b3a) closes the info box
   (1038:1ee0), enables the form, keeps `button_clicked` (`+0x20e`, never
   read), works out the year's total (1070:1452), takes the focus, sets the
-  height to the first rectangle's bottom − 1 and plays 0xd, then 0x25 on
-  the balance sheet or 0xd again.
+  height to the first rectangle's bottom − 1 (with
+  `enhance.form_positions` + 1, as a drag gives it) and plays 0xd, then
+  0x25 on the balance sheet or 0xd again.
 - `geldmenu_close` (1070:2bb4): sound 0xe, the button bar's button 4 up
   (1010:2ade), height 0, the main screen focused.
 - The form is created once (`geldmenu_init`, 1070:2e6c) at the top right
-  (left = screen width − the first rectangle's right), shown with height
+  (left = screen width − the first rectangle's right, a column too far;
+  with `enhance.form_positions` − its width), shown with height
   0. "Shown" means height above 0 everywhere (1070:2617, the timer's
   tooltips use `Visible`, which is always true).
 - It isn't modal and the clock runs on. While it's shown every booking
@@ -91,7 +95,7 @@ widgets shown (1070:1d1f).
 
 | Image | Event | Does |
 |---|---|---|
-| Title | down (1070:0820) | Left: the close button pressed (`closepre.bmp`, sound 8). Any button on the drag area: drag, the form rolled up to 16 pixels, for good with a double click (`+0x696`) |
+| Title | down (1070:0820) | Left: the close button pressed (`closepre.bmp`, sound 8). Any button on the drag area (with `enhance.mouse_buttons` the left one): drag, the form rolled up to 16 pixels, for good with a double click (`+0x696`) |
 | | move (1070:08e0) | With the left button: the form follows, kept on the screen |
 | | up (1070:096d) | The close button up (sound 10), closing if still on it; a drag ends at the full height (the first rectangle's bottom + 1) unless double-clicked |
 | Page | down (1070:0300) | Left: the check box (sound 9, its `Click` 1070:01fc sets `1110:0072`), else on page 0 a button pressed (sound 8) |

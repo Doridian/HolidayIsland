@@ -13,6 +13,7 @@
 
 use vcl::surface::Surface;
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::text::Font;
 use crate::widgets::{
     BitmapId, Button, CheckBox, Edit, Frame, Label, Outcome, RadioButton, ScrollBar, ScrollBitmaps, ShiftState, Skin,
@@ -323,6 +324,9 @@ pub struct StartForm {
     /// On the scenario page. // 1110:6ece
     scenario_mode: bool,
     settings: Settings,
+    /// The player's view enhancements (`edit_field`, `scroll_bars`,
+    /// `mouse_buttons`, `start_menu_scenario`).
+    pub enhance: Enhancements,
 }
 
 fn label(left: i32, top: i32, width: i32, height: i32, colour: i32, alignment: i32, text: &[u8]) -> Label {
@@ -622,6 +626,7 @@ impl StartForm {
             texts,
             scenario_mode: false,
             settings,
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -674,7 +679,7 @@ impl StartForm {
         }
         for which in SCROLL_DOWN_ORDER {
             if let Some(bar) = self.w.scroll_mut(which) {
-                let out = bar.mouse_down(x, y);
+                let out = bar.mouse_down(x, y, self.enhance);
                 if out.handled {
                     return self.finish(which, out);
                 }
@@ -707,7 +712,7 @@ impl StartForm {
                 return self.finish(which, out);
             }
         }
-        let out = self.w.name.mouse_down(x, y);
+        let out = self.w.name.mouse_down(x, y, self.enhance);
         if out.handled {
             return self.finish(Which::Name, out);
         }
@@ -734,12 +739,16 @@ impl StartForm {
     /// `startform_bildmouseup`: the scroll bars, then the buttons, until
     /// one takes it. It doesn't look at which button came up, so letting go
     /// of the right button also releases (and clicks) a button held down
-    /// with the left. // 1058:41fb
-    // BUG(original): doesn't look at which button came up, so letting go of the right one clicks a button held with the left.
-    pub fn mouse_up(&mut self, x: i32, y: i32) -> Response {
+    /// with the left; with `mouse_buttons` only the `left` one does.
+    /// // 1058:41fb
+    pub fn mouse_up(&mut self, x: i32, y: i32, left: bool) -> Response {
+        // BUG(original): doesn't look at which button came up, so letting go of the right one clicks a button held with the left.
+        if !left && self.enhance.has(Enhancement::MouseButtons) {
+            return Response::default();
+        }
         for which in SCROLL_DOWN_ORDER {
             if let Some(bar) = self.w.scroll_mut(which) {
-                let out = bar.mouse_up(x, y);
+                let out = bar.mouse_up(x, y, self.enhance);
                 if out.handled {
                     return self.finish(which, out);
                 }
@@ -889,6 +898,8 @@ impl StartForm {
     /// Each switch starts on scenario 1 (or a normal game), but the boxes
     /// and the description stay as they were, so after going back and
     /// forth a different scenario can be ticked than the one that starts.
+    /// With `start_menu_scenario` the scenario page ticks scenario 1 and
+    /// shows its description.
     fn mode_click(&mut self) {
         let StartForm {
             assets,
@@ -897,6 +908,7 @@ impl StartForm {
             texts,
             scenario_mode,
             settings,
+            ..
         } = self;
         let clip = bild.bounds();
         if *scenario_mode {
@@ -930,6 +942,13 @@ impl StartForm {
         let skin = assets.skin();
         for widget in w.on_both_pages() {
             widget.draw(bild, &skin);
+        }
+        if self.scenario_mode && self.enhance.has(Enhancement::StartMenuScenario) {
+            let out = self.w.scenarios[0].radio.select();
+            if out.repaint {
+                self.repaint(Which::Scenario(0));
+            }
+            self.scenario_click(0);
         }
     }
 }
@@ -980,7 +999,7 @@ mod tests {
 
     fn click(f: &mut StartForm, x: i32, y: i32) -> Response {
         let down = f.mouse_down(x, y, ShiftState::LEFT);
-        let up = f.mouse_up(x, y);
+        let up = f.mouse_up(x, y, true);
         if up.refresh { up } else { down }
     }
 
@@ -1043,7 +1062,7 @@ mod tests {
         let down = f.mouse_down(0x142 + 4, 0xdc + 4, ShiftState::LEFT);
         assert_eq!(down.sound, Some(Sound::Press));
         assert_eq!(f.settings.opponents, 7);
-        let up = f.mouse_up(0x142 + 4, 0xdc + 4);
+        let up = f.mouse_up(0x142 + 4, 0xdc + 4, true);
         assert_eq!(up.sound, Some(Sound::Release));
         assert_eq!((f.settings.opponents, f.settings.players), (6, 7));
         assert_eq!(f.w.opponents_count.text, b"6");
@@ -1067,7 +1086,7 @@ mod tests {
         assert!(!f.w.start.pressed);
         // But any button's release lets go.
         let _ = f.mouse_down(0x152 + 4, 0x132 + 4, ShiftState::LEFT | ShiftState::RIGHT);
-        let up = f.mouse_up(0x152 + 4, 0x132 + 4);
+        let up = f.mouse_up(0x152 + 4, 0x132 + 4, true);
         assert_eq!(up.action, Some(Action::Start { scenario: false }));
         // Dragging needs exactly the left button.
         let _ = f.mouse_down(0x142 + 45, 0xf0 + 4, ShiftState::LEFT);
@@ -1136,7 +1155,38 @@ mod tests {
         assert_eq!(f.key_down(VK_F4, ShiftState::ALT | ShiftState::SHIFT).action, None);
         // Released off the button: no click.
         let _ = f.mouse_down(4, 4, ShiftState::LEFT);
-        let r = f.mouse_up(40, 40);
+        let r = f.mouse_up(40, 40, true);
         assert!(r.refresh && r.action.is_none());
+    }
+
+    fn fixed(e: Enhancement) -> StartForm {
+        let mut f = form();
+        f.enhance.set(e, true);
+        f
+    }
+
+    #[test]
+    fn scenario_page_with_the_fix() {
+        let mut f = fixed(Enhancement::StartMenuScenario);
+        let _ = click(&mut f, 0x12 + 4, 0x132 + 4);
+        let _ = click(&mut f, 0x153 + 2, 0xdc + 2);
+        assert!(f.w.scenarios[4].checked());
+        let _ = click(&mut f, 0x12 + 4, 0x132 + 4);
+        let _ = click(&mut f, 0x12 + 4, 0x132 + 4);
+        // Scenario 1 starts, and its box is the ticked one.
+        assert_eq!(f.settings.scenario, 1);
+        assert!(f.w.scenarios[0].checked() && !f.w.scenarios[4].checked());
+        assert_eq!(f.w.description.text, b"z2");
+    }
+
+    #[test]
+    fn right_button_with_the_fix() {
+        for (e, clicks) in [(Enhancements::ORIGINAL, true), (Enhancements::all_on(), false)] {
+            let mut f = form();
+            f.enhance = e;
+            let _ = f.mouse_down(0x152 + 4, 0x132 + 4, ShiftState::LEFT | ShiftState::RIGHT);
+            let up = f.mouse_up(0x152 + 4, 0x132 + 4, false);
+            assert_eq!(up.action.is_some(), clicks);
+        }
     }
 }

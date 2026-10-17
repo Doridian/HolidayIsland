@@ -12,6 +12,7 @@ use formats::ne::{RT_RCDATA, ResId, resources};
 use game::auction::{self, Change};
 use game::auktionsform::{Auktionsform, BITMAP_FILES, LAYOUT, picture_file};
 use game::command::{self, Command};
+use game::enhance::Enhancement;
 use game::events::Event;
 use game::hauptschirm::InfoTexts;
 use game::text::Font;
@@ -235,4 +236,60 @@ fn paints_the_auction_form() {
     });
     form.update(&w, &tick.auction_changes, &font, &info);
     assert!(!form.visible && !w.auction.open);
+}
+
+/// `form_positions` centres the form by its own height, and with
+/// `auction_title` its title stays on its row. With `UI_PPM=dir` the
+/// form opened and its title bar clicked goes there as
+/// `ui-form_positions-original.ppm` and `-fixed.ppm` (on an 800 × 600
+/// screen).
+#[test]
+fn the_auction_form_with_the_fixes() {
+    if !orig().join("GRAFIK/AUKTBILD.BMP").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let font = Font::new(
+        &bitmap("font.bmp"),
+        &fontdat(&read("DATA/FONTDAT1.DAT")).unwrap(),
+        &fontdat(&read("DATA/FONTDAT2.DAT")).unwrap(),
+    );
+    let texts = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
+    let info = InfoTexts {
+        months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
+        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        currency_factor: texts.waehrungsfaktor,
+        currency: texts.texts.get(5).cloned().unwrap_or_default(),
+    };
+    let bitmaps: Vec<Bitmap> = BITMAP_FILES.iter().map(|f| bitmap(f)).collect();
+    let palette = bitmaps[0].palette;
+    let names = message_media_names(&read("DATA/FILENAME.DAT"));
+    let mut images = Vec::new();
+    for fix in [false, true] {
+        let mut form = Auktionsform::new(
+            bitmaps.iter().map(Surface::from_bitmap).collect(),
+            auktion(&read("TEXTE/AUKTION.TXT")),
+        );
+        form.enhance.set(Enhancement::FormPositions, fix);
+        form.enhance.set(Enhancement::AuctionTitle, fix);
+        let mut w = world();
+        start(&mut w);
+        let picture = Surface::from_bitmap(&bitmap(&picture_file(
+            &names[usize::from(w.auction.item.unsigned_abs())],
+        )));
+        form.open(&w, &font, &info, Some(&picture), (800, 600));
+        // Centred: the original by the picture's 235, 40 pixels low.
+        assert_eq!(form.top, if fix { (600 - 316) / 2 } else { (600 - 235) / 2 });
+        let title = form.leiste.clone();
+        // A click on the title bar draws the title again.
+        let _ = form.mouse_down(100, 5, ShiftState::LEFT, &w, &font, &info);
+        let _ = form.mouse_up(100, 5, &w, &font);
+        assert_eq!(form.leiste == title, fix, "the title where it was");
+        images.push(paint(&form, &palette));
+    }
+    if let Some(dir) = std::env::var_os("UI_PPM") {
+        let dir = PathBuf::from(dir);
+        write_ppm(&dir.join("ui-form_positions-original.ppm"), &images[0], &palette);
+        write_ppm(&dir.join("ui-form_positions-fixed.ppm"), &images[1], &palette);
+    }
 }

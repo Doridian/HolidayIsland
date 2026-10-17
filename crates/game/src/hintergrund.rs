@@ -12,7 +12,7 @@ use formats::data::{self, Abrechnung, Modatyp};
 use formats::savegame::SaveGame;
 use vcl::random::Random;
 
-use crate::enhance::Fixes;
+use crate::enhance::{Enhancement, Enhancements, Fixes};
 use crate::events::Event;
 use crate::generator::Maperste;
 use crate::people::People;
@@ -110,12 +110,21 @@ pub struct Layout {
 /// // 1000:2466 (state 110)
 ///
 /// BUG(original): a form up to 20 pixels smaller than a layout snaps up to it, so what the game puts at the right or bottom edge (the money menu, the compass, the load form) and the right and bottom of the centred forms are cut off by up to 20 pixels.
+///
+/// With `desktop_background` (`enhance`) it's the form's size as it is.
 #[must_use]
-pub fn screen_size(width: i32, height: i32) -> (i32, i32) {
+pub fn screen_size(width: i32, height: i32, enhance: Enhancements) -> (i32, i32) {
+    if enhance.has(Enhancement::DesktopBackground) {
+        return (width, height);
+    }
+    snapped(width, height).map_or((width, height), |l| l.size)
+}
+
+/// The layout a form `width` × `height` snaps to. // 1000:2466 (state 110)
+fn snapped(width: i32, height: i32) -> Option<&'static Layout> {
     LAYOUTS
         .iter()
         .find(|l| (l.widths.0..=l.widths.1).contains(&width) && (l.heights.0..=l.heights.1).contains(&height))
-        .map_or((width, height), |l| l.size)
 }
 
 /// The layout whose pictures states 430 (the title), 450 and 1130 (the
@@ -124,8 +133,18 @@ pub fn screen_size(width: i32, height: i32) -> (i32, i32) {
 /// form's black showing. // 1000:2466 (states 430, 450, 1130)
 ///
 /// BUG(original): any screen size but the five has no title and no background picture: the intro's title and the desktop around the game stay black.
+///
+/// With `desktop_background` (`enhance`) every size has one: the
+/// layout's it would snap to, else the biggest that fits, else the
+/// smallest; the caller centres its pictures on the screen.
 #[must_use]
-pub fn layout(screen: (i32, i32)) -> Option<&'static Layout> {
+pub fn layout(screen: (i32, i32), enhance: Enhancements) -> Option<&'static Layout> {
+    if enhance.has(Enhancement::DesktopBackground) {
+        let fits = |l: &&Layout| l.size.0 <= screen.0 && l.size.1 <= screen.1;
+        return snapped(screen.0, screen.1)
+            .or_else(|| LAYOUTS.iter().filter(fits).max_by_key(|l| l.size.0 * l.size.1))
+            .or_else(|| LAYOUTS.iter().min_by_key(|l| l.size.0 * l.size.1));
+    }
     LAYOUTS.iter().find(|l| l.size == screen)
 }
 
@@ -442,16 +461,27 @@ mod tests {
 
     #[test]
     fn screen_sizes() {
-        assert_eq!(screen_size(800, 600), (800, 600));
-        assert_eq!(screen_size(780, 620), (800, 600));
-        assert_eq!(screen_size(779, 600), (779, 600));
-        assert_eq!(screen_size(660, 460), (640, 480));
-        assert_eq!(screen_size(1024, 768), (1024, 768));
-        assert_eq!(screen_size(1152, 864), (1152, 870));
-        assert_eq!(screen_size(1280, 1024), (1280, 1024));
-        assert_eq!(screen_size(1366, 768), (1366, 768));
-        assert_eq!(screen_size(1920, 1080), (1920, 1080));
-        assert_eq!(layout((800, 600)).map(|l| l.background), Some("bck80x60.BMP"));
-        assert_eq!(layout((1366, 768)), None);
+        assert_eq!(screen_size(800, 600, Enhancements::ORIGINAL), (800, 600));
+        assert_eq!(screen_size(780, 620, Enhancements::ORIGINAL), (800, 600));
+        assert_eq!(screen_size(779, 600, Enhancements::ORIGINAL), (779, 600));
+        assert_eq!(screen_size(660, 460, Enhancements::ORIGINAL), (640, 480));
+        assert_eq!(screen_size(1024, 768, Enhancements::ORIGINAL), (1024, 768));
+        assert_eq!(screen_size(1152, 864, Enhancements::ORIGINAL), (1152, 870));
+        assert_eq!(screen_size(1280, 1024, Enhancements::ORIGINAL), (1280, 1024));
+        assert_eq!(screen_size(1366, 768, Enhancements::ORIGINAL), (1366, 768));
+        assert_eq!(screen_size(1920, 1080, Enhancements::ORIGINAL), (1920, 1080));
+        let o = Enhancements::ORIGINAL;
+        assert_eq!(layout((800, 600), o).map(|l| l.background), Some("bck80x60.BMP"));
+        assert_eq!(layout((1366, 768), o), None);
+        // `desktop_background`: no snapping, and a picture for any size.
+        let mut e = o;
+        e.set(Enhancement::DesktopBackground, true);
+        assert_eq!(screen_size(780, 620, e), (780, 620));
+        let background = |size| layout(size, e).map(|l| l.background);
+        assert_eq!(background((780, 620)), Some("bck80x60.BMP"));
+        assert_eq!(background((1366, 768)), Some("bck10x76.BMP"));
+        assert_eq!(background((1920, 1080)), Some("bck12x10.BMP"));
+        assert_eq!(background((900, 700)), Some("bck80x60.BMP"));
+        assert_eq!(background((700, 1000)), Some("bck64x48.BMP"));
     }
 }

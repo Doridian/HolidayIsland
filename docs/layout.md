@@ -46,6 +46,11 @@ Two quirks follow ([original-bugs.md](original-bugs.md#ui-quirks)):
   The palette then is whatever Windows had; the port uses the 800×600
   pictures' palette.
 
+With `enhance.desktop_background` the port lays out for the desktop's
+size as it is, and draws the pictures of the layout it would have
+snapped to, else of the biggest that fits, centred on it (else the
+smallest; around them the background stays black).
+
 Nothing in the original reacts to a change of the desktop's size later:
 no form has an `OnResize` handler (none in the DFMs), and state 110 runs
 once.
@@ -106,7 +111,10 @@ The move handler doesn't check that the press was on the title bar, so a
 left drag that started off every form (on the background) moves the main
 screen when it passes over the title bar, by the last grab
 ([original-bugs.md](original-bugs.md#ui-quirks)). The other forms' title
-bars work the same way, each with its own clamp (below).
+bars work the same way, each with its own clamp (below). With
+`enhance.form_drags` the main screen only follows a press on its title
+bar, and the compass's and the sabotage window's drags end when the
+mouse comes up.
 
 Ported in `game::hauptschirm`: `Hauptschirm::layout`, `bounds`,
 `title_mouse_down/move/up`, `left`, `top`, `height`, `rolled_up`.
@@ -123,10 +131,10 @@ coordinates; only the info box is placed relative to the main screen.
 | `TLadenForm` | centred across, at the bottom (`screen_height - Height`) | 1038:3b46 |
 | `FilmPanel` (432×320) | centred on the background form, the real desktop | 1000:2466, state 110 |
 | `TCreditform` (not ported) | 640×480, centred; disables the options | 1030:3c42 |
-| `TBaumenue` | created at `screen_width - Width - 1`, `(screen_height - 480) div 2 + 59`; opening keeps it left of `screen_width - Width - 1` | 1018:2fa2, 1018:2b01 |
-| `TAuktionsform` | `(screen_width - 0x154) div 2`, `(screen_height - 0xeb) div 2` | 1028:0dde |
-| `TSabowin` | the DFM's 300, 167 | `Application.CreateForm` |
-| `TDateimenue` | the DFM's 305, 139 | `Application.CreateForm` |
+| `TBaumenue` | created at `screen_width - Width - 1`, `(screen_height - 480) div 2 + 59` (with `enhance.form_positions` the main screen's top + 59, level with the island); opening keeps it left of `screen_width - Width - 1` | 1018:2fa2, 1018:2b01 |
+| `TAuktionsform` | `(screen_width - 0x154) div 2`, `(screen_height - 0xeb) div 2` (with `enhance.form_positions` by its own height, 316) | 1028:0dde |
+| `TSabowin` | the DFM's 300, 167 (with `enhance.form_positions` from the centred main screen's top left) | `Application.CreateForm` |
+| `TDateimenue` | the DFM's 305, 139 (the same) | `Application.CreateForm` |
 | `TInfobox2` | next to the mouse inside the main screen's client area, flipped left or up at its right or bottom | 1038:1ccf |
 | `TKompassform` | top right: `screen_width - Width`, 0 | 1038:2c04 |
 | `TEndeform` | centred | 1020:3b5f |
@@ -136,14 +144,14 @@ coordinates; only the info box is placed relative to the main screen.
 | `TFernseher` | `(screen_width - 0x160) div 2`, `(screen_height - 0x14e) div 2` for a new game; a map file's own position otherwise | 1048:1ffd, 1048:25ea |
 | `TOptionenform` | centred across, at the top | 1060:14f1 |
 | `TSchlussform` | centred (the quit film's panel and the results) | 1068:09a5, 1068:1340 |
-| `TGeldmenuform` | top right: `screen_width -` the table's width, 0 (one column too far right, [geldmenu.md](geldmenu.md)) | 1070:2e6c |
+| `TGeldmenuform` | top right: `screen_width -` the table's width, 0 (one column too far right, [geldmenu.md](geldmenu.md); with `enhance.form_positions` whole on the screen) | 1070:2e6c |
 | `Tumenuform` | centred | 1080:145f, 1080:0ea8 |
 | `TUebersichtsmap2` | top left, 0, 0; its small/large switch (10b8:3e73) keeps the top left | 10b8:4538 |
 
 Every form's title bar drags it, kept on the screen by the same
 `max(0, ..)` / `min(screen - size, ..)` clamp as the main screen:
 1070:08e0 (money menu), 1020:38d4 (quit question, by its 16-pixel title
-bar), 1048:2955 (TV), 1060:29f0 (options), 1040:09ca (file menu),
+bar; with `enhance.form_drags` by its full height), 1048:2955 (TV), 1060:29f0 (options), 1040:09ca (file menu),
 10b8:3c9b (overview), 1028:1c4d (auction), 1080:1e54 (buildings'
 overview), 1028:2ecc (sabotage), 1038:346f (compass), 1018:0461 (build
 menu). `screen_width`'s other readers are these handlers.

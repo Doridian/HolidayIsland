@@ -22,6 +22,7 @@
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::text::{Align, Font};
 
 /// `play_sound`'s numbers for the sounds the widgets make. // 10a0:30b6
@@ -75,6 +76,13 @@ impl ShiftState {
     #[must_use]
     pub fn contains(self, other: ShiftState) -> bool {
         self.0 & other.0 == other.0
+    }
+
+    /// The mouse's buttons and the double click, without Shift, Alt and
+    /// Ctrl.
+    #[must_use]
+    pub fn without_keys(self) -> ShiftState {
+        ShiftState(self.0 & !(Self::SHIFT.0 | Self::ALT.0 | Self::CTRL.0))
     }
 }
 
@@ -675,10 +683,20 @@ impl ScrollBar {
     /// the trough moves a large step at once and isn't left pressed
     /// ([`Sound::Select`]); the thumb only starts a drag and doesn't
     /// repaint. // 10c0:0e21
-    fn press(&mut self, part: Part, out: &mut Outcome) {
+    ///
+    /// With `scroll_bars` an arrow steps as it goes down, as Windows'
+    /// do.
+    fn press(&mut self, part: Part, out: &mut Outcome, e: Enhancements) {
         self.pressed = Some(part);
         match part {
             Part::BackArrow | Part::ForwardArrow => {
+                if e.has(Enhancement::ScrollBars) {
+                    if part == Part::BackArrow {
+                        self.back(self.small_step);
+                    } else {
+                        self.forward(self.small_step);
+                    }
+                }
                 out.repaint = true;
                 out.sound = Some(Sound::Press);
             }
@@ -699,18 +717,25 @@ impl ScrollBar {
     /// `scrollbar_release`: released over the arrow that was pressed, it
     /// steps ([`Sound::Release`]). Whatever the part, nothing is pressed
     /// any more. // 10c0:0f10
-    fn release(&mut self, part: Part, out: &mut Outcome) {
+    ///
+    /// With `scroll_bars` the arrow stepped when it went down, and one let
+    /// go off itself comes up drawn up.
+    fn release(&mut self, part: Part, out: &mut Outcome, e: Enhancements) {
+        let fixed = e.has(Enhancement::ScrollBars);
         if self.pressed == Some(part) {
             match part {
                 // BUG(original): the arrows step only when the mouse is released over them; nothing auto-repeats.
-                Part::BackArrow => self.back(self.small_step),
-                Part::ForwardArrow => self.forward(self.small_step),
+                Part::BackArrow if !fixed => self.back(self.small_step),
+                Part::ForwardArrow if !fixed => self.forward(self.small_step),
                 _ => {}
             }
             if matches!(part, Part::BackArrow | Part::ForwardArrow) {
                 out.repaint = true;
                 out.sound = Some(Sound::Release);
             }
+        } else if fixed && matches!(self.pressed, Some(Part::BackArrow | Part::ForwardArrow)) {
+            out.repaint = true;
+            out.sound = Some(Sound::Release);
         }
         self.pressed = None;
     }
@@ -718,17 +743,23 @@ impl ScrollBar {
     /// `scrollbar_mouse_down`: presses the part under the mouse. Nothing
     /// happens when `min == max`. A repaint also calls `Click`, even when
     /// only an arrow went down or a page step hit the end; `handled` is
-    /// the repaint. // 10c0:0fe3
-    pub fn mouse_down(&mut self, x: i32, y: i32) -> Outcome {
+    /// the repaint. With `scroll_bars` (`e`) `Click` only comes with a
+    /// change of the position. // 10c0:0fe3
+    pub fn mouse_down(&mut self, x: i32, y: i32, e: Enhancements) -> Outcome {
         let mut out = Outcome::default();
+        let old = self.position;
         if self.frame.hit(x, y) && self.max != self.min {
             let along = self.along(x, y);
             // BUG(original): a press calls `Click` whenever it repaints, even when the position didn't change.
-            self.press(self.part_at(along), &mut out);
+            self.press(self.part_at(along), &mut out, e);
             // Measured after a page step has moved the thumb.
             self.grab = along - (self.thickness() + self.thumb_offset());
         }
-        out.clicked = out.repaint;
+        out.clicked = if e.has(Enhancement::ScrollBars) {
+            self.position != old
+        } else {
+            out.repaint
+        };
         out.handled = out.repaint;
         out
     }
@@ -771,19 +802,25 @@ impl ScrollBar {
     ///
     /// Released inside the bar but off the pressed arrow, the arrow is let
     /// go without a repaint, so it stays drawn pressed until something
-    /// else redraws the bar.
-    pub fn mouse_up(&mut self, x: i32, y: i32) -> Outcome {
+    /// else redraws the bar. With `scroll_bars` (`e`) it comes up drawn
+    /// up, and `Click` only comes with a change of the position.
+    pub fn mouse_up(&mut self, x: i32, y: i32, e: Enhancements) -> Outcome {
         let mut out = Outcome::default();
+        let old = self.position;
         if self.frame.hit(x, y) && self.max != self.min {
             // BUG(original): released off the pressed arrow, it's let go without a repaint and stays drawn pressed.
             let part = self.part_at(self.along(x, y));
-            self.release(part, &mut out);
+            self.release(part, &mut out, e);
         } else if self.frame.visible && self.pressed.is_some() {
             self.pressed = None;
             out.repaint = true;
             out.sound = Some(Sound::Release);
         }
-        out.clicked = out.repaint;
+        out.clicked = if e.has(Enhancement::ScrollBars) {
+            self.position != old
+        } else {
+            out.repaint
+        };
         out.handled = out.repaint;
         out
     }
@@ -904,8 +941,9 @@ impl ListBox {
     /// repaint and [`Sound::Select`]; `handled` says the selection changed.
     /// A double click on the selected row plays the sound and calls
     /// `Click`, and returns `handled` false. Any other shift state, such as
-    /// a click with Shift held, does nothing. // 10c0:0431
-    pub fn mouse_down(&mut self, x: i32, y: i32, shift: ShiftState) -> Outcome {
+    /// a click with Shift held, does nothing; with `modifier_clicks` (`e`)
+    /// Shift, Alt and Ctrl don't matter. // 10c0:0431
+    pub fn mouse_down(&mut self, x: i32, y: i32, shift: ShiftState, e: Enhancements) -> Outcome {
         let mut out = Outcome::default();
         if !self.frame.hit(x, y) {
             return out;
@@ -915,6 +953,11 @@ impl ListBox {
         };
         let row = offset + self.top;
         // BUG(original): only exactly [ssLeft] or [ssLeft, ssDouble] count, so a click with Shift held does nothing.
+        let shift = if e.has(Enhancement::ModifierClicks) {
+            shift.without_keys()
+        } else {
+            shift
+        };
         if shift == ShiftState::LEFT | ShiftState::DOUBLE {
             if row == self.selected {
                 out.sound = Some(Sound::Select);
@@ -997,13 +1040,18 @@ impl Edit {
 
     /// `edit_mouse_down`: a click on the field focuses it. While it's
     /// focused, any click, on the field or not, unfocuses it, without
-    /// `Click`. Either way it repaints; `handled` says so. // 10c0:1c1b
-    pub fn mouse_down(&mut self, x: i32, y: i32) -> Outcome {
+    /// `Click`. Either way it repaints; `handled` says so. With
+    /// `edit_field` (`e`) a click on the focused field leaves it focused
+    /// and does nothing. // 10c0:1c1b
+    pub fn mouse_down(&mut self, x: i32, y: i32, e: Enhancements) -> Outcome {
         let mut out = Outcome::default();
         if self.frame.hit(x, y) && !self.focused {
             self.focused = true;
         } else if self.focused && self.frame.visible {
             // BUG(original): any click while focused unfocuses, even one on the field itself.
+            if e.has(Enhancement::EditField) && self.frame.hit(x, y) {
+                return out;
+            }
             self.focused = false;
         } else {
             return out;
@@ -1130,6 +1178,9 @@ fn pstring(text: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The original's widgets.
+    const O: Enhancements = Enhancements::ORIGINAL;
     use formats::bmp::Bitmap;
 
     /// A font whose glyphs change nothing: a white mask and black colours.
@@ -1265,27 +1316,27 @@ mod tests {
     #[test]
     fn scrollbar_arrows_step_on_release() {
         let mut s = bar();
-        let down = s.mouse_down(95, 5);
+        let down = s.mouse_down(95, 5, O);
         assert_eq!(s.pressed, Some(Part::ForwardArrow));
         assert_eq!(s.position, 0);
         assert!(down.repaint && down.clicked);
         assert_eq!(down.sound, Some(Sound::Press));
-        let up = s.mouse_up(96, 5);
+        let up = s.mouse_up(96, 5, O);
         assert_eq!((s.position, s.pressed), (1, None));
         assert!(up.repaint && up.clicked);
         assert_eq!(up.sound, Some(Sound::Release));
         // At the end, the step clamps but still clicks.
         s.position = 0;
-        let _ = s.mouse_down(5, 5);
-        assert!(s.mouse_up(5, 5).clicked);
+        let _ = s.mouse_down(5, 5, O);
+        assert!(s.mouse_up(5, 5, O).clicked);
         assert_eq!(s.position, 0);
         // Released over the trough: let go, but no repaint.
-        let _ = s.mouse_down(5, 5);
-        assert_eq!(s.mouse_up(50, 5), Outcome::default());
+        let _ = s.mouse_down(5, 5, O);
+        assert_eq!(s.mouse_up(50, 5, O), Outcome::default());
         assert_eq!(s.pressed, None);
         // Released outside: let go with a repaint.
-        let _ = s.mouse_down(5, 5);
-        let up = s.mouse_up(500, 5);
+        let _ = s.mouse_down(5, 5, O);
+        let up = s.mouse_up(500, 5, O);
         assert!(up.repaint && s.pressed.is_none());
         assert_eq!(s.position, 0);
     }
@@ -1293,26 +1344,26 @@ mod tests {
     #[test]
     fn scrollbar_pages_on_press() {
         let mut s = bar();
-        let out = s.mouse_down(50, 5);
+        let out = s.mouse_down(50, 5, O);
         assert_eq!((s.position, s.pressed), (10, None));
         assert_eq!(out.sound, Some(Sound::Select));
         // Thumb at 10 + 70 * 95 / 100 = 76..=86.
         s.position = 95;
-        let _ = s.mouse_down(88, 5);
+        let _ = s.mouse_down(88, 5, O);
         assert_eq!(s.position, 100);
-        let _ = s.mouse_down(50, 5);
+        let _ = s.mouse_down(50, 5, O);
         assert_eq!(s.position, 90);
         // With nowhere to go, the bar ignores the mouse.
         s.max = 0;
         s.min = 0;
-        assert_eq!(s.mouse_down(50, 5), Outcome::default());
+        assert_eq!(s.mouse_down(50, 5, O), Outcome::default());
     }
 
     #[test]
     fn scrollbar_drags_thumb() {
         let mut s = bar();
         // Grab the thumb (10..=20) 4 pixels in.
-        let down = s.mouse_down(14, 5);
+        let down = s.mouse_down(14, 5, O);
         assert_eq!((s.pressed, s.grab), (Some(Part::Thumb), 4));
         assert_eq!(down, Outcome::default());
         // Thumb's left edge to 45: (35 * 100 + 35) / 70 = 50.
@@ -1326,7 +1377,7 @@ mod tests {
         // Outside the bar, nothing.
         let _ = s.mouse_move(20, 50);
         assert_eq!(s.position, 100);
-        let _ = s.mouse_up(20, 5);
+        let _ = s.mouse_up(20, 5, O);
         let _ = s.mouse_move(14, 5);
         assert_eq!(s.position, 100);
     }
@@ -1358,18 +1409,18 @@ mod tests {
         assert_eq!(l.rows, 4);
         l.items = (0..6).map(|i| vec![b'a' + i]).collect();
         l.top = 2;
-        let out = l.mouse_down(5, 115, ShiftState::LEFT);
+        let out = l.mouse_down(5, 115, ShiftState::LEFT, O);
         assert_eq!(l.selected, 3);
         assert!(out.handled && out.repaint && !out.clicked);
-        assert!(!l.mouse_down(5, 115, ShiftState::LEFT).handled);
-        let double = l.mouse_down(5, 115, ShiftState::LEFT | ShiftState::DOUBLE);
+        assert!(!l.mouse_down(5, 115, ShiftState::LEFT, O).handled);
+        let double = l.mouse_down(5, 115, ShiftState::LEFT | ShiftState::DOUBLE, O);
         assert!(double.clicked && !double.handled);
-        assert!(!l.mouse_down(5, 125, ShiftState::LEFT | ShiftState::DOUBLE).clicked);
-        let _ = l.mouse_down(5, 115, ShiftState::LEFT | ShiftState::SHIFT);
+        assert!(!l.mouse_down(5, 125, ShiftState::LEFT | ShiftState::DOUBLE, O).clicked);
+        let _ = l.mouse_down(5, 115, ShiftState::LEFT | ShiftState::SHIFT, O);
         assert_eq!(l.selected, 3);
         // Below the last row: none.
         l.top = 6;
-        let _ = l.mouse_down(5, 115, ShiftState::LEFT);
+        let _ = l.mouse_down(5, 115, ShiftState::LEFT, O);
         assert!(!l.has_selection());
         assert!(l.can_scroll_up());
         l.top = 2;
@@ -1386,7 +1437,7 @@ mod tests {
             Outcome::default(),
             "not focused"
         );
-        assert!(e.mouse_down(5, 5).repaint && e.focused);
+        assert!(e.mouse_down(5, 5, O).repaint && e.focused);
         let _ = e.key_down(0x43, ShiftState::default());
         let _ = e.key_down(0xde, ShiftState::SHIFT);
         let _ = e.key_down(0x44, ShiftState::default());
@@ -1404,10 +1455,58 @@ mod tests {
         let enter = e.key_down(0x0d, ShiftState::default());
         assert!(enter.clicked && !e.focused);
         // A click while focused unfocuses, even on the field.
-        let _ = e.mouse_down(5, 5);
-        assert!(e.mouse_down(5, 5).handled && !e.focused);
-        let _ = e.mouse_down(5, 5);
-        assert!(e.mouse_down(500, 5).handled && !e.focused);
-        assert!(!e.mouse_down(500, 5).handled);
+        let _ = e.mouse_down(5, 5, O);
+        assert!(e.mouse_down(5, 5, O).handled && !e.focused);
+        let _ = e.mouse_down(5, 5, O);
+        assert!(e.mouse_down(500, 5, O).handled && !e.focused);
+        assert!(!e.mouse_down(500, 5, O).handled);
+    }
+
+    fn on(e: Enhancement) -> Enhancements {
+        let mut set = Enhancements::ORIGINAL;
+        set.set(e, true);
+        set
+    }
+
+    #[test]
+    fn scrollbar_arrows_step_on_press_with_the_fix() {
+        let fixed = on(Enhancement::ScrollBars);
+        let mut s = bar();
+        let down = s.mouse_down(95, 5, fixed);
+        assert_eq!((s.position, s.pressed), (1, Some(Part::ForwardArrow)));
+        assert!(down.repaint && down.clicked);
+        let up = s.mouse_up(96, 5, fixed);
+        assert_eq!((s.position, s.pressed), (1, None));
+        assert!(up.repaint && !up.clicked, "no change on the release");
+        // At the end: no change, no click.
+        s.position = 0;
+        assert!(!s.mouse_down(5, 5, fixed).clicked);
+        // Let go over the trough: drawn up again (the original leaves
+        // it drawn pressed).
+        let up = s.mouse_up(50, 5, fixed);
+        assert!(up.repaint && s.pressed.is_none());
+        assert_eq!(up.sound, Some(Sound::Release));
+        let _ = s.mouse_down(5, 5, O);
+        assert!(!s.mouse_up(50, 5, O).repaint);
+    }
+
+    #[test]
+    fn listbox_with_shift_with_the_fix() {
+        let mut l = ListBox::new(shown(Frame::new(0, 100, 50, 40)), BitmapId(0), 9, 10, 10);
+        l.items = (0..6).map(|i| vec![b'a' + i]).collect();
+        let shift = ShiftState::LEFT | ShiftState::SHIFT;
+        assert!(!l.mouse_down(5, 115, shift, O).handled);
+        assert!(l.mouse_down(5, 115, shift, on(Enhancement::ModifierClicks)).handled);
+        assert_eq!(l.selected, 2);
+    }
+
+    #[test]
+    fn edit_keeps_its_focus_with_the_fix() {
+        let fixed = on(Enhancement::EditField);
+        let mut e = Edit::new(shown(Frame::new(0, 0, 100, 16)), b"ab", 4, 9, 11);
+        let _ = e.mouse_down(5, 5, fixed);
+        assert!(e.focused);
+        assert!(!e.mouse_down(5, 5, fixed).handled && e.focused);
+        assert!(e.mouse_down(500, 5, fixed).handled && !e.focused);
     }
 }

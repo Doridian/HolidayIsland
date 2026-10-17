@@ -31,6 +31,7 @@ use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::command::Action;
+use crate::enhance::{Enhancement, Enhancements};
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::news::{Entry, Speaker};
@@ -278,6 +279,8 @@ pub struct Fernseher {
     /// `tvleiimage`'s and `tvimage`'s pictures.
     leiste: Surface,
     image: Surface,
+    /// The player's view enhancements (`tv_form`, `tv_sound`).
+    pub enhance: Enhancements,
 }
 
 fn copy(dst: &mut Surface, src: &Surface) {
@@ -411,6 +414,7 @@ impl Fernseher {
             capture: Capture::None,
             leiste: Surface::new(WIDTH as usize, TITLE_HEIGHT as usize, 0),
             image: Surface::new(WIDTH as usize, 319, 0),
+            enhance: Enhancements::ORIGINAL,
         };
         f.new_game(screen);
         f
@@ -525,12 +529,15 @@ impl Fernseher {
         fields.set("1110:6663", 0, &[u8::from(self.ready)]);
     }
 
+    /// The title bar; with `tv_form` the title is centred over the bar
+    /// after the close button.
     fn draw_title(&mut self) {
         copy(&mut self.leiste, &self.bitmaps[LEISTE]);
         let (l, _, r, _) = RECTS[usize::from(DRAG)];
         // BUG(original): the title is centred over the bar's width from the form's left edge, not from the bar's.
+        let x = if self.enhance.has(Enhancement::TvForm) { l } else { 0 };
         self.font
-            .draw(&mut self.leiste, &self.title, (0, 0), r - l, Align::Center, 10);
+            .draw(&mut self.leiste, &self.title, (x, 0), r - l, Align::Center, 10);
     }
 
     /// Draws `entry` on the TV: the background, the message's picture, the
@@ -654,6 +661,7 @@ impl Fernseher {
                     self.speaker_open = true;
                 }
                 // BUG(original): a message without speech leaves a speech still open playing (and the effects off) until the TV closes, only forgetting it.
+                _ if self.enhance.has(Enhancement::TvSound) => self.close_speaker(),
                 _ => self.speaker_open = false,
             }
             self.speaker_done = false;
@@ -702,7 +710,12 @@ impl Fernseher {
         self.speaker_done = speaker_done;
         let since = now.wrapping_sub(self.opened_at);
         // BUG(original): the page's speech decides, though the speaker has the posted message's: browsing by key to a page without one keeps it from starting, and the TV open.
-        if since >= SPEAKER_MS && !self.speaker_started && self.speech_of(world, self.cursor).is_some() {
+        let speech = if self.enhance.has(Enhancement::TvSound) {
+            self.speaker_open
+        } else {
+            self.speech_of(world, self.cursor).is_some()
+        };
+        if since >= SPEAKER_MS && !self.speaker_started && speech {
             if self.speaker_open {
                 self.media.push(Media::EffectsOff);
                 self.media.push(Media::SpeechVolume);
@@ -725,6 +738,10 @@ impl Fernseher {
         };
         if ended {
             // BUG(original): a page without a film closes the TV 6 s after it opened even while the player browses.
+            if self.film == Film::Browsed && self.enhance.has(Enhancement::TvForm) {
+                // The player browses: the TV stays until they close it.
+                return self.finish(r);
+            }
             if !self.has_film(world) {
                 let c = self.close_inner();
                 return self.finish(c);
@@ -771,6 +788,9 @@ impl Fernseher {
     fn play_film(&mut self, world: &World) {
         // BUG(original): the film takes WaveMix's device, and only closing the TV with the sounds on gives it back.
         // BUG(original): after a speech the film plays at the speech volume: the sound volume only comes back when the speaker closes, after the film.
+        if self.enhance.has(Enhancement::TvSound) {
+            self.media.push(Media::SoundVolume);
+        }
         self.media.push(Media::EffectsOff); // 10a0:2518
         self.effects_off = true;
         self.film = Film::Started;
@@ -779,12 +799,18 @@ impl Fernseher {
         self.media.push(Media::PlayFilm { file });
     }
 
-    /// Stops the film, and the speaker. // 1048:034f
+    /// Stops the film, and the speaker. With `tv_sound` the `WaveMix`
+    /// session takes the wave device back. // 1048:034f
     fn stop_film(&mut self) {
         self.film = Film::Stopped;
         self.film_playing = false;
         self.media.push(Media::StopFilm);
         self.close_speaker();
+        if self.enhance.has(Enhancement::TvSound) && self.effects_off {
+            self.media.push(Media::EffectsOn);
+            self.media.push(Media::SoundVolume);
+            self.effects_off = false;
+        }
     }
 
     /// Hides the TV (1048:077a): the form keeps its position for the next
@@ -818,6 +844,9 @@ impl Fernseher {
             r.refresh = true;
         }
         // The pause ends, and with the sounds on the session is back.
+        if self.enhance.has(Enhancement::TvSound) {
+            self.media.push(Media::EffectsOn);
+        }
         self.media.push(Media::EffectsOnWithSounds);
         self.effects_off = false;
         r
@@ -844,7 +873,11 @@ impl Fernseher {
             entry.pos
         } else {
             // BUG(original): back goes to the saved view origin, which 1020:0787 moves 10 rows further.
-            entry.origin
+            if self.enhance.has(Enhancement::TvForm) {
+                (entry.origin.0.wrapping_add(10), entry.origin.1)
+            } else {
+                entry.origin
+            }
         }
     }
 
@@ -898,6 +931,9 @@ impl Fernseher {
         if on(OFF) {
             self.closing = true;
             r.sounds.push(SOUND_RELEASE);
+        }
+        if self.enhance.has(Enhancement::TvForm) {
+            self.pressed = 0;
         }
         self.ready = true;
         if self.closing {
@@ -1345,5 +1381,95 @@ mod tests {
         // The close button.
         let _ = f.mouse_down(5, 5, ShiftState::LEFT);
         assert!(f.mouse_up(5, 5, &w, &info()).hidden);
+    }
+
+    fn fixed(e: Enhancement) -> Fernseher {
+        let mut f = tv();
+        f.enhance.set(e, true);
+        f
+    }
+
+    #[test]
+    fn browsing_keeps_it_open_with_the_fix() {
+        for fix in [false, true] {
+            let mut w = World::default();
+            let _ = post(&mut w, 0, false);
+            let mut f = if fix { fixed(Enhancement::TvForm) } else { tv() };
+            let _ = f.news(&post(&mut w, 0, false).news, [true; 4], &w, &info(), 0);
+            let _ = f.key_down(VK_LEFT, ShiftState::default(), &w, &info());
+            assert_eq!(f.timer(&w, AUTO_CLOSE_MS, false, false).hidden, !fix);
+        }
+    }
+
+    #[test]
+    fn back_and_buttons_with_the_fix() {
+        for fix in [false, true] {
+            let mut w = World::default();
+            let _ = post(&mut w, 0, false);
+            let mut f = if fix { fixed(Enhancement::TvForm) } else { tv() };
+            let _ = f.news(&post(&mut w, 0, false).news, [false; 4], &w, &info(), 0);
+            let _ = f.show(&w, &info(), 0);
+            // Back to where the view was: the origin 1020:0787 takes
+            // 10 rows from again.
+            let _ = f.key_down(VK_RETURN, ShiftState::default(), &w, &info());
+            let r = f.key_down(VK_RETURN, ShiftState::default(), &w, &info());
+            let (i, j) = w.viewpoint.origin;
+            assert_eq!(r.scroll, Some(if fix { (i + 10, j) } else { (i, j) }));
+            // The back button let go elsewhere; a later press elsewhere
+            // let go on it clicks it only in the original.
+            let back = (150, 290 + TITLE_HEIGHT);
+            let _ = f.mouse_down(back.0, back.1, ShiftState::LEFT);
+            let _ = f.mouse_up(5, 100, &w, &info());
+            assert_eq!(f.cursor, 1);
+            let _ = f.mouse_down(5, 100, ShiftState::LEFT);
+            let _ = f.mouse_up(back.0, back.1, &w, &info());
+            assert_eq!(f.cursor, i16::from(fix));
+        }
+    }
+
+    #[test]
+    fn the_title_with_the_fix() {
+        // The test font's glyphs are black boxes: the title starts `l`
+        // further right, over the bar after the close button.
+        let first_black = |f: &Fernseher| (0..f.leiste.width).find(|&x| f.leiste.pixel(x, 5) == 0).unwrap();
+        let mut f = fixed(Enhancement::TvForm);
+        f.draw_title();
+        let mut o = tv();
+        o.draw_title();
+        let (l, _, _, _) = RECTS[usize::from(DRAG)];
+        assert!(l > 0);
+        assert_eq!(first_black(&f), first_black(&o) + usize::try_from(l).unwrap());
+    }
+
+    #[test]
+    fn the_speech_with_the_fix() {
+        let mut w = World::default();
+        let mut f = fixed(Enhancement::TvSound);
+        let mut speech = vec![NONE.to_vec(); 90];
+        speech[0] = b"oster.wav".to_vec();
+        f.set_speech(speech);
+        let _ = f.news(&post(&mut w, 0, false).news, [true; 4], &w, &info(), 1000);
+        // A message without speech closes the one still open.
+        let r = f.news(&post(&mut w, 1, false).news, [true; 4], &w, &info(), 1000);
+        assert_eq!(r.media, [Media::CloseSpeaker, Media::EffectsOn, Media::SoundVolume]);
+        // The film of message 4 after a speech plays at the sounds' volume
+        // and gives the sounds back when it stops.
+        let mut speech = vec![b"oster.wav".to_vec(); 90];
+        speech[1] = NONE.to_vec();
+        f.set_speech(speech);
+        let _ = f.news(&post(&mut w, 4, false).news, [true; 4], &w, &info(), 0);
+        let _ = f.timer(&w, SPEAKER_MS, false, false);
+        let r = f.timer(&w, SPEAKER_MS + 100, true, false);
+        assert_eq!(r.media[..2], [Media::SoundVolume, Media::EffectsOff]);
+        let r = f.key_down(VK_LEFT, ShiftState::default(), &w, &info());
+        assert!(r.media.contains(&Media::StopFilm));
+        assert_eq!(r.media.iter().filter(|m| **m == Media::EffectsOn).count(), 1);
+        // Browsing to a page without speech doesn't keep the posted
+        // message's from starting.
+        let _ = f.news(&post(&mut w, 0, false).news, [true; 4], &w, &info(), 0);
+        let _ = f.key_down(VK_LEFT, ShiftState::default(), &w, &info());
+        let _ = f.key_down(VK_LEFT, ShiftState::default(), &w, &info());
+        let r = f.timer(&w, SPEAKER_MS, false, false);
+        assert!(r.media.contains(&Media::PlaySpeaker));
     }
 }

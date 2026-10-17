@@ -49,7 +49,8 @@ pointer's down (1010:2fa9). Each click plays sound 9.
 
 - A button that's up goes down. For buttons 6 to 22 the old tool's button
   comes up and the build menu closes (1010:2be1: it checks the form's
-  `Visible`, which is always set, so it always plays the closing sound).
+  `Visible`, which is always set, so it always plays the closing sound;
+  with `enhance.build_menu` only a shown menu closes).
   Then the tool is the button's; a submenu's opens the build menu
   (1018:2b01); the road's keeps the mouse square as the drag's start and
   end and, oddly, selects building type 1.
@@ -60,7 +61,8 @@ pointer's down (1010:2fa9). Each click plays sound 9.
 ### Clicks on the island (1020:1984, 1020:1b31)
 
 `HauptbildMouseDown` acts only on exactly `[ssLeft]` (with Shift or Ctrl
-held, or the second press of a double click, the tools do nothing),
+held, or the second press of a double click, the tools do nothing; with
+`enhance.modifier_clicks` they act on any left press),
 `[ssLeft, ssDouble]` (the info box stays open) and `[ssRight]`, which
 moves the view towards the point (by its distance from the middle in
 half rows of 18 and columns of 32 pixels, `hauptschirm_scroll`). The
@@ -126,7 +128,8 @@ square's form where it can, 0x17c plus it where it can't):
 They're drawn after the people (1088:3a19 with source 4), without what's
 in front of them. As only this tick moves the drag's end, with the
 animations or new people off the road is built from where the drag
-started to there: one square.
+started to there: one square. With `enhance.road_drag` the release takes
+the square under the mouse as the end (`Action::RoadDragEnd`'s `to`).
 
 ## The build menu (`TBaumenue`, segment `1018`)
 
@@ -168,7 +171,7 @@ Keys (1018:3290): Left and Right open the submenu before and after
 Enter "Bauen", Space gives the main screen the focus; F1 to F12, the
 digits 1 to 9 and Pause go to the main screen's `FormKeyDown`, the other
 keys nowhere (the island doesn't scroll while the build menu has the
-focus). Turning the view redraws the open form's picture (1018:29f7).
+focus; with `enhance.build_menu` they go to the main screen too). Turning the view redraws the open form's picture (1018:29f7).
 
 ## World and view
 

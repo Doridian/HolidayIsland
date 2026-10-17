@@ -20,6 +20,7 @@ use formats::savegame::SaveGame;
 use game::auction;
 use game::command::{Action, Command};
 use game::darstellung::{BITMAP_FILES, Camera, Tiles, square_at};
+use game::enhance::{Enhancement, Enhancements};
 use game::hauptschirm::{self, Hauptschirm, InfoTexts, LAYOUT};
 use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::infobox::{self, Infobox, Request};
@@ -278,7 +279,8 @@ impl Scene {
     }
 
     fn release(&mut self) {
-        let actions = self.tools.release(true);
+        let cam = self.screen.camera();
+        let actions = self.tools.release(true, &self.world, &self.tiles, &cam, (0, 0));
         assert_eq!(actions, []);
         if let Some(Request::Hide) = self.tools.info_box.take() {
             self.box_.hide();
@@ -448,6 +450,31 @@ fn the_info_box_and_the_overview() {
     assert!(lines[0].starts_with("|kleiner Zeltplatz|"), "{lines:?}");
     assert!(lines[3].starts_with("Fertig|in "), "{lines:?}");
     scene.save("site");
+    // Off the map the original names the site's building (the box
+    // doesn't look the square up), `infobox_text` the sea.
+    for fix in [false, true] {
+        scene.box_.enhance.set(Enhancement::InfoboxText, fix);
+        let (world, font, info) = (&scene.world, &scene.font, &scene.info);
+        scene
+            .box_
+            .show(world, font, info, (-5, -5), (100, 100), Scene::main_rect(), true);
+        let lines: Vec<String> = (0..scene.box_.lines.len()).map(|n| scene.line(n)).collect();
+        assert_eq!(lines.iter().any(|l| l.contains("kleiner Zeltplatz")), !fix, "{lines:?}");
+        // Back to the site.
+        scene.point(mouse, ShiftState::LEFT | ShiftState::DOUBLE);
+    }
+    scene.box_.enhance = Enhancements::ORIGINAL;
+    // `infobox_size`: drawn again, the box keeps its size in the
+    // original and takes the new one with the fix.
+    let width = scene.box_.width;
+    for fix in [false, true] {
+        scene.box_.enhance.set(Enhancement::InfoboxSize, fix);
+        scene.box_.width = 1;
+        scene.box_.redraw(&scene.world, &scene.font, &scene.info);
+        assert_eq!(scene.box_.width, if fix { width } else { 1 });
+    }
+    scene.box_.width = width;
+    scene.box_.enhance = Enhancements::ORIGINAL;
     // Bribing the builders: 5000, and the days go down.
     let money = scene.world.finances.money[0];
     let days = scene.world.building_sites[0].days;
@@ -601,6 +628,32 @@ fn the_info_box_and_the_overview() {
         .key_down(0x0d, ShiftState::default(), &scene.world, &scene.font, &scene.info);
     assert_eq!(r.jump, Some(site));
     scene.save("umenu");
+    // `overview_list`: with fewer than 12 buildings the original's Up
+    // puts the list's top before its start; the fix keeps it at 0. A
+    // click on column 299 selects a row only in the original.
+    assert!(scene.umenu.list.len() >= 3, "{:?}", scene.umenu.list);
+    for fix in [false, true] {
+        let u = &mut scene.umenu;
+        u.enhance.set(Enhancement::OverviewList, fix);
+        u.selected = 2;
+        let _ = u.key_down(0x26, ShiftState::default(), &scene.world, &scene.font, &scene.info);
+        assert_eq!(u.selected, 1);
+        assert_eq!(u.top_row() < 0, !fix, "{}", u.top_row());
+        let _ = u.key_down(0x28, ShiftState::default(), &scene.world, &scene.font, &scene.info);
+        assert_eq!(u.selected, 2);
+        u.selected = 0;
+        let _ = u.mouse_down(
+            299,
+            0x30 + 16 + 4,
+            ShiftState::LEFT,
+            &scene.world,
+            &scene.font,
+            &scene.info,
+        );
+        let _ = u.mouse_up(299, 0x30 + 16 + 4, &scene.world, &scene.font, &scene.info);
+        assert_eq!(u.selected != 0, !fix);
+    }
+    scene.umenu.enhance = Enhancements::ORIGINAL;
     // The hotels' kind with the key Right, and back past the roads' with
     // Left.
     scene

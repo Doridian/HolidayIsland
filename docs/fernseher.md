@@ -79,7 +79,8 @@ comes back up):
 - the form 352 × 335: `tvleiimage` (0, 0, 352 × 16) and `tvimage` (0, 16,
   352 × 319);
 - the page drawn (1048:087f), the title bar (`tvleis`, the title centred
-  in 336 pixels at 0, colour 10), 1038:1ee0 on the info box, the
+  in 336 pixels at 0, colour 10; with `enhance.tv_form` at 16, after the
+  close button), 1038:1ee0 on the info box, the
   form shown, sound 0xd, the time.
 
 The page (1048:087f): `tvbild`, the message's picture (125 × 125 of
@@ -108,7 +109,8 @@ same tick reads them.
 The clock's step 8, every 100 ms while the TV is shown; only for a TV a
 message opened (`667d`):
 
-- 3 s after it opened, if the page on it has speech: with the speaker's
+- 3 s after it opened, if the page on it has speech (with
+  `enhance.tv_sound` the posted message's): with the speaker's
   sound open (`662d`) the WaveMix effects give up the wave device
   (10a0:2518), the wave volume goes to the speech volume (10a0:24bc) and
   the speaker starts; `667a` := 1. The MIDI music plays on.
@@ -119,10 +121,13 @@ message opened (`667d`):
   speaker.
 - When the speaker is done (`Position = Length`), or 6 s after the TV
   opened without one: a
-  page without a film closes the TV (1048:077a). Else, if the player
+  page without a film closes the TV (1048:077a; with `enhance.tv_form`
+  not once the player browsed). Else, if the player
   hasn't browsed (`6672` = 0), the film starts (1048:01bd: the main
   screen's info disabled, `Panel1` at (9, 25), 332 wide, `662c` := 1,
-  `6672` := 1); when it ends the TV closes.
+  `6672` := 1); when it ends the TV closes. With `enhance.tv_sound` the
+  film plays at the sound volume and its end gives the effects their
+  wave device back.
 
 The TV asks the caller for the film (`Media::PlayFilm`, `StopFilm`,
 shown in `FILM_PANEL`), which plays it ([films.md](films.md)).
@@ -144,14 +149,15 @@ back at the sound volume. `Action::TvPause(false)` in the port.
 
 | Part | Where | Down (with the mouse up before, sound 8) | Up on it, if it went down |
 |---|---|---|---|
-| 1 | 107–139, 278–310 | | To the news' square, or back to the view origin of the entry (`+0x118`, which 1020:0787 moves 10 rows on) |
+| 1 | 107–139, 278–310 | | To the news' square, or back to the view origin of the entry (`+0x118`, which 1020:0787 moves 10 rows on; with `enhance.tv_form` back where the view was) |
 | 2 | 143–175 | `tvknopf` at 36 | The page before, down to 0 |
 | 3 | 179–211 | `tvknopf` at 72 | The page after, up to the last (`6664`) |
 | 4 | 215–247 | `tvknopf` at 108 | Off |
 
 Each release plays sound 10, and the page is drawn again. The part that
 went down (`664e`) is never cleared, so a press elsewhere and a release on
-a button that went down before still clicks it (kept). Browsing sets the
+a button that went down before still clicks it (kept; with
+`enhance.tv_form` it's cleared on the release). Browsing sets the
 film's state to 3: the film doesn't start and the TV doesn't close by
 itself, unless the page has no film. A press stops a playing film.
 

@@ -12,6 +12,7 @@
 
 use vcl::surface::Surface;
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::text::Font;
 use crate::widgets::{BitmapId, Button, Frame, LIST_CAPACITY, ListBox, Outcome, ShiftState, Skin, Sound, Widget};
 
@@ -55,9 +56,10 @@ pub const EXTENSION: &[u8] = b".map";
 /// case), without it. Each entry goes in front of those before it, so
 /// the list comes out backwards. The list box holds 100; the original
 /// writes any more past its buffer, the port drops them. Used by the load
-/// form and the file menu (1040:10e5). // 1038:3983, 1038:389d, 1038:3a13
+/// form and the file menu (1040:10e5). With `saved_games_order`
+/// (`enhance`) they stay in the directory's order. // 1038:3983, 1038:389d, 1038:3a13
 #[must_use]
-pub fn saved_games(files: &[Vec<u8>]) -> Vec<Vec<u8>> {
+pub fn saved_games(files: &[Vec<u8>], enhance: Enhancements) -> Vec<Vec<u8>> {
     // `FindFirst(MAPS\*.map)`, then `Delete(name, Length(name) - 3, 4)`.
     let mut names: Vec<Vec<u8>> = files
         .iter()
@@ -65,7 +67,9 @@ pub fn saved_games(files: &[Vec<u8>]) -> Vec<Vec<u8>> {
         .map(|f| f[..f.len() - EXTENSION.len()].to_vec())
         .collect();
     // BUG(original): the list comes out in the reverse of the directory's order.
-    names.reverse();
+    if !enhance.has(Enhancement::SavedGamesOrder) {
+        names.reverse();
+    }
     // BUG(original): past 100 files the names are written beyond the list box's buffer; the port keeps 100.
     names.truncate(LIST_CAPACITY);
     names
@@ -118,6 +122,8 @@ pub struct LadenForm {
     down: Button,  // +0x2b7
     load: Button,  // +0x3cd
     close: Button, // +0x4e3
+    /// The player's view enhancements (`modifier_clicks`).
+    pub enhance: Enhancements,
 }
 
 impl LadenForm {
@@ -141,6 +147,7 @@ impl LadenForm {
             down: Button::new(Frame::new(0x39, 0x9f, 0x1c, 0x11), DOWN, DOWN_PRESSED, b"", 9),
             load: Button::new(Frame::new(0x22, 0xba, 0x4e, 0x11), BUTTON, BUTTON_PRESSED, load_text, 9),
             close: Button::new(Frame::new(0, 0, 0x10, 0x10), CLOSE, CLOSE_PRESSED, b"", 9),
+            enhance: Enhancements::ORIGINAL,
         };
         let LadenForm {
             font,
@@ -152,6 +159,7 @@ impl LadenForm {
             down,
             load,
             close,
+            ..
         } = &mut f;
         let clip = bild.bounds();
         bild.draw(0, 0, bitmaps.get(BACKGROUND.0).unwrap_or(empty), clip);
@@ -198,7 +206,7 @@ impl LadenForm {
     /// takes it. Any mouse button presses the buttons. // 1038:3e24
     pub fn mouse_down(&mut self, x: i32, y: i32, shift: ShiftState) -> Response {
         // 1038:36a2: the list's mouse down, with the shift state.
-        let out = self.list.mouse_down(x, y, shift);
+        let out = self.list.mouse_down(x, y, shift, self.enhance);
         if out.handled || out.clicked {
             return self.finish(Which::List, out);
         }
@@ -348,11 +356,19 @@ mod tests {
     #[test]
     fn lists_saved_games_backwards() {
         let files = [&b"LAST.MAP"[..], b"notes.txt", b"Spiel1.map", b".map", b"x.MAPS"].map(<[u8]>::to_vec);
-        assert_eq!(saved_games(&files), [b"Spiel1".to_vec(), b"LAST".to_vec()]);
+        assert_eq!(
+            saved_games(&files, Enhancements::ORIGINAL),
+            [b"Spiel1".to_vec(), b"LAST".to_vec()]
+        );
         let many: Vec<_> = (0..120).map(|i| format!("S{i}.MAP").into_bytes()).collect();
-        let games = saved_games(&many);
+        let games = saved_games(&many, Enhancements::ORIGINAL);
         assert_eq!(games.len(), 100);
         assert_eq!(games[0], b"S119");
+        // With the fix, in the given (sorted) order.
+        let mut e = Enhancements::ORIGINAL;
+        e.set(Enhancement::SavedGamesOrder, true);
+        assert_eq!(saved_games(&files, e), [b"LAST".to_vec(), b"Spiel1".to_vec()]);
+        assert_eq!(saved_games(&many, e)[0], b"S0");
     }
 
     #[test]

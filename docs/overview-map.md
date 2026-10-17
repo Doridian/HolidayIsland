@@ -68,7 +68,11 @@ and row come from two functions per colouring and shading (10b8:17cf):
 
 "The land" is, shaded by heights (`+0x19f` = 1, the toggle's default),
 `min(36, (h - 3) * 2)` for grass and `h * 2 + 26` for sand, `h` the
-square's corner height; shaded by slopes its form × 2. "Free" squares
+square's corner height; shaded by slopes its form × 2. Grass below
+height 3, sand from height 6 and the buildings of nobody (owner 0, whose
+colour `1110:0073` is never written) get rows outside the bitmap, which
+the port draws nothing for; with `enhance.overview_colours` they get the
+lowest grass's row, the highest sand's (0x24) and the land's. "Free" squares
 have no building, a palm or beach life (`1110:1358`); "buildings" are all
 but those and the bridges' 11 and 52 (`1110:1378`); roads are grounds
 10–58 and 95–100, rivers 59–94 (55–94 for the land and green). Pressing
@@ -98,8 +102,9 @@ mark for the screen's bottom edge beside it
 - `MapBild`: exactly `[ssLeft]` puts the main screen's scroll position at
   the point less the frame's click offset (`1110:3d90`: 20, 12 for
   rotation 0): `wo = (x - 20 + origin.x) div 2`, `ns = y - 12 + origin.y`,
-  unclamped, then `hauptschirm_update_scroll` and the island drawn
-  (10b8:37f5); dragging with it does the same inside the image (10b8:39b1),
+  unclamped (with `enhance.overview_scrolling` kept within the main
+  screen's scroll bars' ends), then `hauptschirm_update_scroll` and the
+  island drawn (10b8:37f5); dragging with it does the same inside the image (10b8:39b1),
   and letting go of the left button draws the island again (10b8:3aab).
   Exactly `[ssRight]` centres the window on the point (10b8:1a6e: what
   stays in view is copied, the strips that come in drawn).
@@ -109,7 +114,8 @@ mark for the screen's bottom edge beside it
   (`1110:0056`) while the timer runs and setting it when the mouse is let
   go (10b8:21c7, 10b8:21fa). The thumbs are dragged. The thumb is
   `16 + (pos - min) (travel - 16) / range`, `travel` the vertical bar's
-  height less 35 and the horizontal trough's width.
+  height less 35 and the horizontal trough's width (which lets it onto the
+  right arrow; with `enhance.overview_scrolling` 4 less).
 - `Menubild`'s colourings' buttons pick on the mouse up over the button
   (sound 9 on the press); "Schließen" goes down (sound 8) and closes
   (sound 10, then 0xe).

@@ -31,7 +31,7 @@ method table at 1028:00ac gives the handlers:
 | `knopfimage` | 0, 251, 340 × 65 | `auktfens.BMP`; the texts; a held button from `auktknop.BMP` |
 
 The form is 340 × 316, centred by `AuktionsImage`'s height (so 40 pixels
-low). The click rectangles (inclusive) are at `1110:1654 + 8·n`: 3 the bid
+low; with `enhance.form_positions` by its own). The click rectangles (inclusive) are at `1110:1654 + 8·n`: 3 the bid
 button (197, 7, 300, 33), 4 the pass button (197, 35, 300, 61), 5 the drag
 bar (16, 0, 340, 16), 6 the close button (0, 0, 16, 16), tested by
 1028:01d4 (1030:1517).
@@ -116,6 +116,8 @@ mouth `Random(7)` within 800 ms of a call; eyes and brows each with
   and Alt+F4 close the form first.
 - **Drag bar**: the form shrinks to its title bar while dragged (and
   stays so after a double click) and follows the mouse, kept on screen.
+  The title is drawn again a row higher than the form opened with it
+  (1028:1ce0; with `enhance.auction_title` on its row).
 
 Any button held down keeps the computers from bidding.
 

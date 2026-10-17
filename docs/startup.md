@@ -201,9 +201,10 @@ Quirks:
   radio buttons, so a click only ticks them.
 - Switching pages sets `scenario` to 1 (or 0), but the boxes and the
   description stay as they were: after going back and forth, a different
-  scenario can be ticked than the one that starts.
+  scenario can be ticked than the one that starts. With
+  `enhance.start_menu_scenario` the scenario page ticks scenario 1.
 - Letting go of the right mouse button also releases, and clicks, a button
-  held down with the left.
+  held down with the left (not with `enhance.mouse_buttons`).
 - Never shown: the credits as labels ("Moritz Baer", ...; the picture has
   them), an empty label and a "Version: Deutsch" button with an empty
   `Click`. The published `MaperstButtonClick` (hide the form and go to

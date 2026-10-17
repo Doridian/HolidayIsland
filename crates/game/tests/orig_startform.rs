@@ -67,12 +67,12 @@ fn paints_the_start_menu() {
 
     // The scenario page.
     let _ = form.mouse_down(0x12 + 4, 0x132 + 4, ShiftState::LEFT);
-    let _ = form.mouse_up(0x12 + 4, 0x132 + 4);
+    let _ = form.mouse_up(0x12 + 4, 0x132 + 4, true);
     assert!(form.scenario_mode());
     let _ = form.mouse_down(0xb3 + 4, 0xf0 + 4, ShiftState::LEFT);
     assert_eq!(form.settings().scenario, 4);
     let _ = form.mouse_down(0x152 + 4, 0x132 + 4, ShiftState::LEFT);
-    let up = form.mouse_up(0x152 + 4, 0x132 + 4);
+    let up = form.mouse_up(0x152 + 4, 0x132 + 4, true);
     assert_eq!(up.action, Some(Action::Start { scenario: true }));
 
     if let Some(out) = std::env::var_os("STARTFORM_PPM") {

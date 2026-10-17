@@ -66,7 +66,8 @@ labels. The tracks' names are the form's own (1060:14a1..).
 | Speed, 80–99 | `0096` | 1060:0619: speed `:= 100 - position` | `-` `+` | world, `Action::Speed` |
 | "Katastrophen" | `0065` | 1060:0637: off also sets `1110:133c` | `K` | world, `Action::SetOption` |
 
-Presses (1060:2404) go to the widgets in the order the form makes them
+Presses (1060:2404), of any mouse button (with `enhance.mouse_buttons`
+the left one only), go to the widgets in the order the form makes them
 until one takes it; otherwise a press on the title bar right of the close
 button grabs the form, which rolls up to its 16-pixel title bar until the
 mouse comes up (1060:2b17), and stays rolled up after a double click, like

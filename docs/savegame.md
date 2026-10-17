@@ -209,6 +209,9 @@ saving, and only Enter saves a typed name (`S` types an `s` while the
 field has the focus); a name from the list goes into the field without moving its cursor;
 `1110:6608` remembers whether "Laden" or "Speichern" was clicked last for
 an Enter handler (`EditierfensterKeyDown`, 1040:0cd3) nothing calls.
+With `enhance.edit_field` a press on a button leaves the name focused, so
+"Speichern" saves a typed name, and a name from the list puts the cursor
+after it.
 
 ## The port
 
@@ -219,7 +222,8 @@ an Enter handler (`EditierfensterKeyDown`, 1040:0cd3) nothing calls.
   `%APPDATA%\Holiday Island\MAPS` on Windows), or `--save-dir=DIR`. The
   game's own `MAPS` is only read: the lists show both (the player's file
   wins a name both have), sorted by name as a stand-in for the
-  directory's order, then backwards as the original lists them. `Last.map`
+  directory's order, then backwards as the original lists them (with
+  `enhance.saved_games_order` in that order). `Last.map`
   goes to the player's directory too. A save is written to a temporary
   file and renamed.
 - A file the parser can't read loads nothing (the original, with I/O

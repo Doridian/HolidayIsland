@@ -26,6 +26,7 @@ use formats::data::Strings;
 use crate::baumenue::{Baumenue, Response};
 use crate::command::Action;
 use crate::darstellung::{self, Camera, Tiles, ToolSprite, ViewSize};
+use crate::enhance::{Enhancement, Enhancements};
 use crate::hauptschirm::InfoTexts;
 use crate::infobox;
 use crate::roads::CROSSABLE;
@@ -129,6 +130,9 @@ pub struct Tools {
     /// and then passes the matching camera
     /// ([`crate::hauptschirm::Hauptschirm::drawn_camera`]).
     pub view: ViewSize,
+    /// The player's view enhancements (`build_menu`, `modifier_clicks`,
+    /// `road_drag`).
+    pub enhance: Enhancements,
 }
 
 /// One step towards `stop` along a line of squares (the road planner's
@@ -166,6 +170,7 @@ impl Tools {
             pointer_double: false,
             info_box: None,
             view: ViewSize::ORIGINAL,
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -245,14 +250,17 @@ impl Tools {
     /// another tool's button goes down. // 1010:2be1
     ///
     /// The original closes the build menu if its form's `Visible`
-    /// (`+0x29`) is set, which it is from its creation on, so always.
+    /// (`+0x29`) is set, which it is from its creation on, so always;
+    /// with `build_menu` only when it's shown.
     fn leave_tool(&mut self, old: u8) {
         self.button_up(old); // 1110:14f2[old]
         if old == SABOTAGE {
             self.hide_sabowin();
         }
         // BUG(original): the build menu's `Visible` is always set, so it's closed (with its sound) even when it is.
-        self.close_menu();
+        if self.menu.height > 0 || !self.enhance.has(Enhancement::BuildMenu) {
+            self.close_menu();
+        }
     }
 
     fn close_menu(&mut self) {
@@ -389,6 +397,11 @@ impl Tools {
             return Vec::new();
         }
         // BUG(original): only exactly [ssLeft]: with Shift or Ctrl held, or on a double click's second press, the tools do nothing.
+        let shift = if self.enhance.has(Enhancement::ModifierClicks) {
+            ShiftState(shift.without_keys().0 & !ShiftState::DOUBLE.0)
+        } else {
+            shift
+        };
         if shift != ShiftState::LEFT {
             return Vec::new();
         }
@@ -441,12 +454,26 @@ impl Tools {
 
     /// A button came up on `Hauptbild`: the road tool builds its road
     /// with the left one, if the drag is still on; the pointer's info box
-    /// closes unless a double click opened it (any button).
+    /// closes unless a double click opened it (any button). With
+    /// `road_drag` the road ends at the square under the `mouse` (in
+    /// `Hauptbild`), not where the last tick's picture had it.
     /// // 1020:1b31, 1080:31ed, 1020:050b
     #[must_use]
-    pub fn release(&mut self, left: bool) -> Vec<Action> {
+    pub fn release(
+        &mut self,
+        left: bool,
+        world: &World,
+        tiles: &Tiles,
+        cam: &Camera,
+        mouse: (i32, i32),
+    ) -> Vec<Action> {
         if self.tool == POINTER && !self.pointer_double {
             self.info_box = Some(infobox::Request::Hide);
+        }
+        if self.tool == ROAD && left && world.road_dragging && self.enhance.has(Enhancement::RoadDrag) {
+            // The original's end is the last tick's (`preview_squares`).
+            self.square = darstellung::square_at_in(world, tiles, cam, &self.view, mouse.0, mouse.1); // 1018:3d8d
+            self.drag_end = self.square;
         }
         if self.tool == ROAD && left {
             vec![Action::RoadDragEnd {

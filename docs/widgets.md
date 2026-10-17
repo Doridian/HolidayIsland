@@ -58,20 +58,25 @@ Widgets start hidden, and hidden widgets ignore the mouse. Hit-testing
 
 - Scroll bars step on the arrows when the mouse is *released* over the arrow
   that was pressed, page on the trough at once on press, and drag the thumb
-  only while the mouse stays inside the bar. Nothing auto-repeats.
+  only while the mouse stays inside the bar. Nothing auto-repeats. With
+  `enhance.scroll_bars` the arrows step when pressed.
 - A scroll arrow released over another part of the bar is let go without a
-  repaint, so it stays drawn pressed.
+  repaint, so it stays drawn pressed (with `enhance.scroll_bars` it's
+  drawn up).
 - Scroll bar presses call `Click` whenever they repaint, even when only an
-  arrow went down or a page step hit the end.
+  arrow went down or a page step hit the end (with `enhance.scroll_bars`
+  only for a change of the position).
 - A button's mouse up reports "handled" whenever it was pressed, clicked or
   not.
 - An edit field unfocuses on any click while focused, including one on the
-  field itself. Its drawing has no background, so every change erases the
+  field itself (with `enhance.edit_field` a click on the field keeps it
+  focused). Its drawing has no background, so every change erases the
   rect from the form's background bitmap first. Letters are lower case
   unless Shift is held; the German OEM keys give ä, ö, ü, ß (Ä, Ö, Ü, ?), and
   Enter calls `Click` and unfocuses.
 - A list box only reacts to exactly `[ssLeft]` or `[ssLeft, ssDouble]`; a
-  click with Shift held does nothing.
+  click with Shift held does nothing (with `enhance.modifier_clicks` Shift,
+  Alt and Ctrl don't matter).
 
 ## Finding the VMTs
 

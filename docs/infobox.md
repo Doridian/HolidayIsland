@@ -77,7 +77,7 @@ The lines (`TIBZeilen`):
 | 6 | Guests / capacity (`HAUSDATA.DAT` column 3) |
 | 7 | How full × capacity / 100 / capacity |
 | 8 | The rent a week: the rent / 4 |
-| 9 | The price per visit, `price × 100 / 30 / capacity`, with two decimals (1030:13da); its text is the short text of the facility's class |
+| 9 | The price per visit, `price × 100 / 30 / capacity`, with two decimals (1030:13da, whose thousands marks are a place off; with `enhance.infobox_text` where they belong); its text is the short text of the facility's class |
 | 10 | The condition in percent: × 100 / 127 |
 | 11 | "in *days* Tagen" (`SONSTIGE.TXT` 0x13, 0x14) |
 | 12 | The height: the highest corner × 3 |
@@ -86,7 +86,8 @@ The lines (`TIBZeilen`):
 
 Money goes through `format_money` (1030:11a0). The values that aren't
 looked up for the square keep the last square's: off the map the
-building isn't, so a building site shown before names the ocean's line.
+building isn't, so a building site shown before names the ocean's line
+(with `enhance.infobox_text` the ocean's ground).
 
 1038:1b92 draws `Infobox.bmp` over the whole largest box, the lines from
 row 3, then 2 rows more, and the frame's right edge (4 columns from
@@ -117,7 +118,8 @@ text), each with the currency.
 A press (any mouse button) holds down the shown buttons under the mouse
 with sound 8; letting go lets them up with sound 10, and the one still
 under the mouse does its work. Each command draws the box again
-(1038:1b92) at the same size. `FormKeyDown` (1038:284b) passes the keys
+(1038:1b92) at the same size (with `enhance.infobox_size` at the size
+of what it shows now). `FormKeyDown` (1038:284b) passes the keys
 to the TV while it's shown; else Enter or Escape (alone or with Shift)
 and Alt+F4 close the box.
 
@@ -144,7 +146,8 @@ selected row (`1110:6fbe`) in colour 7. Under it the selected one's rent
 a week or price per visit.
 
 Mouse (1080:1c3b, only with the left button): a kind's picture selects
-it; a row of the list selects it; then the widgets; else the title bar
+it; a row of the list selects it (up to column 300, the scroll bar's
+first two; with `enhance.overview_list` up to 298); then the widgets; else the title bar
 drags the form (shrunk to it, and kept so after a double click there).
 "Renovieren" and the minus and plus buttons act on the selected building
 like the info box's, then draw the list; "Springe hin" moves the main
@@ -152,7 +155,9 @@ screen's view to ten squares before it (1020:0787). Keys (1080:202b,
 alone or with Shift): Escape and Space close, R renovates, Left and
 Right go through the kinds (past 7), Up and Down move the selection
 (drawing the kind from the top first, then moving the top so the
-selection shows), `+` and `-` (also on the number pad) change the
+selection shows; with `enhance.overview_list` the list only scrolls as
+far as the selection needs, and the price's place is cleared with its
+own background, not row 0x43's), `+` and `-` (also on the number pad) change the
 price and draw the kind again, Enter jumps; Alt+F4 closes.
 `umenu_refresh` (1080:0123) draws the list again if the form is shown,
 after the settlement's steps 0x1d and 0x47 and a finished building

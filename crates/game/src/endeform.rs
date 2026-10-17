@@ -19,6 +19,7 @@
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::text::{Align, Font};
 use crate::widgets::{BitmapId, ShiftState, Sound};
 
@@ -142,6 +143,8 @@ pub struct Endeform {
     /// Where the mouse grabbed the title bar, from the form's top left.
     /// // 1110:6046, 1110:6048
     grab: (i32, i32),
+    /// The player's view enhancements (`form_drags`).
+    pub enhance: Enhancements,
 }
 
 impl Endeform {
@@ -162,6 +165,7 @@ impl Endeform {
             quitting: false,
             pressed: 0,
             grab: (0, 0),
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -332,7 +336,12 @@ impl Endeform {
             let (sx, sy) = (self.left + x, self.top + y);
             self.left = (sx - self.grab.0).max(0).min(screen.0 - WIDTH);
             // BUG(original): the form is kept on the screen by its height while dragged (16), so it can be dropped with its bottom off the screen.
-            self.top = (sy - self.grab.1).max(0).min(screen.1 - self.height);
+            let height = if self.enhance.has(Enhancement::FormDrags) {
+                HEIGHT
+            } else {
+                self.height
+            };
+            self.top = (sy - self.grab.1).max(0).min(screen.1 - height);
             r.moved = true;
         }
         r
@@ -482,5 +491,14 @@ mod tests {
         let _ = f.mouse_down(50, 5, true);
         let _ = f.mouse_move(-1000, 5, ShiftState::LEFT, (800, 600));
         assert_eq!(f.left, 0);
+    }
+
+    #[test]
+    fn stays_on_the_screen_with_the_fix() {
+        let mut f = form();
+        f.enhance.set(Enhancement::FormDrags, true);
+        let _ = f.mouse_down(50, 5, true);
+        let _ = f.mouse_move(50, 5 + 500, ShiftState::LEFT, (800, 600));
+        assert_eq!(f.top, 600 - HEIGHT);
     }
 }

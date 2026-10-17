@@ -27,6 +27,7 @@ use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::command;
+use crate::enhance::{Enhancement, Enhancements};
 use crate::people::FIRST;
 use crate::simulation::Tick;
 use crate::text::{Align, Font};
@@ -650,6 +651,8 @@ pub struct Optionenform {
     /// The title bar was double-clicked: the form stays rolled up to it.
     /// // +0x18b
     rolled_up: bool,
+    /// The player's view enhancements (`mouse_buttons`, `scroll_bars`).
+    pub enhance: Enhancements,
 }
 
 impl Optionenform {
@@ -675,6 +678,7 @@ impl Optionenform {
             grip: (0, 0),
             full_height: HEIGHT,
             rolled_up: false,
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -944,11 +948,15 @@ impl Optionenform {
     /// turn until one takes it; if none does, a press on the title bar
     /// right of the close button grabs the form, which rolls up to its
     /// title bar until the mouse comes up, and stays so after a double
-    /// click. // 1060:2404
+    /// click. With `mouse_buttons` only the left button does anything.
+    /// // 1060:2404
     pub fn mouse_down(&mut self, x: i32, y: i32, shift: ShiftState) -> Response {
         let mut r = Response::default();
         self.dragging = false;
         // BUG(original): the handler doesn't look at the mouse button, so the right button ticks the boxes too.
+        if self.enhance.has(Enhancement::MouseButtons) && !shift.contains(ShiftState::LEFT) {
+            return r;
+        }
         for i in 0..self.widgets.len() {
             let (id, item) = &mut self.widgets[i];
             let id = *id;
@@ -956,7 +964,7 @@ impl Optionenform {
                 Item::Button(b) => b.mouse_down(x, y),
                 Item::Check(c) => c.mouse_down(x, y),
                 Item::Radio(radio) => radio.mouse_down(x, y),
-                Item::Scroll(b) => b.mouse_down(x, y),
+                Item::Scroll(b) => b.mouse_down(x, y, self.enhance),
             };
             if out.handled {
                 self.finish(id, out, &mut r);
@@ -1014,7 +1022,7 @@ impl Optionenform {
                 let id = *id;
                 let out = match item {
                     Item::Button(b) if pass => b.mouse_up(x, y),
-                    Item::Scroll(b) if !pass => b.mouse_up(x, y),
+                    Item::Scroll(b) if !pass => b.mouse_up(x, y, self.enhance),
                     _ => continue,
                 };
                 if out.handled {
@@ -1267,5 +1275,19 @@ mod tests {
         w.set_option(WorldOption::PeopleMove, false, &mut tick);
         assert_eq!(flag(&w, 0x31), 0);
         assert!(!w.options.people_move);
+    }
+
+    #[test]
+    fn right_button_with_the_fix() {
+        let w = World::default();
+        let mut f = form(&w);
+        let animations = (0xb3 + 2, 0x10f + 2);
+        let before = f.checked(Id::Animations);
+        let _ = f.mouse_down(animations.0, animations.1, ShiftState::RIGHT);
+        assert_ne!(f.checked(Id::Animations), before, "the original ticks it");
+        let mut f = form(&w);
+        f.enhance.set(Enhancement::MouseButtons, true);
+        let _ = f.mouse_down(animations.0, animations.1, ShiftState::RIGHT);
+        assert_eq!(f.checked(Id::Animations), before);
     }
 }

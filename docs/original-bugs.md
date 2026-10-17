@@ -41,8 +41,16 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 - **View enhancements** (`enhance::Enhancement`, a set is
   `enhance::Enhancements`) change one player's screen, sound or input.
   They are that player's settings: `window_stacking`
-  ([layout.md](layout.md#stacking)) and `big_map`
-  ([layout.md](layout.md#big_map-enhancement)).
+  ([layout.md](layout.md#stacking)), `big_map`
+  ([layout.md](layout.md#big_map-enhancement)) and the fixes keyed in
+  "UI quirks" and "Sound" below. Each form keeps the player's set in its
+  `enhance` field (`Game::set_view_enhancements` hands it out; the start
+  menu, the load form and the sound get it from `Holiday`), and the
+  code branches on it where the quirk is. Some of them change what the
+  player's view tells the world, as any input does, never how the world
+  reacts: `road_drag` (where `Action::RoadDragEnd` ends), `tv_form` and
+  `tv_sound` (when the TV sends `Action::TvPause` and `Action::Speaker`),
+  `overview_scrolling` (the viewpoint the people code reads).
 - Each has a stable key, a one-line description and is on by default.
   `enhance::Config::resolve` works them out: everything on, or off with
   the master switch, then each per-key override in order. The player
@@ -191,72 +199,72 @@ The widgets' are described in
 
 | Where | Quirk | Kept |
 |---|---|---|
-| 10c0:0f10 | The scroll bars' arrows step only when the mouse is released; nothing auto-repeats | yes |
-| 10c0:15f7 | A scroll arrow released over another part of the bar stays drawn pressed | yes |
-| 10c0:0fe3 | A scroll bar press calls `Click` whenever it repaints, even when the position didn't change | yes |
-| 10c0:0998 | A button's mouse up reports "handled" whenever it was pressed, clicked or not | yes |
-| 10c0:1c1b | A click on an edit field while it has focus takes the focus away | yes |
-| 10c0:0431 | A list box ignores clicks with Shift held | yes |
-| 1030:23d3 | `draw_text` keeps the breaking space on the line and measures it again on the next, doesn't measure a line's last character for alignment, and before the first space puts the whole rest of the string on an overlong line | yes |
-| 1058:02cf | Switching pages on the start menu can leave a different scenario ticked than the one that starts | yes |
-| 1058:41fb | Letting go of the right mouse button also clicks a button held down with the left | yes |
-| 1028:0dde | The auction form is centred by its picture's height, not its own, so it sits 40 pixels low | yes |
-| 1028:15ef | A paddle's animation puts the bare background back under it, wiping the bottom rows of the item's picture | yes |
-| 1038:3983, 1040:10e5 | The lists of saved games come out in the reverse of the directory's order | yes (the port's stand-in for the order is the names sorted) |
-| 1040:073c | Any press while the file menu's name field is focused unfocuses it, so clicking "Speichern" focuses it again instead of saving; only Enter saves a typed name | yes |
-| 1040:0192 | A name picked from the file menu's list goes into the field without moving its cursor | yes |
-| 1028:1ce0 | After a click on the title bar the title is drawn one row higher than the form opened with | yes |
-| 1090:124f, 1080:31ed | The road drag's end only follows the mouse in the clock's tick with the animations and new people on: otherwise the road is one square, and it always ends where the mouse was at the last tick ([player-tools.md](player-tools.md)) | yes |
+| 10c0:0f10 | The scroll bars' arrows step only when the mouse is released; nothing auto-repeats | `scroll_bars`: they step when pressed; still no auto-repeat, which would need a timer in every form with a bar |
+| 10c0:15f7 | A scroll arrow released over another part of the bar stays drawn pressed | `scroll_bars` |
+| 10c0:0fe3 | A scroll bar press calls `Click` whenever it repaints, even when the position didn't change | `scroll_bars`: only for a change (the release too) |
+| 10c0:0998 | A button's mouse up reports "handled" whenever it was pressed, clicked or not | yes; not fixed: nothing shows it, since only the pressed button takes the release |
+| 10c0:1c1b | A click on an edit field while it has focus takes the focus away | `edit_field` |
+| 10c0:0431 | A list box ignores clicks with Shift held | `modifier_clicks` |
+| 1030:23d3 | `draw_text` keeps the breaking space on the line and measures it again on the next, doesn't measure a line's last character for alignment, and before the first space puts the whole rest of the string on an overlong line | yes; not fixed: it's how every text in the game looks, and the texts were fitted to their boxes with it; a fix would rewrap all of them |
+| 1058:02cf | Switching pages on the start menu can leave a different scenario ticked than the one that starts | `start_menu_scenario`: the scenario page ticks scenario 1, which starts |
+| 1058:41fb | Letting go of the right mouse button also clicks a button held down with the left | `mouse_buttons` |
+| 1028:0dde | The auction form is centred by its picture's height, not its own, so it sits 40 pixels low | `form_positions` |
+| 1028:15ef | A paddle's animation puts the bare background back under it (rows 167–234, below the item's picture, which ends at row 166), so a paddle of colour 7 or 8 cuts the bottom rows off the auctioneer's waving hand (282, 149) until its next frame | yes; not fixed: a few pixels for a moment, and only while the hand waves |
+| 1038:3983, 1040:10e5 | The lists of saved games come out in the reverse of the directory's order | `saved_games_order`: the directory's order, which the port's stand-in has sorted by name |
+| 1040:073c | Any press while the file menu's name field is focused unfocuses it, so clicking "Speichern" focuses it again instead of saving; only Enter saves a typed name | `edit_field`: a press on a button leaves the field focused, so "Speichern" saves |
+| 1040:0192 | A name picked from the file menu's list goes into the field without moving its cursor | `edit_field`: the cursor goes after it |
+| 1028:1ce0 | After a click on the title bar the title is drawn one row higher than the form opened with | `auction_title` |
+| 1090:124f, 1080:31ed | The road drag's end only follows the mouse in the clock's tick with the animations and new people on: otherwise the road is one square, and it always ends where the mouse was at the last tick ([player-tools.md](player-tools.md)) | `road_drag`: the road ends where the mouse is let go (the picture still needs the animations) |
 | 1090:0014 | For a square without a building the demolish tool's picture shows the area of the building it or the people code (`1110:6ff2`) last found | partly: the port's picture remembers its own |
-| 1020:1984 | The tools only act on exactly `[ssLeft]`: with Shift or Ctrl held, or on the second press of a double click, a click does nothing | yes |
-| 1010:2be1 | Picking any tool closes the build menu, with its sound, even when it's closed (its `Visible` is always set) | yes |
-| 1010:2c8b | The road's button selects building type 1 for the build tools, until a submenu selects another | yes |
-| 1018:3290 | With the build menu focused only F1–F12, 1–9 and Pause reach the main screen: the arrow keys and 0 do nothing | yes |
-| 1060:2404 | The options form takes a press of any mouse button, so the right button ticks its boxes too | yes |
-| 1070:2b3a | The money menu opens two pixels short of its menu bar's bottom (the first rectangle's bottom − 1); after a drag it's the bottom + 1 ([geldmenu.md](geldmenu.md#opening-and-closing)) | yes |
-| 1070:2e6c | The money menu is placed one column further right than its width allows, so its last column is off the screen | yes |
-| 1070:0820 | Any mouse button drags the money menu by its title bar, and rolls it up meanwhile | yes |
-| 1070:39bf | With the money menu focused, `1`–`6` pick its pages, so `5` (its button's key) and `1`–`4`, `6` don't reach the button bar | yes |
-| 1008:4f64 | The year's end shows the money menu without pressing the button bar's button 4 | yes |
-| 1070:151b | A chart line drawn from right to left along its longer axis gets only its first dot (the charts never draw one) | yes |
-| 10b8:37f5, 10b8:39b1 | A click near the overview map's edges puts the main screen's scroll position past its scroll bars' ends (`wo` from -10 to 490, `ns` from -13 to 489), with the thumbs drawn past the arrows ([overview-map.md](overview-map.md)) | yes |
-| 10b8:2785 | The overview map's horizontal thumb travels the trough's full width, so near the right end it covers 4 pixels of the right arrow, which taking it off leaves behind | yes |
-| 10b8:24a1, 10b8:2e99 | Letting go of the overview map's scroll bar or menu turns the "new people" option on whatever the player chose (its arrows turn it off while held) | yes |
-| 10b8:04b1, 10b8:07df, 10b8:0a0a | On the overview map, grass below height 3, sand from height 6 and buildings of owner 0 (whose colour comes from the never-written `1110:0073`) get a colour from outside `Ueberma2.BMP` | the port draws nothing there, leaving the sea's tile or the square drawn before |
-| 10b8:3d2b | The overview map's close button is drawn back from the small title bar's bitmap in either size (the same pixels) | yes |
+| 1020:1984 | The tools only act on exactly `[ssLeft]`: with Shift or Ctrl held, or on the second press of a double click, a click does nothing | `modifier_clicks` |
+| 1010:2be1 | Picking any tool closes the build menu, with its sound, even when it's closed (its `Visible` is always set) | `build_menu`: only when it's shown |
+| 1010:2c8b | The road's button selects building type 1 for the build tools, until a submenu selects another | yes; not fixed: nothing reads it before a submenu sets its own |
+| 1018:3290 | With the build menu focused only F1–F12, 1–9 and Pause reach the main screen: the arrow keys and 0 do nothing | `build_menu`: every key it doesn't use (Left, Right, Escape, Enter, Space) |
+| 1060:2404 | The options form takes a press of any mouse button, so the right button ticks its boxes too | `mouse_buttons` |
+| 1070:2b3a | The money menu opens two pixels short of its menu bar's bottom (the first rectangle's bottom − 1); after a drag it's the bottom + 1 ([geldmenu.md](geldmenu.md#opening-and-closing)) | `form_positions`: the bottom + 1 |
+| 1070:2e6c | The money menu is placed one column further right than its width allows, so its last column is off the screen | `form_positions` |
+| 1070:0820 | Any mouse button drags the money menu by its title bar, and rolls it up meanwhile | `mouse_buttons`: the left one |
+| 1070:39bf | With the money menu focused, `1`–`6` pick its pages, so `5` (its button's key) and `1`–`4`, `6` don't reach the button bar | yes; not fixed: the pages' keys look meant, as the form's own shortcuts while it has the focus |
+| 1008:4f64 | The year's end shows the money menu without pressing the button bar's button 4 | `money_menu_button` |
+| 1070:151b | A chart line drawn from right to left along its longer axis gets only its first dot (the charts never draw one) | yes; not fixed: never seen |
+| 10b8:37f5, 10b8:39b1 | A click near the overview map's edges puts the main screen's scroll position past its scroll bars' ends (`wo` from -10 to 490, `ns` from -13 to 489), with the thumbs drawn past the arrows ([overview-map.md](overview-map.md)) | `overview_scrolling`: kept within the ends (`Hauptschirm::set_scroll`) |
+| 10b8:2785 | The overview map's horizontal thumb travels the trough's full width, so near the right end it covers 4 pixels of the right arrow, which taking it off leaves behind | `overview_scrolling`: 4 pixels less |
+| 10b8:24a1, 10b8:2e99 | Letting go of the overview map's scroll bar or menu turns the "new people" option on whatever the player chose (its arrows turn it off while held) | yes; not fixed: not a bug, as for 1080:3216 above: `1110:0056` is the busy flag that stops people spawning while the map scrolls, not a player's option (and it's the world's) |
+| 10b8:04b1, 10b8:07df, 10b8:0a0a | On the overview map, grass below height 3, sand from height 6 and buildings of owner 0 (whose colour comes from the never-written `1110:0073`) get a colour from outside `Ueberma2.BMP` | the port draws nothing there, leaving the sea's tile or the square drawn before; `overview_colours`: the lowest grass's and highest sand's colours, and nobody's buildings as the land |
+| 10b8:3d2b | The overview map's close button is drawn back from the small title bar's bitmap in either size (the same pixels) | yes; not fixed: the pixels are the same |
 | 10b8:1684, 1030:185d | The overview map's redraw after a location change covers its radius in squares, though the radius is in cells of two squares | no: the port redraws every changed cell ([overview-map.md](overview-map.md)) |
-| 1038:34fc | The compass's drag isn't let go on the mouse up, so a left drag that starts elsewhere and comes over it moves it | yes |
-| 1028:2f4e, 1028:394c | The sabotage window's Sabotieren only hides it: the tool was already the sabotage tool, and clicks on the island sabotage with the picked kind while the window is open too. It sets `1110:54fa` (saved), which nothing reads | yes |
-| 1028:2ecc, 1028:2f4e | The sabotage window's drag state stays after the mouse comes up, until the next press in it | yes |
-| 1030:108b | The prices with decimals (the info box's and the overview's price per visit) put the thousands marks one place off: "1234,50", "12.34567,89" | yes |
-| 1038:014b | Off the map the info box doesn't look the building up, so after a building site it names the site's building instead of the ocean | yes |
-| 1080:02d9 | The overview clears the place of the selected building's price with the background from row 0x43, not its own | yes |
-| 1080:1c3b | The overview's columns 299 and 300 belong to the list and the scroll bar | yes |
-| 1080:202b | The overview's keys Up and Down draw the kind from the list's top first, then Up puts the selection in the top row (when it isn't the first) and Down in the bottom row past row 10 | yes |
-| 1038:24d6 | After a button's command the info box is drawn again but keeps its size | yes |
-| 1048:1794 | The TV's button that went down is never cleared: a press elsewhere and a release on that button still clicks it | yes |
-| 1048:1794, 1048:26f6 | The TV's first button scrolls back to the view origin saved with the news, which 1020:0787 moves 10 rows on, so the view doesn't come back where it was | yes |
-| 1048:1b3e | A TV the news opened closes 6 s after it opened if its page has no film, even while the player browses | yes |
-| 1048:12e9 | The TV's title is centred over 336 pixels from the bar's left edge, not over the bar after the close button | yes |
-| 1020:38d4 | The quit question is kept on the screen by its 16-pixel title bar while dragged, so it can be dropped with its bottom off the screen | yes |
-| 1068:01df | "Beenden" on the end form quits without saving `Last.map`, unlike the quit question's "OK" | yes |
-| 1068:0288, 1068:1016 | A cheater who wins sees "not reached", the cheating text, the losing film and music, and no "Weiterspielen" | yes |
-| 1040:1d49 | The tenth rank of the high scores shows "..." instead of 10 | yes |
-| 1040:1ca7 | "Löschen" clears the shown high score table without asking | yes |
-| 1040:31bc | The high scores' check boxes are pressed as radio buttons: a ticked one ignores a click | yes |
-| 1040:3dc7 | The tooltip's timeout (`1110:009c`) is set to 10 and never read | yes |
-| 1048:01bd | The TV's `Panel1` is 332 × 256 and its films 335 × 257: their right 3 columns and bottom row are never seen ([films.md](films.md)) | yes |
-| 1000:3938 | A key on the background form sets its timer's interval to 1 in any state, so besides ending the intro's film it cuts the waits for the title and the start menu short | yes |
-| 1000:2466 (state 110) | A desktop up to 20 pixels smaller than 640×480, 800×600, 1024×768, 1152×870 or 1280×1024 is laid out as that size, so what sits at the right or bottom edge (the money menu, the compass, the load form) and the centred forms' right and bottom are cut off by up to 20 pixels ([layout.md](layout.md#the-screen-size)) | yes |
-| 1000:2466 (states 430, 450, 1130) | Any other desktop size has no title and no background picture: the intro's title and the desktop around the main screen stay black ([layout.md](layout.md#the-screen-size)) | yes |
-| 1020:1bd9 | The main screen's title bar moves the form on any left drag over it, also one that started off every form, by the last grab ([layout.md](layout.md#the-main-screen)) | yes |
+| 1038:34fc | The compass's drag isn't let go on the mouse up, so a left drag that starts elsewhere and comes over it moves it | `form_drags` |
+| 1028:2f4e, 1028:394c | The sabotage window's Sabotieren only hides it: the tool was already the sabotage tool, and clicks on the island sabotage with the picked kind while the window is open too. It sets `1110:54fa` (saved), which nothing reads | yes; not fixed: works as a picker either way; what `1110:54fa` was for is unclear |
+| 1028:2ecc, 1028:2f4e | The sabotage window's drag state stays after the mouse comes up, until the next press in it | `form_drags` |
+| 1030:108b | The prices with decimals (the info box's and the overview's price per visit) put the thousands marks one place off: "1234,50", "12.34567,89" | `infobox_text`: "1.234,50" |
+| 1038:014b | Off the map the info box doesn't look the building up, so after a building site it names the site's building instead of the ocean | `infobox_text` |
+| 1080:02d9 | The overview clears the place of the selected building's price with the background from row 0x43, not its own | `overview_list` |
+| 1080:1c3b | The overview's columns 299 and 300 belong to the list and the scroll bar | `overview_list`: to the bar |
+| 1080:202b | The overview's keys Up and Down draw the kind from the list's top first, then Up puts the selection in the top row (when it isn't the first) and Down in the bottom row past row 10 | `overview_list`: the list scrolls only as far as the selection needs |
+| 1038:24d6 | After a button's command the info box is drawn again but keeps its size | `infobox_size` |
+| 1048:1794 | The TV's button that went down is never cleared: a press elsewhere and a release on that button still clicks it | `tv_form` |
+| 1048:1794, 1048:26f6 | The TV's first button scrolls back to the view origin saved with the news, which 1020:0787 moves 10 rows on, so the view doesn't come back where it was | `tv_form` |
+| 1048:1b3e | A TV the news opened closes 6 s after it opened if its page has no film, even while the player browses | `tv_form`: once browsed it stays until closed |
+| 1048:12e9 | The TV's title is centred over 336 pixels from the bar's left edge, not over the bar after the close button | `tv_form` |
+| 1020:38d4 | The quit question is kept on the screen by its 16-pixel title bar while dragged, so it can be dropped with its bottom off the screen | `form_drags` |
+| 1068:01df | "Beenden" on the end form quits without saving `Last.map`, unlike the quit question's "OK" | yes; not fixed: the intent is unclear, as a finished game may well not be meant to come back as the last game |
+| 1068:0288, 1068:1016 | A cheater who wins sees "not reached", the cheating text, the losing film and music, and no "Weiterspielen" | yes; not fixed: design, cheating is punished |
+| 1040:1d49 | The tenth rank of the high scores shows "..." instead of 10 | yes; not fixed: looks meant, the "..." is a string of its own (1040:1d45) |
+| 1040:1ca7 | "Löschen" clears the shown high score table without asking | yes; not fixed: design; a question would be a new dialog |
+| 1040:31bc | The high scores' check boxes are pressed as radio buttons: a ticked one ignores a click | yes; not fixed: design, one table is shown at a time |
+| 1040:3dc7 | The tooltip's timeout (`1110:009c`) is set to 10 and never read | yes; not fixed: nothing to see, and what it was meant to time is unclear |
+| 1048:01bd | The TV's `Panel1` is 332 × 256 and its films 335 × 257: their right 3 columns and bottom row are never seen ([films.md](films.md)) | yes; not fixed: the DFM's layout, and the edges hardly show anything |
+| 1000:3938 | A key on the background form sets its timer's interval to 1 in any state, so besides ending the intro's film it cuts the waits for the title and the start menu short | yes; not fixed: it works as a skip, which a player pressing a key wants |
+| 1000:2466 (state 110) | A desktop up to 20 pixels smaller than 640×480, 800×600, 1024×768, 1152×870 or 1280×1024 is laid out as that size, so what sits at the right or bottom edge (the money menu, the compass, the load form) and the centred forms' right and bottom are cut off by up to 20 pixels ([layout.md](layout.md#the-screen-size)) | `desktop_background`: laid out for the size it is |
+| 1000:2466 (states 430, 450, 1130) | Any other desktop size has no title and no background picture: the intro's title and the desktop around the main screen stay black ([layout.md](layout.md#the-screen-size)) | `desktop_background`: the pictures of the size it would snap to, else the biggest that fits, centred |
+| 1020:1bd9 | The main screen's title bar moves the form on any left drag over it, also one that started off every form, by the last grab ([layout.md](layout.md#the-main-screen)) | `form_drags` |
 | DFMs, Windows | The `fsStayOnTop` forms (TV, compass, info box, auction, pause, options, quit question, high scores, file menu, tooltip) always lie over the others, wherever those are clicked: the end form can lie under the TV and compass, and the TV over the island can't be put behind the main screen ([layout.md](layout.md#stacking)) | `window_stacking` |
 | 1070:2bd7, 10b8:3fa2, 1018:2c96, 1038:1f0a, 1048:085a, 1028:056f, 1040:3bac, 1060:0e80, 1068:0194, 1010:2819 | Closing the money menu, overview map, build menu, info box, TV, auction, pause, options or end form ("Weiterspielen"), and loading a game from the file menu, raise the main screen over the other forms that aren't `fsStayOnTop`, which then lie hidden under it where they overlap it ([layout.md](layout.md#stacking)) | `window_stacking` |
 | 1000:2241, 1010:2a5a | A press on the background raises `THintergrund` over the main screen and the other forms that aren't `fsStayOnTop`; its `OnActivate` raises them back in `window_forms`' order, the main screen on top, but not while the info box or the end form is shown, which leaves them hidden behind the background until one is raised ([layout.md](layout.md#stacking)) | `window_stacking` |
 | 1020:1ce9, 1110:1572, 1050:2700, 1050:21b7 | The main screen and its map view are 640 × 479 and 20 columns by 27 half rows on every screen: a bigger desktop shows more background around them, not more island ([layout.md](layout.md#the-main-screen)) | `big_map` |
 | 10b8:1349, 1110:3d80 | The overview map's frame for the main screen's view is a 40 × 25 box in every rotation; turned a quarter that view covers about 50 × 20 of the map ([overview-map.md](overview-map.md#the-frame)) | yes (`big_map` draws its own frame, the right shape, only for its bigger view) |
-| 1018:2fa2 | The build menu's first position is `(screen_height - 480) div 2 + 59`, one row above the island (the main screen is 479 high, centred with `div 2` of each half) | yes |
-| 1110:54fc users | The sabotage window and the file menu open where the DFM put them (300, 167 and 305, 139), so on a desktop bigger than 640×480 they aren't over the centred main screen ([layout.md](layout.md#the-other-forms)) | yes |
+| 1018:2fa2 | The build menu's first position is `(screen_height - 480) div 2 + 59`, one row above the island (the main screen is 479 high, centred with `div 2` of each half) | `form_positions` |
+| 1110:54fc users | The sabotage window and the file menu open where the DFM put them (300, 167 and 305, 139), so on a desktop bigger than 640×480 they aren't over the centred main screen ([layout.md](layout.md#the-other-forms)) | `form_positions`: moved with the centred main screen |
 
 ## Sound
 
@@ -264,15 +272,15 @@ The widgets' are described in
 
 | Where | Quirk | Kept |
 |---|---|---|
-| 10a0:2824 | The auctioneer's three calls (`zum1.wav`..`zum3.wav`, sounds 0x1a–0x1c) are looked for in `SOUND\`, but they're in `SPRADEUn\`: WaveMix gets null waves and they're never heard | yes |
-| 1090:5293, 10a0:30b6 | A sound's time (`1110:723c`) only counts down in `people_tick`, which runs with the "animations" option on: with it off, each sound with a time plays once and then never again (until "Neues Spiel") | yes |
-| 1018:37de, 1018:367e | The playlist starts at track 0 while the intro's `holiday.mid` plays, so the first track after it is the second (`dub.mid`), and `anotrian.mid` only comes after the whole list | yes |
-| 1018:367e | A track's end is only noticed when the next day begins and the position hasn't moved for a whole day: up to a day of silence between tracks, and none changes while the game is paused | yes |
-| 1010:26fa | Loading a game from the file menu with the music on opens its file again without playing it: silence until a day or two later the next track starts | yes |
-| 1048:0a54 | A message without speech only forgets a speech still open from the last one: it plays on, and the effects stay off, until the TV closes | yes |
-| 1048:1b3e | The speech starts by the page on the TV, not the message it belongs to: browsing with the keys to a page without speech in the first 3 s keeps it from starting, and the TV then never closes by itself | yes |
-| 1048:01bd, 1048:034f | A news film after a speech plays at the speech volume: the sound volume comes back only when the speaker closes, after the film | yes |
-| 1048:01bd, 1048:077a | A news film gives up WaveMix's wave device (10a0:2518) and only closing the TV takes it back, and only with "Geräusche" on: switching the sounds on later leaves the effects silent until something else takes it back | yes |
+| 10a0:2824 | The auctioneer's three calls (`zum1.wav`..`zum3.wav`, sounds 0x1a–0x1c) are looked for in `SOUND\`, but they're in `SPRADEUn\`: WaveMix gets null waves and they're never heard | `auction_calls`: from `SPRADEU1\` (the three directories have the same files) |
+| 1090:5293, 10a0:30b6 | A sound's time (`1110:723c`) only counts down in `people_tick`, which runs with the "animations" option on: with it off, each sound with a time plays once and then never again (until "Neues Spiel") | `sound_times`: every tick |
+| 1018:37de, 1018:367e | The playlist starts at track 0 while the intro's `holiday.mid` plays, so the first track after it is the second (`dub.mid`), and `anotrian.mid` only comes after the whole list | `music`: the first ticked track comes first |
+| 1018:367e | A track's end is only noticed when the next day begins and the position hasn't moved for a whole day: up to a day of silence between tracks, and none changes while the game is paused | `music`: the next starts as one ends, paused or not (the day's check stays for a track that doesn't open) |
+| 1010:26fa | Loading a game from the file menu with the music on opens its file again without playing it: silence until a day or two later the next track starts | `music`: it plays on from the track's start |
+| 1048:0a54 | A message without speech only forgets a speech still open from the last one: it plays on, and the effects stay off, until the TV closes | `tv_sound`: it closes it |
+| 1048:1b3e | The speech starts by the page on the TV, not the message it belongs to: browsing with the keys to a page without speech in the first 3 s keeps it from starting, and the TV then never closes by itself | `tv_sound`: by the posted message's |
+| 1048:01bd, 1048:034f | A news film after a speech plays at the speech volume: the sound volume comes back only when the speaker closes, after the film | `tv_sound` |
+| 1048:01bd, 1048:077a | A news film gives up WaveMix's wave device (10a0:2518) and only closing the TV takes it back, and only with "Geräusche" on: switching the sounds on later leaves the effects silent until something else takes it back | `tv_sound`: the film's end and the TV's closing take it back either way |
 
 ## Design issues for multiplayer
 

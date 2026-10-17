@@ -21,6 +21,7 @@ use vcl::surface::{Rop, Surface};
 
 use crate::build_menu::{FIRST_MENU, MENUS, NONE};
 use crate::darstellung::{self, Tiles};
+use crate::enhance::{Enhancement, Enhancements};
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::savegame::Fields;
@@ -171,6 +172,8 @@ pub struct Baumenue {
     grab: (i32, i32),
     /// Sounds to play, in order (`play_sound`).
     pub sounds: Vec<u8>,
+    /// The player's view enhancements (`build_menu`, `form_positions`).
+    pub enhance: Enhancements,
 }
 
 impl Baumenue {
@@ -217,12 +220,33 @@ impl Baumenue {
             width: 410,
             grab: (0, 0),
             sounds: Vec::new(),
+            enhance: Enhancements::ORIGINAL,
         };
         m.lay_out();
         m.left = width - m.width - 1;
-        // BUG(original): 480, not the main screen's 479 with each half divided, puts the menu one row above the island.
-        m.top = (height - 480) / 2 + 0x3b;
+        m.top = m.first_top(height);
         m
+    }
+
+    /// The menu's first top on a screen `height` high; with
+    /// `form_positions` level with the island's top. // 1018:2fa2
+    fn first_top(&self, height: i32) -> i32 {
+        if self.enhance.has(Enhancement::FormPositions) {
+            crate::hauptschirm::Hauptschirm::position(0, height).1 + 0x3b
+        } else {
+            // BUG(original): 480, not the main screen's 479 with each half divided, puts the menu one row above the island.
+            (height - 480) / 2 + 0x3b
+        }
+    }
+
+    /// The player's view enhancements, on a screen `height` high: a menu
+    /// still where it was made goes where they put it.
+    pub fn set_enhance(&mut self, enhance: Enhancements, height: i32) {
+        let first = self.top == self.first_top(height);
+        self.enhance = enhance;
+        if first {
+            self.top = self.first_top(height);
+        }
     }
 
     /// A building type's short name (`HAUSNAME.TXT`'s first list), as the
@@ -688,12 +712,14 @@ impl Baumenue {
 
     /// `FormKeyDown`: the arrow keys switch submenus, Escape cancels,
     /// Enter closes, Space gives the main screen the focus; F1 to F12, the
-    /// digits but 0 and Pause go to the main screen. // 1018:3290
+    /// digits but 0 and Pause go to the main screen; with `build_menu`
+    /// every key the menu doesn't use. // 1018:3290
     #[must_use]
     pub fn key_down(&self, key: u16) -> Response {
         let k = usize::from(self.menu).checked_sub(usize::from(FIRST_MENU));
         // BUG(original): only these keys reach the main screen: the arrow keys and 0 do nothing while the build menu has the focus.
-        if main_screen_key(key) {
+        let own = matches!(key, 0x25 | 0x27 | 0x1b | 0xd | 0x20);
+        if main_screen_key(key) || (!own && self.enhance.has(Enhancement::BuildMenu)) {
             return Response::MainScreenKey(key);
         }
         match key {

@@ -33,6 +33,7 @@ use vcl::surface::{Rop, Surface};
 
 use crate::beach_life::BEACH_LIFE;
 use crate::command::Action;
+use crate::enhance::{Enhancement, Enhancements};
 use crate::optionen::WorldOption;
 use crate::savegame::Fields;
 use crate::simulation::Tick;
@@ -447,6 +448,9 @@ pub struct Uebersichtsmap {
     /// picture and takes it off by drawing the area under it again
     /// (10b8:1485).
     bare: Surface,
+    /// The player's view enhancements (`overview_colours`,
+    /// `overview_scrolling`).
+    pub enhance: Enhancements,
 }
 
 fn rect(r: DataRect) -> Rect {
@@ -493,21 +497,26 @@ fn grassy(ground: u8) -> bool {
 }
 
 /// The colours' row for the height of `(i, j)`'s corner: grass from 3 up,
-/// two rows a step to 36, anything else from 26.
-fn height_row(world: &World, pos: Pos, grass: bool) -> i32 {
+/// two rows a step to 36, anything else from 26. With `overview_colours`
+/// (`fixed`) lower grass takes the lowest grass's row and higher sand the
+/// highest sand's.
+fn height_row(world: &World, pos: Pos, grass: bool, fixed: bool) -> i32 {
     let h = i32::from(world.island.heights.at(pos));
     if grass {
         // BUG(original): grass below height 3 gives a row above the bitmap; the port draws nothing there.
-        ((h - 3) * 2).min(0x24)
+        let row = ((h - 3) * 2).min(0x24);
+        if fixed { row.max(0) } else { row }
     } else {
         // BUG(original): sand from height 6 up gives a row below the bitmap; the port draws nothing there.
-        h * 2 + 0x1a
+        let row = h * 2 + 0x1a;
+        if fixed { row.min(0x24) } else { row }
     }
 }
 
 /// The owner's colour's row: `(1110:0073[owner] - 1) * 2`, where the
-/// player colours are at `1110:0074`.
-fn owner_row(world: &World, pos: Pos) -> i32 {
+/// player colours are at `1110:0074`. With `overview_colours` (`fixed`)
+/// none for a square of nobody's, which the caller shows as the land.
+fn owner_row(world: &World, pos: Pos, fixed: bool) -> Option<i32> {
     let owner = usize::from(world.island.owners.at(pos));
     // BUG(original): owner 0 reads the never-written byte 1110:0073 (0), owners past 8 the globals after the colours; the port takes 0 for both, a row above the bitmap that draws nothing.
     let colour = owner
@@ -515,7 +524,10 @@ fn owner_row(world: &World, pos: Pos) -> i32 {
         .and_then(|o| world.player_colours.get(o))
         .copied()
         .unwrap_or(0);
-    (i32::from(colour) - 1) * 2
+    if fixed && colour == 0 {
+        return None;
+    }
+    Some((i32::from(colour) - 1) * 2)
 }
 
 /// A building's kind's row (`HAUSDATA.DAT` column 5).
@@ -526,7 +538,7 @@ fn kind_row(world: &World, building: u8) -> i32 {
 /// The column and row in `Ueberma2.BMP` of the colour for `pos`, by the
 /// colouring and shading. // 10b8:17cf
 #[allow(clippy::too_many_lines)]
-fn colour(world: &World, pos: Pos, mode: u8, heights: bool) -> (i32, i32) {
+fn colour(world: &World, pos: Pos, mode: u8, heights: bool, fixed: bool) -> (i32, i32) {
     let island = &world.island;
     let ground = island.ground.at(pos);
     let building = island.buildings.at(pos);
@@ -551,7 +563,10 @@ fn colour(world: &World, pos: Pos, mode: u8, heights: bool) -> (i32, i32) {
             // 10b8:045f
             if ground == 1 && free { 0x32 } else { 0x30 },
             // 10b8:04b1
-            common(&|| owner_row(world, pos), &|| height_row(world, pos, ground == 1)),
+            common(
+                &|| owner_row(world, pos, fixed).unwrap_or_else(|| height_row(world, pos, ground == 1, fixed)),
+                &|| height_row(world, pos, ground == 1, fixed),
+            ),
         ),
         (mode::OWNERS, false) => (
             // 10b8:05f8
@@ -561,7 +576,7 @@ fn colour(world: &World, pos: Pos, mode: u8, heights: bool) -> (i32, i32) {
                 _ => 0x30,
             },
             // 10b8:0684
-            common(&|| owner_row(world, pos), &form_row),
+            common(&|| owner_row(world, pos, fixed).unwrap_or_else(form_row), &form_row),
         ),
         (mode::BUILDINGS, true) => (
             // 10b8:098c
@@ -573,7 +588,9 @@ fn colour(world: &World, pos: Pos, mode: u8, heights: bool) -> (i32, i32) {
                 0x30
             },
             // 10b8:0a0a
-            common(&|| kind_row(world, building), &|| height_row(world, pos, ground == 1)),
+            common(&|| kind_row(world, building), &|| {
+                height_row(world, pos, ground == 1, fixed)
+            }),
         ),
         (mode::BUILDINGS, false) => (
             // 10b8:0b57
@@ -626,7 +643,7 @@ fn colour(world: &World, pos: Pos, mode: u8, heights: bool) -> (i32, i32) {
             if any_river(ground) {
                 0x1a
             } else {
-                height_row(world, pos, grassy(ground))
+                height_row(world, pos, grassy(ground), fixed)
             },
         ),
         (_, false) => {
@@ -710,6 +727,7 @@ impl Uebersichtsmap {
             menu: empty.clone(),
             map: empty.clone(),
             bare: empty,
+            enhance: Enhancements::ORIGINAL,
         };
         m.layout();
         m.width = m.r(part::FORM)[2] + 1;
@@ -921,10 +939,15 @@ impl Uebersichtsmap {
     }
 
     /// The horizontal bar's thumb's travel: the trough's width, which lets
-    /// the thumb onto the right arrow.
+    /// the thumb onto the right arrow; with `overview_scrolling` 4 less,
+    /// which keeps it off.
     fn wo_travel(&self) -> i32 {
         let [l, _, r, _] = self.r(part::WO_TROUGH);
-        r - l + 1
+        if self.enhance.has(Enhancement::OverviewScrolling) {
+            r - l + 1 - 4
+        } else {
+            r - l + 1
+        }
     }
 
     /// Draws the vertical bar's thumb. // 10b8:200e
@@ -1009,7 +1032,8 @@ impl Uebersichtsmap {
                 let j = (py - half + 1250) / 2 - 500;
                 let pos = (short(i), short(j));
                 if on_map(pos) && world.island.ground.at(pos) != 2 {
-                    let (cx, cy) = colour(world, pos, self.mode, self.heights);
+                    let fixed = self.enhance.has(Enhancement::OverviewColours);
+                    let (cx, cy) = colour(world, pos, self.mode, self.heights, fixed);
                     let at = (x - px % 2, y - (py - half + 250) % 2 - 2);
                     self.bare
                         .blit(at.0, at.1, colours, Rect::new(cx, cy, 2, 2), Rop::Copy, clip);

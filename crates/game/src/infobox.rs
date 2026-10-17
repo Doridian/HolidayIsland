@@ -24,7 +24,7 @@ use vcl::surface::{Rop, Surface};
 use crate::accounts::BOOK_OTHER;
 use crate::command::Action;
 use crate::construction::{BUILDING_SITE, NOT_BUILDINGS, Record};
-use crate::enhance::Fix;
+use crate::enhance::{Enhancement, Enhancements, Fix};
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::settlement::{lower_price, lower_rent, raise_rent};
@@ -135,9 +135,10 @@ fn concat(mut a: Vec<u8>, b: &[u8]) -> Vec<u8> {
 /// An amount with two decimals, as the menu prices show: times the
 /// currency factor, at least three digits, the decimal point before the
 /// last two (`,` in Germany, `.` elsewhere) and the thousands marked (`.`
-/// in Germany, `_` in France, `,` elsewhere). // 1030:13da, 1030:108b
+/// in Germany, `_` in France, `,` elsewhere). With `infobox_text`
+/// (`enhance`) the thousands are marked where they are. // 1030:13da, 1030:108b
 #[must_use]
-pub fn decimal_money(amount: i32, factor: i32, land: formats::data::Land) -> Vec<u8> {
+pub fn decimal_money(amount: i32, factor: i32, land: formats::data::Land, enhance: Enhancements) -> Vec<u8> {
     use formats::data::Land;
     let mut s = number(amount.wrapping_mul(factor));
     let (point, thousands) = match land {
@@ -153,7 +154,7 @@ pub fn decimal_money(amount: i32, factor: i32, land: formats::data::Land) -> Vec
     let at = s.len() - 1;
     s.insert(at - 1, point);
     // BUG(original): the thousands marks start five places before the point's position, not four, so an amount of four digits or more before the point is marked one digit off ("12.34567,89").
-    let mut at = at.wrapping_sub(5);
+    let mut at = at.wrapping_sub(if enhance.has(Enhancement::InfoboxText) { 3 } else { 5 });
     while at >= first + 2 && at < s.len() {
         s.insert(at - 1, thousands);
         at = at.wrapping_sub(3);
@@ -284,6 +285,8 @@ pub struct Infobox {
     zeilen: Vec<[Vec<u8>; 2]>,
     /// The lines as they were last drawn, for tests and tooltips.
     pub lines: Vec<Line>,
+    /// The player's view enhancements (`infobox_text`, `infobox_size`).
+    pub enhance: Enhancements,
 }
 
 impl Infobox {
@@ -335,6 +338,7 @@ impl Infobox {
             buttons: [ButtonState::default(); BUTTON_COUNT],
             zeilen,
             lines: Vec::new(),
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -408,13 +412,16 @@ impl Infobox {
     }
 
     /// The box draws itself again for the same square, as after its
-    /// buttons' commands; its bounds stay. // 1038:1b92
+    /// buttons' commands; its bounds stay. With `infobox_size` it takes
+    /// its new size, at the same top left. // 1038:1b92
     pub fn redraw(&mut self, world: &World, font: &Font, info: &InfoTexts) {
         let (w, h) = (self.width, self.height);
         self.draw(world, font, info);
         // BUG(original): after a button's command the box is drawn again but keeps its size.
-        self.width = w;
-        self.height = h;
+        if !self.enhance.has(Enhancement::InfoboxSize) {
+            self.width = w;
+            self.height = h;
+        }
     }
 
     /// The world's tick: a finished building site under the box closes
@@ -440,6 +447,10 @@ impl Infobox {
             self.kind = IB_GROUND;
             self.ground = 2;
             self.corner = 0;
+            // BUG(original): off the map the building isn't looked up, so the building site of the square shown before names this one.
+            if self.enhance.has(Enhancement::InfoboxText) {
+                self.building = NO_BUILDING;
+            }
             return;
         }
         let plot = island.plot_at(pos);
@@ -523,7 +534,7 @@ impl Infobox {
         let per_visit = (self.record_price(world).wrapping_mul(100) / 30)
             .checked_div(capacity)
             .unwrap_or(0);
-        decimal_money(per_visit, info.currency_factor, info.land)
+        decimal_money(per_visit, info.currency_factor, info.land, self.enhance)
     }
 
     /// Line `line`'s value. // 1038:014b
@@ -1072,18 +1083,29 @@ mod tests {
     use super::*;
     use formats::data::Land;
 
+    /// The original's text.
+    const O: Enhancements = Enhancements::ORIGINAL;
+
     #[test]
     fn decimals() {
         let de = Land::Deutschland;
-        assert_eq!(decimal_money(5, 10, de), b"0,50");
-        assert_eq!(decimal_money(0, 10, de), b"0,00");
-        assert_eq!(decimal_money(-1, 1, de), b"-0,01");
-        assert_eq!(decimal_money(123, 10, de), b"12,30");
-        assert_eq!(decimal_money(1234, 10, de), b"123,40");
+        assert_eq!(decimal_money(5, 10, de, O), b"0,50");
+        assert_eq!(decimal_money(0, 10, de, O), b"0,00");
+        assert_eq!(decimal_money(-1, 1, de, O), b"-0,01");
+        assert_eq!(decimal_money(123, 10, de, O), b"12,30");
+        assert_eq!(decimal_money(1234, 10, de, O), b"123,40");
         // The thousands mark one place off.
-        assert_eq!(decimal_money(12_345, 10, de), b"1234,50");
-        assert_eq!(decimal_money(1_234_567, 100, de), b"12.34567,00");
-        assert_eq!(decimal_money(500, 1, Land::England), b"5.00");
+        assert_eq!(decimal_money(12_345, 10, de, O), b"1234,50");
+        assert_eq!(decimal_money(1_234_567, 100, de, O), b"12.34567,00");
+        assert_eq!(decimal_money(500, 1, Land::England, O), b"5.00");
+        // `infobox_text` marks them where they are.
+        let mut e = O;
+        e.set(Enhancement::InfoboxText, true);
+        assert_eq!(decimal_money(1234, 10, de, e), b"123,40");
+        assert_eq!(decimal_money(12_345, 10, de, e), b"1.234,50");
+        assert_eq!(decimal_money(1_234_567, 100, de, e), b"1.234.567,00");
+        assert_eq!(decimal_money(-123_456, 10, de, e), b"-12.345,60");
+        assert_eq!(decimal_money(-12_345, 10, de, e), b"-1.234,50");
     }
 
     #[test]

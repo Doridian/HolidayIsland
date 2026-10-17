@@ -19,6 +19,7 @@ use vcl::surface::{Rop, Surface};
 
 use crate::command::Action;
 use crate::construction::CLASSES;
+use crate::enhance::{Enhancement, Enhancements};
 use crate::hauptschirm::InfoTexts;
 use crate::infobox::decimal_money;
 use crate::money::format_money;
@@ -220,6 +221,9 @@ pub struct Umenuform {
     /// The title bar was double-clicked: the form stays rolled up.
     /// // +0x735
     rolled_up: bool,
+    /// The player's view enhancements (`overview_list`, `infobox_text`,
+    /// `scroll_bars`).
+    pub enhance: Enhancements,
 }
 
 /// `p` percent as one of the ten bars in `menuaus.bmp`: its left edge.
@@ -280,11 +284,18 @@ impl Umenuform {
             grip: (0, 0),
             saved_height: HEIGHT,
             rolled_up: false,
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
     fn text(&self, n: usize) -> Vec<u8> {
         self.texts.get(n).cloned().unwrap_or_default()
+    }
+
+    /// The list's top row: its scroll bar's position.
+    #[must_use]
+    pub fn top_row(&self) -> i32 {
+        self.scroll.position
     }
 
     /// The last row of the list, -1 for none. // 1110:6fc4
@@ -434,15 +445,21 @@ impl Umenuform {
 
     /// The list of the human's buildings of the kind, the scroll bar, the
     /// rows from its position, and the selected one's rent or price.
-    /// // 1080:02d9
+    /// With `overview_list` the price's place is cleared with its own
+    /// background. // 1080:02d9
     pub fn draw_list(&mut self, world: &World, font: &Font, info: &InfoTexts) {
         let all = self.image.bounds();
         let bg = &self.bitmaps[BACKGROUND];
         self.image
             .blit(0, 0x2f, bg, Rect::new(0, 0x2f, 0x122, 0xc9), Rop::Copy, all);
         // BUG(original): the price's place is cleared with the background from row 0x43, not its own.
+        let from = if self.enhance.has(Enhancement::OverviewList) {
+            0x109
+        } else {
+            0x43
+        };
         self.image
-            .blit(200, 0x109, bg, Rect::new(200, 0x43, 0x43, 0x10), Rop::Copy, all);
+            .blit(200, 0x109, bg, Rect::new(200, from, 0x43, 0x10), Rop::Copy, all);
         let t = &world.tables;
         // Single human: the human's buildings, player 1's.
         let ours =
@@ -501,7 +518,7 @@ impl Umenuform {
             let capacity = i32::from(world.tables.hausdata(f.building(), 3));
             // BUG(original): a type with no capacity divides by zero; the port shows 0.
             let per_visit = (f.price().wrapping_mul(100) / 30).checked_div(capacity).unwrap_or(0);
-            decimal_money(per_visit, info.currency_factor, info.land)
+            decimal_money(per_visit, info.currency_factor, info.land, self.enhance)
         }
     }
 
@@ -650,14 +667,19 @@ impl Umenuform {
             r.refresh = true;
         }
         // BUG(original): columns 299 and 300 are both the list's and the scroll bar's.
-        if 7 < x && x < 0x12d && 0x2f < y && y < 0xf1 {
+        let list_end = if self.enhance.has(Enhancement::OverviewList) {
+            self.scroll.frame.left
+        } else {
+            0x12d
+        };
+        if 7 < x && x < list_end && 0x2f < y && y < 0xf1 {
             self.selected = (y - LIST_TOP) / ROW_HEIGHT + self.scroll.position;
             self.draw_list(world, font, info);
             r.refresh = true;
         }
         for which in WIDGETS {
             let out = match which {
-                Which::Scroll => self.scroll.mouse_down(x, y),
+                Which::Scroll => self.scroll.mouse_down(x, y, self.enhance),
                 Which::Renovate => self.renovate.mouse_down(x, y),
                 Which::Jump => self.jump.mouse_down(x, y),
                 Which::Minus => self.minus.mouse_down(x, y),
@@ -717,7 +739,7 @@ impl Umenuform {
         let mut r = Response::default();
         for which in WIDGETS {
             let out = match which {
-                Which::Scroll => self.scroll.mouse_up(x, y),
+                Which::Scroll => self.scroll.mouse_up(x, y, self.enhance),
                 Which::Renovate => self.renovate.mouse_up(x, y),
                 Which::Jump => self.jump.mouse_up(x, y),
                 Which::Minus => self.minus.mouse_up(x, y),
@@ -765,10 +787,34 @@ impl Umenuform {
                 }
                 self.select(self.kind, world, font, info);
             }
+            VK_UP | VK_DOWN if self.enhance.has(Enhancement::OverviewList) => {
+                // The selection moves, and the list only as far as it
+                // needs to keep it in view.
+                if key == VK_UP && self.selected > 0 {
+                    self.selected -= 1;
+                } else if key == VK_DOWN && self.selected < self.last() {
+                    self.selected += 1;
+                }
+                let top = self.scroll.position;
+                let top = if self.selected < top {
+                    self.selected
+                } else if self.selected > top + ROWS - 1 {
+                    self.selected - (ROWS - 1)
+                } else {
+                    top
+                };
+                let top = top.min(self.scroll.max).max(self.scroll.min.max(0));
+                if top != self.scroll.position {
+                    self.scroll.position = top;
+                    self.draw_widget(Which::Scroll, font, false);
+                }
+                self.draw_list(world, font, info);
+            }
             VK_UP => {
                 if self.selected > 0 {
                     self.selected -= 1;
                 }
+                // BUG(original): the kind is drawn again from the list's top first; Up then puts the selection in the top row, Down in the bottom row.
                 self.select(self.kind, world, font, info);
                 if self.scroll.position < self.selected {
                     // BUG(original): with fewer than 12 buildings this is before the list's start.

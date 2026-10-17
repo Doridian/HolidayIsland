@@ -15,6 +15,7 @@
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
+use crate::enhance::{Enhancement, Enhancements};
 use crate::text::{Align, Font};
 use crate::widgets::{BitmapId, Button, Edit, Frame, ListBox, Outcome, ShiftState, Skin, Sound, Widget};
 
@@ -181,6 +182,8 @@ pub struct Dateimenue {
     /// Where the mouse grabbed the title bar, from the form's top left.
     /// // 1110:6046, 1110:6048
     grab: (i32, i32),
+    /// The player's view enhancements (`edit_field`, `modifier_clicks`).
+    pub enhance: Enhancements,
 }
 
 impl Dateimenue {
@@ -204,6 +207,7 @@ impl Dateimenue {
             pressed: 0,
             mode: 2,
             grab: (0, 0),
+            enhance: Enhancements::ORIGINAL,
         }
     }
 
@@ -351,22 +355,27 @@ impl Dateimenue {
     /// grabbed. With any button, the list, the name field and the arrows
     /// are offered the press until one takes it; the name field
     /// unfocuses on any press, so "Speichern" can't save a name being
-    /// typed. // 1040:073c
+    /// typed. With `edit_field` a press on a button leaves the name field
+    /// as it is, and a name picked from the list puts the cursor after
+    /// it. // 1040:073c
     pub fn mouse_down(&mut self, x: i32, y: i32, left_button: bool, shift: ShiftState) -> Response {
         let mut r = Response::default();
+        let fixed = self.enhance.has(Enhancement::EditField);
+        let mut on_button = false;
         if left_button {
             if let Some(&(id, _)) = BUTTONS.iter().find(|(id, _)| Self::hit(*id, x, y)) {
                 self.pressed = id;
                 self.draw_pressed(id);
                 r.refresh = true;
                 r.sounds.push(Sound::Press);
+                on_button = true;
             } else if Self::hit(TITLE, x, y) {
                 self.pressed = TITLE;
                 self.grab = (x, y);
             }
         }
         // 1040:0192: the list, which puts the selected name in the field.
-        let out = self.list.mouse_down(x, y, shift);
+        let out = self.list.mouse_down(x, y, shift, self.enhance);
         if out.handled || out.clicked {
             r.sounds.extend(out.sound);
             if out.handled {
@@ -374,6 +383,9 @@ impl Dateimenue {
                     let n = usize::try_from(self.list.selected - 1).unwrap_or(0);
                     // BUG(original): the name goes into the field without moving its cursor.
                     self.edit.text = self.list.items.get(n).cloned().unwrap_or_default();
+                    if fixed {
+                        self.edit.cursor = u8::try_from(self.edit.text.len()).unwrap_or(u8::MAX);
+                    }
                 }
                 self.redraw_list_and_name();
                 r.refresh = true;
@@ -384,7 +396,10 @@ impl Dateimenue {
             return r;
         }
         // BUG(original): any press while the name is focused unfocuses it, so clicking "Speichern" then focuses it again instead of saving.
-        let out = self.edit.mouse_down(x, y);
+        if fixed && on_button {
+            return r;
+        }
+        let out = self.edit.mouse_down(x, y, self.enhance);
         if out.handled {
             self.repaint_edit();
             r.refresh = true;
@@ -731,5 +746,27 @@ mod tests {
         assert_eq!((m.left, m.top), (295, 134));
         let _ = m.mouse_move(-2000, -2000, ShiftState::LEFT, (800, 600));
         assert_eq!((m.left, m.top), (0, 0));
+    }
+
+    #[test]
+    fn saves_a_typed_name_with_the_fix() {
+        let mut m = menu(3);
+        m.enhance.set(Enhancement::EditField, true);
+        let save = (20, 75);
+        let _ = click(&mut m, save.0, save.1);
+        for key in [0x41, 0x42] {
+            let _ = m.key_down(key, ShiftState::default());
+        }
+        // "Speichern" again saves the typed name.
+        assert_eq!(
+            click(&mut m, save.0, save.1).action,
+            Some(Action::Save(b"ab.map".to_vec()))
+        );
+        // A picked name puts the cursor after it: typing goes on at its end.
+        let _ = m.mouse_down(130, 0x2e + 0xf + 2, true, ShiftState::LEFT);
+        assert_eq!(m.name(), b"SPIEL1");
+        m.edit.focused = true;
+        let _ = m.key_down(0x43, ShiftState::default());
+        assert_eq!(m.name(), b"SPIEL1c");
     }
 }

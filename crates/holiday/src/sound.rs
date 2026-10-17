@@ -13,6 +13,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use formats::setup;
+use game::enhance::{Enhancement, Enhancements};
 use game::fernseher::Media;
 use game::optionen::Settings;
 use game::sound::{Effects, Mci, MciEvent, Music, WAVE_FILES, device_level};
@@ -47,6 +48,33 @@ pub struct Sound {
     pub film_quality: setup::Film,
     /// The film that's open.
     film: Option<Film>,
+    /// The waves' directory (`SOUND` or `SOUNDLO`), none without sound.
+    wave_dir: Option<&'static str>,
+    /// The player's view enhancements (`auction_calls`, `sound_times`,
+    /// `music`).
+    pub enhance: Enhancements,
+}
+
+/// `play_sound`'s waves from `dir`'s `sub` (`init_sound`, 10a0:2f5e); with
+/// `auction_calls` those not there from `SPRADEU1\`, where the
+/// auctioneer's calls are.
+fn load_waves(dir: &Path, sub: &str, auction_calls: bool) -> Vec<Option<Wave>> {
+    WAVE_FILES
+        .iter()
+        .map(|name| {
+            let mut path = find(dir, sub, name);
+            // BUG(original): the auctioneer's calls are looked for in `SOUND\`, but they're in `SPRADEUn\`.
+            if auction_calls && !path.is_file() {
+                path = find(dir, "SPRADEU1", name);
+            }
+            // A missing file is a null wave, which `WaveMixPlay`
+            // refuses (the auctioneer's `zum1.wav` to `zum3.wav`).
+            let bytes = std::fs::read(&path).ok()?;
+            Wave::open(&bytes)
+                .inspect_err(|e| eprintln!("{}: {e}", path.display()))
+                .ok()
+        })
+        .collect()
 }
 
 /// `name` in `dir`'s subdirectory `sub`, as the CD has it (upper case),
@@ -68,24 +96,13 @@ impl Sound {
     #[must_use]
     pub fn new(dir: &Path, quality: setup::Sound, audio: Audio) -> Sound {
         let enabled = quality != setup::Sound::Off;
-        if enabled {
-            let sub = if quality == setup::Sound::Lo {
-                "SOUNDLO"
-            } else {
-                "SOUND"
-            };
-            let waves: Vec<Option<Wave>> = WAVE_FILES
-                .iter()
-                .map(|name| {
-                    let path = find(dir, sub, name);
-                    // A missing file is a null wave, which `WaveMixPlay`
-                    // refuses (the auctioneer's `zum1.wav` to `zum3.wav`).
-                    let bytes = std::fs::read(&path).ok()?;
-                    Wave::open(&bytes)
-                        .inspect_err(|e| eprintln!("{}: {e}", path.display()))
-                        .ok()
-                })
-                .collect();
+        let wave_dir = enabled.then_some(if quality == setup::Sound::Lo {
+            "SOUNDLO"
+        } else {
+            "SOUND"
+        });
+        if let Some(sub) = wave_dir {
+            let waves = load_waves(dir, sub, false);
             audio.with(|e| {
                 e.set_waves(waves);
                 e.activate(true);
@@ -103,7 +120,35 @@ impl Sound {
             midis: BTreeMap::new(),
             film_quality: setup::Film::Hi,
             film: None,
+            wave_dir,
+            enhance: Enhancements::ORIGINAL,
         }
+    }
+
+    /// The player's view enhancements: the music's, and with
+    /// `auction_calls` the auctioneer's calls loaded.
+    pub fn set_view_enhancements(&mut self, view: Enhancements) {
+        let calls = Enhancement::AuctionCalls;
+        if let Some(sub) = self.wave_dir
+            && view.has(calls) != self.enhance.has(calls)
+        {
+            let waves = load_waves(&self.dir, sub, view.has(calls));
+            self.audio.with(|e| e.set_waves(waves));
+        }
+        self.enhance = view;
+        self.music.enhance = view;
+    }
+
+    /// Each frame: with `music` a track that ended is followed at once
+    /// (`Music::frame`).
+    pub fn music_frame(&mut self, settings: &mut Settings) {
+        let player = &self.music.player;
+        if !(player.is_open() && player.at_end()) {
+            return;
+        }
+        let lengths = self.lengths();
+        self.music.frame(settings, lengths);
+        self.sync();
     }
 
     /// `init_sound` again (10a0:2f5e, from 1030:38a3 when a new game
@@ -452,6 +497,19 @@ mod tests {
                     assert!(!wave.samples().is_empty(), "{name}");
                 }
             }
+            // `auction_calls`: the calls from `SPRADEU1\`.
+            let original = load_waves(&dir, sub, false);
+            let fixed = load_waves(&dir, sub, true);
+            for n in 25..=27 {
+                assert!(original[n].is_none());
+                assert!(
+                    fixed[n].as_ref().is_some_and(|w| !w.samples().is_empty()),
+                    "{}",
+                    WAVE_FILES[n]
+                );
+            }
+            assert_eq!(original.iter().flatten().count(), 39);
+            assert_eq!(fixed.iter().flatten().count(), 42);
         }
         let mut s = Sound::new(&dir, setup::Sound::Hi, Audio::silent());
         let mut settings = Settings::default();

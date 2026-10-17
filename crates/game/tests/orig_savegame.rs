@@ -339,7 +339,7 @@ fn draws_the_load_form_and_the_file_menu() {
         b"zweite.map",
     ]
     .map(<[u8]>::to_vec);
-    let games = saved_games(&files);
+    let games = saved_games(&files, game::enhance::Enhancements::ORIGINAL);
     assert_eq!(games[0], b"zweite");
     let mut form = LadenForm::new(font(), surfaces(&ladenform::BITMAP_FILES), &texts[7], games.clone());
     let background = bitmap("BCK80X60.BMP");

@@ -28,6 +28,7 @@ use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::command;
+use crate::enhance::{Enhancement, Enhancements};
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::simulation::Tick;
@@ -446,6 +447,9 @@ pub struct Geldmenuform {
     cost: Label,            // +0x583
     /// "Gebäudeübersicht", on the menu bar.
     overview: Button, // +0x24f
+    /// The player's view enhancements (`form_positions`,
+    /// `mouse_buttons`).
+    pub enhance: Enhancements,
 }
 
 impl Geldmenuform {
@@ -489,8 +493,7 @@ impl Geldmenuform {
             menu: size(MENU_BAR),
             font,
             empty: Surface::new(0, 0, 0),
-            // BUG(original): placed at the screen's width less the form's right edge, one column further right than its width allows.
-            left: screen_width - i32::from(rects[usize::from(FORM)][2]),
+            left: 0,
             top: 0,
             height: 0,
             page: 0,
@@ -507,7 +510,9 @@ impl Geldmenuform {
             rects,
             texts,
             bitmaps,
+            enhance: Enhancements::ORIGINAL,
         };
+        f.left = f.first_left(screen_width);
         f.draw_title(); // 1070:1f3f
         let Geldmenuform {
             font,
@@ -525,6 +530,28 @@ impl Geldmenuform {
     #[must_use]
     pub fn width(&self) -> i32 {
         self.right(FORM) + 1
+    }
+
+    /// Where `geldmenu_init` puts the form's left edge on a screen
+    /// `screen_width` wide; with `form_positions` the form is whole on
+    /// it. // 1070:2e6c
+    fn first_left(&self, screen_width: i32) -> i32 {
+        // BUG(original): placed at the screen's width less the form's right edge, one column further right than its width allows.
+        if self.enhance.has(Enhancement::FormPositions) {
+            screen_width - self.width()
+        } else {
+            screen_width - self.right(FORM)
+        }
+    }
+
+    /// The player's view enhancements, on a screen `screen_width` wide:
+    /// a form still where it was made goes where they put it.
+    pub fn set_enhance(&mut self, enhance: Enhancements, screen_width: i32) {
+        let first = self.left == self.first_left(screen_width);
+        self.enhance = enhance;
+        if first {
+            self.left = self.first_left(screen_width);
+        }
     }
 
     /// The form's bounds on the screen.
@@ -1052,7 +1079,11 @@ impl Geldmenuform {
         r.commands.push(command::Action::MoneyMenu(Action::Shown(true)));
         r.update = true;
         // BUG(original): the form opens with r0's bottom - 1 as its height, two pixels short of the menu bar's bottom that a drag gives it.
-        self.height = self.rect(FORM).3 - 1;
+        self.height = if self.enhance.has(Enhancement::FormPositions) {
+            self.rect(FORM).3 + 1
+        } else {
+            self.rect(FORM).3 - 1
+        };
         r.sounds.push(SOUND_OPEN);
         r.sounds
             .push(if self.page == 1 { SOUND_OPEN_BALANCE } else { SOUND_OPEN });
@@ -1153,7 +1184,7 @@ impl Geldmenuform {
             r.sounds.push(SOUND_PRESS);
         }
         // BUG(original): the drag starts with any mouse button.
-        if self.hit(DRAG, x, y) {
+        if self.hit(DRAG, x, y) && (left || !self.enhance.has(Enhancement::MouseButtons)) {
             self.pressed = DRAG;
             let (tl, tt, _, _) = self.rect(TITLE_PLACE);
             self.grab = (x + tl, y + tt);

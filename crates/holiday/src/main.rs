@@ -78,6 +78,7 @@ use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult};
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
 use game::optionen::Settings as Options;
+use game::sabowin;
 use game::savegame::{self, Fields, MapView};
 use game::simulation::{TICK_MS, Tick};
 use game::startform::{self, Action, Settings, StartForm};
@@ -146,9 +147,10 @@ impl Saves {
         names
     }
 
-    /// The list boxes' entries. // 1038:3983
-    fn games(&self) -> Vec<Vec<u8>> {
-        ladenform::saved_games(&self.files())
+    /// The list boxes' entries, with the player's view `enhance`ments.
+    /// // 1038:3983
+    fn games(&self, enhance: enhance::Enhancements) -> Vec<Vec<u8>> {
+        ladenform::saved_games(&self.files(), enhance)
     }
 
     /// The file called `name` (any case), the player's first.
@@ -206,6 +208,8 @@ struct FileMenu {
     form: Form,
     visible: bool,
     captured: bool,
+    /// The DFM's position, where the form is made.
+    at: (i32, i32),
 }
 
 /// `TStartform`: the game's widgets, and the VCL form whose `Bild` shows
@@ -328,6 +332,7 @@ impl Game {
         let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         let mut changed = self.forms_timers(ms);
         self.end_music_tick();
+        self.sound.borrow_mut().music_frame(&mut self.forms.settings);
         changed |= self.apply_commands();
         while self.since_tick >= tick {
             if self.clock_stopped() {
@@ -466,11 +471,42 @@ impl Game {
         self.main_view_changed();
     }
 
-    /// The player's view enhancements for this game: the stacking, and
-    /// `big_map`'s main screen.
+    /// The player's view enhancements for this game: the stacking,
+    /// `big_map`'s main screen, and each form's.
     fn set_view_enhancements(&mut self, view: enhance::Enhancements) {
         self.stack = Stack::new(view);
         self.screen.big_map = view.has(enhance::Enhancement::BigMap);
+        self.screen.enhance = view;
+        let f = &mut self.forms;
+        f.options.enhance = view;
+        f.tv.enhance = view;
+        f.money.set_enhance(view, self.size.0);
+        f.overview.enhance = view;
+        f.compass.enhance = view;
+        f.infobox.enhance = view;
+        f.umenu.enhance = view;
+        f.ende.enhance = view;
+        self.auction.enhance = view;
+        self.tools.enhance = view;
+        self.tools.menu.set_enhance(view, self.size.1);
+        // `form_positions`: the forms the original leaves where the DFM
+        // put them (`1110:54fc` users) go over the centred main screen.
+        let positions = view.has(enhance::Enhancement::FormPositions);
+        let main = Hauptschirm::position(self.size.0, self.size.1);
+        if let Some(w) = &mut self.tools.sabowin {
+            w.enhance = view;
+            // BUG(original): the DFM's place, not over the centred main screen.
+            if positions && (w.left, w.top) == (sabowin::LEFT, sabowin::TOP) {
+                (w.left, w.top) = (sabowin::LEFT + main.0, sabowin::TOP + main.1);
+            }
+        }
+        let d = &mut self.file_menu.menu;
+        d.enhance = view;
+        if positions && (d.left, d.top) == self.file_menu.at {
+            // BUG(original): the DFM's place (305, 139), not over the centred main screen.
+            (d.left, d.top) = (self.file_menu.at.0 + main.0, self.file_menu.at.1 + main.1);
+        }
+        self.sound.borrow_mut().music.enhance = view;
         self.place_main();
     }
 
@@ -615,9 +651,12 @@ impl Game {
         let settings = self.forms.settings;
         {
             let mut s = self.sound.borrow_mut();
-            let split = t.sound_countdown.unwrap_or(t.sounds.len()).min(t.sounds.len());
+            // BUG(original): only `people_tick` counts the sounds' times down, with the animations on.
+            let every_tick = s.enhance.has(enhance::Enhancement::SoundTimes);
+            let countdown = t.sound_countdown.or(every_tick.then_some(0));
+            let split = countdown.unwrap_or(t.sounds.len()).min(t.sounds.len());
             s.play_all(t.sounds[..split].iter().copied(), &settings);
-            if t.sound_countdown.is_some() {
+            if countdown.is_some() {
                 s.effects.count_down();
             }
             s.play_all(t.sounds[split..].iter().copied(), &settings);
@@ -848,7 +887,10 @@ impl Game {
                 (true, false)
             }
             ("Hauptbild", Input::MouseUp { button, .. }) => {
-                let actions = self.tools.release(button == Button::Left);
+                let cam = self.screen.drawn_camera();
+                let actions = self
+                    .tools
+                    .release(button == Button::Left, &self.world, &self.tiles, &cam, (x, y));
                 self.tool_actions(actions);
                 let shown = self.forms.infobox.visible;
                 self.take_info_box();
@@ -1091,10 +1133,12 @@ impl Holiday {
     /// for other sizes (states 430, 450 and 1130). The palette, which the
     /// whole game is drawn with, is the picture's; without one (or with
     /// `Picture::None`) it's the 800×600 one's, the port's stand-in for
-    /// the palette Windows would have had then. // 1000:2466
+    /// the palette Windows would have had then. With
+    /// `desktop_background` every size has its nearest layout's,
+    /// centred. // 1000:2466
     fn set_picture(&mut self, picture: Picture) {
         self.picture = picture;
-        let layout = hintergrund::layout(self.size);
+        let layout = hintergrund::layout(self.size, self.enhance.view);
         let fallback = &hintergrund::LAYOUTS[0];
         let file = |l: &hintergrund::Layout| match picture {
             Picture::None | Picture::Title => l.title,
@@ -1107,10 +1151,18 @@ impl Holiday {
         self.palette = bitmap.palette;
         self.rgb = bitmap.palette.map(|c| [c.r, c.g, c.b]);
         let shown = (picture != Picture::None && layout.is_some()).then(|| Surface::from_bitmap(&bitmap));
-        if let Some(image) = self.form.component_mut("backgroundimage")
-            && let Kind::Image { picture } = &mut image.kind
-        {
-            *picture = shown;
+        let (w, h) = self.size;
+        let bounds = match layout {
+            Some(l) if self.enhance.view.has(enhance::Enhancement::DesktopBackground) => {
+                Rect::new((w - l.size.0) / 2, (h - l.size.1) / 2, l.size.0, l.size.1)
+            }
+            _ => Rect::new(0, 0, w, h),
+        };
+        if let Some(image) = self.form.component_mut("backgroundimage") {
+            image.bounds = bounds;
+            if let Kind::Image { picture } = &mut image.kind {
+                *picture = shown;
+            }
         }
         self.repaint();
     }
@@ -1131,11 +1183,8 @@ impl Holiday {
         self.screen = Surface::new(usize::try_from(w).unwrap_or(0), usize::try_from(h).unwrap_or(0), 0);
         // State 110: the maximized form's size, snapped to a layout, is
         // the screen size; `backgroundimage` gets it at 0, 0.
-        self.size = hintergrund::screen_size(w, h);
+        self.size = hintergrund::screen_size(w, h, self.enhance.view);
         self.form.components[0].bounds = Rect::new(0, 0, w, h);
-        if let Some(image) = self.form.component_mut("backgroundimage") {
-            image.bounds = Rect::new(0, 0, self.size.0, self.size.1);
-        }
         if self.pending.is_some() || self.intro == Intro::Film {
             let panel = self.film_panel();
             self.sound.borrow_mut().set_film_panel(panel);
@@ -1233,7 +1282,7 @@ impl Holiday {
                 if !over {
                     return;
                 }
-                self.start.menu.mouse_up(x, y)
+                self.start.menu.mouse_up(x, y, button == Some(Button::Left))
             }
             _ if over => self.start.menu.mouse_move(x, y, self.shift()),
             _ => return,
@@ -1330,7 +1379,7 @@ impl Holiday {
             let request = game.forms.requests.remove(0);
             match request {
                 Request::FileMenu => {
-                    let games = self.saves.games();
+                    let games = self.saves.games(self.enhance.view);
                     game.open_file_menu(games);
                 }
                 Request::Quit => {
@@ -1484,7 +1533,7 @@ impl Holiday {
                     Ok(path) => println!("saved {}", path.display()),
                     Err(e) => eprintln!("can't save {}: {e}", String::from_utf8_lossy(&name)),
                 }
-                let games = self.saves.games();
+                let games = self.saves.games(self.enhance.view);
                 if let Some(game) = &mut self.game {
                     game.file_menu.menu.set_games(games);
                 }
@@ -1524,6 +1573,7 @@ impl Holiday {
             s.intro_music();
         }
         self.start = start_menu(&self.dir, &self.exe, Settings::from_world(&game.world));
+        self.start.menu.enhance = self.enhance.view;
         self.start.show(self.size);
         self.repaint();
     }
@@ -1688,7 +1738,9 @@ impl Holiday {
             Some(Action::Load) => {
                 // 1058:0c7d: the start menu is disabled and TLadenForm
                 // opens over it.
-                self.load = Some(load_menu(&self.dir, &self.exe, self.saves.games(), self.size));
+                let mut load = load_menu(&self.dir, &self.exe, self.saves.games(self.enhance.view), self.size);
+                load.menu.enhance = self.enhance.view;
+                self.load = Some(load);
             }
             Some(Action::Quit) => self.quit = true,
             None => {}
@@ -1912,6 +1964,7 @@ fn file_menu(dir: &Path, exe: &[u8]) -> FileMenu {
         form,
         visible: false,
         captured: false,
+        at: (at.left, at.top),
     }
 }
 
@@ -2427,6 +2480,8 @@ impl Holiday {
             sound,
             enhance,
         };
+        holiday.start.menu.enhance = enhance.view;
+        holiday.sound.borrow_mut().set_view_enhancements(enhance.view);
         let (w, h) = platform::DEFAULT_DESKTOP;
         holiday.layout(i32::try_from(w).unwrap_or(800), i32::try_from(h).unwrap_or(600));
         holiday
@@ -3025,6 +3080,159 @@ mod tests {
         let dir = PathBuf::from(out);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(format!("{name}.png")), png).unwrap();
+    }
+
+    /// The original's config with only the view enhancement `e` on.
+    fn only(e: enhance::Enhancement) -> Config {
+        let mut c = Config::ORIGINAL;
+        c.view.set(e, true);
+        c
+    }
+
+    /// The view enhancements of "UI quirks" and "Sound"
+    /// (`docs/original-bugs.md`) in the whole program on 800×600, each
+    /// against the original (every view enhancement but `big_map` on).
+    #[test]
+    #[allow(clippy::too_many_lines)] // One game each way.
+    fn ui_enhancements() {
+        use enhance::Enhancement as E;
+        let Some(dir) = game_dir() else { return };
+        let mut all = Config::ORIGINAL;
+        for &e in E::ALL {
+            all.view.set(e, e != E::BigMap);
+        }
+        let mut o_h = holiday_in_a_game(&dir, SIZE, Config::ORIGINAL);
+        let mut f_h = holiday_in_a_game(&dir, SIZE, all);
+        let o = o_h.game.as_mut().unwrap();
+        let f = f_h.game.as_mut().unwrap();
+        let main = Hauptschirm::position(SIZE.0, SIZE.1);
+
+        // `form_positions`: the money menu a column further left, whole on
+        // the screen, and two pixels higher; the build menu a row lower,
+        // level with the island; the sabotage window and the file menu
+        // over the main screen.
+        let (om, fm) = (o.forms.money.bounds(), f.forms.money.bounds());
+        assert_eq!((om.right, fm.right), (SIZE.0 + 1, SIZE.0));
+        assert_eq!(fm.height(), om.height() + 2);
+        assert_eq!(f.tools.menu.top, o.tools.menu.top + 1);
+        assert_eq!(f.tools.menu.top, main.1 + 0x3b);
+        let (os, fs) = (o.tools.sabowin.as_ref().unwrap(), f.tools.sabowin.as_ref().unwrap());
+        assert_eq!((fs.left, fs.top), (os.left + main.0, os.top + main.1));
+        assert_eq!(
+            (f.file_menu.menu.left, f.file_menu.menu.top),
+            (o.file_menu.menu.left + main.0, o.file_menu.menu.top + main.1)
+        );
+
+        // `mouse_buttons`: the right button on the money menu's title bar
+        // rolls it up for a drag only in the original.
+        for (g, rolls) in [(&mut *o, true), (&mut *f, false)] {
+            let title = g.forms.money.layout()[0].1;
+            let at = (title.left + title.width() / 2, title.top + 4);
+            let height = g.forms.money.bounds().height();
+            let _ = g.forms.money.mouse_down(at.0, at.1, false, ShiftState::RIGHT);
+            assert_eq!(g.forms.money.bounds().height() != height, rolls);
+            let _ = g.forms.money.mouse_up(at.0, at.1, false);
+        }
+
+        // `money_menu_button`: the year's end shows the money menu, with
+        // its button down only with the fix.
+        for (g, down) in [(&mut *o, false), (&mut *f, true)] {
+            let _ = g.forms.money.close();
+            g.tools.down[4] = false;
+            assert!(!g.forms.money.shown());
+            g.forms.settings.year_balance = true;
+            let _ = g.forms_tick(&Tick {
+                new_year: true,
+                ..Tick::default()
+            });
+            assert!(g.forms.money.shown());
+            assert_eq!(g.tools.down[4], down);
+        }
+
+        // `form_drags`: a left drag that didn't start on the main screen's
+        // title bar, or on the compass's after it was let go, moves them
+        // only in the original.
+        for (g, moves) in [(&mut *o, true), (&mut *f, false)] {
+            let at = (g.screen.left + 300, g.screen.top + 5);
+            assert_eq!(g.screen.title_mouse_move(ShiftState::LEFT, at, SIZE), moves);
+            let c = g.forms.compass.bounds();
+            let grab = (30, 5);
+            let cursor = (c.left + grab.0, c.top + grab.1);
+            let _ = g.forms.compass.mouse_down(grab.0, grab.1, ShiftState::LEFT, cursor);
+            let _ = g.forms.compass.mouse_up(grab.0, grab.1);
+            let r = g
+                .forms
+                .compass
+                .mouse_move(ShiftState::LEFT, (cursor.0 - 20, cursor.1), SIZE);
+            assert_eq!(r.moved, moves);
+        }
+
+        // `overview_scrolling`: the overview map's click past the main
+        // screen's scroll bars' ends.
+        for (g, at) in [(&mut *o, (-10, -13)), (&mut *f, (0, 0))] {
+            g.screen.set_view(0, &g.world, &g.tiles);
+            g.screen.set_scroll(-10, -13, &g.world, &g.tiles);
+            assert_eq!(g.screen.scroll_position(), at);
+        }
+
+        // `build_menu`: picking a tool with the build menu closed makes
+        // its closing sound only in the original; the arrow keys go on to
+        // the main screen only with the fix.
+        for (g, sound) in [(&mut *o, true), (&mut *f, false)] {
+            let view = g.screen.camera().view;
+            let _ = g
+                .tools
+                .click(game::tools::DEMOLISH, &g.world, &g.font, &g.tiles, &g.info, view, SIZE);
+            g.tools.menu.sounds.clear();
+            let _ = g
+                .tools
+                .click(game::tools::RAISE, &g.world, &g.font, &g.tiles, &g.info, view, SIZE);
+            assert_eq!(g.tools.menu.sounds.contains(&0xe), sound);
+            let key = g.tools.menu.key_down(0x26);
+            assert_eq!(key == baumenue::Response::MainScreenKey(0x26), !sound);
+        }
+
+        // `sound_times`: with the animations off, a sound with a time
+        // plays again after its 50 ticks only with the fix.
+        for (g, again) in [(&mut *o, false), (&mut *f, true)] {
+            let sound = Rc::clone(&g.sound);
+            let _ = sound.borrow_mut().effects.play(1, true);
+            for _ in 0..50 {
+                g.tick_sounds(&Tick::default());
+            }
+            assert_eq!(sound.borrow_mut().effects.play(1, true).is_some(), again);
+        }
+
+        // `modifier_clicks`: the demolish tool with Shift held.
+        for (g, works) in [(&mut *o, false), (&mut *f, true)] {
+            let cam = g.screen.drawn_camera();
+            let actions = g
+                .tools
+                .press(300, 200, ShiftState::LEFT | ShiftState::SHIFT, &g.world, &g.tiles, &cam);
+            assert_eq!(!actions.is_empty(), works);
+        }
+    }
+
+    /// `desktop_background` on 1366×700, which has no picture in the
+    /// original. With `HOLIDAY_PNG` set, the screens go there as
+    /// `ui-desktop_background-original.png` and `-fixed.png`.
+    #[test]
+    fn desktop_background() {
+        let Some(dir) = game_dir() else { return };
+        let picture = |h: &Holiday| {
+            let c = h.form.components.iter().find(|c| c.name == b"backgroundimage").unwrap();
+            let shown = matches!(&c.kind, Kind::Image { picture: Some(_) });
+            (shown, c.bounds)
+        };
+        let size = (1366, 700);
+        let o = holiday_in_a_game(&dir, size, Config::ORIGINAL);
+        let f = holiday_in_a_game(&dir, size, only(enhance::Enhancement::DesktopBackground));
+        write_png(&o, "ui-desktop_background-original");
+        write_png(&f, "ui-desktop_background-fixed");
+        // 800×600's background, the biggest that fits, centred.
+        assert!(!picture(&o).0);
+        let at = Rect::new((1366 - 800) / 2, (700 - 600) / 2, 800, 600);
+        assert_eq!(picture(&f), (true, at));
     }
 
     /// The original's config with only `big_map` on.

@@ -272,6 +272,113 @@ enhancements! {
     /// (`docs/layout.md`, "`big_map`").
     BigMap = "big_map",
         "A bigger screen shows more island: the main screen fills it and its map view grows";
+    /// The scroll bars' arrows step when pressed, an arrow let go off
+    /// itself is drawn up again, and a press only counts as a change when
+    /// the position changed (10c0:0f10, 10c0:15f7, 10c0:0fe3).
+    ScrollBars = "scroll_bars",
+        "Scroll bar arrows step when pressed and come up wherever they're let go";
+    /// A click on a focused text field keeps it focused, "Speichern"
+    /// saves a name being typed, and a name picked from the file menu's
+    /// list puts the cursor after it (10c0:1c1b, 1040:073c, 1040:0192).
+    EditField = "edit_field",
+        "Text fields keep the focus when clicked, so the file menu's Speichern saves a typed name";
+    /// Shift, Ctrl and a double click's second press don't stop a click
+    /// on a list or with a tool (10c0:0431, 1020:1984).
+    ModifierClicks = "modifier_clicks",
+        "Clicks on lists and with the tools work with Shift or Ctrl held and on a double click";
+    /// Only the left button clicks the start menu's buttons, ticks the
+    /// options' boxes and drags the money menu (1058:41fb, 1060:2404,
+    /// 1070:0820).
+    MouseButtons = "mouse_buttons",
+        "The right mouse button no longer clicks start menu buttons, ticks options or drags the money menu";
+    /// Switching the start menu to its scenarios ticks the scenario that
+    /// starts (1058:02cf).
+    StartMenuScenario = "start_menu_scenario",
+        "The start menu's scenario page ticks the scenario that will start";
+    /// The auction form's title stays on the row it opened with after a
+    /// click on its title bar (1028:1ce0).
+    AuctionTitle = "auction_title",
+        "The auction form's title doesn't jump a row up after a click on its title bar";
+    /// Forms open where they belong: the auction centred, the money menu
+    /// whole on the screen at its full height, the build menu level with
+    /// the island, the sabotage window and the file menu over the main
+    /// screen (1028:0dde, 1070:2b3a, 1070:2e6c, 1018:2fa2, `1110:54fc`).
+    FormPositions = "form_positions",
+        "Forms open where they belong: the auction centred, the money menu whole, the others over the main screen";
+    /// The lists of saved games are in the names' order (1038:3983,
+    /// 1040:10e5).
+    SavedGamesOrder = "saved_games_order",
+        "The lists of saved games are sorted by name, not backwards";
+    /// A dragged road ends where the mouse is let go, also with the
+    /// animations or new people off (1090:124f, 1080:31ed).
+    RoadDrag = "road_drag",
+        "A dragged road ends where the mouse is let go, also with the animations off";
+    /// The build menu's close sound only plays when it's open, and the
+    /// keys it doesn't use go on to the main screen (1010:2be1,
+    /// 1018:3290).
+    BuildMenu = "build_menu",
+        "The build menu passes on the keys it doesn't use and makes no closing sound when it's closed";
+    /// The money menu that the year's end opens presses its button
+    /// (1008:4f64).
+    MoneyMenuButton = "money_menu_button",
+        "The year's end presses the money menu's button when it opens the menu";
+    /// The overview map keeps the main screen within its scroll bars and
+    /// its horizontal thumb off the right arrow (10b8:37f5, 10b8:2785).
+    OverviewScrolling = "overview_scrolling",
+        "Clicks on the overview map keep the main view within its scroll bars; its thumb stays off the arrow";
+    /// The overview map colours low grass, high sand and nobody's
+    /// buildings with the bitmap's nearest colours (10b8:04b1, 10b8:07df,
+    /// 10b8:0a0a).
+    OverviewColours = "overview_colours",
+        "The overview map has a colour for low grass, high sand and nobody's buildings instead of none";
+    /// A form's drag only starts on its title bar and ends when the mouse
+    /// comes up, and the quit question stays whole on the screen
+    /// (1038:34fc, 1028:2ecc, 1020:1bd9, 1020:38d4).
+    FormDrags = "form_drags",
+        "Form drags end when the mouse comes up and only move the form grabbed; the quit question stays on screen";
+    /// The info box's and the overview's prices mark the thousands in the
+    /// right place, and off the map the box names the sea (1030:108b,
+    /// 1038:014b).
+    InfoboxText = "infobox_text",
+        "The info box puts the thousands marks in the right place and names the sea off the map";
+    /// The info box takes the size of what it shows after a button's
+    /// command (1038:24d6).
+    InfoboxSize = "infobox_size",
+        "The info box grows or shrinks to what it shows after a button";
+    /// The buildings' overview clears its price with its own background,
+    /// leaves its scroll bar's columns to the bar, and Up and Down only
+    /// scroll as far as the selection needs (1080:02d9, 1080:1c3b,
+    /// 1080:202b).
+    OverviewList = "overview_list",
+        "The buildings' overview keeps the selection in view with Up and Down and draws its price cleanly";
+    /// The TV's buttons click only on a press and release on them, its
+    /// first button takes the view back where it was, browsing keeps it
+    /// open and its title is centred over its bar (1048:1794, 1048:26f6,
+    /// 1048:1b3e, 1048:12e9).
+    TvForm = "tv_form",
+        "The TV's buttons, back button and title work as meant, and browsing keeps it open";
+    /// Any desktop size lays out for itself, with the nearest background
+    /// and title picture centred on it (1000:2466).
+    DesktopBackground = "desktop_background",
+        "Any window size gets the nearest background picture, centred, and nothing is cut off at the edges";
+    /// The auctioneer's calls are heard, from `SPRADEU1\` (10a0:2824).
+    AuctionCalls = "auction_calls",
+        "The auctioneer's three calls are heard";
+    /// A sound's time runs down every tick, also with the animations off
+    /// (1090:5293).
+    SoundTimes = "sound_times",
+        "Sounds play again after their time with the animations off too";
+    /// The music plays the playlist from its first track after the
+    /// intro's, goes on to the next track as soon as one ends, and plays
+    /// on after a game is loaded (1018:37de, 1018:367e, 1010:26fa).
+    Music = "music",
+        "The music starts at the playlist's first track, has no silence between tracks and plays on after loading";
+    /// The TV's speech belongs to its message: a message without one
+    /// stops the last, browsing doesn't keep it from starting, and a film
+    /// after it plays at the sounds' volume and gives the sounds back
+    /// when it ends (1048:0a54, 1048:1b3e, 1048:01bd, 1048:034f).
+    TvSound = "tv_sound",
+        "The TV's speech belongs to its message, and its films don't leave the sounds silent or at the speech volume";
 }
 
 /// Every enhancement's [`Info`], the world's first.

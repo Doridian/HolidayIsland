@@ -42,7 +42,8 @@ eight), and the session activated (`sound_activate`, 10a0:254f).
 plays 2; unless `1110:723c[n]` is above 0, `WaveMixPlay` of wave `n` on
 channel 0 with `WMIX_USELRUCHANNEL`, no loops, and `1110:723c[n]` :=
 `1110:3dce[n]`. `people_tick` (1090:5293) counts each down by one at its
-start; it runs only with the "animations" option on.
+start; it runs only with the "animations" option on (with
+`enhance.sound_times` the port counts down every tick).
 
 | n | File | Ticks | Played by |
 |---|---|---|---|
@@ -69,7 +70,7 @@ start; it runs only with the "animations" option on.
 | 21–23 | `crashku1.wav`, `exploku1.wav`, `exploku2.wav` | 0 | |
 | 24 | `fliegst2.wav` | 50 | |
 | 25 | `elefant.wav` | 50 | the people (kind 0x1c) |
-| 26–28 | `zum1.wav`..`zum3.wav` | 0 | the auctioneer's three calls: not in `SOUND\` (they're in `SPRADEUn\`), so never heard |
+| 26–28 | `zum1.wav`..`zum3.wav` | 0 | the auctioneer's three calls: not in `SOUND\` (they're in `SPRADEUn\`), so never heard; with `enhance.auction_calls` from `SPRADEU1\` |
 | 29 | `hublop8b.wav` | 50 | |
 | 30 | `klaerku.wav` | 50 | the people (kind 0x1b) |
 | 31 | `klonga8b.wav` | 0 | a tool did its work (build, raise, lower) |
@@ -136,13 +137,15 @@ the game reads of it.
 - The intro (states 422, 424) and "Neues Spiel" (1010:25dc) open and play
   `holiday.mid`, whatever the options say, once.
 - Each game's set-up: `music_init_playlist` (1018:37de): every track on
-  the list, track 0, `1110:6efc` := 0x3039.
+  the list, track 0, `1110:6efc` := 0x3039. So the first track after the
+  intro's is track 1; with `enhance.music` track 0.
 - After each day (1020:2285): `music_next_track` (1018:367e): with the
   music on, if the position equals the one after the last day, the next
   ticked track after the current one (wrapping, the same one if none is
   ticked) is stopped, ejected, closed, opened and played; then the
   position is kept. So a track's end shows a day later, and the paused
-  game never changes track.
+  game never changes track. With `enhance.music` the next track starts
+  as soon as one ends (each frame, paused or not).
 - The options: "Musik" `music_start` (1018:3850: the track opens and
   plays, 0x3039) or `music_stop` (1018:38c5: stop, close); a track's radio
   button (1060:02b7): with the music on stop, eject and close, the track,
@@ -150,7 +153,8 @@ the game reads of it.
   `anotrian.mid`, `dub.mid`, `floatin'.mid`, `samba.mid`, `ukanchi.mid`,
   `cuban.mid`, `holiday.mid`.
 - A game loaded from the file menu (`game_show_state`, 1010:26fa): with the
-  music off it closes, else its file opens again, without playing.
+  music off it closes, else its file opens again, without playing (with
+  `enhance.music` it plays).
 - The end of a game (`TSchlussform.MusikPlayer`, +0x18c,
   [endforms.md](endforms.md)): the background music stops (and the option
   goes off), `gewonn.mid` or `pleite.mid` plays, then `endeloop.mid` each
@@ -198,10 +202,11 @@ TV; this is its sound.
 - A message that opens the TV (`post_message`, 1048:0a54): with
   "Sprachausgabe" and a `SOUNNAME.DAT` name other than `kein`, the file
   `SPRADEU<1 + text mod 3>\<name>` (the speech of the text variant shown)
-  is opened and `tv_busy` (`1110:662d`) := 1; else `tv_busy` := 0. Then
-  sound 0x24.
+  is opened and `tv_busy` (`1110:662d`) := 1; else `tv_busy` := 0,
+  leaving a speech still open playing (with `enhance.tv_sound` it's
+  closed). Then sound 0x24.
 - `fernseher_tick` (1048:1b3e): 3 s after the TV opened, if the page's
-  name isn't `kein`: with `tv_busy` the effects go off (10a0:2518), the
+  name isn't `kein` (with `enhance.tv_sound` the posted message's): with `tv_busy` the effects go off (10a0:2518), the
   wave volume goes to the speech volume (10a0:24bc) and the speaker plays;
   `1110:667a` := 1. The lights flicker while `tv_busy`, started and
   `Position <> Length`. With `tv_busy` the TV closes (or its film plays)
@@ -209,7 +214,8 @@ TV; this is its sound.
 - Closing the speaker (stopping the film, hiding the TV, a press on the TV
   or its title bar): `Close`, the effects on (10a0:254f), the sound volume
   back, `tv_busy` := 0. Hiding the TV then turns the effects on again with
-  "Geräusche" on.
+  "Geräusche" on (with `enhance.tv_sound` either way, and a news film's
+  end too).
 - The auction's `Timer2` (1028:1940) doesn't open the form while
   `tv_busy`: it tries again a second later.
 
