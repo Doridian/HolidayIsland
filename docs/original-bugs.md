@@ -75,6 +75,7 @@ explains a bug in detail, the row links there instead of repeating it.
 | 1040:1bdf `add_highscore` | A won game of scenario 7 (past the six tables) writes its entry 67 bytes past the end of the high score table ([endforms.md](endforms.md)) | Writes nothing |
 | 1040:1d49 | Showing the high scores of a game past 6 reads the next ranks' tables and, for the last rank, past the end of the table | Shows the ones in the table, nothing past it |
 | 1068:1016 | A fairly won scenario past 6 sets no film, so the film player opens whatever file name it had | Shows the results at once |
+| 10c8:1810 from 1000:2466, 1048:01bd, 1068:1016, 1068:0e68 | A film that doesn't open (a missing or broken file) raises an exception out of the handler; the TV's then never closes by itself ([films.md](films.md)) | Ends the film at once |
 | 1068:0288 | A scenario past 7 leaves the end form's reason text as it was | Leaves it empty |
 
 ## Simulation logic
@@ -189,6 +190,8 @@ The widgets' are described in
 | 1040:1ca7 | "Löschen" clears the shown high score table without asking | yes |
 | 1040:31bc | The high scores' check boxes are pressed as radio buttons: a ticked one ignores a click | yes |
 | 1040:3dc7 | The tooltip's timeout (`1110:009c`) is set to 10 and never read | yes |
+| 1048:01bd | The TV's `Panel1` is 332 × 256 and its films 335 × 257: their right 3 columns and bottom row are never seen ([films.md](films.md)) | yes |
+| 1000:3938 | A key on the background form sets its timer's interval to 1 in any state, so besides ending the intro's film it cuts the waits for the title and the start menu short | yes |
 
 ## Sound
 
@@ -203,6 +206,7 @@ The widgets' are described in
 | 1010:26fa | Loading a game from the file menu with the music on opens its file again without playing it: silence until a day or two later the next track starts | yes |
 | 1048:0a54 | A message without speech only forgets a speech still open from the last one: it plays on, and the effects stay off, until the TV closes | yes |
 | 1048:1b3e | The speech starts by the page on the TV, not the message it belongs to: browsing with the keys to a page without speech in the first 3 s keeps it from starting, and the TV then never closes by itself | yes |
+| 1048:01bd, 1048:034f | A news film after a speech plays at the speech volume: the sound volume comes back only when the speaker closes, after the film | yes |
 | 1048:01bd, 1048:077a | A news film gives up WaveMix's wave device (10a0:2518) and only closing the TV takes it back, and only with "Geräusche" on: switching the sounds on later leaves the effects silent until something else takes it back | yes |
 
 ## Design issues for multiplayer
@@ -217,8 +221,9 @@ state into the simulation. See the open questions in
   for one player the port does as the original. For multiplayer the lights
   would draw from a view's numbers and the auction wouldn't wait;
 - the TV pause: a message the human's options pick, or the TV's button,
-  stops the game for everyone until the TV closes, and the archive keeps
-  the human's view origin. The news options are each player's view
+  stops the game for everyone until the TV closes (after its film, whose
+  length and skipping are one player's, [films.md](films.md)), and the
+  archive keeps the human's view origin. The news options are each player's view
   setting (`optionen::Settings::news`, saved with the view); for one
   player the port pauses as the original does. Intended for multiplayer,
   not built yet: news never pause the game, since each player can dismiss

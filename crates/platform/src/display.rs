@@ -8,7 +8,7 @@ use winit::dpi::PhysicalSize;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
-use crate::Frame;
+use crate::{Frame, Overlay};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -48,10 +48,14 @@ impl View {
         View { offset, scale }
     }
 
-    fn bytes(self) -> [u8; 16] {
-        let mut b = [0; 16];
+    /// The uniform, with `overlay`'s rectangle (empty without one).
+    #[allow(clippy::cast_precision_loss)]
+    fn bytes(self, overlay: Option<&Overlay<'_>>) -> [u8; 32] {
+        let rect = overlay.map_or([0.0; 4], |o| [o.x as f32, o.y as f32, o.width as f32, o.height as f32]);
+        let mut b = [0; 32];
         for (i, v) in [self.offset[0], self.offset[1], self.scale, 0.0]
             .into_iter()
+            .chain(rect)
             .enumerate()
         {
             b[4 * i..4 * i + 4].copy_from_slice(&v.to_le_bytes());
@@ -64,6 +68,9 @@ struct Textures {
     width: u32,
     height: u32,
     framebuffer: wgpu::Texture,
+    /// The overlay's size, at least 1 × 1.
+    overlay_size: (u32, u32),
+    overlay: wgpu::Texture,
     bind_group: wgpu::BindGroup,
 }
 
@@ -126,6 +133,7 @@ impl Display {
                     },
                     count: None,
                 },
+                texture_entry(3, wgpu::TextureSampleType::Float { filterable: false }),
             ],
         });
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
@@ -158,7 +166,7 @@ impl Display {
         let palette = texture(&device, 256, 1, wgpu::TextureFormat::Rgba8Unorm);
         let view = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: 16,
+            size: 32,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -184,14 +192,22 @@ impl Display {
         }
     }
 
-    /// Makes the framebuffer texture `width` × `height`.
-    fn ensure_textures(&mut self, width: u32, height: u32) {
+    /// Makes the framebuffer texture `width` × `height` and the overlay's
+    /// `overlay` (at least 1 × 1).
+    fn ensure_textures(&mut self, width: u32, height: u32, overlay: (u32, u32)) {
+        let overlay_size = (overlay.0.max(1), overlay.1.max(1));
         if self
             .textures
             .as_ref()
-            .is_none_or(|t| (t.width, t.height) != (width, height))
+            .is_none_or(|t| (t.width, t.height, t.overlay_size) != (width, height, overlay_size))
         {
             let framebuffer = texture(&self.device, width, height, wgpu::TextureFormat::R8Uint);
+            let overlay = texture(
+                &self.device,
+                overlay_size.0,
+                overlay_size.1,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
             let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.layout,
@@ -212,12 +228,20 @@ impl Display {
                         binding: 2,
                         resource: self.view.as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(
+                            &overlay.create_view(&wgpu::TextureViewDescriptor::default()),
+                        ),
+                    },
                 ],
             });
             self.textures = Some(Textures {
                 width,
                 height,
                 framebuffer,
+                overlay_size,
+                overlay,
                 bind_group,
             });
         }
@@ -235,10 +259,21 @@ impl Display {
         };
         let size = PhysicalSize::new(self.config.width, self.config.height);
         let view = View::new(size, frame.width, frame.height);
-        self.queue.write_buffer(&self.view, 0, &view.bytes());
+        // An overlay whose pixels don't fill it isn't shown.
+        let overlay = frame
+            .overlay
+            .as_ref()
+            .filter(|o| o.width > 0 && o.height > 0 && o.rgb.len() >= o.width as usize * o.height as usize * 3);
+        self.queue.write_buffer(&self.view, 0, &view.bytes(overlay));
         let rgba: Vec<u8> = frame.palette.iter().flat_map(|&[r, g, b]| [r, g, b, 255]).collect();
         write(&self.queue, &self.palette, &rgba, 256, 1, 4);
-        self.ensure_textures(frame.width, frame.height);
+        // The overlay texture keeps its size while none is shown, so a film
+        // that stops and starts doesn't make new textures.
+        let size = overlay.map_or_else(
+            || self.textures.as_ref().map_or((1, 1), |t| t.overlay_size),
+            |o| (o.width, o.height),
+        );
+        self.ensure_textures(frame.width, frame.height, size);
         let Some(textures) = &self.textures else {
             return Ok(());
         };
@@ -250,6 +285,15 @@ impl Display {
             frame.height,
             1,
         );
+        if let Some(o) = overlay {
+            let rgba: Vec<u8> = o.rgb[..o.width as usize * o.height as usize * 3]
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .flat_map(|&[r, g, b]| [r, g, b, 255])
+                .collect();
+            write(&self.queue, &textures.overlay, &rgba, o.width, o.height, 4);
+        }
 
         let target = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
@@ -330,4 +374,20 @@ fn write(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8], width: u32, 
             depth_or_array_layers: 1,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    /// The shader parses and validates, as `create_shader_module` would
+    /// check it at run time.
+    #[test]
+    fn shader_validates() {
+        let module = naga::front::wgsl::parse_str(include_str!("shader.wgsl")).expect("WGSL parses");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::default(),
+        )
+        .validate(&module)
+        .expect("WGSL validates");
+    }
 }

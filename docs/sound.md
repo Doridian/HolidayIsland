@@ -6,7 +6,8 @@ WAV from `SPRADEUn\` through another `TMediaPlayer` (MCI's `waveaudio`).
 All three are the view's: the world only says which sound number a tick
 makes (`Tick::sounds`) and hears of the speaker through a command.
 
-Ported in [`game::sound`](../crates/game/src/sound.rs) (which wave
+The films' sound is in [films.md](films.md). Ported in
+[`game::sound`](../crates/game/src/sound.rs) (which wave
 `play_sound` plays and when, the music's player and playlist, the MCI
 players' positions), [`game::fernseher`](../crates/game/src/fernseher.rs)
 (the speaker), [`platform::audio`](../crates/platform/src/audio/mod.rs)
@@ -236,8 +237,7 @@ behaves the same.
 
 ## Not done
 
-- The films (`*.AVI`) and their sound; the films still take the wave
-  device from WaveMix as they "play" (they end at once).
+- The films' timing as MCI's: see [films.md](films.md#not-done).
 - The device latency of WaveMix's blocks.
 - `WAVEMIX.INI`'s other rates (22 and 44 kHz for some devices): the port
   mixes at 11.025 kHz, the default and the INI's `[default]`.

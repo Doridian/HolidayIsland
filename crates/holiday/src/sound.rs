@@ -1,8 +1,10 @@
 //! The sound: `game::sound`'s logic on the platform's mixer and
 //! synthesizer. `play_sound`'s waves (10a0:2f5e opens them from `SOUND\`
 //! or `SOUNDLO\`), the background music (`hintergrund.MusikMediaPlayer`),
-//! the end's music (`TSchlussform.MusikPlayer`) and the TV's speaker
-//! (`TFernseher.MediaPlayer2`). `docs/sound.md` has what plays when.
+//! the end's music (`TSchlussform.MusikPlayer`), the TV's speaker
+//! (`TFernseher.MediaPlayer2`) and the films (`hintergrund.FilmMediaPlayer`,
+//! `TFernseher.MediaPlayer1`, `TSchlussform.Filmplayer`: one at a time).
+//! `docs/sound.md` and `docs/films.md` have what plays when.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -16,6 +18,9 @@ use game::optionen::Settings;
 use game::sound::{Effects, Mci, MciEvent, Music, WAVE_FILES, device_level};
 use platform::audio::wavemix::{WavFile, Wave};
 use platform::audio::{self, Audio, MidiFile};
+use vcl::Rect;
+
+use crate::film::Film;
 
 /// The players the engine's one MIDI output plays for.
 const BACKGROUND: u8 = 1;
@@ -38,6 +43,10 @@ pub struct Sound {
     speaker_failed: bool,
     /// The MIDI files read so far, `None` where one isn't there.
     midis: BTreeMap<String, Option<Arc<MidiFile>>>,
+    /// Which films: `SETUP.DAT`'s fourth line (`film_dir`, 1110:502a).
+    pub film_quality: setup::Film,
+    /// The film that's open.
+    film: Option<Film>,
 }
 
 /// `name` in `dir`'s subdirectory `sub`, as the CD has it (upper case),
@@ -92,6 +101,8 @@ impl Sound {
             speaker_wav: None,
             speaker_failed: false,
             midis: BTreeMap::new(),
+            film_quality: setup::Film::Hi,
+            film: None,
         }
     }
 
@@ -226,6 +237,11 @@ impl Sound {
                 }
                 Media::PlaySpeaker => self.speaker.play(),
                 Media::CloseSpeaker => self.speaker.close(),
+                Media::PlayFilm { file } => {
+                    // A film that doesn't open is over at once.
+                    let _ = self.play_film(&String::from_utf8_lossy(file), Rect::new(0, 0, 0, 0));
+                }
+                Media::StopFilm => self.stop_film(),
             }
         }
         self.sync();
@@ -311,7 +327,67 @@ impl Sound {
         self.music.player.advance(ms);
         self.end_music.advance(ms);
         self.speaker.advance(ms);
+        if let Some(f) = &mut self.film {
+            f.advance(ms);
+        }
         self.sync();
+    }
+
+    /// A film player's `FileName := film_dir + name; Open; Play`, shown in
+    /// `panel` on the screen, its sound on the wave device. `false` if it
+    /// doesn't open; the original raises an exception then
+    /// (`docs/films.md`). Another film that's open closes first.
+    pub fn play_film(&mut self, name: &str, panel: Rect) -> bool {
+        self.stop_film();
+        let sub = match self.film_quality {
+            setup::Film::Lo => "FILMLO",
+            setup::Film::Hi => "FILMHI",
+        };
+        let Some(path) = crate::forms::find(&self.dir, &format!("{sub}/{name}")) else {
+            eprintln!("film {sub}/{name} not found");
+            return false;
+        };
+        match Film::open(&path, panel) {
+            Ok(mut film) => {
+                film.play();
+                if let Some((samples, rate)) = &film.sound {
+                    self.audio.with(|e| e.play_film(Arc::clone(samples), *rate));
+                }
+                self.film = Some(film);
+                true
+            }
+            Err(e) => {
+                // BUG(original): `TMediaPlayer.Open` raises an exception for a film that doesn't open (the TV then never closes by itself); the callers end the film at once.
+                eprintln!("{}: {e}", path.display());
+                false
+            }
+        }
+    }
+
+    /// The film player's `Stop`/`Eject`/`Close`.
+    pub fn stop_film(&mut self) {
+        if self.film.take().is_some() {
+            self.audio.with(platform::audio::Engine::stop_film);
+        }
+    }
+
+    /// `Position = Length` of the film, or no film open.
+    #[must_use]
+    pub fn film_done(&self) -> bool {
+        self.film.as_ref().is_none_or(Film::at_end)
+    }
+
+    /// The film's panel moved.
+    pub fn set_film_panel(&mut self, panel: Rect) {
+        if let Some(f) = &mut self.film {
+            f.panel = panel;
+        }
+    }
+
+    /// What the film shows on a `screen`-sized screen.
+    #[must_use]
+    pub fn film_picture(&self, screen: (i32, i32)) -> Option<(Rect, Vec<u8>)> {
+        self.film.as_ref()?.picture(screen)
     }
 
     /// The renderer follows the players.

@@ -220,6 +220,7 @@ pub enum Action {
 }
 
 /// What an event did.
+#[allow(clippy::struct_excessive_bools)] // Independent requests.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[must_use]
 pub struct Response {
@@ -228,9 +229,14 @@ pub struct Response {
     /// The sounds played, in order (`play_sound`, 10a0:30b6).
     pub sounds: Vec<Sound>,
     pub action: Option<Action>,
-    /// A film to play from `FILM` in `Panel1`; report its end with
-    /// [`Schlussform::film_ended`].
+    /// A film to play from `FILM` in `Panel1` ([`Schlussform::film_panel`]),
+    /// with the `WaveMix` session's wave device given up first (10a0:2518);
+    /// report its end with [`Schlussform::film_ended`].
     pub film: Option<&'static str>,
+    /// The film stops and closes (`Stop`, `Eject`, `Close`), `Panel1`
+    /// hides and the session takes the wave device back (10a0:254f).
+    /// // 1068:17ad
+    pub stop_film: bool,
     /// Music to play from `MUSIK` (`MusikPlayer`).
     pub music: Option<&'static str>,
     /// The end's music stops (1068:1593).
@@ -459,6 +465,7 @@ impl Schlussform {
             return r;
         }
         r.refresh = true;
+        r.stop_film = true;
         match self.mode {
             Mode::End => self.show_results(screen),
             // BUG(original): quitting from the results page ("Beenden") saves nothing, unlike TEndeform's "OK", which saves Last.map first.
@@ -468,6 +475,20 @@ impl Schlussform {
             }
         }
         r
+    }
+
+    /// `Panel1` on the screen while a film plays: the film is drawn at its
+    /// size from its top left.
+    #[must_use]
+    pub fn film_panel(&self) -> Option<Rect> {
+        (self.stage == Stage::Film).then(|| {
+            Rect::new(
+                self.left + FILM_PANEL.left,
+                self.top + FILM_PANEL.top,
+                FILM_PANEL.width(),
+                FILM_PANEL.height(),
+            )
+        })
     }
 
     /// `FormKeyDown`: any key skips the film. // 1068:198a

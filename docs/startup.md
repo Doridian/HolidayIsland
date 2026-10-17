@@ -49,7 +49,7 @@ timer's `Tag`; each state does its work, sets the next `Tag` and the
 | 100 | Loads nine bitmaps for the file menu's buttons (`close.bmp`, `closepre.bmp`, `datB1.bmp`, ...) from `GRAFIK` | 110 | 1 |
 | 110 | Centres the video control (432×320) and picks the screen size (below); sizes the image to it at 0,0 | 300 | 1 |
 | 300, 400 | 300 waits a tick. 400 shows the form, image and video control, then opens and plays `sunflow.avi`. If the open fails it goes to 420 | 410 | 200 |
-| 410 | Waits until the video's position reaches its length | 420 | 1 |
+| 410 | Waits until the video's position reaches its length; a key or a click ends it ([films.md](films.md)) | 420 | 1 |
 | 420 | Stops and closes the video and hides the form and image; something happens to the video control (`10e8:2258`) | 422 | 10 |
 | 422 | Opens `holiday.mid` from `MUSIK` | 424 | 1 |
 | 424 | Plays it | 430 | 1000 |
@@ -89,8 +89,8 @@ another name there) from `MAPS\`, which the load form sets
 [`game::hintergrund`](../crates/game/src/hintergrund.rs): a scenario's
 world from its map file (`load_world`) and a normal game's from the
 generator and the game's data (`new_world`,
-[island-generator.md](island-generator.md)); the `holiday` binary skips
-the video and the progress window.
+[island-generator.md](island-generator.md)); the `holiday` binary plays
+`titel.avi` ([films.md](films.md)) and skips the progress window.
 
 | Tag | Does | Next | Interval (ms) |
 |---|---|---|---|
@@ -122,7 +122,7 @@ map file's view position into the main screen's scroll position
 A normal game's world is ported: the island (10b0:52d4) and what the
 game's data sets up around it in states 100 and 1220
 ([island-generator.md](island-generator.md#the-rest-of-a-new-game)). Not
-ported yet: the video, the progress window, a scenario's events
+ported yet: the progress window, a scenario's events
 (`EREIGNn.DAT`, 1010:36f8) and players' flags, and what
 `game_start_setup` does to the view. A scenario's start money is ported
 ([simulation.md](simulation.md#money-107801e7)).

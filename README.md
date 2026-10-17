@@ -10,7 +10,7 @@ fields, along with the high-score table and `SETUP.DAT`. The startup
 sequence is mapped ([docs/startup.md](docs/startup.md)). The `vcl` crate
 builds the forms from the layouts in `HOLIDAY.EXE` and draws them with their
 bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
-(`winit` and `wgpu`) that shows the end of the intro and the start menu. The
+(`winit` and `wgpu`) that plays the intro and shows the start menu. The
 `game` crate has the first ported game code: text in the game's own bitmap
 font, its widget toolkit, the start menu, and starting a game: the island
 from a scenario, or one generated from the start menu's settings, is drawn
@@ -19,7 +19,9 @@ from the build menu, lays roads, raises and lowers the land and
 demolishes ([docs/player-tools.md](docs/player-tools.md)), while the
 computer players do the same. Games are saved and loaded in
 the original's format, from the start menu's load form and the in-game
-file menu ([docs/savegame.md](docs/savegame.md)). Also here:
+file menu ([docs/savegame.md](docs/savegame.md)). The sound, the music
+and the films (Cinepak and MS ADPCM, decoded in pure Rust,
+[docs/films.md](docs/films.md)) play. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable

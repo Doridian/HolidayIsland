@@ -6,6 +6,10 @@
 1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
 1000:1ea0 func init_game_defaults  # guess: the defaults for a new game (island_shape 1, relief 2, land 2, rivers 5, player_colours 1..8, ...)
 1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
+1000:3938 func hintergrund_skip_film  # FormKeyDown's part: Timer1.Interval := 1 (the next state comes at once), and in state 0x19a (sunflow.avi) or 0x459 (titel.avi) the film ends (0x1a4, 0x460); docs/films.md
+1000:39b7 func hintergrund_film_panel_click  # FilmPanelClick: in state 0x19a or 0x459 the film ends
+1000:3a36 func hintergrund_backgroundimage_click  # backgroundimageClick: as 1000:39b7
+1000:3d0c func hintergrund_formkeydown  # THintergrund.FormKeyDown: TSchlussform's FormKeyDown while that's shown, else 1000:3938
 1000:3d54 func marker_or_zero  # (i, j, layer): *1110:551c[layer] at the square, 0 unless both are 1..249
 1000:3d9e func event_chance  # (chance: Longint): Random(65000) always; true from 65536 on, false below 1, else Random + 1 < chance; game::events
 1000:3dc9 func building_or_none  # (i, j): the building, 255 unless both are 1..249
@@ -479,8 +483,8 @@
 1040:3db1 func helpform_free
 1040:3dc7 func helpform_show
 1040:3ead func helpform_hide
-1048:01bd func fernseher_play_film
-1048:034f func fernseher_stop_film
+1048:01bd func fernseher_play_film  # (name): WaveMix off, Panel1 at (9, 0x19) 0x14c x 0x100, MediaPlayer1 opens film_dir + name and plays; docs/films.md
+1048:034f func fernseher_stop_film  # Panel1 hidden, MediaPlayer1 Eject and Close, and the speaker closed (WaveMix back) if it was open
 1048:03c5 func fernseher_message_text
 1048:077a func fernseher_hide
 1048:087f func fernseher_draw_entry
@@ -617,7 +621,7 @@
 1068:1613 func schlussform_bildmousedown
 1068:16e0 func schlussform_bildmouseup
 1068:17ad func schlussform_film_ended
-1068:187f func schlussform_timer1timer
+1068:187f func schlussform_timer1timer  # every second: the film's Position = Length ends it (1068:17ad); the end's music, once over, plays endeloop.mid
 1068:198a func schlussform_formkeydown
 1068:199b func schlussform_panel1click
 1068:1a08 func new_house  # (i, j, building): a 0x2c-byte record in front of *1110:6f10 and of its plot's +0x358 list; condition 127, price HAUSPREI col 2, +0x16 0x50, +1 HAUSDATA col 4, +2 1110:6509[road_distance]

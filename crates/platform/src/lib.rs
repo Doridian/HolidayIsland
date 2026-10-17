@@ -1,6 +1,7 @@
 //! The window, input and display. The game hands over an 8-bit framebuffer
-//! and a palette each frame; the GPU does the palette lookup and scales the
-//! picture to the window by a whole factor where it fits, letterboxed.
+//! and a palette each frame, and a true-colour picture over part of it
+//! (a film); the GPU does the palette lookup and scales the picture to
+//! the window by a whole factor where it fits, letterboxed.
 //! [`audio`] plays the sound.
 
 pub mod audio;
@@ -29,6 +30,19 @@ pub struct Frame<'a> {
     pub height: u32,
     pub pixels: &'a [u8],
     pub palette: &'a [[u8; 3]; 256],
+    /// A true-colour picture on top.
+    pub overlay: Option<Overlay<'a>>,
+}
+
+/// RGB pixels, top row first, `width` × `height` at `x`, `y` in the
+/// framebuffer (a film MCI draws into a window, past the palette).
+#[derive(Debug, Clone, Copy)]
+pub struct Overlay<'a> {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub rgb: &'a [u8],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

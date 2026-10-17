@@ -203,7 +203,7 @@ an Enter handler (`EditierfensterKeyDown`, 1040:0cd3) nothing calls.
 - Not ported: the message box, the button
   bar's mouse handling (a click on its first button opens the menu), the
   hourglass cursor, the music and data reload of `back_to_start_menu`, and
-  the video and progress window of states 1000–1500.
+  the progress window of states 1000–1500.
 - The load form doesn't cut a name to `load_map_name`'s 12 characters:
   the original's 8.3 names always fit, and a longer host file name
   couldn't be found again.

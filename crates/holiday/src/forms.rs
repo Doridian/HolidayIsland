@@ -775,8 +775,11 @@ impl Game {
     pub(crate) fn forms_clock_tick(&mut self) -> bool {
         let mut changed = false;
         if self.forms.tv.visible {
-            let done = self.sound.borrow().speaker_done();
-            let r = self.forms.tv.timer(&self.world, self.forms.now, done);
+            let (done, film_done) = {
+                let s = self.sound.borrow();
+                (s.speaker_done(), s.film_done())
+            };
+            let r = self.forms.tv.timer(&self.world, self.forms.now, done, film_done);
             changed |= self.tv_response(r);
         }
         changed | self.tooltips()
@@ -856,8 +859,26 @@ impl Game {
         changed
     }
 
+    /// Where the film that plays shows on the screen: the TV's `Panel1`
+    /// (cut off by the form, which may be rolled up) or the end form's.
+    pub(crate) fn film_panel(&self) -> Option<Rect> {
+        if self.forms.tv.film_playing() {
+            let tv = self.forms.tv.bounds();
+            let p = fernseher::FILM_PANEL;
+            let left = tv.left + p.left;
+            let top = tv.top + p.top;
+            let right = (left + p.width()).min(tv.left + tv.width());
+            let bottom = (top + p.height()).min(tv.top + tv.height());
+            return Some(Rect::new(left, top, (right - left).max(0), (bottom - top).max(0)));
+        }
+        self.forms.schluss.film_panel()
+    }
+
     pub(crate) fn tv_response(&mut self, mut r: fernseher::Response) -> bool {
         self.sound.borrow_mut().tv_media(&r.media, &self.forms.settings);
+        if let Some(panel) = self.film_panel() {
+            self.sound.borrow_mut().set_film_panel(panel);
+        }
         if self.sound.borrow_mut().take_speaker_failed() {
             r.actions.extend(self.forms.tv.speaker_missing());
         }
@@ -1063,22 +1084,36 @@ impl Game {
 
     pub(crate) fn schluss_response(&mut self, r: schlussform::Response) {
         self.schluss_sound(&r);
-        // The films aren't played: each ends as it starts (1068:17ad).
-        let r = if r.film.is_some() {
-            // The `WaveMix` session gives the film the wave device (1068:12b7,
-            // 1068:0ec9) and takes it back after (1068:1869).
-            self.sound.borrow_mut().effects_off();
-            let first = r.action;
-            let ended = self.forms.schluss.film_ended(screen_size());
-            self.sound.borrow_mut().effects_on();
-            self.schluss_sound(&ended);
-            schlussform::Response {
-                action: ended.action.or(first),
-                ..ended
+        let mut r = r;
+        if r.stop_film {
+            // 1068:17ad: `Filmplayer` stops and closes, the session takes
+            // the wave device back (10a0:254f).
+            let mut sound = self.sound.borrow_mut();
+            sound.stop_film();
+            sound.effects_on();
+        }
+        if let Some(film) = r.film {
+            // 1068:12b7, 1068:0ec9: the `WaveMix` session gives the film
+            // the wave device, and it plays in `Panel1`.
+            let panel = self.forms.schluss.film_panel().unwrap_or_default();
+            let opened = {
+                let mut sound = self.sound.borrow_mut();
+                sound.effects_off();
+                sound.play_film(film, panel)
+            };
+            if !opened {
+                // The original raises an exception in the middle of
+                // opening the form; the port ends the film at once.
+                let first = r.action;
+                let ended = self.forms.schluss.film_ended(screen_size());
+                self.sound.borrow_mut().effects_on();
+                self.schluss_sound(&ended);
+                r = schlussform::Response {
+                    action: ended.action.or(first),
+                    ..ended
+                };
             }
-        } else {
-            r
-        };
+        }
         match r.action {
             Some(schlussform::Action::Continue { restart_music }) => {
                 if restart_music {
@@ -1121,6 +1156,13 @@ impl Game {
     pub(crate) fn end_music_tick(&mut self) {
         if !self.forms.schluss.visible() {
             return;
+        }
+        // The film's end: `Position = Length` (1068:187f). `Timer1` looks
+        // once a second, so the original holds the last frame up to a
+        // second longer; the port looks every frame.
+        if self.forms.schluss.film_panel().is_some() && self.sound.borrow().film_done() {
+            let r = self.forms.schluss.film_ended(screen_size());
+            self.schluss_response(r);
         }
         let ended = {
             let s = self.sound.borrow();

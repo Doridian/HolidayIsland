@@ -123,11 +123,11 @@ message opened (`667d`):
   screen's info disabled, `Panel1` at (9, 25), 332 wide, `662c` := 1,
   `6672` := 1); when it ends the TV closes.
 
-The port has no film: a film ends as it starts, so the TV closes when
-the speech ends (or 6 s after it opened without one) unless the player
-browsed and the page has a film. `Fernseher::timer` takes the caller's
-clock in ms and whether the speaker is done; the speaker itself and the
-lights' random numbers are in [sound.md](sound.md#the-tvs-speaker).
+The TV asks the caller for the film (`Media::PlayFilm`, `StopFilm`,
+shown in `FILM_PANEL`), which plays it ([films.md](films.md)).
+`Fernseher::timer` takes the caller's clock in ms and whether the
+speaker and the film are done; the speaker itself and the lights'
+random numbers are in [sound.md](sound.md#the-tvs-speaker).
 
 ## Closing (1048:077a)
 

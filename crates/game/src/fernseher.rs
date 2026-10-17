@@ -20,9 +20,9 @@
 //! in [`Fernseher::timer`]; the world hears of it through
 //! [`Action::Speaker`] (`docs/sound.md`).
 //!
-//! Not ported: the news' film (`FILMNAME.DAT`, `MediaPlayer1` on `Panel1`).
-//! It's taken to end as soon as it starts; `docs/fernseher.md` has what it
-//! does.
+//! The news' film (`FILMNAME.DAT`, `MediaPlayer1` on `Panel1`) is the
+//! caller's too: [`Media::PlayFilm`] in [`FILM_PANEL`], and its end
+//! (`Position = Length`) back in [`Fernseher::timer`] (`docs/films.md`).
 
 // The original's names: `x`, `y`, sizes `w`, `h`.
 #![allow(clippy::many_single_char_names)]
@@ -128,8 +128,14 @@ const SOUND_PRESS: u8 = 8;
 const SOUND_KEY: u8 = 9;
 const SOUND_RELEASE: u8 = 10;
 
-/// The film's state (`1110:6672`, a `Longint`). The film itself isn't
-/// ported: it ends as it starts.
+/// `Panel1`, where the film plays, in the form (1048:01bd: left 9, top
+/// 0x19, width 0x14c, height 0x100). The films are 335 × 257, drawn at
+/// their size from its top left, so their right 3 columns and bottom row
+/// are cut off.
+// BUG(original): `Panel1` is 332 × 256 and the films 335 × 257: their right 3 columns and bottom row are never seen.
+pub const FILM_PANEL: Rect = Rect::new(9, 0x19, 0x14c, 0x100);
+
+/// The film's state (`1110:6672`, a `Longint`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Film {
     /// Not started. // 0
@@ -162,6 +168,11 @@ pub enum Media {
     PlaySpeaker,
     /// `MediaPlayer2.Close`.
     CloseSpeaker,
+    /// `MediaPlayer1.FileName := <film dir>\<file>; Open; Play`, shown in
+    /// [`FILM_PANEL`]. // 1048:01bd
+    PlayFilm { file: Vec<u8> },
+    /// `MediaPlayer1.Eject; Close`, `Panel1` hidden. // 1048:034f
+    StopFilm,
 }
 
 /// What an event did.
@@ -252,7 +263,7 @@ pub struct Fernseher {
     /// When it opened, in the caller's ms (`GetTickCount`). // 1110:6676
     opened_at: u32,
     film: Film,
-    /// The film is playing (1048:01bd); it never is here. // 1110:662c
+    /// The film is playing (1048:01bd). // 1110:662c
     film_playing: bool,
     /// The title bar is held to drag the form. // +400
     dragging: bool,
@@ -653,17 +664,29 @@ impl Fernseher {
     }
 
     /// The film of the entry on the TV, if it has one.
-    fn has_film(&self, world: &World) -> bool {
+    fn film_of(&self, world: &World) -> Option<Vec<u8>> {
         let number = world.news.entry(self.cursor).map_or(0, |e| e.number);
         usize::try_from(number)
             .ok()
             .and_then(|n| self.films.get(n))
-            .is_some_and(|f| !f.eq_ignore_ascii_case(NONE))
+            .filter(|f| !f.eq_ignore_ascii_case(NONE))
+            .cloned()
+    }
+
+    fn has_film(&self, world: &World) -> bool {
+        self.film_of(world).is_some()
+    }
+
+    /// Whether the film plays, and so `Panel1` with it shows.
+    #[must_use]
+    pub fn film_playing(&self) -> bool {
+        self.visible && self.film_playing
     }
 
     /// `fernseher_tick`, the clock's step 8 while the TV is shown, at
     /// `now` ms (`GetTickCount`), with `speaker_done` whether the speaker
-    /// has played to its end (`Position = Length`). Only for a TV a
+    /// has played to its end (`Position = Length`) and `film_done`
+    /// whether the film has (or didn't open). Only for a TV a
     /// message opened: 3 s after it opened, a message's speech starts,
     /// with the `WaveMix` session given up meanwhile; the two lights, which
     /// flicker while it reads (the world draws them,
@@ -671,7 +694,7 @@ impl Fernseher {
     /// one 6 s after the TV opened, it closes, unless the page on it has a
     /// film, which plays first, and not at all once the player browsed
     /// (while a page without a film still closes it). // 1048:1b3e
-    pub fn timer(&mut self, world: &World, now: u32, speaker_done: bool) -> Response {
+    pub fn timer(&mut self, world: &World, now: u32, speaker_done: bool, film_done: bool) -> Response {
         let mut r = Response::default();
         if !self.auto {
             return r;
@@ -706,15 +729,13 @@ impl Fernseher {
                 let c = self.close_inner();
                 return self.finish(c);
             }
+            // A film started now has just begun (`Position` 0).
+            let mut started = false;
             if self.film == Film::Waiting {
-                // TODO: the film (`FILMNAME.DAT` from `FILMHI\`/`FILMLO\` on `Panel1`, 1048:01bd) isn't ported: it ends as it starts.
-                // BUG(original): the film takes WaveMix's device, and only closing the TV with the sounds on gives it back.
-                self.media.push(Media::EffectsOff); // 10a0:2518
-                self.effects_off = true;
-                self.film = Film::Started;
-                self.film_playing = true;
+                self.play_film(world);
+                started = true;
             }
-            if !matches!(self.film, Film::Stopped | Film::Browsed) && self.film_playing {
+            if !matches!(self.film, Film::Stopped | Film::Browsed) && self.film_playing && film_done && !started {
                 self.stop_film(); // 1048:034f
                 let c = self.close_inner();
                 return self.finish(c);
@@ -742,10 +763,27 @@ impl Fernseher {
         );
     }
 
+    /// `fernseher_play_film` (1048:01bd): the `WaveMix` effects give up
+    /// the wave device, `Panel1` shows at (9, 0x19), 0x14c × 0x100, and
+    /// the page's film plays in it. The original also repaints the main
+    /// screen and the info box, with the main screen's timer (`+0x190`)
+    /// off meanwhile, and runs `Application.ProcessMessages` twice.
+    fn play_film(&mut self, world: &World) {
+        // BUG(original): the film takes WaveMix's device, and only closing the TV with the sounds on gives it back.
+        // BUG(original): after a speech the film plays at the speech volume: the sound volume only comes back when the speaker closes, after the film.
+        self.media.push(Media::EffectsOff); // 10a0:2518
+        self.effects_off = true;
+        self.film = Film::Started;
+        self.film_playing = true;
+        let file = self.film_of(world).unwrap_or_default();
+        self.media.push(Media::PlayFilm { file });
+    }
+
     /// Stops the film, and the speaker. // 1048:034f
     fn stop_film(&mut self) {
         self.film = Film::Stopped;
         self.film_playing = false;
+        self.media.push(Media::StopFilm);
         self.close_speaker();
     }
 
@@ -1140,8 +1178,8 @@ mod tests {
         assert_eq!(r.sounds, [SOUND_SHOW, SOUND_NEWS]);
         assert!(f.centred);
         assert_eq!(f.bounds(), Rect::new(224, 133, WIDTH, HEIGHT));
-        assert!(!f.timer(&w, 6999, false).hidden);
-        let r = f.timer(&w, 7000, false);
+        assert!(!f.timer(&w, 6999, false, false).hidden);
+        let r = f.timer(&w, 7000, false, false);
         assert!(r.hidden && !f.visible);
         assert_eq!(r.sounds, [SOUND_HIDE]);
         assert_eq!(r.actions, [Action::TvPause(false)]);
@@ -1167,16 +1205,16 @@ mod tests {
         );
         assert_eq!(r.actions, [Action::ShowTv(0), Action::Speaker(Speaker::Open)]);
         // 3 s later it reads, with the effects off.
-        let r = f.timer(&w, 3999, false);
+        let r = f.timer(&w, 3999, false, false);
         assert!(r.media.is_empty() && r.actions.is_empty());
-        let r = f.timer(&w, 4000, false);
+        let r = f.timer(&w, 4000, false, false);
         assert_eq!(r.media, [Media::EffectsOff, Media::SpeechVolume, Media::PlaySpeaker]);
         assert_eq!(r.actions, [Action::Speaker(Speaker::Reading)]);
         // It reads on past 6 s; the world draws the lights.
-        assert!(!f.timer(&w, 20_000, false).hidden);
+        assert!(!f.timer(&w, 20_000, false, false).hidden);
         f.draw_lights(4, Some(2));
         // At its end the TV closes and the effects come back.
-        let r = f.timer(&w, 20_100, true);
+        let r = f.timer(&w, 20_100, true, false);
         assert!(r.hidden);
         assert_eq!(
             r.media,
@@ -1194,7 +1232,7 @@ mod tests {
         let tick = post(&mut w, 0, false);
         let r = f.news(&tick.news, [true; 4], &w, &info(), 0);
         assert_eq!(r.media, []);
-        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
+        assert!(f.timer(&w, AUTO_CLOSE_MS, false, false).hidden);
     }
 
     #[test]
@@ -1208,7 +1246,7 @@ mod tests {
         assert_eq!(r.actions, [Action::Speaker(Speaker::Off)]);
         // Then the TV closes 6 s after it opened, as without one.
         let _ = f.mouse_up(0, TITLE_HEIGHT, &w, &info());
-        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
+        assert!(f.timer(&w, AUTO_CLOSE_MS, false, false).hidden);
     }
 
     #[test]
@@ -1255,20 +1293,34 @@ mod tests {
     fn a_film_keeps_it_open_after_browsing() {
         let mut w = World::default();
         let mut f = tv();
-        // Message 4 has a film: the TV closes after it (at once here),
+        // Message 4 has a film: it plays, and the TV closes after it,
         // unless the player browsed.
         let _ = f.news(&post(&mut w, 4, false).news, [true; 4], &w, &info(), 0);
-        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
+        let r = f.timer(&w, AUTO_CLOSE_MS, false, true);
+        assert!(!r.hidden && f.film_playing());
+        assert_eq!(
+            r.media,
+            [
+                Media::EffectsOff,
+                Media::PlayFilm {
+                    file: b"haitauch.avi".to_vec()
+                }
+            ]
+        );
+        assert!(!f.timer(&w, AUTO_CLOSE_MS + 100, false, false).hidden);
+        let r = f.timer(&w, AUTO_CLOSE_MS + 200, false, true);
+        assert!(r.hidden && !f.film_playing());
+        assert_eq!(r.media, [Media::StopFilm, Media::EffectsOnWithSounds]);
         let _ = f.news(&post(&mut w, 4, false).news, [true; 4], &w, &info(), 0);
         let _ = f.key_down(VK_RIGHT, ShiftState::default(), &w, &info());
-        assert!(!f.timer(&w, AUTO_CLOSE_MS, false).hidden);
+        assert!(!f.timer(&w, AUTO_CLOSE_MS, false, false).hidden);
         assert!(f.visible);
         // Browsing to a page without a film closes it after all.
         let _ = f.key_down(VK_RIGHT, ShiftState::default(), &w, &info());
         let _ = f.news(&post(&mut w, 0, false).news, [true; 4], &w, &info(), 0);
         let _ = f.key_down(VK_RIGHT, ShiftState::default(), &w, &info());
         assert_eq!(f.cursor, 2);
-        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
+        assert!(f.timer(&w, AUTO_CLOSE_MS, false, false).hidden);
     }
 
     #[test]

@@ -1,7 +1,8 @@
 //! What the sound card plays, rendered without a device: the `WaveMix`
 //! session's mix ([`super::wavemix`]), the TV's speaker (MCI `waveaudio`,
-//! on the same wave device) and the MIDI music (MCI `sequencer`, rendered
-//! with `rustysynth` from a `SoundFont`). The game decides what plays when;
+//! on the same wave device), a film's sound (MCI `avivideo`, the wave
+//! device too) and the MIDI music (MCI `sequencer`, rendered with
+//! `rustysynth` from a `SoundFont`). The game decides what plays when;
 //! this only renders it, so tests can render to a buffer.
 
 use std::sync::Arc;
@@ -10,16 +11,27 @@ use rustysynth::{MidiFile, MidiFileSequencer, SoundFont, Synthesizer, Synthesize
 
 use super::wavemix::{self, PlayError, SILENCE, WavFile, Wave, WaveMix};
 
-/// Linear interpolation of an 8-bit stream from `src` Hz to `dst` Hz, in
-/// whole numbers so a render is the same every time.
+/// Linear interpolation of a stream from `src` Hz to `dst` Hz, the steps
+/// in whole numbers so a render is the same every time.
 #[derive(Debug, Clone)]
 struct Resampler {
     src: u64,
     dst: u64,
     /// How far between `prev` and `next`, in `dst`ths.
     phase: u64,
-    prev: u8,
-    next: u8,
+    /// The samples as -1.0..1.0.
+    prev: f32,
+    next: f32,
+}
+
+/// An 8-bit sample as -1.0..1.0.
+fn unsigned8(s: u8) -> f32 {
+    (f32::from(s) - 128.0) / 128.0
+}
+
+/// A 16-bit sample as -1.0..1.0.
+fn signed16(s: i16) -> f32 {
+    f32::from(s) / 32768.0
 }
 
 impl Resampler {
@@ -28,14 +40,14 @@ impl Resampler {
             src: u64::from(src.max(1)),
             dst: u64::from(dst.max(1)),
             phase: 0,
-            prev: SILENCE,
-            next: SILENCE,
+            prev: 0.0,
+            next: 0.0,
         }
     }
 
-    /// The next output sample, as -1.0..1.0, pulling input from `pull`.
+    /// The next output sample, pulling input as -1.0..1.0 from `pull`.
     #[allow(clippy::cast_precision_loss)] // `phase` and `dst` are below 2^32.
-    fn next(&mut self, mut pull: impl FnMut() -> u8) -> f32 {
+    fn next(&mut self, mut pull: impl FnMut() -> f32) -> f32 {
         self.phase += self.src;
         while self.phase >= self.dst {
             self.phase -= self.dst;
@@ -43,8 +55,7 @@ impl Resampler {
             self.next = pull();
         }
         let t = self.phase as f32 / self.dst as f32;
-        let (a, b) = (f32::from(self.prev), f32::from(self.next));
-        (a + (b - a) * t - 128.0) / 128.0
+        self.prev + (self.next - self.prev) * t
     }
 }
 
@@ -52,6 +63,14 @@ impl Resampler {
 #[derive(Debug, Clone)]
 struct Speaker {
     samples: Arc<[u8]>,
+    at: usize,
+    resampler: Resampler,
+}
+
+/// A film's sound while it plays: 16-bit mono.
+#[derive(Debug, Clone)]
+struct FilmSound {
+    samples: Arc<[i16]>,
     at: usize,
     resampler: Resampler,
 }
@@ -65,6 +84,7 @@ pub struct Engine {
     waves: Vec<Option<Wave>>,
     mix: Resampler,
     speaker: Option<Speaker>,
+    film: Option<FilmSound>,
     /// `waveOutSetVolume`: the wave device, `WaveMix` and the speaker.
     wave_volume: f32,
     /// `midiOutSetVolume`.
@@ -102,6 +122,7 @@ impl Engine {
             waves: Vec::new(),
             mix: Resampler::new(wavemix::SAMPLE_RATE, rate),
             speaker: None,
+            film: None,
             wave_volume: 1.0,
             music_volume: 1.0,
             sequencer,
@@ -187,6 +208,19 @@ impl Engine {
         self.speaker = None;
     }
 
+    /// A film's sound, 16-bit mono at `rate` Hz, plays from its start.
+    pub fn play_film(&mut self, samples: Arc<[i16]>, rate: u32) {
+        self.film = Some(FilmSound {
+            samples,
+            at: 0,
+            resampler: Resampler::new(rate, self.rate),
+        });
+    }
+
+    pub fn stop_film(&mut self) {
+        self.film = None;
+    }
+
     /// Renders the next `out.len() / channels` frames, interleaved, as
     /// -1.0..1.0: the wave device (`WaveMix` and the speaker) at its volume
     /// plus the music at its own.
@@ -204,14 +238,23 @@ impl Engine {
         }
         for (f, frame) in out.chunks_exact_mut(channels).enumerate() {
             let wavemix = &mut self.wavemix;
-            let mut wave = self.mix.next(|| wavemix.next_sample());
+            let mut wave = self.mix.next(|| unsigned8(wavemix.next_sample()));
             if let Some(sp) = &mut self.speaker {
                 let samples = &sp.samples;
                 let at = &mut sp.at;
                 wave += sp.resampler.next(|| {
                     let s = samples.get(*at).copied().unwrap_or(SILENCE);
                     *at += 1;
-                    s
+                    unsigned8(s)
+                });
+            }
+            if let Some(film) = &mut self.film {
+                let samples = &film.samples;
+                let at = &mut film.at;
+                wave += film.resampler.next(|| {
+                    let s = samples.get(*at).copied().unwrap_or(0);
+                    *at += 1;
+                    signed16(s)
                 });
             }
             let wave = wave * self.wave_volume;
@@ -229,6 +272,9 @@ impl Engine {
         }
         if self.speaker.as_ref().is_some_and(|s| s.at > s.samples.len() + 1) {
             self.speaker = None;
+        }
+        if self.film.as_ref().is_some_and(|s| s.at > s.samples.len() + 1) {
+            self.film = None;
         }
     }
 }
@@ -272,5 +318,16 @@ mod tests {
         e.render(&mut out, 1);
         assert_eq!(out, [0.0, -0.5, -0.5, -0.5, 0.0, 0.0]);
         assert!(e.speaker.is_none());
+    }
+
+    #[test]
+    fn plays_a_films_sound() {
+        let mut e = Engine::new(11025, None).unwrap();
+        e.play_film(vec![16384, -16384].into(), 11025);
+        let mut out = vec![0.0; 4];
+        e.render(&mut out, 1);
+        // A sample late.
+        assert_eq!(out, [0.0, 0.5, -0.5, 0.0]);
+        assert!(e.film.is_none());
     }
 }

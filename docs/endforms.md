@@ -98,8 +98,9 @@ closes, everything is freed (1030:3974: `game_done`) and the program
 `Halt`s.
 
 The port hands the films and the music to the caller as file names in the
-[`Response`](../crates/game/src/schlussform.rs); without a player the
-caller ends the film at once (`Schlussform::film_ended`). The music plays
+[`Response`](../crates/game/src/schlussform.rs), and `stop_film` when one
+ends; the caller plays the film in `Schlussform::film_panel` and calls
+`Schlussform::film_ended` at its end ([films.md](films.md)). The music plays
 ([sound.md](sound.md#the-music)): the caller asks `music_ended` when the
 end's player has reached its length.
 
@@ -182,7 +183,7 @@ None of them issues a world command. The clock stops while the quit
 question and the end form are up (single human: the simulation waits on
 these dialogs; see [original-bugs.md](original-bugs.md#design-issues-for-multiplayer)).
 
-Not ported: the films (the caller's, stubbed), the message
+Not ported: the message
 box path, `game_done`'s freeing. The money menu's and the overview map's
 tooltips wait for those forms.
 

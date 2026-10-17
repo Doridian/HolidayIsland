@@ -140,7 +140,8 @@ fn apply(world: &mut World, r: &Response) {
 }
 
 /// A tick at `now` ms, with a player who leaves every auction as soon as
-/// its form opens and lets the TV close by itself.
+/// its form opens and lets the TV close by itself, its films over as soon
+/// as they start.
 fn step(world: &mut World, tv: &mut Fernseher, info: &InfoTexts, now: u32) -> Tick {
     let mut tick = world.tick();
     if world.auction.open {
@@ -154,7 +155,7 @@ fn step(world: &mut World, tv: &mut Fernseher, info: &InfoTexts, now: u32) -> Ti
     let r = tv.news(&tick.news, [true; 4], world, info, now);
     apply(world, &r);
     if tv.visible {
-        let r = tv.timer(world, now, false);
+        let r = tv.timer(world, now, false, true);
         apply(world, &r);
     }
     tick
@@ -425,7 +426,7 @@ fn paints_the_tv() {
     }
     let n = shown.expect("a message on the TV");
     // The lights, once.
-    let _ = tv.timer(&world, now + 100, false);
+    let _ = tv.timer(&world, now + 100, false, false);
     let out = paint(&tv, &palette);
     let bare = Surface::from_bitmap(&bitmap("TVBILD.BMP"));
     let (_, image) = tv.images()[1];

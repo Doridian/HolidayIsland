@@ -1,6 +1,7 @@
-//! Holiday Island. For now this shows the main form with the title picture
-//! and then the background, like the end of the intro (`docs/startup.md`,
-//! states 430–450), and then the start menu on top (state 500). Start
+//! Holiday Island. This plays the intro's film (`sunflow.avi`), shows the
+//! main form with the title picture and then the background, like the
+//! intro (`docs/startup.md`, states 400–450), and then the start menu on
+//! top (state 500). Start (after `titel.avi`, states 1111–1120)
 //! loads the scenario (or, until island generation is ported, the tutorial
 //! island) and shows the main screen with the island, which the arrow keys
 //! scroll and Insert and Delete turn, and runs the simulation's clock
@@ -25,7 +26,7 @@
 //! and the high scores.
 //!
 //! `holiday [--save-dir=DIR] [--soundfont=FILE.sf2] [--sound=hi|lo|off]
-//! [--no-audio] [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`,
+//! [--films=hi|lo] [--no-audio] [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`,
 //! `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved games go to `DIR`
 //! (default `MAPS` in the platform's data directory,
 //! `platform::storage::save_dir`); the lists show those and the game's own
@@ -36,8 +37,11 @@
 //! one `tools/get-soundfont.sh` installed or one in the usual places
 //! (`platform::audio::find_soundfont`); without
 //! one the music is silent, and without a sound device (or with
-//! `--no-audio`) everything is.
+//! `--no-audio`) everything is. The films come from `FILMHI` (or
+//! `FILMLO`: `--films`, else `SETUP.DAT`'s choice if there is one), and
+//! play with their sound (`docs/films.md`).
 
+mod film;
 mod forms;
 mod sound;
 
@@ -86,8 +90,19 @@ use crate::sound::Sound;
 
 /// The layout `hintergrund_timer` picks for an 800×600 screen.
 const SCREEN: (usize, usize) = (800, 600);
-/// How long the title stays up (state 440's interval).
-const TITLE_TIME: Duration = Duration::from_secs(3);
+/// After the intro's film: when states 422 to 424 play `holiday.mid`
+/// (420's interval 10, 422's 1), when 430 shows the title (424's 1000)
+/// and when 500 shows the start menu (440's 3000, 450's 1).
+/// // 1000:2466
+const INTRO_MUSIC_AT: Duration = Duration::from_millis(11);
+const TITLE_AT: Duration = Duration::from_millis(1012);
+const MENU_AT: Duration = Duration::from_millis(4013);
+/// The intro's film, in `FilmPanel`. // 1000:2323 (state 400)
+const INTRO_FILM: &str = "sunflow.avi";
+/// The film before a game starts. // 1000:23bd (state 1111)
+const START_FILM: &str = "titel.avi";
+/// `FilmPanel`'s size; state 110 centres it. // 1000:2466
+const FILM_PANEL: (i32, i32) = (0x1b0, 0x140);
 const VK_SHIFT: u16 = 0x10;
 const VK_CONTROL: u16 = 0x11;
 const VK_MENU: u16 = 0x12;
@@ -834,6 +849,25 @@ impl Game {
     }
 }
 
+/// Where `hintergrund_timer` (1000:2466) is in the intro.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Intro {
+    /// States 400 and 410: `sunflow.avi` plays.
+    Film,
+    /// States 420 to 450, this long after the film.
+    After(Duration),
+    /// State 500 on: the start menu.
+    Done,
+}
+
+/// A game to start once `titel.avi` is over (states 1111 to 1120).
+enum Pending {
+    /// The start menu's Start, on its scenario page or not.
+    Start { scenario: bool },
+    /// The load form's game.
+    Load(SaveGame),
+}
+
 struct Holiday {
     dir: PathBuf,
     exe: Vec<u8>,
@@ -844,8 +878,11 @@ struct Holiday {
     palette: Palette,
     rgb: [[u8; 3]; 256],
     screen: Surface,
-    elapsed: Duration,
-    showing_title: bool,
+    intro: Intro,
+    /// `titel.avi` plays, and then this game starts.
+    pending: Option<Pending>,
+    /// The film's picture on the screen, in true colour.
+    overlay: Option<(Rect, Vec<u8>)>,
     /// Mouse buttons and Shift, Ctrl and Alt, as a `TShiftState`.
     buttons: ShiftState,
     keys: ShiftState,
@@ -1110,18 +1147,7 @@ impl Holiday {
                 match self.saves.read(&name) {
                     Ok(map) => {
                         self.start.hide();
-                        let settings = self.start.menu.settings().clone();
-                        let options = self.options.with_map(&map);
-                        let high = forms::high_scores(&self.dir, &self.saves.high_scores());
-                        self.game = Some(load_game(
-                            &self.dir,
-                            &self.exe,
-                            &map,
-                            &settings,
-                            options,
-                            high,
-                            &self.sound,
-                        ));
+                        self.play_start_film(Pending::Load(map));
                     }
                     Err(e) => eprintln!("{e}"),
                 }
@@ -1228,11 +1254,149 @@ impl Holiday {
             let mut s = self.sound.borrow_mut();
             s.reset_effects();
             s.speaker.close();
+            s.stop_film();
             s.intro_music();
         }
         self.start = start_menu(&self.dir, &self.exe, Settings::from_world(&game.world));
         self.start.show();
         self.repaint();
+    }
+
+    /// `FilmPanel`, centred on the screen (state 110).
+    fn film_panel() -> Rect {
+        let (w, h) = screen_size();
+        Rect::new(
+            (w - FILM_PANEL.0) / 2,
+            (h - FILM_PANEL.1) / 2,
+            FILM_PANEL.0,
+            FILM_PANEL.1,
+        )
+    }
+
+    /// State 1111: the `WaveMix` session gives up the wave device and
+    /// `titel.avi` plays in `FilmPanel`, then `pending` starts; if the
+    /// film doesn't open, at once (state 1120). // 1000:2466
+    fn play_start_film(&mut self, pending: Pending) {
+        let opened = {
+            let mut s = self.sound.borrow_mut();
+            s.effects_off(); // 10a0:2518
+            s.play_film(START_FILM, Self::film_panel())
+        };
+        self.pending = Some(pending);
+        if !opened {
+            self.start_pending();
+        }
+    }
+
+    /// State 1120 and on: the film stops and closes, the session takes
+    /// the wave device back (10a0:254f), and the game starts.
+    fn start_pending(&mut self) {
+        {
+            let mut s = self.sound.borrow_mut();
+            s.stop_film();
+            s.effects_on();
+        }
+        self.overlay = None;
+        let high = forms::high_scores(&self.dir, &self.saves.high_scores());
+        match self.pending.take() {
+            Some(Pending::Start { scenario }) => {
+                self.game = Some(start_game(
+                    &self.dir,
+                    &self.exe,
+                    self.start.menu.settings(),
+                    scenario,
+                    self.options,
+                    high,
+                    &self.sound,
+                ));
+            }
+            Some(Pending::Load(map)) => {
+                let settings = self.start.menu.settings().clone();
+                let options = self.options.with_map(&map);
+                self.game = Some(load_game(
+                    &self.dir,
+                    &self.exe,
+                    &map,
+                    &settings,
+                    options,
+                    high,
+                    &self.sound,
+                ));
+            }
+            None => {}
+        }
+        self.repaint();
+    }
+
+    /// State 420: the intro's film stops and closes.
+    fn end_intro_film(&mut self) {
+        self.sound.borrow_mut().stop_film();
+        self.overlay = None;
+        self.intro = Intro::After(Duration::ZERO);
+        self.repaint();
+    }
+
+    /// The intro's states after the film, at `t` after it: the music, the
+    /// title, then the background and the start menu, with the `WaveMix`
+    /// session back (state 500).
+    fn intro_step(&mut self, from: Duration, to: Duration) {
+        if from < INTRO_MUSIC_AT && to >= INTRO_MUSIC_AT {
+            // States 422 and 424: `holiday.mid`.
+            self.sound.borrow_mut().intro_music();
+        }
+        if from < TITLE_AT && to >= TITLE_AT {
+            // States 430 and 440.
+            let title = bitmap(&self.dir, "GRAFIK/TIT80X60.BMP");
+            self.set_picture(&title);
+        }
+        if to >= MENU_AT {
+            // States 450 and 500.
+            self.intro = Intro::Done;
+            self.sound.borrow_mut().effects_on(); // 10a0:254f
+            let background = self.background.clone();
+            self.start.show();
+            self.set_picture(&background);
+        } else {
+            self.intro = Intro::After(to);
+        }
+    }
+
+    /// `FormKeyDown` (1000:3d0c, 1000:3938) and the clicks on `FilmPanel`
+    /// and `backgroundimage` (1000:39b7, 1000:3a36) during the intro or
+    /// `titel.avi`: the film ends; a key also makes the timer's next
+    /// state come at once. Whether it took the input.
+    fn intro_input(&mut self, input: Input) -> bool {
+        let key = matches!(input, Input::KeyDown(_));
+        let click = matches!(
+            input,
+            Input::MouseUp {
+                button: Button::Left,
+                ..
+            }
+        );
+        if self.pending.is_some() {
+            if key || click {
+                self.start_pending();
+            }
+            return true;
+        }
+        match self.intro {
+            Intro::Film => {
+                if key || click {
+                    self.end_intro_film();
+                }
+                true
+            }
+            Intro::After(t) => {
+                // BUG(original): `FormKeyDown` sets the timer's interval to 1 whatever the state, so a key cuts the wait for the title or the start menu short.
+                if key {
+                    let next = if t < TITLE_AT { TITLE_AT } else { MENU_AT };
+                    self.intro_step(t, next);
+                }
+                true
+            }
+            Intro::Done => false,
+        }
     }
 
     fn respond(&mut self, response: startform::Response) {
@@ -1244,16 +1408,7 @@ impl Holiday {
                 // `startform_start_click` hides the form, and hintergrund's
                 // states 1000-1500 start the game.
                 self.start.hide();
-                let high = forms::high_scores(&self.dir, &self.saves.high_scores());
-                self.game = Some(start_game(
-                    &self.dir,
-                    &self.exe,
-                    self.start.menu.settings(),
-                    scenario,
-                    self.options,
-                    high,
-                    &self.sound,
-                ));
+                self.play_start_film(Pending::Start { scenario });
             }
             Some(Action::Load) => {
                 // 1058:0c7d: the start menu is disabled and TLadenForm
@@ -1271,7 +1426,6 @@ impl Holiday {
 
 impl App for Holiday {
     fn update(&mut self, elapsed: Duration) {
-        self.elapsed += elapsed;
         let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         self.sound.borrow_mut().advance(ms);
         if let Some(game) = &mut self.game
@@ -1280,16 +1434,27 @@ impl App for Holiday {
             self.process_requests();
             self.repaint();
         }
-        if self.showing_title && self.elapsed >= TITLE_TIME {
-            // States 450 and 500.
-            self.showing_title = false;
-            let background = self.background.clone();
-            self.start.show();
-            self.set_picture(&background);
+        let film_done = self.sound.borrow().film_done();
+        match self.intro {
+            // State 410: `Position = Length`.
+            Intro::Film if film_done => self.end_intro_film(),
+            Intro::After(t) => self.intro_step(t, t + elapsed),
+            _ => {}
         }
+        // State 1113.
+        if self.pending.is_some() && film_done {
+            self.start_pending();
+        }
+        if let Some(panel) = self.game.as_ref().and_then(Game::film_panel) {
+            self.sound.borrow_mut().set_film_panel(panel);
+        }
+        self.overlay = self.sound.borrow().film_picture(screen_size());
     }
 
     fn input(&mut self, input: Input) {
+        if !matches!(input, Input::Close) && self.intro_input(input) {
+            return;
+        }
         match input {
             Input::Close => self.quit = true,
             // In a game, Escape asks first (`TEndeform`).
@@ -1347,6 +1512,13 @@ impl App for Holiday {
             height: u32::try_from(self.screen.height).expect("screen height"),
             pixels: &self.screen.pixels,
             palette: &self.rgb,
+            overlay: self.overlay.as_ref().map(|(r, rgb)| platform::Overlay {
+                x: r.left,
+                y: r.top,
+                width: u32::try_from(r.width()).unwrap_or(0),
+                height: u32::try_from(r.height()).unwrap_or(0),
+                rgb,
+            }),
         }
     }
 
@@ -1584,8 +1756,8 @@ fn load_game(
     )
 }
 
-/// What hintergrund's timer does from state 1000 to 1500 once Start is
-/// clicked, without the video (`titel.avi`), the progress window
+/// What hintergrund's timer does from state 1200 to 1500 once Start is
+/// clicked and `titel.avi` is over, without the progress window
 /// (`TWasNunForm`) and what isn't ported yet: load the scenario's map or
 /// generate an island, set up the main screen and show it. // 1000:2466
 fn start_game(
@@ -1720,11 +1892,22 @@ fn make_game(
     }
 }
 
-fn main() {
+/// The command line's options.
+struct Args {
+    dir: PathBuf,
+    save_dir: Option<PathBuf>,
+    soundfont: Option<PathBuf>,
+    quality: setup::Sound,
+    films: setup::Film,
+    no_audio: bool,
+}
+
+fn args() -> Args {
     let mut dir = PathBuf::from("orig");
     let mut save_dir = None;
     let mut soundfont = None;
     let mut quality = None;
+    let mut films = None;
     let mut no_audio = false;
     for arg in std::env::args_os().skip(1) {
         let a = arg.to_str().unwrap_or_default();
@@ -1742,25 +1925,56 @@ fn main() {
                     std::process::exit(2);
                 }
             };
+        } else if let Some(q) = a.strip_prefix("--films=") {
+            films = match q {
+                "hi" => Some(setup::Film::Hi),
+                "lo" => Some(setup::Film::Lo),
+                _ => {
+                    eprintln!("--films= takes hi or lo");
+                    std::process::exit(2);
+                }
+            };
         } else if a == "--no-audio" {
             no_audio = true;
         } else {
             dir = PathBuf::from(arg);
         }
     }
-    // The installer's choice (`SETUP.DAT`'s fifth line, 1000:17bc), if
-    // there is one; else the full quality.
-    let quality = quality.unwrap_or_else(|| {
-        std::fs::read(dir.join("SETUP.DAT")).map_or(setup::Sound::Hi, |d| setup::Setup::parse(&d).sound)
-    });
+    // The installer's choices (`SETUP.DAT`, 1000:17bc), if there are
+    // any; else the full quality: its fifth line for the sound, its
+    // fourth for the films (`film_dir`, 1110:502a).
+    let installed = std::fs::read(dir.join("SETUP.DAT"))
+        .ok()
+        .map(|d| setup::Setup::parse(&d));
+    let quality = quality.unwrap_or_else(|| installed.as_ref().map_or(setup::Sound::Hi, |s| s.sound));
+    let films = films.unwrap_or_else(|| installed.as_ref().map_or(setup::Film::Hi, |s| s.film));
+    Args {
+        dir,
+        save_dir,
+        soundfont,
+        quality,
+        films,
+        no_audio,
+    }
+}
+
+fn main() {
+    let Args {
+        dir,
+        save_dir,
+        soundfont,
+        quality,
+        films,
+        no_audio,
+    } = args();
     let audio = if no_audio {
         platform::audio::Audio::silent()
     } else {
         platform::audio::Audio::open(platform::audio::find_soundfont(soundfont.as_deref()).as_deref())
     };
-    let sound = Sound::new(&dir, quality, audio).shared();
-    // States 422 and 424: `holiday.mid`.
-    sound.borrow_mut().intro_music();
+    let mut sound = Sound::new(&dir, quality, audio);
+    sound.film_quality = films;
+    let sound = sound.shared();
     let saves = Saves {
         dir: save_dir
             .or_else(platform::storage::save_dir)
@@ -1782,6 +1996,18 @@ fn main() {
     let title = bitmap(&dir, "GRAFIK/TIT80X60.BMP");
     let start = start_menu(&dir, &exe, Settings::default());
     let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
+    // State 100: the `WaveMix` session gives up the wave device until the
+    // start menu (10a0:2518); state 400: `sunflow.avi`, or state 420 if
+    // it doesn't open.
+    let intro = {
+        let mut s = sound.borrow_mut();
+        s.effects_off();
+        if s.play_film(INTRO_FILM, Holiday::film_panel()) {
+            Intro::Film
+        } else {
+            Intro::After(Duration::ZERO)
+        }
+    };
     let mut holiday = Holiday {
         dir,
         exe,
@@ -1792,8 +2018,9 @@ fn main() {
         palette: title.palette,
         rgb: [[0; 3]; 256],
         screen: Surface::new(SCREEN.0, SCREEN.1, 0),
-        elapsed: Duration::ZERO,
-        showing_title: true,
+        intro,
+        pending: None,
+        overlay: None,
         buttons: ShiftState::default(),
         keys: ShiftState::default(),
         quit: false,
@@ -1803,7 +2030,14 @@ fn main() {
         options: Options::default(),
         sound,
     };
+    // The title's palette, with no picture until state 430.
     holiday.set_picture(&title);
+    if let Some(image) = holiday.form.component_mut("backgroundimage")
+        && let Kind::Image { picture } = &mut image.kind
+    {
+        *picture = None;
+    }
+    holiday.repaint();
     if let Err(e) = platform::run("Holiday Island", holiday) {
         eprintln!("{e}");
         std::process::exit(1);
@@ -1898,5 +2132,122 @@ mod tests {
             }
             std::fs::write(PathBuf::from(out).join("integrated.ppm"), ppm).unwrap();
         }
+    }
+
+    /// A message with a film (4, `haitauch.avi`) opens the TV, which
+    /// plays the film in `Panel1` 6 s later and closes when it's over,
+    /// which ends the pause. With `HOLIDAY_PPM` set, the screen with the
+    /// film goes there as `films-tv.ppm`. Skipped without the game's files
+    /// in `orig/`.
+    #[test]
+    fn a_news_film_on_the_tv() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orig");
+        if !dir.join("FILMHI").exists() {
+            eprintln!("skipping: {} not found", dir.display());
+            return;
+        }
+        let exe = read(&dir, "HOLIDAY.EXE");
+        let settings = Settings {
+            scenario: 1,
+            ..Settings::default()
+        };
+        let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+        let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high, &sound);
+        game.forms.settings.speech = false;
+        game.world.clock.paused = false;
+        let mut tick = Tick::default();
+        game.world.post_message(
+            game::news::Message {
+                number: 4,
+                ..game::news::Message::default()
+            },
+            &mut tick,
+        );
+        let _ = game.show(&tick);
+        assert!(game.forms.tv.visible);
+        let step = Duration::from_millis(u64::from(TICK_MS));
+        let mut ms = 0;
+        while !game.forms.tv.film_playing() {
+            sound.borrow_mut().advance(TICK_MS);
+            let _ = game.update(step);
+            ms += TICK_MS;
+            assert!(ms <= 7000, "the film starts 6 s after the TV opened");
+        }
+        assert!(game.world.clock.paused, "the TV pauses the game");
+        sound.borrow_mut().advance(4000);
+        let panel = game.film_panel().unwrap();
+        sound.borrow_mut().set_film_panel(panel);
+        let (rect, rgb) = sound.borrow().film_picture(screen_size()).unwrap();
+        // 335 × 257, cut to the panel's 332 × 256.
+        let tv = game.forms.tv.bounds();
+        assert_eq!(rect, Rect::new(tv.left + 9, tv.top + 25, 332, 256));
+        if let Some(out) = std::env::var_os("HOLIDAY_PPM") {
+            let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
+            let mut screen = Surface::new(SCREEN.0, SCREEN.1, 0);
+            game.paint(&mut screen, &background.palette);
+            let mut ppm = format!("P6\n{} {}\n255\n", screen.width, screen.height).into_bytes();
+            for (i, &p) in screen.pixels.iter().enumerate() {
+                let (x, y) = (
+                    i32::try_from(i % screen.width).unwrap(),
+                    i32::try_from(i / screen.width).unwrap(),
+                );
+                if (rect.left..rect.left + rect.width()).contains(&x)
+                    && (rect.top..rect.top + rect.height()).contains(&y)
+                {
+                    let at = usize::try_from((y - rect.top) * rect.width() + x - rect.left).unwrap() * 3;
+                    ppm.extend_from_slice(&rgb[at..at + 3]);
+                } else {
+                    let c = background.palette[usize::from(p)];
+                    ppm.extend_from_slice(&[c.r, c.g, c.b]);
+                }
+            }
+            std::fs::write(PathBuf::from(out).join("films-tv.ppm"), ppm).unwrap();
+        }
+        // `haitauch.avi` is 8 s long; the next clock tick after its end
+        // closes the TV.
+        while game.forms.tv.visible {
+            sound.borrow_mut().advance(TICK_MS);
+            let _ = game.update(step);
+            ms += TICK_MS;
+            assert!(ms <= 20_000, "the TV closes after the film");
+        }
+        assert!(game.film_panel().is_none() && sound.borrow().film_picture(screen_size()).is_none());
+        let _ = game.update(step);
+        assert!(!game.world.clock.paused, "the pause ends with the TV");
+    }
+
+    /// The quit film (`ABEnde.avi`) plays in the end form's `Panel1`; a
+    /// key skips it, and the game exits. Skipped without the game's files.
+    #[test]
+    fn the_quit_film() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orig");
+        if !dir.join("FILMHI").exists() {
+            eprintln!("skipping: {} not found", dir.display());
+            return;
+        }
+        let exe = read(&dir, "HOLIDAY.EXE");
+        let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+        let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let mut game = start_game(
+            &dir,
+            &exe,
+            &Settings::default(),
+            false,
+            Options::default(),
+            high,
+            &sound,
+        );
+        let r = game.forms.schluss.open_quit(screen_size());
+        game.schluss_response(r);
+        let panel = game.forms.schluss.film_panel().unwrap();
+        assert_eq!((panel.width(), panel.height()), (432, 320));
+        sound.borrow_mut().advance(1000);
+        let (rect, _) = sound.borrow().film_picture(screen_size()).unwrap();
+        assert_eq!(rect, panel);
+        assert!(!sound.borrow().film_done() && !sound.borrow().effects.active());
+        assert!(game.forms_key(0x20, ShiftState::default()));
+        assert!(sound.borrow().film_done() && sound.borrow().effects.active());
+        assert!(matches!(game.forms.requests.last(), Some(Request::Exit)));
     }
 }
