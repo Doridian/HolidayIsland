@@ -479,6 +479,12 @@ impl Enhanceform {
         self.panes.get(pane).map_or(0, Pane::top)
     }
 
+    /// List `pane`'s scroll bar's place in the form.
+    #[must_use]
+    pub fn bar_frame(&self, pane: usize) -> Option<Frame> {
+        self.panes.get(pane).map(|p| p.bar.frame)
+    }
+
     /// List `pane` scrolled to row `top` (as far as it goes).
     pub fn scroll_to(&mut self, pane: usize, top: usize) {
         if let Some(p) = self.panes.get_mut(pane) {
@@ -730,6 +736,34 @@ impl Enhanceform {
             if out.handled {
                 self.bar_outcome(p, out, &mut r);
                 return r;
+            }
+        }
+        r
+    }
+
+    /// `scroll_bars`' repeat of a scroll arrow held down
+    /// ([`ScrollBar::repeat`]), `ms` after the last call.
+    pub fn repeat(&mut self, ms: u32) -> Response {
+        let mut r = Response::default();
+        for p in 0..self.panes.len() {
+            let out = self.panes[p].bar.repeat(ms, self.enhance);
+            if out.handled {
+                self.bar_outcome(p, out, &mut r);
+            }
+        }
+        r
+    }
+
+    /// The mouse wheel at `x`, `y` in the form (`mouse_wheel`): the list
+    /// under it scrolls `notches` up ([`ScrollBar::wheel`]).
+    pub fn wheel(&mut self, x: i32, y: i32, notches: i32) -> Response {
+        let mut r = Response::default();
+        let on =
+            |p: &Pane| (p.left..p.left + LIST_WIDTH).contains(&x) && (LIST_TOP..LIST_TOP + LIST_HEIGHT).contains(&y);
+        if let Some(p) = self.panes.iter().position(on) {
+            let out = self.panes[p].bar.wheel(notches);
+            if out.handled {
+                self.bar_outcome(p, out, &mut r);
             }
         }
         r

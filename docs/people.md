@@ -145,7 +145,10 @@ map), which the view sets before each tick; sounds go to the view in
 The view also calls it: 1088:7fb1, after scrolling, turning the view and
 the options, runs 1088:7a14 and `spawn_people` with the drawing. The port
 leaves that out, so the random numbers part from the original's after
-those.
+those. Every scroll of the main screen (`hauptschirm_scroll`, 1020:07dc:
+the keys, a right click, the scroll bars and their held repeat, the
+wheel) and every turn ends in `Game::view_moved`, which is where it goes
+(a `TODO(1088:7fb1)` there).
 
 ## Sending someone out (1090:1a25)
 

@@ -141,7 +141,7 @@ pub(crate) struct Forms {
     pub enhance: Enhanceform,
     /// What the list of enhancements says about saving (`Holiday`'s).
     pub enhance_notes: enhanceform::Notes,
-    help: Helpform,
+    pub(crate) help: Helpform,
     help_form: Form,
     pub focus: Focus,
     pub grab: Option<Grab>,
@@ -930,11 +930,28 @@ impl Game {
         self.schluss_response(r);
     }
 
-    /// The overview map's scroll timers (10b8:21c7) and the tooltips,
-    /// for `ms` of time.
+    /// The overview map's scroll timers (10b8:21c7), and with
+    /// `scroll_bars` the repeat of the scroll arrows held down on the
+    /// options, the buildings' overview and the list of enhancements, for
+    /// `ms` of time.
     pub(crate) fn forms_timers(&mut self, ms: u32) -> bool {
         self.forms.now = self.forms.now.wrapping_add(ms);
         let mut changed = false;
+        if self.forms.options.visible {
+            let r = self.forms.options.repeat(ms);
+            changed |= r.refresh;
+            self.options_response(r);
+        }
+        if self.forms.umenu.visible {
+            let r = self.forms.umenu.repeat(ms, &self.world, &self.font, &self.info);
+            changed |= r.refresh;
+            self.umenu_response(r);
+        }
+        if self.forms.enhance.visible {
+            let r = self.forms.enhance.repeat(ms);
+            changed |= r.refresh;
+            self.enhance_response(r);
+        }
         if self.forms.overview.scrolling() {
             self.forms.since_scroll += ms;
             while self.forms.since_scroll >= SCROLL_TIMER_MS {
@@ -969,7 +986,11 @@ impl Game {
             return self.forms.help.hide();
         }
         let (width, height) = self.screen.size();
-        let main = Rect::new(self.screen.left, self.screen.top, width, height);
+        // The button bar's rows are 0x22 to 0x3b from the form's top; the
+        // form as if it had its title bar (`no_main_title`).
+        let bar = self.screen.rects()[2].1;
+        let top = self.screen.top + bar.top - 0x22;
+        let main = Rect::new(self.screen.left, top, width, height);
         // Not while the main screen is rolled up (`+0x1da`, 1020:2115).
         let ready = !self.forms.modal() && !self.screen.rolled_up;
         // The build menu and the sabotage window take the focus from the
@@ -1121,7 +1142,7 @@ impl Game {
         }
     }
 
-    fn overview_response(&mut self, r: uebersichtsmap::Response) {
+    pub(crate) fn overview_response(&mut self, r: uebersichtsmap::Response) {
         self.play(r.sounds.iter().copied());
         if let Some((wo, ns)) = r.scroll {
             self.screen.set_scroll(wo, ns, &self.world, &self.tiles);
@@ -1164,16 +1185,15 @@ impl Game {
     /// picture, the overview map and the compass.
     pub(crate) fn set_view(&mut self, view: u8) {
         self.screen.set_view(view, &self.world, &self.tiles);
-        self.screen
-            .show_people(&self.world, &self.tiles, &self.font, &self.info);
         let view = self.screen.camera().view;
         self.tools
             .menu
             .view_turned(&self.world, &self.font, &self.tiles, &self.info, view);
-        self.main_view_changed();
+        // 1010:258c: `people_refresh` too.
+        self.view_moved();
     }
 
-    fn infobox_response(&mut self, r: infobox::Response) {
+    pub(crate) fn infobox_response(&mut self, r: infobox::Response) {
         self.play(r.sounds.iter().copied());
         if let Some(a) = r.action {
             self.commands([a]);
@@ -1188,12 +1208,12 @@ impl Game {
     }
 
     /// The buildings' overview opens (1080:0ea8), with the focus.
-    fn open_umenu(&mut self) {
+    pub(crate) fn open_umenu(&mut self) {
         self.forms.umenu.open(&self.world, &self.font, &self.info, self.size);
         self.set_focus(Focus::Umenu);
     }
 
-    fn umenu_response(&mut self, r: umenuform::Response) {
+    pub(crate) fn umenu_response(&mut self, r: umenuform::Response) {
         self.play(r.sounds.iter().copied());
         if let Some(a) = r.action {
             self.commands([a]);
@@ -1276,7 +1296,7 @@ impl Game {
     /// The list of enhancements: its sounds, the world's fixes as the
     /// human's commands, the player's settings for the caller to change
     /// and save, and the credits.
-    fn enhance_response(&mut self, r: enhanceform::Response) {
+    pub(crate) fn enhance_response(&mut self, r: enhanceform::Response) {
         self.play(r.sounds.iter().map(|s| s.number()));
         self.commands(r.commands);
         self.forms.requests.extend(r.changes.into_iter().map(Request::Enhance));

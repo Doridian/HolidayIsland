@@ -59,7 +59,12 @@ Widgets start hidden, and hidden widgets ignore the mouse. Hit-testing
 - Scroll bars step on the arrows when the mouse is *released* over the arrow
   that was pressed, page on the trough at once on press, and drag the thumb
   only while the mouse stays inside the bar. Nothing auto-repeats. With
-  `enhance.scroll_bars` the arrows step when pressed.
+  `enhance.scroll_bars` the arrows step when pressed and, held, again
+  after 400 ms and every 50 ms while the mouse is on them
+  (`ScrollBar::repeat`, which each form with a bar calls from its
+  owner's timer: the start menu, the options, the buildings' overview,
+  the list of enhancements). With `enhance.mouse_wheel` the wheel moves
+  a list's bar three arrow steps a notch (`ScrollBar::wheel`).
 - A scroll arrow released over another part of the bar is let go without a
   repaint, so it stays drawn pressed (with `enhance.scroll_bars` it's
   drawn up).

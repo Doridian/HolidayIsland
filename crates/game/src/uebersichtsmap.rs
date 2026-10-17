@@ -1538,6 +1538,23 @@ impl Uebersichtsmap {
         moved
     }
 
+    /// The mouse wheel over the form (`mouse_wheel`, a port extension):
+    /// the map's window moves `dy` notches up and `dx` right, by the
+    /// arrows' step of 5 each.
+    pub fn wheel(&mut self, world: &World, dx: i32, dy: i32) -> Response {
+        let mut r = Response::default();
+        let step = |n: i32| n.clamp(-100, 100) * 5;
+        let before = self.origin();
+        if dy != 0 {
+            self.scroll_ns(world, step(-dy));
+        }
+        if dx != 0 {
+            self.scroll_wo(world, step(dx));
+        }
+        r.refresh = self.origin() != before;
+        r
+    }
+
     /// Whether a scroll timer runs, for the caller to tick
     /// [`Uebersichtsmap::scroll_timers`] every 25 ms.
     #[must_use]

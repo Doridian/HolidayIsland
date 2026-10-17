@@ -20,6 +20,12 @@
 //! original's 20 × 27 view, which lies in the middle of the bigger one;
 //! the island is drawn with a bigger camera around it
 //! ([`Hauptschirm::drawn_camera`]). `docs/layout.md`, "`big_map`".
+//! Filling the screen, with `no_main_title` it has no title bar
+//! ([`layout_for`]).
+//!
+//! The two scroll bars are pictures the form's handlers make scroll bars
+//! of ([`Hauptschirm::bar_mouse_down`], [`Hauptschirm::bar_tick`];
+//! `docs/map.md`, "The scroll bars").
 
 use formats::data::Land;
 use vcl::Rect;
@@ -31,7 +37,7 @@ use crate::monate::Date;
 use crate::money::format_money;
 use crate::people::Viewpoint;
 use crate::text::{Align, Font};
-use crate::widgets::ShiftState;
+use crate::widgets::{Part, ShiftState};
 use crate::world::{Pos, World};
 
 /// The form's size. // 1110:1578, 1110:157a
@@ -61,21 +67,28 @@ pub const LAYOUT: [(&str, Rect); 10] = [
 /// The images' bounds in a form `width` × `height` (`big_map`): as
 /// [`LAYOUT`], with what's at the right and bottom edges moved there and
 /// the bars and the island stretched between. The status bar keeps its
-/// width. `layout_for(WIDTH, HEIGHT)` is [`LAYOUT`].
+/// width. `layout_for(WIDTH, HEIGHT, true)` is [`LAYOUT`].
+///
+/// Without a `title` bar (`no_main_title`) the title bar and its close
+/// and minimize widgets are empty rectangles at the top, and the info
+/// bar, the button bar and everything below them move up by
+/// [`TITLE_HEIGHT`], the island's view growing by as much.
 #[must_use]
-pub fn layout_for(width: i32, height: i32) -> [(&'static str, Rect); 10] {
+pub fn layout_for(width: i32, height: i32, title: bool) -> [(&'static str, Rect); 10] {
     let (w, h) = (width, height);
+    let t = if title { TITLE_HEIGHT } else { 0 };
+    let bar = |r: Rect| if title { r } else { Rect::new(r.left, 0, 0, 0) };
     [
-        ("Ueberschriftbild", Rect::new(16, 0, w - 32, 16)),
-        ("InfoImage", Rect::new(0, 16, w, 18)),
-        ("ButtonImage", Rect::new(0, 34, w, 25)),
-        ("Hauptbild", Rect::new(0, 59, w - 16, h - 75)),
-        ("NSScrollbild", Rect::new(w - 16, 59, 16, h - 75)),
+        ("Ueberschriftbild", bar(Rect::new(16, 0, w - 32, 16))),
+        ("InfoImage", Rect::new(0, t, w, 18)),
+        ("ButtonImage", Rect::new(0, t + 18, w, 25)),
+        ("Hauptbild", Rect::new(0, t + 43, w - 16, h - t - 59)),
+        ("NSScrollbild", Rect::new(w - 16, t + 43, 16, h - t - 59)),
         ("Statusimage", Rect::new(0, h - 16, 219, 16)),
         ("WOScrollbild", Rect::new(219, h - 16, w - 16 - 219, 16)),
         ("eckimage", Rect::new(w - 16, h - 16, 16, 16)),
-        ("CloseBild", Rect::new(0, 0, 16, 16)),
-        ("Kleinbild", Rect::new(w - 16, 0, 16, 16)),
+        ("CloseBild", bar(Rect::new(0, 0, 16, 16))),
+        ("Kleinbild", bar(Rect::new(w - 16, 0, 16, 16))),
     ]
 }
 
@@ -95,7 +108,7 @@ const TROUGH_END: i32 = 32;
 
 /// The bitmaps the frame is drawn from, from `GRAFIK`, in the order
 /// [`Hauptschirm::new`] takes them.
-pub const BITMAP_FILES: [&str; 11] = [
+pub const BITMAP_FILES: [&str; 15] = [
     "menulei3.bmp", // the title bar, 1020:1df3
     "statusle.bmp", // the info bar's, despite the name: 1110:600e
     "buttoff.bmp",  // 1110:600a
@@ -107,6 +120,10 @@ pub const BITMAP_FILES: [&str; 11] = [
     "close.bmp",    // 1110:54b8
     "minimize.bmp", // 1020:2501
     "button.bmp",   // the buttons held down, 1110:6006
+    "scrbutno.BMP", // the up arrow held down, 1110:6022 (1030:307a)
+    "scrbutsu.BMP", // down, 1110:6026
+    "scrbutwe.BMP", // left, 1110:602a
+    "scrbutos.BMP", // right, 1110:602e
 ];
 const MENULEI: usize = 0;
 const INFO: usize = 1;
@@ -119,6 +136,10 @@ const KOMPKN: usize = 7;
 const CLOSE: usize = 8;
 const MINIMIZE: usize = 9;
 const BUTTON: usize = 10;
+const UP_PRESSED: usize = 11;
+const DOWN_PRESSED: usize = 12;
+const LEFT_PRESSED: usize = 13;
+const RIGHT_PRESSED: usize = 14;
 
 /// The left edges of the 23 buttons in the button bar, each 25 wide.
 /// // 1110:12c0
@@ -155,6 +176,77 @@ impl Bar {
             return 16;
         }
         (16 * range + (i32::from(self.position) - i32::from(self.min)) * (length - 16 - 19 - 16)) / range
+    }
+}
+
+/// One of the two scroll bars.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    /// `NSScrollbild`, the right one: north–south, down the screen.
+    Ns,
+    /// `WOScrollbild`, the lower one: west–east, across.
+    Wo,
+}
+
+/// A press on a scroll bar, until the mouse comes up: an arrow shows
+/// pressed while it's held (+0x1d0, +0x1d1 for the right bar's, +0x1ce,
+/// +0x1cf for the lower one's), an arrow or the trough repeats in the
+/// clock's tick (the `Tag` of the component at +0x190, 1 to 4 for the
+/// right bar's up arrow, page up, page down and down arrow, 5 to 8 for
+/// the lower one's), the thumb is dragged (+0x1cd, +0x1cc).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BarPress {
+    axis: Axis,
+    part: Part,
+    /// Where the thumb was grabbed, from its start. // +0x1ba, +0x1b8
+    grab: i32,
+    /// Where the last move put the thumb's start, as the mouse had it
+    /// (both bars share the `Longint`). // +0x1c8
+    last: i32,
+    /// The mouse along the bar when last seen (the port's, for
+    /// `scroll_bars`).
+    at: i32,
+    /// The clock's ticks since the press (the port's, for
+    /// `scroll_bars`' wait before repeating).
+    ticks: u8,
+}
+
+/// An arrow's step, on both bars. // 1020:0d92, 1020:151a
+const BAR_STEP: i16 = 1;
+/// The trough's step: 16 half rows down the right bar, 18 columns across
+/// the lower one. // 1020:0d92 (0x10), 1020:151a (0x12)
+const NS_PAGE: i16 = 0x10;
+const WO_PAGE: i16 = 0x12;
+/// The thumb's length along the bar (`scroll1.BMP`'s 16 × 20 pieces).
+const THUMB: i32 = 20;
+/// With `scroll_bars`, a part held repeats from the clock's third tick
+/// after the press (200 to 300 ms), so a click is one step.
+const REPEAT_WAIT: u8 = 2;
+/// The mouse wheel's step a notch (`mouse_wheel`): two, as the arrow
+/// keys' (1020:2e09).
+pub const WHEEL_STEP: i16 = 2;
+
+/// The part of a scroll bar `length` long at `along`, as the presses
+/// test it (1020:0d92, 1020:151a): the back arrow up to 16 (`< 0x11`),
+/// the forward arrow from `length - 16`, and between them the thumb from
+/// its start and 15 on, the trough before and after it. With
+/// `whole_thumb` (`scroll_bars`) all 20 pixels of the thumb.
+fn part_at(bar: Bar, length: i32, along: i32, whole_thumb: bool) -> Part {
+    if along < 0x11 {
+        return Part::BackArrow;
+    }
+    if along >= length - 0x10 {
+        return Part::ForwardArrow;
+    }
+    let thumb = bar.thumb(length);
+    // BUG(original): the thumb is 20 pixels long, but only its first 16 grab it: a press on its last four pages forward.
+    let end = if whole_thumb { thumb + THUMB - 1 } else { thumb + 0xf };
+    if along < thumb {
+        Part::PageBack
+    } else if along > end {
+        Part::PageForward
+    } else {
+        Part::Thumb
     }
 }
 
@@ -311,6 +403,11 @@ pub struct Hauptschirm {
     /// The title bar was pressed and the button hasn't come up yet
     /// (`form_drags`; the original doesn't keep it).
     title_held: bool,
+    /// The form has its title bar: always but with `no_main_title` when
+    /// it fills the screen.
+    titled: bool,
+    /// A scroll bar held down.
+    bar_press: Option<BarPress>,
 }
 
 /// `src` repeated over a `width` × `height` surface.
@@ -499,6 +596,8 @@ impl Hauptschirm {
             title_text: title.to_vec(),
             enhance: Enhancements::ORIGINAL,
             title_held: false,
+            titled: true,
+            bar_press: None,
         };
         // 1020:1e4f: the game's name over the title bar.
         let width = LAYOUT[0].1.width();
@@ -648,21 +747,257 @@ impl Hauptschirm {
         };
         self.ns_bar.position = ns;
         self.wo_bar.position = wo;
+        self.draw_bars();
+    }
+
+    /// Draws both scroll bars: the trough, an arrow held down (its
+    /// `scrbut*.BMP` over the trough's, 1020:0d92, 1020:151a; the trough's
+    /// back when it comes up, 1020:10b6, 1020:181f), then the thumb.
+    fn draw_bars(&mut self) {
+        let pressed = |axis: Axis| {
+            self.bar_press
+                .filter(|p| p.axis == axis)
+                .map(|p| p.part)
+                .filter(|&p| matches!(p, Part::BackArrow | Part::ForwardArrow))
+        };
+        let (ns_arrow, wo_arrow) = (pressed(Axis::Ns), pressed(Axis::Wo));
+        let b = &self.bitmaps;
+        let scroll = &b[SCROLL1];
+        let arrow = Rect::new(0, 0, 16, 16);
         // 1020:0c8b, 1020:0bf4: the trough, then the thumb.
-        let scroll = &self.bitmaps[SCROLL1];
         let img = &mut self.ns_image;
         copy(img, &self.ns_trough);
-        let y = self.ns_bar.thumb(i32::try_from(img.height).unwrap_or(0));
+        let length = i32::try_from(img.height).unwrap_or(0);
         let all = img.bounds();
+        match ns_arrow {
+            Some(Part::BackArrow) => img.blit(0, 0, &b[UP_PRESSED], arrow, Rop::Copy, all),
+            Some(_) => img.blit(0, length - 16, &b[DOWN_PRESSED], arrow, Rop::Copy, all),
+            None => {}
+        }
+        let y = self.ns_bar.thumb(length);
         img.blit(0, y, scroll, Rect::new(0, 16, 16, 20), Rop::And, all);
         img.blit(0, y, scroll, Rect::new(16, 16, 16, 20), Rop::Invert, all);
         // 1020:1413, 1020:137c
         let img = &mut self.wo_image;
         copy(img, &self.wo_trough);
-        let x = self.wo_bar.thumb(i32::try_from(img.width).unwrap_or(0));
+        let length = i32::try_from(img.width).unwrap_or(0);
         let all = img.bounds();
+        match wo_arrow {
+            Some(Part::BackArrow) => img.blit(0, 0, &b[LEFT_PRESSED], arrow, Rop::Copy, all),
+            Some(_) => img.blit(length - 16, 0, &b[RIGHT_PRESSED], arrow, Rop::Copy, all),
+            None => {}
+        }
+        let x = self.wo_bar.thumb(length);
         img.blit(x, 0, scroll, Rect::new(0, 0, 20, 16), Rop::And, all);
         img.blit(x, 0, scroll, Rect::new(20, 0, 20, 16), Rop::Invert, all);
+    }
+
+    fn bar(&self, axis: Axis) -> Bar {
+        match axis {
+            Axis::Ns => self.ns_bar,
+            Axis::Wo => self.wo_bar,
+        }
+    }
+
+    /// The bar's length: `NSScrollbild`'s `Height`, `WOScrollbild`'s
+    /// `Width` (+0x24, +0x22).
+    fn bar_length(&self, axis: Axis) -> i32 {
+        let n = match axis {
+            Axis::Ns => self.ns_image.height,
+            Axis::Wo => self.wo_image.width,
+        };
+        i32::try_from(n).unwrap_or(0)
+    }
+
+    /// `hauptschirm_scroll_ns`, `hauptschirm_scroll_wo`: the bar's
+    /// position moves `by`, kept within its ends, and the view moves as
+    /// much down or across the screen ([`Hauptschirm::scroll`]). The
+    /// original then draws the overview map's frame again, which is the
+    /// caller's. // 1020:0cf7, 1020:147f
+    fn scroll_bar(&mut self, axis: Axis, by: i16, world: &World, tiles: &Tiles) {
+        let bar = self.bar(axis);
+        let mut to = bar.position.wrapping_add(by);
+        if to < bar.min {
+            to = bar.min;
+        } else if bar.max < to {
+            to = bar.max;
+        }
+        let by = to.wrapping_sub(bar.position);
+        match axis {
+            Axis::Ns => self.scroll(by, 0, world, tiles),
+            Axis::Wo => self.scroll(0, by, world, tiles),
+        }
+    }
+
+    /// What holding `part` of the `axis` bar steps by.
+    fn bar_step(axis: Axis, part: Part) -> i16 {
+        let page = match axis {
+            Axis::Ns => NS_PAGE,
+            Axis::Wo => WO_PAGE,
+        };
+        match part {
+            Part::BackArrow => -BAR_STEP,
+            Part::PageBack => -page,
+            Part::PageForward => page,
+            Part::ForwardArrow => BAR_STEP,
+            Part::Thumb => 0,
+        }
+    }
+
+    /// `NSScrollBildMouseDown`, `WOScrollBildMouseDown`: a press `along`
+    /// the bar (down the right one, across the lower one). An arrow
+    /// shows pressed and steps one, the trough beside the thumb pages, and
+    /// both go on in the clock's tick while the mouse is held
+    /// ([`Hauptschirm::bar_tick`]); the thumb is grabbed. Only a press of
+    /// exactly the left button counts; with `modifier_clicks` Shift, Ctrl
+    /// and a double click don't matter. Whether the view moved, and the
+    /// caller follows it as after [`Hauptschirm::scroll`].
+    /// // 1020:0d92, 1020:151a
+    pub fn bar_mouse_down(&mut self, axis: Axis, along: i32, shift: ShiftState, world: &World, tiles: &Tiles) -> bool {
+        // BUG(original): only exactly [ssLeft]: with Shift or Ctrl held, or on a double click's second press, the bars do nothing, so quick clicks on an arrow step every other time.
+        let shift = if self.enhance.has(Enhancement::ModifierClicks) {
+            ShiftState(shift.without_keys().0 & !ShiftState::DOUBLE.0)
+        } else {
+            shift
+        };
+        if shift != ShiftState::LEFT {
+            return false;
+        }
+        let (bar, length) = (self.bar(axis), self.bar_length(axis));
+        let part = part_at(bar, length, along, self.enhance.has(Enhancement::ScrollBars));
+        let grab = along - bar.thumb(length);
+        self.bar_press = Some(BarPress {
+            axis,
+            part,
+            grab,
+            last: along - grab,
+            at: along,
+            ticks: 0,
+        });
+        if part == Part::Thumb {
+            return false;
+        }
+        self.scroll_bar(axis, Self::bar_step(axis, part), world, tiles);
+        true
+    }
+
+    /// `NSScrollbildMouseMove`, `WOScrollbildMouseMove` at `along`: while
+    /// the left button drags the thumb, the view follows. Whether it
+    /// moved. // 1020:0fa2, 1020:172a
+    ///
+    /// The original moves the position by the mouse's move since the last
+    /// one, scaled by the bar's length less 48, not the thumb's travel
+    /// (less 51), rounded by adding half the divisor also to a move back,
+    /// and only while the mouse is between the arrows; so the thumb
+    /// creeps away from the mouse, faster going back. With `scroll_bars`
+    /// the thumb goes where the mouse holds it.
+    pub fn bar_mouse_move(&mut self, axis: Axis, along: i32, shift: ShiftState, world: &World, tiles: &Tiles) -> bool {
+        let Some(mut p) = self.bar_press.filter(|p| p.axis == axis) else {
+            return false;
+        };
+        p.at = along;
+        self.bar_press = Some(p);
+        if p.part != Part::Thumb || !shift.contains(ShiftState::LEFT) {
+            return false;
+        }
+        let (bar, length) = (self.bar(axis), self.bar_length(axis));
+        let range = i32::from(bar.max) - i32::from(bar.min);
+        let short = |n: i32| i16::try_from(n).unwrap_or(if n < 0 { i16::MIN } else { i16::MAX });
+        if self.enhance.has(Enhancement::ScrollBars) {
+            let travel = length - 16 - 19 - 16;
+            let at = (along - p.grab - 16).max(0).min(travel.max(0));
+            let Some(offset) = (at * range + travel / 2).checked_div(travel) else {
+                return false;
+            };
+            let to = short(i32::from(bar.min) + offset);
+            self.scroll_bar(axis, to.wrapping_sub(bar.position), world, tiles);
+            return true;
+        }
+        // BUG(original): the drag moves by the mouse's moves, scaled by the bar less 48 (not the thumb's travel) and rounded up also going back, only between the arrows: the thumb drifts from the mouse.
+        if !(0x10 < along && along < length - 0x10) {
+            return false;
+        }
+        let mut at = along - p.grab;
+        if at < 0 {
+            at = 0;
+        } else if length - 0xe < at {
+            at = length - 0xe;
+        }
+        let Some(by) = ((at - p.last) * range + (length - 0x2f) / 2).checked_div(length - 0x30) else {
+            return false;
+        };
+        self.scroll_bar(axis, short(by), world, tiles);
+        if let Some(q) = &mut self.bar_press {
+            q.last = at;
+        }
+        true
+    }
+
+    /// `NSScrollBildMouseUp`, `WOScrollBildMouseUp`: an arrow held comes
+    /// up, the thumb is let go and the clock stops repeating. Whether the
+    /// bar was drawn again. // 1020:10b6, 1020:181f
+    pub fn bar_mouse_up(&mut self) -> bool {
+        let arrow = self
+            .bar_press
+            .take()
+            .is_some_and(|p| matches!(p.part, Part::BackArrow | Part::ForwardArrow));
+        if arrow {
+            self.draw_bars();
+        }
+        arrow
+    }
+
+    /// The clock's tick's part for the scroll bars: an arrow or the
+    /// trough held steps again, by its press's step. Whether it did, and
+    /// the caller follows the view as after [`Hauptschirm::scroll`].
+    /// // 1020:1e9b (the `Tag`'s cases 1 to 8)
+    ///
+    /// With `scroll_bars` the repeat waits two ticks after the press, and
+    /// steps only while the mouse is on the part held: an arrow, or the
+    /// trough on the side of the thumb it was pressed, so paging stops
+    /// when the thumb reaches the mouse.
+    pub fn bar_tick(&mut self, world: &World, tiles: &Tiles) -> bool {
+        let Some(mut p) = self.bar_press else {
+            return false;
+        };
+        if p.part == Part::Thumb {
+            return false;
+        }
+        if self.enhance.has(Enhancement::ScrollBars) {
+            p.ticks = p.ticks.saturating_add(1);
+            self.bar_press = Some(p);
+            let (bar, length) = (self.bar(p.axis), self.bar_length(p.axis));
+            if p.ticks <= REPEAT_WAIT || part_at(bar, length, p.at, true) != p.part {
+                return false;
+            }
+        }
+        // BUG(original): the repeat starts at the next tick and goes on wherever the mouse is: holding the trough pages past the mouse to the bar's end.
+        self.scroll_bar(p.axis, Self::bar_step(p.axis, p.part), world, tiles);
+        true
+    }
+
+    /// Whether a scroll bar is held, so that the clock's tick may move
+    /// the view.
+    #[must_use]
+    pub fn bar_held(&self) -> bool {
+        self.bar_press.is_some()
+    }
+
+    /// The mouse wheel (`mouse_wheel`, a port extension): `dy` notches up
+    /// move the view up the screen, `dx` notches right move it right,
+    /// [`WHEEL_STEP`] each, as the arrow keys do ([`Hauptschirm::scroll`],
+    /// 1020:07dc). Whether it moved, and the caller follows it.
+    pub fn wheel(&mut self, dx: i32, dy: i32, world: &World, tiles: &Tiles) -> bool {
+        if (dx, dy) == (0, 0) {
+            return false;
+        }
+        let step = |n: i32| {
+            let n = n.saturating_mul(i32::from(WHEEL_STEP)).clamp(-1000, 1000);
+            i16::try_from(n).unwrap_or(0)
+        };
+        let before = self.scroll_position();
+        self.scroll(step(-dy), step(dx), world, tiles);
+        self.scroll_position() != before
     }
 
     /// The view part of `game_show_state` after a game was loaded in
@@ -993,14 +1328,20 @@ impl Hauptschirm {
     /// position stays, past the new bars' ends too until the next scroll.
     /// Whether the size changed; then the caller draws the island and the
     /// people again.
-    fn set_size(&mut self, width: i32, height: i32) -> bool {
-        if (width, height) == (self.width, self.full_height) {
+    fn set_size(&mut self, width: i32, height: i32, titled: bool) -> bool {
+        if (width, height, titled) == (self.width, self.full_height, self.titled) {
             return false;
         }
-        let original = (width, height) == (WIDTH, HEIGHT);
+        let original = (width, height, titled) == (WIDTH, HEIGHT, true);
         self.width = width;
         self.full_height = height;
-        self.rects = if original { LAYOUT } else { layout_for(width, height) };
+        self.titled = titled;
+        self.bar_press = None;
+        self.rects = if original {
+            LAYOUT
+        } else {
+            layout_for(width, height, titled)
+        };
         let rects = self.rects;
         let image = |name| image(&rects, name);
         let bild = self.hauptbild();
@@ -1010,14 +1351,18 @@ impl Hauptschirm {
             ViewSize::for_image(bild.width(), bild.height())
         };
         self.title = tiled(&self.bitmaps[MENULEI], rects[0].1.width(), rects[0].1.height());
-        self.font.draw(
-            &mut self.title,
-            &self.title_text,
-            (0, 1),
-            rects[0].1.width(),
-            Align::Center,
-            1,
-        );
+        if titled {
+            self.font.draw(
+                &mut self.title,
+                &self.title_text,
+                (0, 1),
+                rects[0].1.width(),
+                Align::Center,
+                1,
+            );
+        }
+        self.close = image("CloseBild");
+        self.minimize = image("Kleinbild");
         self.info_bar = tiled(&self.bitmaps[INFO], width, rects[1].1.height());
         self.ns_trough = trough(
             &self.bitmaps[SCRONOSU],
@@ -1043,20 +1388,24 @@ impl Hauptschirm {
 
     /// Lays the form out for the `screen` the game lays out for on a
     /// `desktop` (the window): with `big_map` and a desktop bigger than
-    /// [`BIG_FROM`] it fills the desktop at 0, 0, else it's the original's
+    /// [`BIG_FROM`] it fills the desktop at 0, 0 (with `no_main_title`
+    /// without its title bar), else it's the original's
     /// ([`Hauptschirm::layout`]). Whether its size changed, which the
     /// caller follows by drawing the island, the people and the buttons
     /// again.
     pub fn place(&mut self, screen: (i32, i32), desktop: (i32, i32)) -> bool {
         if self.big_map && (desktop.0 > BIG_FROM.0 || desktop.1 > BIG_FROM.1) {
-            let changed = self.set_size(desktop.0, desktop.1);
+            // The window's own title bar names the game; a second one
+            // would only take room from the island.
+            let titled = !self.enhance.has(Enhancement::NoMainTitle);
+            let changed = self.set_size(desktop.0, desktop.1, titled);
             (self.left, self.top) = (0, 0);
             self.height = self.full_height;
             self.rolled_up = false;
             changed
         } else {
             // BUG(original): the main screen and its map view are 640 × 479 and 20 × 27 on every screen; a bigger one shows more background, not more island.
-            let changed = self.set_size(WIDTH, HEIGHT);
+            let changed = self.set_size(WIDTH, HEIGHT, true);
             self.layout(screen);
             changed
         }
@@ -1084,6 +1433,13 @@ impl Hauptschirm {
     #[must_use]
     pub fn bounds(&self) -> Rect {
         Rect::new(self.left, self.top, self.width, self.height)
+    }
+
+    /// Whether the form has its title bar: all but `no_main_title`'s
+    /// filling the screen.
+    #[must_use]
+    pub fn titled(&self) -> bool {
+        self.titled
     }
 
     /// The form fills the screen (`big_map`), so its title bar doesn't
@@ -1181,10 +1537,74 @@ mod tests {
     }
 
     #[test]
+    fn layouts_without_the_title_bar() {
+        for (w, h) in [(800, 600), (1024, 768), (1280, 1024), (1366, 700), (1920, 1080)] {
+            let with = layout_for(w, h, true);
+            let without = layout_for(w, h, false);
+            let rect = |l: &[(&str, Rect); 10], n: &str| l.iter().find(|(m, _)| *m == n).unwrap().1;
+            // The title bar and its widgets are gone.
+            for n in ["Ueberschriftbild", "CloseBild", "Kleinbild"] {
+                let r = rect(&without, n);
+                assert_eq!((r.width(), r.height(), r.top), (0, 0, 0), "{n}");
+            }
+            // The info bar is at the top, the button bar under it, and the
+            // island and the right scroll bar start 16 higher, as long as
+            // the bottom bar stays.
+            assert_eq!(rect(&without, "InfoImage"), Rect::new(0, 0, w, 18));
+            assert_eq!(rect(&without, "ButtonImage"), Rect::new(0, 18, w, 25));
+            let bild = rect(&without, "Hauptbild");
+            assert_eq!(bild, Rect::new(0, 43, w - 16, h - 59));
+            assert_eq!(bild.bottom, rect(&with, "Hauptbild").bottom);
+            assert_eq!(rect(&without, "NSScrollbild"), Rect::new(w - 16, 43, 16, h - 59));
+            for n in ["Statusimage", "WOScrollbild", "eckimage"] {
+                assert_eq!(rect(&without, n), rect(&with, n), "{n}");
+                assert_eq!(rect(&without, n).bottom, h);
+            }
+            // The island's view grows by the title bar's height or more.
+            let (a, b) = (ViewSize::for_image(bild.width(), bild.height()), {
+                let r = rect(&with, "Hauptbild");
+                ViewSize::for_image(r.width(), r.height())
+            });
+            assert!(a.half_rows >= b.half_rows && a.height == b.height + TITLE_HEIGHT);
+        }
+    }
+
+    #[test]
+    fn scroll_bar_parts() {
+        // The right bar at the start, 404 long: the thumb at 16..36.
+        let bar = Bar {
+            min: 0,
+            max: NS_MAX,
+            position: 0,
+        };
+        let at = |along, whole| part_at(bar, 404, along, whole);
+        assert_eq!(at(0, false), Part::BackArrow);
+        assert_eq!(at(16, false), Part::BackArrow, "`< 0x11`");
+        assert_eq!(at(17, false), Part::Thumb);
+        assert_eq!(at(31, false), Part::Thumb);
+        // BUG(original): the thumb's last four pixels page.
+        assert_eq!(at(32, false), Part::PageForward);
+        assert_eq!(at(32, true), Part::Thumb);
+        assert_eq!(at(35, true), Part::Thumb);
+        assert_eq!(at(36, true), Part::PageForward);
+        assert_eq!(at(387, false), Part::PageForward);
+        assert_eq!(at(388, false), Part::ForwardArrow);
+        // In the middle the trough is on both sides.
+        let mid = Bar { position: 238, ..bar };
+        let thumb = mid.thumb(404);
+        assert_eq!(part_at(mid, 404, thumb - 1, false), Part::PageBack);
+        assert_eq!(part_at(mid, 404, thumb, false), Part::Thumb);
+        // The steps: arrows one, pages 16 down and 18 across.
+        assert_eq!(Hauptschirm::bar_step(Axis::Ns, Part::PageForward), 16);
+        assert_eq!(Hauptschirm::bar_step(Axis::Wo, Part::PageBack), -18);
+        assert_eq!(Hauptschirm::bar_step(Axis::Wo, Part::BackArrow), -1);
+    }
+
+    #[test]
     fn big_layouts() {
-        assert_eq!(layout_for(WIDTH, HEIGHT), LAYOUT);
+        assert_eq!(layout_for(WIDTH, HEIGHT, true), LAYOUT);
         assert_eq!(ViewSize::for_image(624, 404), ViewSize::ORIGINAL);
-        let r = layout_for(1024, 768);
+        let r = layout_for(1024, 768, true);
         assert_eq!(r[3].1, Rect::new(0, 59, 1008, 693));
         assert_eq!(r[7].1, Rect::new(1008, 752, 16, 16));
         // A trough no longer than the original's is the original's start.

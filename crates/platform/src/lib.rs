@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
@@ -41,6 +41,34 @@ pub const MAX_UI_SCALE: u32 = 4;
 /// settings file gives one, in desktop pixels: the original's
 /// recommended 800×600.
 pub const DEFAULT_DESKTOP: (u32, u32) = (800, 600);
+
+/// How many pixels of a touchpad's scrolling make one wheel notch.
+pub const WHEEL_PIXELS: f64 = 40.0;
+
+/// Adds a wheel event's `delta` to what's left over in `rest` and takes
+/// the whole notches out: `(dx, dy)`, scrolling right and up positive,
+/// as Windows counts them. Lines are notches, pixels count
+/// [`WHEEL_PIXELS`] each; a high-resolution wheel's or a touchpad's
+/// fractions add up. (`winit`'s deltas say which way the content moves:
+/// up and to the left for a scroll up and right.)
+#[must_use]
+pub fn wheel_notches(rest: &mut (f64, f64), delta: MouseScrollDelta) -> (i32, i32) {
+    let (x, y) = match delta {
+        MouseScrollDelta::LineDelta(x, y) => (-f64::from(x), f64::from(y)),
+        MouseScrollDelta::PixelDelta(p) => (-p.x / WHEEL_PIXELS, p.y / WHEEL_PIXELS),
+    };
+    rest.0 += x;
+    rest.1 += y;
+    let whole = |r: &mut f64| {
+        let n = r.trunc();
+        *r -= n;
+        // A notch count is small; anything past `i32` is noise.
+        #[allow(clippy::cast_possible_truncation)]
+        let n = n.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
+        n
+    };
+    (whole(&mut rest.0), whole(&mut rest.1))
+}
 
 /// How often the game is updated and redrawn.
 const FRAME: Duration = Duration::from_nanos(1_000_000_000 / 60);
@@ -89,6 +117,19 @@ pub enum Input {
         x: i32,
         y: i32,
         button: Button,
+    },
+    /// The mouse wheel turned at `x`, `y` (a port extension: the
+    /// original's Windows 3.1 had no wheel). `dy` is in notches, positive
+    /// away from the user (scrolling up), as Windows' `WM_MOUSEWHEEL`
+    /// counts them; `dx` in notches scrolling right, from a tilting wheel
+    /// or a touchpad.
+    /// Touchpads' pixel deltas are added up into notches
+    /// ([`WHEEL_PIXELS`] each).
+    Wheel {
+        x: i32,
+        y: i32,
+        dx: i32,
+        dy: i32,
     },
     /// A Windows virtual-key code (`VK_*`), as `OnKeyDown` gets it.
     KeyDown(u16),
@@ -172,6 +213,8 @@ struct Runner<A> {
     /// The desktop last handed to [`App::resize`].
     desktop: (u32, u32),
     modifiers: ModifiersState,
+    /// The wheel's movement not yet handed on as whole notches.
+    wheel: (f64, f64),
     /// Keys whose press toggled fullscreen, whose release the game
     /// doesn't get either.
     swallowed: Vec<KeyCode>,
@@ -336,6 +379,13 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     });
                 }
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = wheel_notches(&mut self.wheel, delta);
+                if (dx, dy) != (0, 0) {
+                    let (x, y) = self.mouse;
+                    self.app.input(Input::Wheel { x, y, dx, dy });
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     self.key(code, event.state == ElementState::Pressed, event.repeat);
@@ -389,6 +439,7 @@ pub fn run<A: App>(title: &str, options: WindowOptions, app: A) -> Result<(), Er
         error: None,
         desktop: (0, 0),
         modifiers: ModifiersState::empty(),
+        wheel: (0.0, 0.0),
         swallowed: Vec::new(),
         remembered: WindowSettings::default(),
     };
@@ -407,6 +458,25 @@ pub fn run<A: App>(title: &str, options: WindowOptions, app: A) -> Result<(), Er
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wheel_notches_add_up() {
+        let mut rest = (0.0, 0.0);
+        assert_eq!(wheel_notches(&mut rest, MouseScrollDelta::LineDelta(0.0, 1.0)), (0, 1));
+        assert_eq!(
+            wheel_notches(&mut rest, MouseScrollDelta::LineDelta(0.0, -2.0)),
+            (0, -2)
+        );
+        // Content moving left is a scroll right.
+        assert_eq!(wheel_notches(&mut rest, MouseScrollDelta::LineDelta(-1.0, 0.0)), (1, 0));
+        // Fractions wait until they make a notch.
+        assert_eq!(wheel_notches(&mut rest, MouseScrollDelta::LineDelta(0.0, 0.5)), (0, 0));
+        assert_eq!(wheel_notches(&mut rest, MouseScrollDelta::LineDelta(0.0, 0.5)), (0, 1));
+        let px = |y| MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, y));
+        assert_eq!(wheel_notches(&mut rest, px(30.0)), (0, 0));
+        assert_eq!(wheel_notches(&mut rest, px(30.0)), (0, 1));
+        assert_eq!(wheel_notches(&mut rest, px(-100.0)), (0, -2));
+    }
 
     #[test]
     fn ui_scales() {

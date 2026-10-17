@@ -1022,6 +1022,24 @@ impl Optionenform {
         r
     }
 
+    /// `scroll_bars`' repeat of a scroll bar's arrow held down (a port
+    /// extension, [`ScrollBar::repeat`]), `ms` after the last call.
+    pub fn repeat(&mut self, ms: u32) -> Response {
+        let mut r = Response::default();
+        for i in 0..self.widgets.len() {
+            let (id, item) = &mut self.widgets[i];
+            let id = *id;
+            if let Item::Scroll(b) = item {
+                let out = b.repeat(ms, self.enhance);
+                if out.handled {
+                    self.finish(id, out, &mut r);
+                    r.refresh = true;
+                }
+            }
+        }
+        r
+    }
+
     /// `bildMouseUp`: the buttons, then the scroll bars, until one takes
     /// it; otherwise the form unrolls after a drag that wasn't a double
     /// click. // 1060:2b17

@@ -130,6 +130,10 @@ pub struct Tools {
     /// and then passes the matching camera
     /// ([`crate::hauptschirm::Hauptschirm::drawn_camera`]).
     pub view: ViewSize,
+    /// `Hauptbild`'s bounds in the main screen's form, for the info box's
+    /// place: 0, 59 (with `big_map` too), or 0, 43 without the title bar
+    /// (`no_main_title`).
+    pub hauptbild: vcl::Rect,
     /// The player's view enhancements (`build_menu`, `modifier_clicks`,
     /// `road_drag`).
     pub enhance: Enhancements,
@@ -170,6 +174,7 @@ impl Tools {
             pointer_double: false,
             info_box: None,
             view: ViewSize::ORIGINAL,
+            hauptbild: crate::hauptschirm::LAYOUT[3].1,
             enhance: Enhancements::ORIGINAL,
         }
     }
@@ -388,7 +393,7 @@ impl Tools {
             // and open. The square under the mouse (`cursor_square`), and
             // the mouse in the main screen's form.
             self.pointer_double = shift == double; // 1110:64b8
-            let main = crate::hauptschirm::LAYOUT[3].1; // Hauptbild, at 0, 59 with `big_map` too
+            let main = self.hauptbild;
             self.info_box = Some(infobox::Request::Show {
                 square: darstellung::square_at_in(world, tiles, cam, &self.view, x, y), // 1018:3d8d
                 mouse: (x + main.left, y + main.top),

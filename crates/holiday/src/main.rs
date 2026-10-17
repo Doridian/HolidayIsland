@@ -75,7 +75,7 @@ use game::dateimenue::{self, Dateimenue};
 use game::endeform;
 use game::enhance::{self, Config, Fix, Fixes};
 use game::enhanceform;
-use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult};
+use game::hauptschirm::{self, Axis, Hauptschirm, InfoTexts, KeyResult};
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
 use game::optionen::Settings as Options;
@@ -349,6 +349,14 @@ impl Game {
             // tooltips; step 8 the TV.
             changed |= self.screen.status_tick(&self.font);
             changed |= self.forms_clock_tick();
+            // A scroll bar held scrolls again (the `Tag`'s cases). The
+            // original does it after its simulation's steps and the
+            // building slice, before the people's; the port before the
+            // world's tick, which then sees the new view a step early.
+            if self.screen.bar_tick(&self.world, &self.tiles) {
+                self.view_moved();
+                changed = true;
+            }
             // The original's people code reads the player's view.
             // The original's 20 × 27 view's, with `big_map` too.
             self.world.set_viewpoint(self.screen.viewpoint());
@@ -461,6 +469,7 @@ impl Game {
     fn place_main(&mut self) {
         let changed = self.screen.place(self.size, self.desktop);
         self.stack.main_desktop = self.screen.size() != (hauptschirm::WIDTH, hauptschirm::HEIGHT);
+        self.tools.hauptbild = self.screen.hauptbild();
         if changed {
             self.tools.view = self.screen.view_size();
             self.screen.paint_map(&self.world, &self.tiles);
@@ -513,6 +522,71 @@ impl Game {
         }
         self.sound.borrow_mut().music.enhance = view;
         self.place_main();
+    }
+
+    /// After the main screen's view moved (`hauptschirm_scroll`,
+    /// 1020:07dc, from the keys, a right click, the scroll bars or the
+    /// wheel) or turned (1010:254d): the people over the island again,
+    /// and the overview map's frame (`uebersichtsmap_draw_frame`, as
+    /// 1020:0cf7 does).
+    ///
+    /// TODO(1088:7fb1): 1020:07dc (and 1010:258c after a turn) ends with
+    /// `people_refresh`, which runs 1088:7a14 and `spawn_people` for the
+    /// new view: a change of the world made from the view, so it belongs
+    /// here as a command to the world once it's ported. The port leaves
+    /// it out for now (`docs/people.md`), so the random numbers part from
+    /// the original's after a scroll.
+    fn view_moved(&mut self) {
+        self.screen
+            .show_people(&self.world, &self.tiles, &self.font, &self.info);
+        self.main_view_changed();
+    }
+
+    /// The mouse wheel at `x`, `y` on the screen (`mouse_wheel`, a port
+    /// extension), `dx` notches right and `dy` up, with Shift turning
+    /// the wheel's up and down into left and right: the top window under
+    /// the mouse scrolls, or the modal list of enhancements. Whether the
+    /// screen changed.
+    fn wheel(&mut self, (x, y): (i32, i32), dx: i32, dy: i32, shift: ShiftState) -> bool {
+        let (dx, dy) = if shift.contains(ShiftState::SHIFT) {
+            (dx - dy, 0)
+        } else {
+            (dx, dy)
+        };
+        if self.forms.modal() {
+            if !self.forms.enhance.visible {
+                return false;
+            }
+            let e = &self.forms.enhance;
+            let (ex, ey) = (x - e.left, y - e.top);
+            let r = self.forms.enhance.wheel(ex, ey, dy);
+            let refresh = r.refresh;
+            self.enhance_response(r);
+            return refresh;
+        }
+        self.sync_stack();
+        match self.window_at(x, y) {
+            Win::Main => {
+                if self.screen.wheel(dx, dy, &self.world, &self.tiles) {
+                    self.view_moved();
+                    return true;
+                }
+                false
+            }
+            Win::Overview => {
+                let r = self.forms.overview.wheel(&self.world, dx, dy);
+                let refresh = r.refresh;
+                self.overview_response(r);
+                refresh
+            }
+            Win::Umenu => {
+                let r = self.forms.umenu.wheel(dy, &self.world, &self.font, &self.info);
+                let refresh = r.refresh;
+                self.umenu_response(r);
+                refresh
+            }
+            _ => false,
+        }
     }
 
     /// The mouse in `Hauptbild`'s coordinates.
@@ -880,9 +954,7 @@ impl Game {
             ("Hauptbild", Input::MouseDown { .. }) => {
                 if shift == ShiftState::RIGHT {
                     self.screen.right_click(x, y, &self.world, &self.tiles); // 1020:1984
-                    self.screen
-                        .show_people(&self.world, &self.tiles, &self.font, &self.info);
-                    self.main_view_changed();
+                    self.view_moved();
                 } else {
                     let cam = self.screen.drawn_camera();
                     let actions = self.tools.press(x, y, shift, &self.world, &self.tiles, &cam);
@@ -901,6 +973,32 @@ impl Game {
                 self.take_info_box();
                 (shown != self.forms.infobox.visible, false)
             }
+            // The scroll bars. // 1020:0d92, 1020:0fa2, 1020:10b6 (the
+            // right one, `y` down it), 1020:151a, 1020:172a, 1020:181f
+            // (the lower one, `x` across)
+            ("NSScrollbild" | "WOScrollbild", Input::MouseDown { .. } | Input::MouseMove { .. }) => {
+                let (axis, along) = if target == "NSScrollbild" {
+                    (Axis::Ns, y)
+                } else {
+                    (Axis::Wo, x)
+                };
+                let moved = if matches!(input, Input::MouseDown { .. }) {
+                    let held = self.screen.bar_mouse_down(axis, along, shift, &self.world, &self.tiles);
+                    // An arrow shows pressed, moved or not.
+                    if held {
+                        self.view_moved();
+                    }
+                    true
+                } else {
+                    let moved = self.screen.bar_mouse_move(axis, along, shift, &self.world, &self.tiles);
+                    if moved {
+                        self.view_moved();
+                    }
+                    moved
+                };
+                (moved, false)
+            }
+            ("NSScrollbild" | "WOScrollbild", Input::MouseUp { .. }) => (self.screen.bar_mouse_up(), false),
             // The compass's knob (1038:3557).
             ("eckimage", Input::MouseDown { .. }) => {
                 let view = self.screen.camera().view;
@@ -962,15 +1060,13 @@ impl Game {
         }
         match self.screen.key_down(key, shift, &self.world, &self.tiles) {
             KeyResult::Redrawn => {
-                self.screen
-                    .show_people(&self.world, &self.tiles, &self.font, &self.info);
                 // `set_view` (1010:254d) turns the build menu's picture
                 // too.
                 let view = self.screen.camera().view;
                 self.tools
                     .menu
                     .view_turned(&self.world, &self.font, &self.tiles, &self.info, view);
-                self.main_view_changed();
+                self.view_moved();
             }
             KeyResult::Button(hauptschirm::FILE_MENU_BUTTON) => self.forms.requests.push(Request::FileMenu),
             KeyResult::Button(b) => self.click_button(b),
@@ -1375,6 +1471,44 @@ impl Holiday {
         }
         self.process_requests();
         if changed || file_menu || raised {
+            self.repaint();
+        }
+    }
+
+    /// The mouse wheel (`mouse_wheel`, a port extension): the load
+    /// form's list over the start menu, the file menu's while it's open,
+    /// else the game's window under the mouse (`Game::wheel`).
+    fn wheel(&mut self, at: (i32, i32), dx: i32, dy: i32) {
+        if !self.enhance.view.has(enhance::Enhancement::MouseWheel) {
+            return;
+        }
+        let shift = self.shift();
+        let changed = if let Some(load) = &mut self.load {
+            load.menu.wheel(dy).refresh
+        } else if self.start.visible() {
+            false
+        } else if let Some(game) = &mut self.game {
+            if game.file_menu.visible {
+                let m = &game.file_menu.menu;
+                let (x, y) = (at.0 - m.left, at.1 - m.top);
+                let over = (0..dateimenue::WIDTH).contains(&x) && (0..dateimenue::HEIGHT).contains(&y);
+                let r = if over {
+                    game.file_menu.menu.wheel(dy)
+                } else {
+                    dateimenue::Response::default()
+                };
+                let refresh = r.refresh;
+                self.file_menu_response(r);
+                refresh
+            } else {
+                let changed = game.wheel(at, dx, dy, shift);
+                self.process_requests();
+                changed
+            }
+        } else {
+            false
+        };
+        if changed {
             self.repaint();
         }
     }
@@ -1830,6 +1964,13 @@ impl App for Holiday {
     fn update(&mut self, elapsed: Duration) {
         let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         self.sound.borrow_mut().advance(ms);
+        // `scroll_bars`: the start menu's scroll arrows held repeat.
+        if self.start.visible() && self.load.is_none() && self.start.menu.scroll_held() {
+            let response = self.start.menu.repeat(ms);
+            if response.refresh || response.action.is_some() {
+                self.respond(response);
+            }
+        }
         if let Some(game) = &mut self.game
             && game.update(elapsed)
         {
@@ -1904,6 +2045,7 @@ impl App for Holiday {
                     self.keys = ShiftState(self.keys.0 & !bit.0);
                 }
             }
+            Input::Wheel { x, y, dx, dy } => self.wheel((x, y), dx, dy),
             _ => self.mouse(input),
         }
     }
@@ -3648,6 +3790,484 @@ mod tests {
             button: Button::Left,
         };
         assert_eq!(game.main_mouse(on_map, ShiftState::LEFT, false), (false, false));
+    }
+
+    /// `big_map` and `no_main_title`, as the defaults have them.
+    fn no_title_only() -> Config {
+        let mut c = big_map_only();
+        c.view.set(enhance::Enhancement::NoMainTitle, true);
+        c
+    }
+
+    /// A press of the left button at `at` on the main screen, with
+    /// `shift`, and whether the screen changed.
+    fn main_press(game: &mut Game, at: (i32, i32), shift: ShiftState) -> bool {
+        let down = Input::MouseDown {
+            x: at.0,
+            y: at.1,
+            button: Button::Left,
+        };
+        game.main_mouse(down, shift, false).0
+    }
+
+    fn main_release(game: &mut Game, at: (i32, i32)) -> bool {
+        let up = Input::MouseUp {
+            x: at.0,
+            y: at.1,
+            button: Button::Left,
+        };
+        game.main_mouse(up, ShiftState::default(), true).0
+    }
+
+    fn main_move(game: &mut Game, at: (i32, i32)) -> bool {
+        game.main_mouse(Input::MouseMove { x: at.0, y: at.1 }, ShiftState::LEFT, false)
+            .0
+    }
+
+    /// One tick of the clock.
+    fn tick(game: &mut Game, n: u32) {
+        for _ in 0..n {
+            let _ = game.update(Duration::from_millis(u64::from(TICK_MS)));
+        }
+    }
+
+    /// `no_main_title`: the main screen that fills the window has no
+    /// title bar; the info bar is at the top, the button bar under it,
+    /// and the island 16 pixels taller. The world sees the same view, the
+    /// forms at the top edge open under the button bar (43 down), the
+    /// tooltips and the info box are where they belong, the top row
+    /// neither drags nor rolls the form up. At 640×480, and without the
+    /// enhancement, it keeps its title bar. With `HOLIDAY_PNG` set, the
+    /// screens go there as `notitle-WxH.png` (the forms closed) and
+    /// `notitle-WxH-forms.png`.
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn no_main_title() {
+        let Some(dir) = game_dir() else { return };
+        for size in [(800, 600), (1024, 768), (1280, 1024), (1366, 700)] {
+            let mut titled_h = holiday_in_a_game(&dir, size, big_map_only());
+            let mut h = holiday_in_a_game(&dir, size, no_title_only());
+            write_png(&h, &format!("notitle-{}x{}-forms", size.0, size.1));
+            let titled = titled_h.game.as_mut().unwrap();
+            let game = h.game.as_mut().unwrap();
+            assert!(titled.screen.titled() && !game.screen.titled());
+            assert_eq!(game.screen.bounds(), Rect::new(0, 0, size.0, size.1));
+            let rects = *game.screen.rects();
+            assert_eq!(rects[0].1.width() * rects[0].1.height(), 0, "no title bar");
+            assert_eq!(rects[1].1, Rect::new(0, 0, size.0, 18));
+            assert_eq!(rects[2].1, Rect::new(0, 18, size.0, 25));
+            let bild = game.screen.hauptbild();
+            assert_eq!(bild, Rect::new(0, 43, size.0 - 16, size.1 - 59));
+            assert_eq!((game.tools.view, game.tools.hauptbild), (game.screen.view_size(), bild));
+            assert_eq!(game.screen.view_size().height, titled.screen.view_size().height + 16);
+            // The world sees the same view, and the original's lies in
+            // the bigger one's middle, square for square.
+            assert_eq!(game.screen.viewpoint(), titled.screen.viewpoint());
+            assert_eq!(game.screen.camera(), titled.screen.camera());
+            let core = |g: &Game| {
+                let (dc, dr) = g.screen.view_size().core_offset();
+                (i32::from(dc) * 32, i32::from(dr) * 16)
+            };
+            let ((ax, ay), (bx, by)) = (core(game), core(titled));
+            for (x, y) in [(0, 0), (300, 200), (623, 403), (17, 391)] {
+                assert_eq!(
+                    darstellung::square_at_in(
+                        &game.world,
+                        &game.tiles,
+                        &game.screen.drawn_camera(),
+                        &game.screen.view_size(),
+                        x + ax,
+                        y + ay
+                    ),
+                    darstellung::square_at_in(
+                        &titled.world,
+                        &titled.tiles,
+                        &titled.screen.drawn_camera(),
+                        &titled.screen.view_size(),
+                        x + bx,
+                        y + by
+                    ),
+                );
+            }
+            // The forms opened at the top edge went under the bars.
+            for (g, bars) in [(&*game, 43), (&*titled, 59)] {
+                assert_eq!(g.forms.compass.top, bars);
+                assert_eq!(g.forms.overview.top, bars);
+                assert!(g.forms.money.top >= bars);
+            }
+            // The button bar's tooltip goes under it.
+            for (g, bars) in [(&mut *game, 43), (&mut *titled, 59)] {
+                g.forms.settings.button_help = true;
+                g.set_focus(Focus::Main);
+                let at = (g.screen.left + 6 * 25 + 30, g.screen.top + bars - 10);
+                let _ = g.main_mouse(Input::MouseMove { x: at.0, y: at.1 }, ShiftState::default(), false);
+                g.mouse = at;
+                tick(g, 1);
+                assert!(g.forms.help_visible(), "{size:?} {bars}");
+                assert_eq!(g.forms.help.top, bars);
+            }
+            // The pointer's info box lies next to the mouse alike.
+            let mut boxes = Vec::new();
+            for g in [&mut *game, &mut *titled] {
+                let r = g.forms.tv.close();
+                g.tv_response(r);
+                g.click_button(game::tools::POINTER);
+                let b = g.screen.hauptbild();
+                let at = (b.left + 100, b.top + 100);
+                g.mouse = at;
+                let _ = main_press(g, at, ShiftState::LEFT);
+                assert!(g.forms.infobox.visible);
+                boxes.push((g.forms.infobox.left - at.0, g.forms.infobox.top - at.1));
+                // With one click, it goes when the button comes up.
+                let _ = main_release(g, at);
+            }
+            assert_eq!(boxes[0], boxes[1]);
+            // The top row is the info bar: no drag, no rolling up.
+            let top = (game.screen.left + 300, game.screen.top + 5);
+            let _ = main_press(game, top, ShiftState::LEFT | ShiftState::DOUBLE);
+            let _ = main_move(game, (top.0 + 50, top.1 + 50));
+            let _ = main_release(game, top);
+            assert!(!game.screen.rolled_up);
+            assert_eq!(game.screen.bounds(), Rect::new(0, 0, size.0, size.1));
+            // A clean screen for the picture.
+            game.click_button(4);
+            game.click_button(5);
+            let _ = game.forms.help.hide();
+            let _ = game.update(Duration::ZERO);
+            h.repaint();
+            write_png(&h, &format!("notitle-{}x{}", size.0, size.1));
+            // At 640×480 the main screen is the original's, with its
+            // title bar; back on a bigger window it goes again.
+            h.resize(640, 480);
+            let game = h.game.as_mut().unwrap();
+            assert!(game.screen.titled());
+            assert_eq!(game.screen.hauptbild(), hauptschirm::LAYOUT[3].1);
+            assert_eq!(game.tools.hauptbild, hauptschirm::LAYOUT[3].1);
+            h.resize(u32::try_from(size.0).unwrap(), u32::try_from(size.1).unwrap());
+            let game = h.game.as_mut().unwrap();
+            assert!(!game.screen.titled());
+            // Switched off in the game, the title bar comes back.
+            game.set_view_enhancements(big_map_only().view);
+            assert!(game.screen.titled());
+            assert_eq!(game.screen.hauptbild(), Rect::new(0, 59, size.0 - 16, size.1 - 75));
+        }
+    }
+
+    /// The main screen's scroll bars with the mouse: the arrows step one
+    /// (16 pixels down, a column across), the trough beside the thumb
+    /// pages 16 half rows down and 18 columns across, both again in each
+    /// tick while held, and the thumb drags; in the original's main
+    /// screen (800×600, every enhancement off) and in the title-less
+    /// `big_map` one (1024×768, every enhancement on), whose stretched
+    /// bars map the same way.
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn main_scroll_bars() {
+        let Some(dir) = game_dir() else { return };
+        for (size, config) in [((800, 600), Config::ORIGINAL), ((1024, 768), Config::default())] {
+            let fixed = config.view.has(enhance::Enhancement::ScrollBars);
+            let mut h = holiday_in_a_game(&dir, size, config);
+            let game = h.game.as_mut().unwrap();
+            let main = game.screen.bounds();
+            let ns = game.screen.rects()[4].1.offset(main.left, main.top);
+            let wo = game.screen.rects()[6].1.offset(main.left, main.top);
+            assert_eq!(ns.top, main.top + if fixed { 43 } else { 59 });
+            game.screen.set_view(0, &game.world, &game.tiles);
+            let middle = |g: &mut Game| g.screen.set_scroll(240, 238, &g.world, &g.tiles);
+            middle(game);
+            let pos = |g: &Game| g.screen.scroll_position();
+            let start = pos(game);
+            // The down arrow: a step, drawn pressed until let go.
+            let down_arrow = (ns.left + 8, ns.bottom - 8);
+            let up_bar = game.screen.ns_image.clone();
+            assert!(main_press(game, down_arrow, ShiftState::LEFT));
+            assert_eq!(pos(game), (start.0, start.1 + 1));
+            assert_ne!(game.screen.ns_image.pixels, up_bar.pixels, "pressed");
+            let _ = main_release(game, down_arrow);
+            assert_eq!(pos(game), (start.0, start.1 + 1));
+            let _ = main_press(game, (ns.left + 8, ns.top + 8), ShiftState::LEFT);
+            let _ = main_release(game, (ns.left + 8, ns.top + 8));
+            assert_eq!(pos(game), start);
+            assert_eq!(game.screen.ns_image.pixels, up_bar.pixels, "up again");
+            // The right arrow: a column.
+            let right_arrow = (wo.right - 8, wo.top + 8);
+            let _ = main_press(game, right_arrow, ShiftState::LEFT);
+            let _ = main_release(game, right_arrow);
+            assert_eq!(pos(game), (start.0 + 1, start.1));
+            middle(game);
+            // Held: the original steps in every tick; the fix waits two.
+            let _ = main_press(game, down_arrow, ShiftState::LEFT);
+            tick(game, 5);
+            assert_eq!(pos(game).1 - start.1, if fixed { 4 } else { 6 });
+            // Off the arrow the original goes on, the fix waits.
+            let _ = main_move(game, (ns.left + 8, ns.bottom - 100));
+            let before = pos(game).1;
+            tick(game, 2);
+            assert_eq!(pos(game).1 - before, if fixed { 0 } else { 2 });
+            let _ = main_release(game, down_arrow);
+            tick(game, 2);
+            assert_eq!(pos(game).1 - before, if fixed { 0 } else { 2 }, "stopped");
+            middle(game);
+            // The trough below the thumb pages 16, across 18.
+            let below = (ns.left + 8, ns.bottom - 40);
+            let _ = main_press(game, below, ShiftState::LEFT);
+            let _ = main_release(game, below);
+            assert_eq!(pos(game), (start.0, start.1 + 16));
+            let right = (wo.right - 40, wo.top + 8);
+            let _ = main_press(game, right, ShiftState::LEFT);
+            let _ = main_release(game, right);
+            assert_eq!(pos(game), (start.0 + 18, start.1 + 16));
+            middle(game);
+            // Held, the original pages on to the end; the fix stops where
+            // the thumb reaches the mouse.
+            let bar_len = ns.height();
+            let at = (ns.left + 8, ns.top + bar_len * 3 / 4);
+            let _ = main_press(game, at, ShiftState::LEFT);
+            tick(game, 40);
+            let end = pos(game).1;
+            let _ = main_release(game, at);
+            let max = 476 - game.screen.view_size().core_offset().1;
+            if fixed {
+                assert!(end < max, "{end}");
+                // The thumb lies under the mouse.
+                let t = 16 + (i32::from(end) - (476 - i32::from(max))) * (bar_len - 51) / (2 * i32::from(max) - 476);
+                assert!(
+                    (t..t + 20).contains(&(at.1 - ns.top)),
+                    "thumb {t}, mouse {}",
+                    at.1 - ns.top
+                );
+            } else {
+                assert_eq!(end, max);
+            }
+            middle(game);
+            // The thumb dragged: from its middle, 100 pixels down at once.
+            let range = |g: &Game| {
+                let (_, dr) = g.screen.view_size().core_offset();
+                i32::from(476 - 2 * dr)
+            };
+            let travel = bar_len - 51;
+            let thumb_at = |g: &Game| {
+                16 + (i32::from(pos(g).1) - i32::from(g.screen.view_size().core_offset().1)) * travel / range(g)
+            };
+            let grab = (ns.left + 8, ns.top + thumb_at(game) + 8);
+            let before = pos(game).1;
+            let _ = main_press(game, grab, ShiftState::LEFT);
+            assert_eq!(pos(game).1, before, "a press on the thumb doesn't scroll");
+            let _ = main_move(game, (grab.0, grab.1 + 100));
+            let moved = i32::from(pos(game).1 - before);
+            if fixed {
+                assert!((thumb_at(game) - (grab.1 - ns.top - 8 + 100)).abs() <= 1);
+            } else {
+                assert_eq!(moved, (100 * range(game) + (bar_len - 47) / 2) / (bar_len - 48));
+            }
+            // Back and forth a pixel at a time: the fix comes back where it
+            // was; the original's rounding creeps.
+            let here = pos(game).1;
+            for k in 1..=30 {
+                let _ = main_move(game, (grab.0, grab.1 + 100 + k));
+            }
+            for k in (0..30).rev() {
+                let _ = main_move(game, (grab.0, grab.1 + 100 + k));
+            }
+            if fixed {
+                assert_eq!(pos(game).1, here);
+            } else {
+                assert_ne!(pos(game).1, here, "BUG(original): the drag drifts");
+            }
+            let _ = main_release(game, grab);
+            middle(game);
+            // Shift held or a double click's second press: the original
+            // does nothing (`modifier_clicks` does).
+            for shift in [
+                ShiftState::LEFT | ShiftState::SHIFT,
+                ShiftState::LEFT | ShiftState::DOUBLE,
+            ] {
+                let before = pos(game);
+                let _ = main_press(game, down_arrow, shift);
+                let _ = main_release(game, down_arrow);
+                assert_eq!(pos(game).1 - before.1, i16::from(fixed));
+            }
+            // The right button does nothing.
+            let before = pos(game);
+            let _ = game.main_mouse(
+                Input::MouseDown {
+                    x: down_arrow.0,
+                    y: down_arrow.1,
+                    button: Button::Right,
+                },
+                ShiftState::RIGHT,
+                false,
+            );
+            let _ = main_release(game, down_arrow);
+            assert_eq!(pos(game), before);
+            // Turned half round, the right bar runs the other way.
+            game.screen.set_view(2, &game.world, &game.tiles);
+            let before = pos(game);
+            let _ = main_press(game, down_arrow, ShiftState::LEFT);
+            let _ = main_release(game, down_arrow);
+            assert_eq!(pos(game), (before.0, before.1 - 1));
+        }
+    }
+
+    /// The mouse wheel (`mouse_wheel`): over the island it scrolls two
+    /// steps a notch (Shift: across), over the overview map that map, over
+    /// the list of enhancements the list under it; in the original, no
+    /// wheel.
+    #[test]
+    fn mouse_wheel() {
+        let Some(dir) = game_dir() else { return };
+        for config in [Config::default(), Config::ORIGINAL] {
+            let on = config.view.has(enhance::Enhancement::MouseWheel);
+            let mut h = holiday_in_a_game(&dir, (1024, 768), config);
+            let game = h.game.as_mut().unwrap();
+            game.screen.set_view(0, &game.world, &game.tiles);
+            game.screen.set_scroll(240, 238, &game.world, &game.tiles);
+            let main = game.screen.bounds();
+            let bild = game.screen.hauptbild().offset(main.left, main.top);
+            let at = (bild.left + 20, bild.bottom - 20);
+            game.sync_stack();
+            assert_eq!(game.window_at(at.0, at.1), Win::Main);
+            let wheel = |h: &mut Holiday, (x, y): (i32, i32), dx, dy| h.input(Input::Wheel { x, y, dx, dy });
+            let pos = |h: &Holiday| h.game.as_ref().unwrap().screen.scroll_position();
+            wheel(&mut h, at, 0, 1);
+            assert_eq!(pos(&h), if on { (240, 236) } else { (240, 238) });
+            wheel(&mut h, at, 0, -3);
+            assert_eq!(pos(&h), if on { (240, 242) } else { (240, 238) });
+            h.input(Input::KeyDown(VK_SHIFT));
+            wheel(&mut h, at, 0, 1);
+            h.input(Input::KeyUp(VK_SHIFT));
+            assert_eq!(pos(&h), if on { (238, 242) } else { (240, 238) });
+            wheel(&mut h, at, 2, 0);
+            assert_eq!(pos(&h), if on { (242, 242) } else { (240, 238) });
+            // Over the overview map: its own window moves, not the island.
+            let o = &h.game.as_ref().unwrap().forms.overview;
+            let map = o
+                .images()
+                .iter()
+                .find(|(i, _, _)| *i == game::uebersichtsmap::Image::Map)
+                .map(|&(_, r, _)| r)
+                .unwrap();
+            let over = (o.left + map.left + 20, o.top + map.top + 20);
+            let (origin, before) = (o.origin(), pos(&h));
+            assert_eq!(h.game.as_ref().unwrap().window_at(over.0, over.1), Win::Overview);
+            wheel(&mut h, over, 0, -1);
+            let o = &h.game.as_ref().unwrap().forms.overview;
+            assert_eq!(o.origin() != origin, on);
+            assert_eq!(pos(&h), before);
+            if !on {
+                continue;
+            }
+            // The list of enhancements: the list under the mouse.
+            press_info(&mut h);
+            let e = &h.game.as_ref().unwrap().forms.enhance;
+            assert!(e.visible);
+            let (rx, ry) = e.row_of("window_stacking").unwrap();
+            let row = (e.left + rx + 40, e.top + ry);
+            wheel(&mut h, row, 0, -1);
+            let e = &h.game.as_ref().unwrap().forms.enhance;
+            assert_eq!((e.scrolled(0), e.scrolled(1)), (0, 3));
+            // The island under it doesn't move while it's open.
+            let before = pos(&h);
+            wheel(&mut h, at, 0, 1);
+            assert_eq!(pos(&h), before);
+        }
+    }
+
+    /// The other forms' scroll bars take the mouse, and with
+    /// `scroll_bars` their arrows held repeat: the options' music volume,
+    /// the list of enhancements, the buildings' overview and the overview
+    /// map (whose arrows repeat in the original too, every 25 ms).
+    #[test]
+    #[allow(clippy::many_single_char_names)]
+    fn form_scroll_bars() {
+        let Some(dir) = game_dir() else { return };
+        for config in [Config::ORIGINAL, Config::default()] {
+            let fixed = config.view.has(enhance::Enhancement::ScrollBars);
+            let mut h = holiday_in_a_game(&dir, (1024, 768), config);
+            let press = |h: &mut Holiday, (x, y): (i32, i32)| {
+                h.input(Input::MouseDown {
+                    x,
+                    y,
+                    button: Button::Left,
+                });
+            };
+            let release = |h: &mut Holiday, (x, y): (i32, i32)| {
+                h.input(Input::MouseUp {
+                    x,
+                    y,
+                    button: Button::Left,
+                });
+            };
+            let hold = |h: &mut Holiday, ms: u64| h.update(Duration::from_millis(ms));
+            // The overview map's down arrow: 5 at once, 5 every 25 ms.
+            let game = h.game.as_mut().unwrap();
+            // The TV lies over the overview's bar; out of the way.
+            game.forms.tv.left = 600;
+            let o = &game.forms.overview;
+            let bar = o
+                .images()
+                .iter()
+                .find(|(i, _, _)| *i == game::uebersichtsmap::Image::Scroll)
+                .map(|&(_, r, _)| r)
+                .unwrap();
+            let arrow = (o.left + bar.left + 8, o.top + bar.bottom - 8);
+            let before = o.origin().1;
+            press(&mut h, arrow);
+            hold(&mut h, 50);
+            release(&mut h, arrow);
+            assert_eq!(h.game.as_ref().unwrap().forms.overview.origin().1 - before, 15);
+            // The options' music volume, from 100: the back arrow.
+            h.game.as_mut().unwrap().click_button(2);
+            // Where it opens (under the bars, with `big_map`).
+            h.game.as_mut().unwrap().sync_stack();
+            let o = &h.game.as_ref().unwrap().forms.options;
+            assert!(o.visible);
+            let arrow = (o.left + 0xc + 4, o.top + 0xbe + 4);
+            press(&mut h, arrow);
+            hold(&mut h, 600);
+            let volume = h.game.as_ref().unwrap().forms.options.settings().music_volume;
+            release(&mut h, arrow);
+            let after = h.game.as_ref().unwrap().forms.options.settings().music_volume;
+            if fixed {
+                // A step at once, then every 50 ms after 400.
+                assert_eq!((volume, after), (100 - 1 - 5, 94));
+            } else {
+                // BUG(original): a step when let go, never more.
+                assert_eq!((volume, after), (100, 99));
+            }
+            // The list of enhancements (`enhancements_screen`).
+            if config.view.has(enhance::Enhancement::EnhancementsScreen) {
+                h.input(Input::KeyDown(0x20));
+                h.input(Input::KeyUp(0x20));
+                let e = &h.game.as_ref().unwrap().forms.enhance;
+                assert!(e.visible);
+                let f = e.bar_frame(1).unwrap();
+                let arrow = (e.left + f.left + 4, e.top + f.top + f.height - 4);
+                press(&mut h, arrow);
+                hold(&mut h, 450);
+                release(&mut h, arrow);
+                assert_eq!(h.game.as_ref().unwrap().forms.enhance.scrolled(1), 3);
+                let e = &mut h.game.as_mut().unwrap().forms.enhance;
+                e.visible = false;
+            }
+            let game = h.game.as_mut().unwrap();
+            game.forms.options.visible = false;
+            // The buildings' overview: its bar takes the mouse when there's
+            // anything to scroll.
+            game.open_umenu();
+            game.sync_stack();
+            let u = &game.forms.umenu;
+            assert!(u.visible);
+            let f = u.scroll_bar().frame;
+            let arrow = (u.left + f.left + 4, u.top + f.top + f.height - 4);
+            let (min, max) = (u.scroll_bar().min, u.scroll_bar().max);
+            press(&mut h, arrow);
+            hold(&mut h, 450);
+            release(&mut h, arrow);
+            let p = h.game.as_ref().unwrap().forms.umenu.scroll_bar().position;
+            let steps = if fixed { 3 } else { 1 };
+            assert_eq!(p, (min + steps).min(max));
+        }
     }
 
     /// A press and release of the left button at `x`, `y` on the screen.

@@ -595,6 +595,29 @@ impl Dateimenue {
         self.redraw_list();
     }
 
+    /// The mouse wheel over the form (`mouse_wheel`, a port extension):
+    /// the list moves [`crate::widgets::WHEEL_STEPS`] rows a notch, `notches` up,
+    /// as far as the arrows would take it.
+    pub fn wheel(&mut self, notches: i32) -> Response {
+        let mut r = Response::default();
+        let top = self.list.top;
+        for _ in 0..notches
+            .unsigned_abs()
+            .saturating_mul(crate::widgets::WHEEL_STEPS.unsigned_abs())
+        {
+            if notches < 0 && self.list.can_scroll_down() {
+                self.list.top += 1;
+            } else if notches > 0 && self.list.can_scroll_up() {
+                self.list.top -= 1;
+            }
+        }
+        if self.list.top != top {
+            self.redraw_list();
+            r.refresh = true;
+        }
+        r
+    }
+
     /// An arrow's press or release: repaint, and its `Click` moves the
     /// list a row (down, 1040:0286, or up, 1040:0244). The arrows stay
     /// shown at either end.
@@ -662,6 +685,19 @@ mod tests {
         let down = m.mouse_down(x, y, true, ShiftState::LEFT);
         let up = m.mouse_up(x, y, true);
         if up.action.is_some() { up } else { down }
+    }
+
+    #[test]
+    fn wheel_scrolls_the_list() {
+        let mut m = menu(30);
+        let rows = m.list.rows;
+        assert!(m.wheel(-1).refresh);
+        assert_eq!(m.list.top, 4);
+        let _ = m.wheel(-100);
+        assert_eq!(m.list.top, 30 - rows + 1);
+        assert!(!m.wheel(-1).refresh, "at the end");
+        let _ = m.wheel(100);
+        assert_eq!(m.list.top, 1);
     }
 
     #[test]

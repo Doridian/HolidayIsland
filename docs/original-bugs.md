@@ -42,7 +42,10 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   `enhance::Enhancements`) change one player's screen, sound or input.
   They are that player's settings: `window_stacking`
   ([layout.md](layout.md#stacking)), `big_map`
-  ([layout.md](layout.md#big_map-enhancement)) and the fixes keyed in
+  ([layout.md](layout.md#big_map-enhancement)), `no_main_title`
+  ([layout.md](layout.md#no_main_title-enhancement)), `mouse_wheel` (the
+  wheel scrolls the island, Shift across, the overview map and the
+  lists; [map.md](map.md#the-scroll-bars)) and the fixes keyed in
   "UI quirks" and "Sound" below. Each form keeps the player's set in its
   `enhance` field (`Game::set_view_enhancements` hands it out; the start
   menu, the load form and the sound get it from `Holiday`), and the
@@ -212,9 +215,14 @@ The widgets' are described in
 
 | Where | Quirk | Kept |
 |---|---|---|
-| 10c0:0f10 | The scroll bars' arrows step only when the mouse is released; nothing auto-repeats | `scroll_bars`: they step when pressed; still no auto-repeat, which would need a timer in every form with a bar |
+| 10c0:0f10 | The scroll bars' arrows step only when the mouse is released; nothing auto-repeats | `scroll_bars`: they step when pressed, and repeat while held (after 400 ms, every 50 ms, while the mouse is on them; `ScrollBar::repeat`, from the forms' timers) |
 | 10c0:15f7 | A scroll arrow released over another part of the bar stays drawn pressed | `scroll_bars` |
 | 10c0:0fe3 | A scroll bar press calls `Click` whenever it repaints, even when the position didn't change | `scroll_bars`: only for a change (the release too) |
+| 1020:0d92, 1020:151a | The main screen's scroll thumbs are 20 pixels long, but only their first 16 grab them: a press on the last four pages forward ([map.md](map.md#the-scroll-bars)) | `scroll_bars`: all 20 grab |
+| 1020:0fa2, 1020:172a | Dragging a main screen's scroll thumb moves the bar by each mouse move scaled by the bar's length less 48 (the thumb travels the length less 51), adds half the divisor also to a move back (so it rounds towards zero) and ignores moves over the arrows: the thumb creeps away from the mouse, faster going back | `scroll_bars`: the thumb goes where the mouse holds it |
+| 1020:1e9b | A main screen's scroll arrow or trough held steps again in every clock tick from the first after the press (a click of up to 100 ms can step twice), wherever the mouse has gone: holding the trough pages on past the mouse to the bar's end | `scroll_bars`: from the third tick, and only while the mouse is on the part held, so paging stops at the mouse |
+| 1020:0d92, 1020:151a | The main screen's scroll bars take only exactly `[ssLeft]`: with Shift or Ctrl held, or on a double click's second press, a press does nothing, so quick clicks on an arrow step every other time | `modifier_clicks` |
+| 1020:0d92, 1020:151a | A press at 16, the first pixel past the 16-pixel back arrow, counts as the arrow (`< 0x11`) | yes; not fixed: one pixel, under the thumb's first only at the bar's start |
 | 10c0:0998 | A button's mouse up reports "handled" whenever it was pressed, clicked or not | yes; not fixed: nothing shows it, since only the pressed button takes the release |
 | 10c0:1c1b | A click on an edit field while it has focus takes the focus away | `edit_field` |
 | 10c0:0431 | A list box ignores clicks with Shift held | `modifier_clicks` |

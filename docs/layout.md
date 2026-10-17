@@ -119,6 +119,11 @@ mouse comes up.
 Ported in `game::hauptschirm`: `Hauptschirm::layout`, `bounds`,
 `title_mouse_down/move/up`, `left`, `top`, `height`, `rolled_up`.
 
+The two scroll bars take the mouse as the original's handlers have them
+([map.md](map.md#the-scroll-bars)); with `big_map` their stretched
+lengths go into the same arithmetic, so the thumb, its parts and the drag
+follow the longer bars.
+
 ## The other forms
 
 Where each form goes. "Centred" is `(screen_width - Width) div 2`,
@@ -390,13 +395,15 @@ overview map's clicks centre on the same squares as in the original.
   takes the rest.
 - **Dragging**: the title bar doesn't move a main screen that fills the
   screen; a double click still rolls it up to its title bar, and the
-  next press unrolls it.
+  next press unrolls it. With `no_main_title` (on by default) there's no
+  title bar at all ([below](#no_main_title-enhancement)).
 - **Stacking**: the main screen that fills the screen lies right over
   the background and under every form, in both stackings
   (`Stack::main_desktop`): raised, it would hide them all.
 - **The forms at the top edge** (the money menu, the compass, the
   options, the overview map) are moved just below the main screen's
-  button bar (59 pixels down) when they open over it, so the title, info
+  button bar when they open over it (59 pixels down, 43 without the
+  title bar: `Hauptbild`'s top, `Forms::below_bars`), so the title, info
   and button bars stay free.
 - **Resizing** lays the main screen out again (`Hauptschirm::place`):
   it fills the new desktop, or becomes the original's at 640×480. The
@@ -411,6 +418,40 @@ for square in each rotation, the overview's frame, the scroll bars'
 ends; with `HOLIDAY_PNG` set to a directory it writes
 `bigmap-WxH-on.png` and `-off.png` there), `big_map_world_is_the_same`,
 `big_map_resize`, and `stacking::tests::big_map_desktop`.
+
+### `no_main_title` (enhancement)
+
+On by default ([original-bugs.md](original-bugs.md#options)), a key of
+its own so that `big_map` can be had with the title bar. When `big_map`'s
+main screen fills the window, its own title bar (`Ueberschriftbild` with
+the game's name, `CloseBild` and `Kleinbild`) only repeats the window's,
+so it goes: the info bar moves to the top, the button bar under it
+(18), and `Hauptbild` and the right scroll bar start at 43 instead of 59,
+the map view growing by those 16 pixels (`layout_for(w, h, false)`; the
+three images get empty rectangles). The status bar, the lower scroll bar
+and the compass knob stay at the bottom. On 640×480, where the main
+screen is the original's floating window, and with `big_map` off, the
+title bar stays.
+
+What follows the title bar's place:
+
+- The forms that open over the bars go to `Hauptbild`'s top, 43.
+- The button bar's tooltips (1020:1e9b tests the rows `0x22`..`0x3b` from
+  the form's top) are given the form's top as if it had its title bar,
+  so they still go just under the button bar.
+- The pointer's info box is placed from the mouse in the form
+  (1020:04bc), which `Tools::hauptbild` gives with the island's real
+  top.
+- Nothing drags or rolls up the form: the top row is the info bar.
+  Without `CloseBild` the quit question is still a key away (Escape,
+  `Q`, Alt+F4), and the window's own buttons close and minimize it.
+- The world's view is the same as with the title bar: the original's
+  20 × 27 view still lies in the middle of the bigger one.
+
+The test: `no_main_title` (800×600, 1024×768, 1280×1024 and 1366×700
+against `big_map` alone; resizing to 640×480 and back; switching it off
+in the game; with `HOLIDAY_PNG` set, `notitle-WxH.png` and
+`notitle-WxH-forms.png`), and `hauptschirm::tests::layouts_without_the_title_bar`.
 
 ## The port
 

@@ -736,6 +736,30 @@ impl StartForm {
         Response::default()
     }
 
+    /// `scroll_bars`' repeat of a scroll bar's arrow held down (a port
+    /// extension, [`ScrollBar::repeat`]), `ms` after the last call.
+    pub fn repeat(&mut self, ms: u32) -> Response {
+        for which in SCROLL_DOWN_ORDER {
+            let e = self.enhance;
+            if let Some(bar) = self.w.scroll_mut(which) {
+                let out = bar.repeat(ms, e);
+                if out.handled {
+                    return self.finish(which, out);
+                }
+            }
+        }
+        Response::default()
+    }
+
+    /// Whether a scroll bar's arrow is held down, for the caller to call
+    /// [`StartForm::repeat`].
+    #[must_use]
+    pub fn scroll_held(&mut self) -> bool {
+        SCROLL_DOWN_ORDER
+            .iter()
+            .any(|&w| self.w.scroll_mut(w).is_some_and(|b| b.pressed.is_some()))
+    }
+
     /// `startform_bildmouseup`: the scroll bars, then the buttons, until
     /// one takes it. It doesn't look at which button came up, so letting go
     /// of the right button also releases (and clicks) a button held down
@@ -1074,6 +1098,29 @@ mod tests {
         assert_eq!(f.settings.relief, 3);
         let _ = click(&mut f, 0x142 + 0x5c, 0xc2 + 4);
         assert_eq!(f.settings.difficulty, 1);
+    }
+
+    #[test]
+    fn held_arrows_repeat_with_the_fix() {
+        let mut f = form();
+        f.enhance.set(Enhancement::ScrollBars, true);
+        // The opponents' back arrow: a step at once, more while held.
+        let _ = f.mouse_down(0x142 + 4, 0xdc + 4, ShiftState::LEFT);
+        assert!(f.scroll_held());
+        assert_eq!(f.settings.opponents, 6);
+        let r = f.repeat(crate::widgets::REPEAT_DELAY_MS + 2 * crate::widgets::REPEAT_MS);
+        assert!(r.refresh);
+        assert_eq!(
+            (f.settings.opponents, f.w.opponents_count.text.as_slice()),
+            (3, b"3".as_slice())
+        );
+        let _ = f.mouse_up(0x142 + 4, 0xdc + 4, true);
+        assert!(!f.scroll_held());
+        assert!(!f.repeat(1000).refresh);
+        // BUG(original): no repeat.
+        f.enhance = Enhancements::ORIGINAL;
+        let _ = f.mouse_down(0x142 + 4, 0xdc + 4, ShiftState::LEFT);
+        assert!(!f.repeat(1000).refresh);
     }
 
     #[test]

@@ -732,6 +732,35 @@ impl Umenuform {
         r
     }
 
+    /// The list's scroll bar.
+    #[must_use]
+    pub fn scroll_bar(&self) -> &ScrollBar {
+        &self.scroll
+    }
+
+    /// `scroll_bars`' repeat of the list's scroll arrow held down (a port
+    /// extension, [`ScrollBar::repeat`]), `ms` after the last call.
+    pub fn repeat(&mut self, ms: u32, world: &World, font: &Font, info: &InfoTexts) -> Response {
+        let mut r = Response::default();
+        let out = self.scroll.repeat(ms, self.enhance);
+        if out.handled {
+            self.finish(Which::Scroll, out, world, font, info, &mut r);
+        }
+        r
+    }
+
+    /// The mouse wheel over the form (`mouse_wheel`, a port extension):
+    /// the list scrolls `notches` up, by its scroll bar
+    /// ([`ScrollBar::wheel`]).
+    pub fn wheel(&mut self, notches: i32, world: &World, font: &Font, info: &InfoTexts) -> Response {
+        let mut r = Response::default();
+        let out = self.scroll.wheel(notches);
+        if out.handled {
+            self.finish(Which::Scroll, out, world, font, info, &mut r);
+        }
+        r
+    }
+
     /// `bildMouseUp`: the widgets until one takes it, their `Click`s; else
     /// the drag ends and the form unrolls, unless it was double-clicked.
     /// // 1080:1f18

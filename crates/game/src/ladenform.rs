@@ -284,6 +284,25 @@ impl LadenForm {
         }
     }
 
+    /// The mouse wheel over the form (`mouse_wheel`, a port extension):
+    /// the list moves [`crate::widgets::WHEEL_STEPS`] rows a notch,
+    /// `notches` up, as the arrows move it (they hide and show as they
+    /// do).
+    pub fn wheel(&mut self, notches: i32) -> Response {
+        let top = self.list.top;
+        let by = if notches > 0 { -1 } else { 1 };
+        for _ in 0..notches
+            .unsigned_abs()
+            .saturating_mul(crate::widgets::WHEEL_STEPS.unsigned_abs())
+        {
+            self.scroll(by);
+        }
+        Response {
+            refresh: self.list.top != top,
+            ..Response::default()
+        }
+    }
+
     /// The up (`by` -1, 1038:36d5) and down (1038:3776) arrows: the list
     /// moves a row if it can, the arrow hides once it can't any more, and
     /// the other arrow shows if the list can go its way.
@@ -393,6 +412,24 @@ mod tests {
         // The close button.
         let _ = f.mouse_down(3, 3, ShiftState::LEFT);
         assert_eq!(f.mouse_up(3, 3).action, Some(Action::Close));
+    }
+
+    #[test]
+    fn wheel_scrolls() {
+        let mut f = form(12);
+        assert!(f.wheel(-1).refresh);
+        assert_eq!(f.list.top, 4);
+        assert!(f.up.frame.visible && f.down.frame.visible);
+        // Twelve games, seven rows: row 6 is the last top.
+        let _ = f.wheel(-5);
+        assert_eq!(f.list.top, 6);
+        assert!(!f.down.frame.visible);
+        assert!(!f.wheel(-1).refresh);
+        let _ = f.wheel(1);
+        assert_eq!(f.list.top, 3);
+        let _ = f.wheel(1);
+        assert_eq!(f.list.top, 1);
+        assert!(!f.up.frame.visible);
     }
 
     #[test]

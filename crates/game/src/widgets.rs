@@ -568,7 +568,8 @@ pub struct ScrollBitmaps {
 ///
 /// The arrows step on release, the trough pages on press, and the thumb
 /// drags, but only while the mouse stays inside the bar. Nothing repeats
-/// while a button is held.
+/// while a button is held; with `scroll_bars` an arrow does
+/// ([`ScrollBar::repeat`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScrollBar {
     pub frame: Frame,
@@ -589,7 +590,23 @@ pub struct ScrollBar {
     /// Where in the thumb it was grabbed, along the bar (+0x39 across a
     /// horizontal bar, +0x3b down a vertical one).
     pub grab: i32,
+    /// The mouse along the bar while it's over it, as last seen (the
+    /// port's, for `scroll_bars`' repeat).
+    pub hover: Option<i32>,
+    /// How long the arrow pressed has been held, in milliseconds (the
+    /// port's).
+    pub held_ms: u32,
 }
+
+/// With `scroll_bars` an arrow held down steps again this long after the
+/// press (a port extension, as Windows' scroll bars do; the original's
+/// widgets never repeat)...
+pub const REPEAT_DELAY_MS: u32 = 400;
+/// ...and then this often.
+pub const REPEAT_MS: u32 = 50;
+/// The mouse wheel's notch moves a list this many of its arrows' steps
+/// (`mouse_wheel`, as Windows' three lines).
+pub const WHEEL_STEPS: i32 = 3;
 
 impl ScrollBar {
     #[must_use]
@@ -605,6 +622,8 @@ impl ScrollBar {
             large_step: 10,
             pressed: None,
             grab: 0,
+            hover: None,
+            held_ms: 0,
         }
     }
 
@@ -667,6 +686,66 @@ impl ScrollBar {
         } else {
             Part::PageForward
         }
+    }
+
+    /// How many repeats an arrow held for `ms` has made.
+    fn repeats(ms: u32) -> u32 {
+        ms.checked_sub(REPEAT_DELAY_MS).map_or(0, |m| m / REPEAT_MS + 1)
+    }
+
+    /// `scroll_bars` (a port extension): an arrow held down steps again
+    /// [`REPEAT_DELAY_MS`] after the press and then every [`REPEAT_MS`],
+    /// while the mouse is on it. `ms` is the time since the last call. A
+    /// change of the position repaints and calls `Click`; `handled` is
+    /// the change.
+    pub fn repeat(&mut self, ms: u32, e: Enhancements) -> Outcome {
+        let mut out = Outcome::default();
+        let Some(part @ (Part::BackArrow | Part::ForwardArrow)) = self.pressed else {
+            return out;
+        };
+        if !e.has(Enhancement::ScrollBars) || self.max == self.min {
+            return out;
+        }
+        let before = Self::repeats(self.held_ms);
+        self.held_ms = self.held_ms.saturating_add(ms);
+        let steps = Self::repeats(self.held_ms) - before;
+        if steps == 0 || self.hover.is_none_or(|a| self.part_at(a) != part) {
+            return out;
+        }
+        let old = self.position;
+        for _ in 0..steps {
+            if part == Part::BackArrow {
+                self.back(self.small_step);
+            } else {
+                self.forward(self.small_step);
+            }
+        }
+        out.repaint = self.position != old;
+        out.clicked = out.repaint;
+        out.handled = out.repaint;
+        out
+    }
+
+    /// The mouse wheel (`mouse_wheel`, a port extension): `notches` up
+    /// (positive) move towards `min`, [`WHEEL_STEPS`] small steps each.
+    /// A change of the position repaints and calls `Click`; `handled` is
+    /// the change.
+    pub fn wheel(&mut self, notches: i32) -> Outcome {
+        let mut out = Outcome::default();
+        if self.max == self.min || self.pressed.is_some() {
+            return out;
+        }
+        let old = self.position;
+        let by = notches.saturating_mul(WHEEL_STEPS).saturating_mul(self.small_step);
+        if by > 0 {
+            self.back(by);
+        } else {
+            self.forward(by.saturating_neg());
+        }
+        out.repaint = self.position != old;
+        out.clicked = out.repaint;
+        out.handled = out.repaint;
+        out
     }
 
     /// Moves towards `min` by `by`, stopping there. The sign of `by` isn't
@@ -750,6 +829,8 @@ impl ScrollBar {
         let old = self.position;
         if self.frame.hit(x, y) && self.max != self.min {
             let along = self.along(x, y);
+            self.hover = Some(along);
+            self.held_ms = 0;
             // BUG(original): a press calls `Click` whenever it repaints, even when the position didn't change.
             self.press(self.part_at(along), &mut out, e);
             // Measured after a page step has moved the thumb.
@@ -773,6 +854,7 @@ impl ScrollBar {
     /// error when it's 0; here the position stays.
     pub fn mouse_move(&mut self, x: i32, y: i32) -> Outcome {
         let mut out = Outcome::default();
+        self.hover = self.frame.hit(x, y).then(|| self.along(x, y));
         if self.pressed == Some(Part::Thumb) && self.frame.hit(x, y) && self.max != self.min {
             let travel = self.travel();
             let mut at = self.along(x, y) - self.grab - self.thickness();
@@ -1466,6 +1548,57 @@ mod tests {
         let mut set = Enhancements::ORIGINAL;
         set.set(e, true);
         set
+    }
+
+    #[test]
+    fn scrollbar_arrows_repeat_with_the_fix() {
+        let fixed = on(Enhancement::ScrollBars);
+        let mut s = bar();
+        s.max = 50;
+        let _ = s.mouse_down(95, 5, fixed);
+        assert_eq!(s.position, 1);
+        // Nothing until the delay, then a step every `REPEAT_MS`.
+        assert!(!s.repeat(REPEAT_DELAY_MS - 1, fixed).handled);
+        let out = s.repeat(1, fixed);
+        assert!(out.handled && out.repaint && out.clicked && out.sound.is_none());
+        assert_eq!(s.position, 2);
+        let _ = s.repeat(3 * REPEAT_MS, fixed);
+        assert_eq!(s.position, 5);
+        // Off the arrow it waits; back on, it goes on.
+        let _ = s.mouse_move(50, 5);
+        assert!(!s.repeat(REPEAT_MS, fixed).handled);
+        let _ = s.mouse_move(95, 5);
+        let _ = s.repeat(REPEAT_MS, fixed);
+        assert_eq!(s.position, 6);
+        // Let go, it stops.
+        let _ = s.mouse_up(95, 5, fixed);
+        assert!(!s.repeat(10 * REPEAT_MS, fixed).handled);
+        // BUG(original): nothing repeats without the fix.
+        let _ = s.mouse_down(95, 5, O);
+        assert!(!s.repeat(REPEAT_DELAY_MS + 10 * REPEAT_MS, O).handled);
+        let _ = s.mouse_up(95, 5, O);
+        assert_eq!(s.position, 7);
+        // The back arrow, to the end.
+        let _ = s.mouse_down(5, 5, fixed);
+        let _ = s.repeat(REPEAT_DELAY_MS + 100 * REPEAT_MS, fixed);
+        assert_eq!(s.position, 0);
+    }
+
+    #[test]
+    fn scrollbar_wheel() {
+        let mut s = bar();
+        s.max = 20;
+        s.position = 10;
+        let out = s.wheel(-1);
+        assert!(out.handled && out.clicked);
+        assert_eq!(s.position, 10 + WHEEL_STEPS);
+        let _ = s.wheel(1);
+        assert_eq!(s.position, 10);
+        let _ = s.wheel(10);
+        assert_eq!(s.position, 0);
+        assert!(!s.wheel(1).handled, "at the end");
+        let _ = s.wheel(-100);
+        assert_eq!(s.position, 20);
     }
 
     #[test]

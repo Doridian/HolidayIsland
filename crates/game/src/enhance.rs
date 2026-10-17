@@ -275,20 +275,25 @@ enhancements! {
     /// (`docs/layout.md`, "`big_map`").
     BigMap = "big_map", "Großes Fenster zeigt mehr Insel",
         "A bigger screen shows more island: the main screen fills it and its map view grows";
-    /// The scroll bars' arrows step when pressed, an arrow let go off
-    /// itself is drawn up again, and a press only counts as a change when
-    /// the position changed (10c0:0f10, 10c0:15f7, 10c0:0fe3).
-    ScrollBars = "scroll_bars", "Bildlaufpfeile reagieren sofort",
-        "Scroll bar arrows step when pressed and come up wherever they're let go";
+    /// The scroll bars' arrows step when pressed and repeat while held,
+    /// an arrow let go off itself is drawn up again, and a press only
+    /// counts as a change when the position changed (10c0:0f10,
+    /// 10c0:15f7, 10c0:0fe3). The main screen's bars take their thumb by
+    /// all of it, keep it under the mouse while it's dragged, and repeat
+    /// only while the mouse stays on the part held, after a short wait
+    /// (1020:0d92, 1020:0fa2, 1020:1e9b).
+    ScrollBars = "scroll_bars", "Bildlaufleisten wie unter Windows",
+        "Scroll bar arrows step when pressed and repeat while held; thumbs follow the mouse; paging stops at the mouse";
     /// A click on a focused text field keeps it focused, "Speichern"
     /// saves a name being typed, and a name picked from the file menu's
     /// list puts the cursor after it (10c0:1c1b, 1040:073c, 1040:0192).
     EditField = "edit_field", "Textfelder behalten den Fokus",
         "Text fields keep the focus when clicked, so the file menu's Speichern saves a typed name";
     /// Shift, Ctrl and a double click's second press don't stop a click
-    /// on a list or with a tool (10c0:0431, 1020:1984).
+    /// on a list, with a tool or on the main screen's scroll bars
+    /// (10c0:0431, 1020:1984, 1020:0d92, 1020:151a).
     ModifierClicks = "modifier_clicks", "Klicks auch mit Umschalt und Strg",
-        "Clicks on lists and with the tools work with Shift or Ctrl held and on a double click";
+        "Clicks on lists, with the tools and on the main scroll bars work with Shift or Ctrl held and on a double click";
     /// Only the left button clicks the start menu's buttons, ticks the
     /// options' boxes, drags the money menu and presses the credits'
     /// close button (1058:41fb, 1060:2404, 1070:0820, 1030:3ec4).
@@ -387,6 +392,17 @@ enhancements! {
     /// opens the credits (1060:01ab, `crate::enhanceform`).
     EnhancementsScreen = "enhancements_screen", "INFO zeigt diese Liste",
         "The options' INFO button opens this list of enhancements (the credits are a button away)";
+    /// With `big_map`'s main screen filling the window, its own title bar
+    /// (the game's name, the close and minimize widgets) goes, as the
+    /// window has one: the info bar goes to the top and the map view
+    /// gets the room (`docs/layout.md`, "`no_main_title`").
+    NoMainTitle = "no_main_title", "Kein zweiter Titelbalken",
+        "When the main screen fills the window it drops its own title bar; the map gets the room";
+    /// The mouse wheel scrolls: the island (Shift: across), the overview
+    /// map, and the lists of the file menu, the load form, the buildings'
+    /// overview and this list. The original has no wheel.
+    MouseWheel = "mouse_wheel", "Mausrad scrollt",
+        "The mouse wheel scrolls the island (with Shift across), the overview map and the lists";
 }
 
 /// Every enhancement's [`Info`], the world's first.
