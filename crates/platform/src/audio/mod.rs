@@ -166,60 +166,33 @@ impl Audio {
 
     #[cfg(feature = "audio-device")]
     fn with_device(font: Option<&Arc<SoundFont>>) -> Result<Audio, String> {
-        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+        use cpal::traits::{DeviceTrait, HostTrait};
 
         let host = cpal::default_host();
         let device = host.default_output_device().ok_or("no audio output device")?;
         let supported = device.default_output_config().map_err(|e| e.to_string())?;
-        let config = supported.config();
-        let channels = usize::from(config.channels);
-        let engine = Arc::new(Mutex::new(Engine::new(config.sample_rate, font)?));
-        let err = |e: cpal::StreamError| eprintln!("audio: {e}");
-        let stream = match supported.sample_format() {
-            cpal::SampleFormat::F32 => {
-                let engine = Arc::clone(&engine);
-                device.build_output_stream(
-                    &config,
-                    move |out: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        engine
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .render(out, channels);
-                    },
-                    err,
-                    None,
-                )
+        let engine = Arc::new(Mutex::new(Engine::new(supported.config().sample_rate, font)?));
+        // The device's default buffer can be smaller than the sound
+        // server's period (PipeWire's ALSA plugin under a quantum of 1024),
+        // and then every poll fails. Ask for a buffer that's more than
+        // enough, and a bigger one while the stream reports errors.
+        let mut last = String::new();
+        for frames in BUFFER_FRAMES {
+            let frames = match supported.buffer_size() {
+                cpal::SupportedBufferSize::Range { min, max } => frames.clamp(*min, *max),
+                cpal::SupportedBufferSize::Unknown => frames,
+            };
+            match open_stream(&device, &supported, frames, &engine) {
+                Ok(stream) => {
+                    return Ok(Audio {
+                        engine: Some(engine),
+                        _stream: Some(stream),
+                    });
+                }
+                Err(e) => last = e,
             }
-            cpal::SampleFormat::I16 => {
-                let engine = Arc::clone(&engine);
-                let mut buf = Vec::new();
-                device.build_output_stream(
-                    &config,
-                    move |out: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                        buf.resize(out.len(), 0.0);
-                        engine
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .render(&mut buf, channels);
-                        for (o, s) in out.iter_mut().zip(&buf) {
-                            // -1.0..1.0, clamped by the engine.
-                            #[allow(clippy::cast_possible_truncation)]
-                            let v = (s * f32::from(i16::MAX)) as i16;
-                            *o = v;
-                        }
-                    },
-                    err,
-                    None,
-                )
-            }
-            f => return Err(format!("unsupported sample format {f}")),
         }
-        .map_err(|e| e.to_string())?;
-        stream.play().map_err(|e| e.to_string())?;
-        Ok(Audio {
-            engine: Some(engine),
-            _stream: Some(stream),
-        })
+        Err(last)
     }
 
     #[cfg(not(feature = "audio-device"))]
@@ -239,6 +212,89 @@ impl Audio {
         if let Some(e) = &self.engine {
             f(&mut e.lock().unwrap_or_else(PoisonError::into_inner));
         }
+    }
+}
+
+/// The buffer sizes to try, in frames, smallest first: 2048 is about
+/// 46 ms at 44.1 kHz.
+#[cfg(feature = "audio-device")]
+const BUFFER_FRAMES: [u32; 3] = [2048, 4096, 8192];
+
+/// Opens a stream on `device` with a buffer of `frames` that pulls from
+/// `engine`, plays it, and gives it back if it runs without errors for a
+/// moment. Later errors are logged, each kind once.
+#[cfg(feature = "audio-device")]
+fn open_stream(
+    device: &cpal::Device,
+    supported: &cpal::SupportedStreamConfig,
+    frames: u32,
+    engine: &Arc<Mutex<Engine>>,
+) -> Result<cpal::Stream, String> {
+    use cpal::traits::{DeviceTrait, StreamTrait};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let mut config = supported.config();
+    config.buffer_size = cpal::BufferSize::Fixed(frames);
+    let channels = usize::from(config.channels);
+    let errors = Arc::new(AtomicUsize::new(0));
+    let err = {
+        let errors = Arc::clone(&errors);
+        let mut logged: Vec<String> = Vec::new();
+        move |e: cpal::StreamError| {
+            errors.fetch_add(1, Ordering::Relaxed);
+            let text = e.to_string();
+            if !logged.contains(&text) {
+                eprintln!("audio: {text}");
+                logged.push(text);
+            }
+        }
+    };
+    let stream = match supported.sample_format() {
+        cpal::SampleFormat::F32 => {
+            let engine = Arc::clone(engine);
+            device.build_output_stream(
+                &config,
+                move |out: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    engine
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .render(out, channels);
+                },
+                err,
+                None,
+            )
+        }
+        cpal::SampleFormat::I16 => {
+            let engine = Arc::clone(engine);
+            let mut buf = Vec::new();
+            device.build_output_stream(
+                &config,
+                move |out: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                    buf.resize(out.len(), 0.0);
+                    engine
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .render(&mut buf, channels);
+                    for (o, s) in out.iter_mut().zip(&buf) {
+                        // -1.0..1.0, clamped by the engine.
+                        #[allow(clippy::cast_possible_truncation)]
+                        let v = (s * f32::from(i16::MAX)) as i16;
+                        *o = v;
+                    }
+                },
+                err,
+                None,
+            )
+        }
+        f => return Err(format!("unsupported sample format {f}")),
+    }
+    .map_err(|e| e.to_string())?;
+    stream.play().map_err(|e| e.to_string())?;
+    // A broken buffer size fails at once and on every poll.
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    match errors.load(Ordering::Relaxed) {
+        0 => Ok(stream),
+        n => Err(format!("{n} stream errors with a buffer of {frames} frames")),
     }
 }
 
