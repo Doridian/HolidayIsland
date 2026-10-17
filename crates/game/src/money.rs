@@ -64,7 +64,92 @@ impl Finances {
     }
 }
 
+/// The economy (`*1110:6f20 + 0x19a`) a new game starts with: 1078:0692
+/// works out `Round(Sin(day / p1) * 90 + 127 + Sin(day / p2) * 37)` for
+/// [`World::economy_periods`] `p1`, `p2` in `Real`s and on the FPU, and
+/// is only ever called for day 0, where both sines are exactly 0.
+/// // 1078:08b2, 1078:0692
+pub const START_ECONOMY: u8 = 127;
+
 impl World {
+    /// Sets up the players for a new game (1078:3271): the computers'
+    /// money and loans at `MODATYP.DAT`'s `Startgeld`; then the
+    /// difficulty sets the debt limit (doubled on easy, halved on hard),
+    /// the start money (half of it), the disasters (off on easy) and
+    /// `1110:133c` (on easy), and player 1 starts with that money as a
+    /// loan. Nobody has guests or was refused a loan. Then the economy's
+    /// periods (`Random(2000) + 2000`, `Random(200) + 300`, 1078:075f),
+    /// empty lists of building sites, houses and facilities, the island's
+    /// `plots` (1068:2bba), the sums (1078:08b2) and the players' block
+    /// (1078:0918).
+    pub fn init_players(&mut self, plots: u16) {
+        for p in 2..=8 {
+            self.finances.money[usize::from(p - 1)] = self.finances.start_money;
+            self.set_loan(p, self.finances.start_money);
+        }
+        let f = &mut self.finances;
+        match self.difficulty {
+            0 => {
+                f.max_debt = f.max_debt.wrapping_mul(2);
+                f.start_money = f.max_debt / 2;
+                self.disasters = false;
+                self.flag_133c = true;
+            }
+            1 => {
+                f.start_money = f.max_debt / 2;
+                self.disasters = true;
+                self.flag_133c = false;
+            }
+            2 => {
+                f.max_debt /= 2;
+                f.start_money = f.max_debt / 2;
+                self.disasters = true;
+                self.flag_133c = false;
+            }
+            _ => {}
+        }
+        f.money[0] = f.start_money;
+        self.set_loan(1, self.finances.start_money);
+        for p in 0..8 {
+            self.finances.guest_count[p] = 0; // 1078:0172
+            self.finances.credit_refused[p] = false;
+        }
+        // 1078:075f
+        let first = self.random.random(2000).cast_signed().wrapping_add(2000);
+        let second = self.random.random(200).cast_signed().wrapping_add(300);
+        self.economy_periods = [first, second];
+        // 1068:19d0, 1068:19ac, 1068:19be
+        self.building_sites.clear();
+        self.houses.clear();
+        self.facilities.clear();
+        self.create_plots(plots); // 1068:2bba
+        // 1078:08b2: no plots with a port, no capacities.
+        self.totals = vec![0; crate::world::TOTALS_SIZE];
+        self.totals[0x19a] = START_ECONOMY;
+        self.init_player_block(); // 1078:0918
+    }
+
+    /// The players' block of a new game: for each player 7 at `+p - 1`,
+    /// 50 at `+0x27 + p`, `+0x2f + p` (the reputation) and `+0x37 + p`,
+    /// the `Longint` 50 at `+4 + 4p`, 0 at `+0x3c + 4p` and `+0x5c + 4p`,
+    /// and out (`+0x7f + p`) if past the player count; then `+0` 0.
+    /// // 1078:0918
+    fn init_player_block(&mut self) {
+        let mut b = vec![0u8; crate::world::PLAYER_BLOCK_SIZE];
+        for p in 1..=8usize {
+            b[0x37 + p] = 50;
+            b[0x2f + p] = 50;
+            b[p - 1] = 7;
+            b[0x27 + p] = 50;
+            b[4 + 4 * p..8 + 4 * p].copy_from_slice(&50i32.to_le_bytes());
+            b[0x3c + 4 * p..0x40 + 4 * p].copy_from_slice(&0i32.to_le_bytes());
+            b[0x5c + 4 * p..0x60 + 4 * p].copy_from_slice(&0i32.to_le_bytes());
+            b[0x7f + p] = u8::from(usize::from(self.player_count) < p);
+        }
+        b[0] = 0;
+        self.player_block = b;
+    }
+
     /// Adds `amount` to `player`'s money (1 to the number of players),
     /// saturating at the `Longint` limits. A computer player paying gets
     /// some of it back on the harder levels: a sixth at difficulty 1, a

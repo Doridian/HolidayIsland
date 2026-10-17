@@ -530,28 +530,9 @@ fn load_tiles(dir: &Path) -> Tiles {
     )
 }
 
-/// What hintergrund's timer does from state 1000 to 1500 once Start is
-/// clicked, without the video (`titel.avi`), the progress window
-/// (`TWasNunForm`) and what isn't ported yet: load the map, set up the
-/// main screen and show it. // 1000:2466
-fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) -> Game {
-    let path = match hintergrund::new_island(settings, scenario_page) {
-        Island::Scenario(file) => format!("SZENARIO/{}", file.to_ascii_uppercase()),
-        Island::Generated => {
-            println!("generating an island isn't ported yet (10b0:52d4); here's the tutorial island");
-            "MAPS/TUTORIAL.MAP".to_owned()
-        }
-    };
-    let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
-    let mut world = hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
-    // `Randomize` (1108:1e21) seeds RandSeed from the clock.
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| {
-            d.subsec_nanos() ^ u32::try_from(d.as_secs() & 0xffff_ffff).unwrap_or(0)
-        });
-    world.random = Random::new(seed);
-    world.tables = Arc::new(Tables {
+/// The tables the simulation reads (1030:2e48), for a scenario's world.
+fn world_tables(dir: &Path) -> Arc<Tables> {
+    Arc::new(Tables {
         hausnr: hausnr(&read(dir, "DATA/HAUSNR.DAT")).expect("HAUSNR.DAT"),
         hausdata: hausdata(&read(dir, "DATA/HAUSDATA.DAT")).expect("HAUSDATA.DAT"),
         hausprei: hausprei(&read(dir, "DATA/HAUSPREI.DAT")).expect("HAUSPREI.DAT"),
@@ -564,18 +545,63 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         road_cost: modatyp(&read(dir, "DATA/MODATYP.DAT"))
             .expect("MODATYP.DAT")
             .strassenbaukosten,
-    });
-    let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
-    let origin = map.field("1110:5530").map_or((0, 0), |d| {
-        (i16::from_le_bytes([d[0], d[1]]), i16::from_le_bytes([d[2], d[3]]))
-    });
-    let camera = Camera {
-        view: byte("1110:007c"),
-        origin,
-        parity: 0,
-        owner_pointers: byte("1110:0058") != 0,
-        occupancy_pointers: byte("1110:0059") != 0,
-    };
+    })
+}
+
+/// The world a game starts with and the main screen's camera: a
+/// scenario's map (and its view origin) or a generated island. // 1000:2466
+fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> (World, Camera, Option<(i16, i16)>) {
+    // `Randomize` (1108:1e21) seeds RandSeed from the clock.
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| {
+            d.subsec_nanos() ^ u32::try_from(d.as_secs() & 0xffff_ffff).unwrap_or(0)
+        });
+    match hintergrund::new_island(settings, scenario_page) {
+        Island::Scenario(file) => {
+            let path = format!("SZENARIO/{}", file.to_ascii_uppercase());
+            let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let mut world =
+                hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
+            world.random = Random::new(seed);
+            world.tables = world_tables(dir);
+            let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
+            let origin = map.field("1110:5530").map_or((0, 0), |d| {
+                (i16::from_le_bytes([d[0], d[1]]), i16::from_le_bytes([d[2], d[3]]))
+            });
+            let camera = Camera {
+                view: byte("1110:007c"),
+                origin,
+                parity: 0,
+                owner_pointers: byte("1110:0058") != 0,
+                occupancy_pointers: byte("1110:0059") != 0,
+            };
+            (world, camera, Some(origin))
+        }
+        Island::Generated => {
+            let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok())
+                .unwrap_or_else(|e| panic!("{e}"));
+            // States 100, 1210 and 1220.
+            let world = hintergrund::new_world(settings, &data, seed);
+            // The options as the initialised data has them (1000:1ea0).
+            let camera = Camera {
+                view: 0,
+                origin: world.viewpoint.origin,
+                parity: world.viewpoint.parity,
+                owner_pointers: false,
+                occupancy_pointers: true,
+            };
+            (world, camera, None)
+        }
+    }
+}
+
+/// What hintergrund's timer does from state 1000 to 1500 once Start is
+/// clicked, without the video (`titel.avi`), the progress window
+/// (`TWasNunForm`) and what isn't ported yet: load the scenario's map or
+/// generate an island, set up the main screen and show it. // 1000:2466
+fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) -> Game {
+    let (world, camera, origin) = start_world(dir, settings, scenario_page);
     let font = Font::new(
         &bitmap(dir, "GRAFIK/FONT.BMP"),
         &fontdat(&read(dir, "DATA/FONTDAT1.DAT")).expect("FONTDAT1.DAT"),
@@ -587,7 +613,10 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
         .collect();
     let title = texts.texts.first().cloned().unwrap_or_default();
-    let mut screen = Hauptschirm::new(camera, origin, bitmaps, &font, &title);
+    let mut screen = match origin {
+        Some(origin) => Hauptschirm::new(camera, origin, bitmaps, &font, &title),
+        None => Hauptschirm::new_game(camera, bitmaps, &font, &title),
+    };
     let tiles = load_tiles(dir);
     screen.paint_map(&world, &tiles);
     let info = InfoTexts {

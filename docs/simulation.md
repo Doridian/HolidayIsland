@@ -368,7 +368,7 @@ What the driver and the ported parts use, all saved in the map file:
 | `*1110:6fd6`, `*1110:6fda`, `*1110:6fde`, `*1110:6fe2`, `1110:3c2e`, `1110:6ff4`, `1110:6fee`, `1110:6ff0` | The people and their tables, [people.md](people.md) | same (unit 1088:8a07) |
 | `1110:007c`, `1110:5530`, `1110:5534` | The human's view as the people code reads it | same |
 | `1110:723c` | How long each sound still plays (`array[1..42]`), the view's | not saved |
-| `1110:4a06` | `RandSeed`: **not** saved; `Randomize` (1108:1e21) seeds it from the DOS clock when the game's data is loaded (1030:38a3) | |
+| `1110:4a06` | `RandSeed`: **not** saved; `Randomize` (1108:1e21) seeds it from the DOS clock when the program loads its data (1030:38a3, state 100); a new game's names, island and computers draw from it ([island-generator.md](island-generator.md)) | |
 
 ## The date (1030:000d..)
 
@@ -648,7 +648,10 @@ demolition and its people, `replace_building`, the news' random text,
 and the people ([people.md](people.md): `people_tick` with
 `person_animate` and `person_step`, `spawn_people`, `send_person`,
 `add_person` and the removal helpers; their records and tables are
-loaded from the map). The tables the
+loaded from the map, or set up for a new game). A normal game's world,
+the generated island and everything the game's data sets up, is
+`hintergrund::new_world` ([island-generator.md](island-generator.md)).
+The tables the
 simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`, `HAUSPREI.DAT`,
 `GROUNDNR.DAT`, `ANIMDAT1.DAT`, `ANIMDAT4.DAT` and `DARSTELL.DAT`'s
 `AnsichtFormkorrektur`) are in `World::tables`, loaded from the CD by
@@ -718,8 +721,9 @@ the original's once it runs.
   only for the human: it may belong to the view. The port keeps it in
   the world, as the original does.
 - A full championship building takes its visitors from its plot's
-  guests (`+0xee`), at most its capacity. What `*1110:6f20 + 0x19a` (the
-  economy) is set by is open ([settlement.md](settlement.md#open-questions)).
+  guests (`+0xee`), at most its capacity. `*1110:6f20 + 0x19a` (the
+  economy) is 127 from a new game on, and nothing changes it
+  ([settlement.md](settlement.md#open-questions)).
 - Demolishing a building site doesn't take its effect (type 31's 90 %)
   off the location map. A demolished park comes off its plot's
   `+0x354`, a dead palm doesn't. The original's bridge demolition costs
@@ -731,8 +735,10 @@ the original's once it runs.
   the original runs at the year's end and whenever the money menu is
   shown (1070:2617, only with the form's height above 0): a view
   condition in world state. The port only works it out at the year's end.
-- What the books' 0x6c–0x6e and the plots' `+0x352` (the area?) are,
-  and what `1110:133c` and `1110:006f` mean.
+- What the books' 0x6c–0x6e are (a new game starts them as the human's
+  money, `-loan` and their difference), and what `1110:133c` and
+  `1110:006f` mean. The plots' `+0x352` is their area in land corners
+  (1068:25fd).
 - The high score entry also stores a floating-point value made by
   1100:1142/1100:1808 from `1110:0a02` (the date?); that's left to the
   view. A scenario's `*1110:6f24+0x80` out flags come from its map; state
@@ -742,5 +748,7 @@ the original's once it runs.
   settlement likewise charges only the human for advertising, insurance
   and the cost of living.
 - 1010:1129 counts palms on the square's plot through a nil pointer when
-  the square has none; the CD's maps have plots on all land, but a
-  generated island may not. The port skips the count then.
+  the square has none; the CD's maps and generated islands have a plot
+  on every land corner, but a square whose corners are all in sea rows
+  of the plot map takes its neighbour's by its form (1030:1e62), which
+  may be none. The port skips the count then.

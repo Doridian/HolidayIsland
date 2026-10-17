@@ -58,7 +58,7 @@ const SIDE: usize = 41;
 /// corners `(i, j - 1)`, `(i - 1, j - 1)` and `(i - 1, j)` are; a square
 /// that fits none gets form 19. The original's rows are four `Integer`s,
 /// the first (for `(i, j)` itself) always 0. // 1110:1224
-const FORMS: [[i16; 3]; 19] = [
+pub(crate) const FORMS: [[i16; 3]; 19] = [
     [0, 1, 1],
     [-1, -1, 0],
     [0, -1, -1],
@@ -491,7 +491,7 @@ impl World {
     /// back ([`World::reset_ground`]); `j` outside, `i` inside. Off the map
     /// the original reads and writes past the layers; the port reads the
     /// layer's neighbouring bytes and writes nothing. // 10b0:33bc
-    fn reshape(&mut self, low: (u8, u8), high: (u8, u8)) {
+    pub(crate) fn reshape(&mut self, low: (u8, u8), high: (u8, u8)) {
         for b in u16::from(low.1)..=u16::from(high.1) + 1 {
             for a in u16::from(low.0)..=u16::from(high.0) + 1 {
                 let pos = (a.cast_signed(), b.cast_signed());

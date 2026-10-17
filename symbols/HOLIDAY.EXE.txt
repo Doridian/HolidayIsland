@@ -92,6 +92,7 @@
 1010:29cc func enable_forms  # the forms' Enabled back from 1110:645a
 1010:2a0c func enable_forms  # re-enables the forms in 1110:646c except 10 and 11
 1010:2af5 func draw_button_bar
+1010:2fa9 func clear_651a  # 1110:651a..6530 := 0, 1110:6530 := 1; not ported
 1010:3006 func schedule_event  # (i, j, ?, value, ?, arg: Longint; n): event n certain (chance 0x3fffc) with value (+0x14), arg (+0x2c) and square (+0x30)
 1010:3084 func events_tick  # once a day: counts event_days, starts the due events of *1110:6536 by kind (auction, news, disaster, new building type), ends them after their duration; game::events
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
@@ -331,9 +332,11 @@
 1068:2243 func plot_remove_house
 1068:233c func plot_remove_facility
 1068:2591 func find_plot  # (id: Word): the plot record in the list at *1110:6f0c with that number, or nil
+1068:25fd func count_plot_squares  # each land corner's plot: +0x352 + 1, a palm +0x354 + 1
 1068:2698 func new_plot  # : a 0x364-byte plot in front of *1110:6f0c, numbered ++1110:552c: area 1, ratings +3..+0x19 50, sums 0; game::terrain
 1068:27a5 func merge_plots  # (keep, gone): gone's counts, sums (1010:2225), areas and building lists go to keep, ratings 50, the plot map's gone := keep, remove_plot(gone); keep's number afterwards; game::terrain
 1068:2a2b func remove_plot  # (id): the last plot (the list's head) takes id's number and place, and its squares in the plot map; game::terrain
+1068:2bba func create_plots  # plot_count records, each in front, ratings 50; then 1068:25fd; game::world
 1068:2d49 func link_plots  # after loading: every house, then facility, in front of its plot's list
 1068:2e05 func load_houses  # unit routine: the house list *1110:6f10 (count 1110:6f1a, 0x2c-byte records)
 1068:313e func load_plots  # unit routine: the plot list *1110:6f0c (count 1110:552c, 0x364-byte records)
@@ -344,6 +347,7 @@
 1070:2617 func geldmenu_refresh  # (Self): geldmenu_year_total if the form's height (+0x24) is above 0
 1070:269d func books_close_year
 1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
+1070:2e6c func geldmenu_init  # form method (Self): the books' history rings and this year's kinds; game::world::Books::new_game
 1078:0002 func building_slice  # (n): houses with (i + j) mod 30 = n: Random(100) < guests*100 div capacity (HAUSDATA col 3); facilities with (i * j) mod 30 = n: Random(100) < +0x15; then 1090:1a25; game::construction
 1078:014c func guests_of  # (player): 1110:6f8c + 4p (player 0 reads player 8's interest)
 1078:0172 func set_guests_of  # (player, guests: Longint)
@@ -355,7 +359,11 @@
 1078:05a0 func interest_of  # (player): 1110:6f6c + 4p
 1078:05c6 func take_loan  # (player, amount): if the loan would pass MaxSchulden, 1110:6f27+player := 1, else money and loan += amount; game::money
 1078:061b func repay_loan  # (player, amount): if money >= amount and loan > 0: money and loan -= amount, 1110:6f27+player := 0; game::money
+1078:0692 func economy_at  # (day: Longint): Round(Sin(day / 6fb0) * 90 + 127 + Sin(day / 6fb2) * 37) in Real and extended; only called with 0 (127)
+1078:075f func init_economy_periods  # 1110:6fb0 := Random(2000) + 2000, 1110:6fb2 := Random(200) + 300
 1078:0780 func mix_classes  # (var guests: 11 Longints): Klassenmischung with the remainders carried on
+1078:08b2 func create_totals  # *1110:6f20 cleared, +0x19a := economy_at(0); game::money
+1078:0918 func create_player_block  # *1110:6f24: 7, 50s (reputations), out past player_count; game::money
 1078:09f6 func corner_risen  # (i, j): a corner rose from the sea: a new plot, the one around it (area + 1), or the plots around merged (1068:27a5, bytes for the first); game::terrain
 1078:0d00 func corner_sunk  # (i, j): a corner sank to 0: its plot's area - 1, or the plot goes if it was alone; the plot map entry 0 if the paired row's corner is at 0 too; game::terrain
 1078:0eda func register_building  # (i, j, building), near: on a plot only: HAUSNR col 5 squares on the plot (+0x354 parks, +0x356), the record by 1110:1341[kind], HAUSDATA col 3 into the plot's and *1110:6f20's sums by class, kinds 9/10 counted at plot+2 and 6f20+0, location effect; game::construction
@@ -375,6 +383,7 @@
 1078:273a func remove_renters  # (i, j): remove_people_at for the rentals 0x0a, 0x1a, 0x1b, 0x6d
 1078:276f func remove_bridge_square  # nested in demolish: people off, the square water (ground 2), adds Strassenabrisskosten to demolish's unused sum
 1078:280b func demolish  # (j, i, player): player 0 for disasters; building site (refund price*days div time), building (price div 20), road (1110:64ea), sea bridge (free); error messages 0xe, 0x17, 0x18, 0x1d for player 1; game::construction
+1078:3271 func init_players  # start money and loans, the difficulty's debt limit, lists, plots (1068:2bba), totals, player block; game::money
 1080:0123 func umenu_refresh  # refreshes TUmenuform if shown
 1080:1141 func load_umenu
 1080:22be func road_set  # (i, j): where the ground's road pieces start: sand 0, grass 0xf, water 0x5f, sand to grass 0x1e; game::roads
@@ -429,6 +438,7 @@
 1088:7f4a func people_flag16_set  # the same with +0x16 := 1
 1088:7fb1 func people_refresh  # 1088:7a14, then spawn_people and the drawing; after scrolling (1020:0a4c), turning (1010:258c) and the options (1060:05cb)
 1088:80a7 func load_animdat
+1088:868c func create_people  # the records (+0x1a 100, 1..0x23 kind 6, +0x14 1), layers 551c/5520 255, last 0x2f, load_animdat; game::people
 1088:88bb func people_free  # frees the people blocks
 1088:8950 func save_people  # saves 1110:3c2e, *1110:6fd6, ANIMDAT2, NEINTRAG, ANIMDAT3, 6ff4, 6fee, 6ff0
 1088:8a07 func load_people  # loads them, unit of load_map; game::world
@@ -512,21 +522,69 @@
 10a8:388b func create_computers  # the arrays, the type lists from COMPBAU.DAT (types 0..0x7e with HAUSDATA col 6 = 0), init_computers
 10a8:3a6c func free_computers
 10b0:0002 func gen_raise_corner  # nested in the island generator: raises a map corner and its neighbours two lower (no checks)
+10b0:0130 func gen_try_raise  # nested in the island generator: (j, i): gen_raise_corner if the corner is below 20 and its height fits the edge distances (h <= i-2, j-2, 248-i, 248-j); 0 when raised; game::generator
 10b0:01f0 func risen_contains  # nested in 10b0:069f: whether (i, j) is in the list of corners risen from the sea
 10b0:025b func risen_add  # nested in 10b0:069f: (i, j) onto the list of corners risen from the sea (0xa2 bytes, 80 entries)
 10b0:0291 func check_raise  # nested in 10b0:03fa: a square of the working copy: 1 building (a palm goes for Palmenabrisskosten), 2 road, 0x10 river, 0x1c layer_551c; the square in 069f's frame
 10b0:03fa func raise_step  # nested in 10b0:069f: (di, dj): the four squares checked (10b0:0291), the copy's corner + 1, the bounds, the cost (LandausWasserhebekosten from 0, else Landhebekosten), then the neighbours (i+1, j+1, i-1, j-1) exactly 2 lower
 10b0:069f func raise_corner  # (i, j, player, var cost): 0xd off the map, 4 at 20, 5..8 too close to the edge; the 41x41 copy (*1110:721e, *1110:7222), 10b0:03fa, 0xe for player 1 without the money; back on the map with 1078:09f6, 10b0:33bc; add_person(0x2a) at the error; game::terrain
+10b0:0ace func gen_risen_add  # nested in 10b0:0e0c: (i, j) onto its list of corners risen from the sea, which nothing reads
+10b0:0b04 func gen_check_raise  # nested in 10b0:0ba3: (dj, di): the copy's palm goes for nothing; 0x10 for river ground (0x37..0x5e)
+10b0:0ba3 func gen_raise_step  # nested in 10b0:0e0c: (dj, di): the four squares (10b0:0b04), the copy's corner + 1, the bounds, then the neighbours exactly 2 lower
+10b0:0e0c func gen_raise_checked  # (j, i): the generator's raise_corner on the 41x41 copy, no costs or markers: 0xd, 4, 5..8 as 069f, 0x10 a river; writes the copy back even after an error, then reshape; game::generator
+10b0:1162 func gen_lower_corner  # nested: lowers a map corner and its neighbours two higher (no checks)
+10b0:1290 func gen_try_lower  # nested: (j, i): gen_lower_corner unless at sea level
 10b0:12c7 func lower_step  # nested in 10b0:1907: (di, dj): the four squares' buildings (palms go, 1 otherwise, even after an error), their ground (2 road, 0x10 river), the copy's corner - 1, the cost (LandinWassersenkkosten to 0, else Landsenkkosten), then the neighbours exactly 2 higher
 10b0:1907 func lower_corner  # (i, j, player, var cost): 3 off the map or at 0; the copy, 10b0:12c7, 0xe for player 1 without the money; back on the map, 10b0:33bc, 1078:0d00 at 0; add_person(0x2a) at the error; game::terrain
+10b0:1c54 func gen_lower_step  # nested in 10b0:2053: (dj, di): the four squares' palms go, 0x10 for river ground, the copy's corner - 1, the bounds, then the neighbours exactly 2 higher
+10b0:2053 func gen_lower_checked  # (j, i): the generator's lower_corner on the copy: 3 off the map or at 0, 0x10 a river; written back even after an error, then reshape; game::generator
+10b0:22dd func plot_fill_push  # nested in 10b0:23c3: (state): the current corner and the state to go on with onto 29c0's three stacks
+10b0:233b func plot_fill_pop  # nested in 10b0:23c3
+10b0:239a func plot_fill_goto  # nested in 10b0:23c3: (i, j): the current corner, state 0
+10b0:23c3 func plot_fill  # nested in 10b0:29c0: (i, j): depth-first walk giving the land joined to the corner 29c0's plot number (states 0 set, 1 j-1, 2 j+1, 3 i-, 4 i+, 5 pop); game::generator
+10b0:29c0 func number_plots  # the plot map from the heights: each piece of land one plot, numbered down the columns; plot_count; game::generator
 10b0:2b9b func set_corner_height  # (i, j, height, player, var cost): raise_corner or lower_corner until the corner is at height or one fails; nothing off 1..249; game::terrain
 10b0:2c83 func level_corner  # (i, j, height, player, var cost): one step of raise_corner or lower_corner towards height; 0x16 off 1..249; game::terrain
+10b0:2d70 func gen_set_corner  # (height, j, i): gen_raise_checked or gen_lower_checked until the corner is there or one fails; 0x16 off 1..249
+10b0:2e03 func gen_level_square  # (height, i, j): the corners (i,j), (i-1,j), (i,j-1), (i-1,j-1) to height, until one fails
+10b0:2e6f func gen_slope_square  # (direction, height, i, j): the corners on the direction's side to height - 1, the others to height
+10b0:3030 func clear_map  # all sea: heights 0, forms 16, ground 2, no buildings, parts, owners, occupancy; plot map 0, plot_count 0, location map 127
 10b0:3199 func reset_ground  # (i, j: Byte): an empty square's ground by its corners (water, sand, sand to grass, grass); a variant past GROUNDNR's count becomes 0
 10b0:33bc func reshape  # (min_i, min_j, max_i, max_j: Byte): the squares to max + 1 get their form from the corners (table 1110:1224, 19 if none fits), plain ground reset_ground; game::terrain
-10b0:52d4 func generate_island  # makes a new island from the start menu settings (segment 10b0); not ported
+10b0:354c func shape_squares  # squares 1..249: form from the corners (1110:1224), reset_ground; no land corner: form 16, water
+10b0:371e func swap_points  # nested in 10b0:375a: swaps two (Integer, Integer) pairs
+10b0:375a func hill_line  # nested in 10b0:3904: marks a line of the hill's outline in *1110:7226, stepping a Double slope (FDIV, FADD, Round); game::generator::x87
+10b0:3904 func hill  # (i, j, size): size at most 50, inside the map by it; 8 Random(size) corners, the outline (10b0:375a) filled by columns, every corner inside raised to a step above its height before (10b0:0130); game::generator
+10b0:3c5c func gen_atoll  # 12 ring points in the boxes at 1110:3cf4, ATAnzahl1/2 hills along each stretch, Random(30)+20 small hills in the lagoon box
+10b0:404c func hill_cluster  # (i, j, radius, chance, largest): each corner within the circle has a hill of Random(min(largest, 39) - 4) + 4 with Random(chance) = 0
+10b0:412c func gen_one_island  # clusters at (125,125) (GIRadius, GILeere1, 35) and (Random(50)+100, Random(50)+100) (GIRadius-30, GILeere2, 20)
+10b0:41b5 func gen_group  # (n): n clusters at Random(200)+25, radius IGMinRadius + Random(10), chance IGMinLeere + Random(15), largest 15
+10b0:424f func river_piece  # (i, j, from, to: Byte): the river piece for the turn by form and ground (none for others), building 255; ground piece + 0x37
+10b0:4506 func river_start  # (var pos): Random(249)+1 twice until the lowest corner is 4 up; the 1500th try unchecked, always true
+10b0:4560 func move_pos  # (var pos, direction): 0 j+1, 1 i+1, 2 j-1, 3 i-1
+10b0:459a func river_source_blocked  # (i, j, next_i, next_j, direction): the lower lowest corner below 3, or levelling either square to it fails
+10b0:4618 func river_source  # (var pos, var direction): Random(4); the two source squares (ground 0x57 + 2*dir, 0x58 + 2*dir) and pos past them; whether it failed
+10b0:470c func square_height_sum  # (j, i): the sum of the square's four corners
+10b0:4786 func beside_river  # (j, i): a river (ground >= 0x37) on one of the four squares beside
+10b0:47ff func rivers_beside  # (i, j): how many of the four squares beside are rivers
+10b0:4885 func flat_way_value  # nested in 10b0:48d7: (j, i): 0xffff off 1..249 or beside a river, else the corners' sum
+10b0:48d7 func flat_way  # (direction, i, j): the way on along the flat: the three ways but back, looking further each round, the higher drop out until one is left; an Integer distance that wraps
+10b0:4a7d func river_step  # (var pos, var direction): level or slope the square, flat_way, unless two rivers beside the river piece and on; 0 when done
+10b0:4bea func opposite_direction  # (direction): (d + 2) mod 4
+10b0:4c06 func follow_river  # (var pos): to a river square beside (j-1, i-1, j+1, i+1); 1 when there's none
+10b0:4cb1 func river_erase  # (i, j, direction): a failed river's squares get their ground back, from the one behind along the river
+10b0:4d19 func river  # river_start, river_source, river_step until the sea or a failure, then river_erase; game::generator
+10b0:4d79 func rivers  # (n)
+10b0:4dae func decorate  # sand and grass looks (Random(6) flat, Random(2) sloping), palms with Random(100) < 1110:0094
+10b0:4fd1 func smooth_land  # 4h minus the four neighbours >= 3 lowers (10b0:1290), < -2 raises (10b0:0130); forwards, then backwards
+10b0:517b func location_of_square  # nested in 10b0:52a4: (j, i): river 112, sloping water 108, sand below 2 101 (1030:1daa, radius 3); a building's effect
+10b0:52a4 func location_from_island  # the location map's effects of every square
+10b0:52d4 func generate_island  # a new island from the start menu settings: clear_map, the shape, smooth, forms, decorate, rivers, plots, location; only clear_map for a loaded game; game::generator
 10b0:53fe func level_road_square  # (j, i, direction, player): the two corners towards the direction to the height of one behind; not level, both a step below (lowest lower) or above; whether they got there; game::terrain
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
+10b0:5788 func create_maperste  # the 11 tables of 5x5 Integers at 1110:71f2..721a, load_maperste
+10b0:582a func free_maperste
 10b8:1624 func uebersichtsmap_redraw_area  # guess: (self, i, j, w, h): redraws an area of the overview map
 10b8:41ad func uebermap_load_data  # form method (Self); UEBERMAP.TXT + UEBERMAP.DAT
 10c0:0002 func widget_init  # constructor of the widget object (Turbo Pascal object, VMT word at +9): (left, top, width, height, visible); fields +0 top, +2 left, +4 width, +6 height, +8 visible. Segment 10c0 is the widget toolkit, docs/widgets.md
@@ -647,6 +705,7 @@
 1110:008e data relief  # Integer 0..4
 1110:0090 data land_amount  # Integer 0..4
 1110:0092 data rivers  # Integer 0..10
+1110:0094 data palm_chance  # Integer, 20: percent of a new island's sand and grass squares with a palm (10b0:4dae)
 1110:0096 data game_speed  # Longint: ticks per hour of game time (a day is six), 4 by default
 1110:009a data status_message_timeout
 1110:009e data building_slice_tick  # Integer 0..29: building_slice argument
@@ -670,6 +729,7 @@
 1110:1438 data empty_championships  # set of Byte: 0x6f, 0x71..0x74, 0x79, 0x7a
 1110:1478 data computer_opponents  # Byte 0..7, initially 7
 1110:1479 data player_count  # Byte: computer_opponents + 1
+1110:147a data name_steps  # array[0..9] of Integer: 53, 59, ... 89, the step through NAMEN.TXT's names (1010:0414)
 1110:1492 data ui_label_vmt  # VMT of plain labels. Ghidra shows wrong bytes here: DGROUP is stored as iterated data in the NE file and the loader does not expand it
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
 1110:1572 data hauptschirm_layout_table  # 11 x (hidden, left, top, width, height)
@@ -692,6 +752,7 @@
 1110:3c74 data ship_detours  # array[0..7, 0..5] of Integer: a harbour ship's detour turns
 1110:3cd4 data ship_drift  # array[0..3] of (di, dj): a ship's drift by the view's rotation (up the screen)
 1110:3ce4 data map_corners  # array[0..3] of (i, j): (0, 0), (0, 250), (250, 0), (250, 250)
+1110:3cf4 data atoll_boxes  # array[0..12] of (i0, j0, i1, j1: Integer): the ring's boxes, the last the lagoon (10b0:3c5c)
 1110:3dce data sound_lengths  # array[1..42] of Integer: how long each sound plays, in ticks
 1110:4a06 data rand_seed  # RandSeed (Longint)
 1110:4a82 data module_handle  # entry quits when GetModuleUsage of it is above 1 (a second copy)
@@ -848,6 +909,7 @@
 1110:6f50 data loan
 1110:6f70 data loan_interest
 1110:6f90 data player_guests  # array[1..8] of Longint
+1110:6fb0 data economy_periods  # 2 Integers, see 1078:075f
 1110:6fb4 data umenuform
 1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
@@ -895,8 +957,11 @@
 1110:70ea data computer_types | pointer32  # 13 x (count, 40 types)
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
 1110:70f2 data computer_status_text  # string, saved
+1110:71f2 data maperste_tables  # 11 pointer32 to 5x5 Integers: IGMinLeere, IGMinRadius, GIRadius, GILeere1, GILeere2, ATAnzahl1, ATAnzahl2, ATGroesse1, ATGroesse2, ATVariation1, ATVariation2
 1110:721e data land_heights_copy  # pointer32: 41x41 heights around the corner being moved (10b0:069f, 10b0:1907)
 1110:7222 data land_buildings_copy  # pointer32: the buildings
+1110:7226 data hill_mask  # pointer32: array[-50..50, -50..50] of Integer, the hill's outline (10b0:3904)
+1110:722a data hill_heights  # pointer32: the heights under the hill
 1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
 1110:723a data uebersichtsmap2
 1110:723c data sound_busy  # array[1..42] of Integer from 1110:723e: ticks each sound still plays; play_sound (10a0:30b6) only plays at 0 and sets it from 1110:3dce, people_tick counts it down; not saved, the view's

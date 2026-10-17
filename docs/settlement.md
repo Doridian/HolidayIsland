@@ -32,7 +32,8 @@ a scenario can change them.
 - `MODATYP.DAT`'s `Werbungskosten` (`1110:64c6`), `Lebenshaltungskosten`
   (`64fa`), `Klassenmischung` (`*1110:6502`, 10 × 10 `Integer`s) and its
   divisor (`64fe`), `Verfallwahrscheinlichkeit` (`650e`, 3 bytes).
-- `1110:004c`, a byte only read from the map: the base demand.
+- `1110:004c`, a byte read from the map: the base demand; a new game
+  has the initialised data's 0x50.
 
 The factors work through three helpers, all `Longint` arithmetic:
 
@@ -192,15 +193,17 @@ renovations ([year_end](simulation.md#the-new-year-10084f64)) are ported.
 | | `+0x1a` | Price rating |
 | Plot | `+3`, `+4`, `+5..+0xe`, `+0xf` | Greenery, quality, quality by class, shop price level |
 | | `+0x10..+0x19` | Read as the shops' price level by class, never written |
-| | `+0x352` | Probably the area |
+| | `+0x352` | The area: a new island counts its land corners (1068:25fd) |
 | Player block | `+p - 1` | Advertising level, 0–7 |
 | | `+4 + 4p`, `+0x27 + p` | Price rating, places per bed |
 | | `+0x3c + 4p`, `+0x5c + 4p` | Beds, places |
 
 ## Open questions
 
-- What `1110:004c` (the base demand) and `*1110:6f20 + 0x19a` (the
-  economy) are set by: the settlement only reads them.
+- What `1110:004c` (the base demand, 0x50 in the initialised data) and
+  `*1110:6f20 + 0x19a` (the economy) mean: nothing changes them. A new
+  game sets the economy to 127, a sine-based formula's value for day 0
+  (1078:0692, [island-generator.md](island-generator.md#the-rest-of-a-new-game)).
 - 1008:0f37 writes each price class's shop price level into the same
   byte (`+0xf`), so `+0x10..` is never written and the last class wins;
   and it mixes copies of the shops' places by class (1078:0780) that it

@@ -84,8 +84,11 @@ The start menu's Start sets `Timer1.Tag` to 1000 with `+0x191` set on the
 scenario page and `+0x190` cleared. `+0x190` is the other way in: it loads
 the saved game named at `1110:1322` (`Last.map` unless something put
 another name there) from `MAPS\`. Ported in
-[`game::hintergrund`](../crates/game/src/hintergrund.rs) as far as the
-island goes; the `holiday` binary skips the video and the progress window.
+[`game::hintergrund`](../crates/game/src/hintergrund.rs): a scenario's
+world from its map file (`load_world`) and a normal game's from the
+generator and the game's data (`new_world`,
+[island-generator.md](island-generator.md)); the `holiday` binary skips
+the video and the progress window.
 
 | Tag | Does | Next | Interval (ms) |
 |---|---|---|---|
@@ -95,7 +98,7 @@ island goes; the `holiday` binary skips the video and the progress window.
 | 1120 | Stops and closes the video, hides the panel, disables the form and image, reactivates WaveMix and reloads the font (`text_done`, `text_init`) | 1200 | 10 |
 | 1130, 1140 | Reload the background `bck<size>.BMP` and show it. Nothing in the start path goes there | 1200 | 10 |
 | 1200 | Creates `TWasNunForm`, the progress window (1040:33e9), shows it and disables the form | 1210 | 10 |
-| 1210 | With the timer off: generates a new island from the start menu's settings (1030:390e, hourglass cursor around 10b0:52d4) | 1220 | 10 |
+| 1210 | With the timer off: generates a new island from the start menu's settings (1030:390e, hourglass cursor around 10b0:52d4, [island-generator.md](island-generator.md)); for a scenario or a saved game it only clears the map | 1220 | 10 |
 | 1220 | With the timer off: loads the data tables (1030:2e48: `HAUSPOS.DAT`, `HAUSNR.DAT`, the other `*POS.DAT`, prices, names...), the bitmaps (1030:307a: the frame's and the island's, see [map.md](map.md)) and the rest (1030:36e5: months, events, sabotage, the forms' data...), moving the progress bar to 100 | 1500 | 2 |
 | 1500 | Sets up the main screen (`hauptschirm_init`, 1020:2501) and stops the timer. With `+0x190`: `load_map` of the saved game, then `game_start_setup` (1010:2820). With `+0x191`: `load_map` of the scenario's `SZENARIO\*.his`, puts the kept name, colours and difficulty back, sets the starting money from the difficulty, the scenario's number of computer players and its events (`EREIGNn.DAT`, 1010:36f8), then `game_start_setup`. Finally closes the progress window and shows the main screen (1020:283b: starts its `AnimationsTimer`, height 479) | | |
 
@@ -114,11 +117,13 @@ map file's view position into the main screen's scroll position
 | 5 | `Surfer.his` | 3 | `ereign5.dat` |
 | 6 | `Oeko.his` | 0 | `ereign6.dat` |
 
-Not ported yet: the video, the progress window, generating an island (the
-port shows `MAPS\TUTORIAL.MAP` instead, segment `10b0` is about 22 KB of
-generator), the events, the players' flags and everything else
-`game_start_setup` and 1030:36e5 set up for the simulation. A scenario's
-start money is ported ([simulation.md](simulation.md#money-107801e7)).
+A normal game's world is ported: the island (10b0:52d4) and what the
+game's data sets up around it in states 100 and 1220
+([island-generator.md](island-generator.md#the-rest-of-a-new-game)). Not
+ported yet: the video, the progress window, a scenario's events
+(`EREIGNn.DAT`, 1010:36f8) and players' flags, and what
+`game_start_setup` does to the view. A scenario's start money is ported
+([simulation.md](simulation.md#money-107801e7)).
 
 ## Back to the start menu (1010:25dc)
 

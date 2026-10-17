@@ -13,7 +13,8 @@ bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
 (`winit` and `wgpu`) that shows the end of the intro and the start menu. The
 `game` crate has the first ported game code: text in the game's own bitmap
 font, its widget toolkit, the start menu, and starting a game: the island
-from a scenario is drawn on the main screen, which scrolls and turns. Also here:
+from a scenario, or one generated from the start menu's settings, is drawn
+on the main screen, which scrolls and turns. Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable
@@ -101,6 +102,7 @@ shared through [symbols/](symbols/README.md).
 - [docs/port-architecture.md](docs/port-architecture.md): the planned Rust port: stack, crates, design
 - [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)
 - [docs/map.md](docs/map.md): the island's map layers, how the main screen draws them, and its layout
+- [docs/island-generator.md](docs/island-generator.md): how a normal game's island is made, and the rest of a new game
 - [docs/data-files.md](docs/data-files.md): survey of the game's data files
 - [docs/formats/install-archive.md](docs/formats/install-archive.md): the installer archive format
 

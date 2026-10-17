@@ -194,7 +194,8 @@ pub struct Settlement {
     /// adds the buildings of nobody there. // 1110:4aea
     pub sums: [i32; SUMS],
     /// Not known: the base of how full the buildings get, in percent
-    /// (with factors 9 and 22). Only ever read from the map. // 1110:004c
+    /// (with factors 9 and 22). Read from the map; a new game has the
+    /// initialised data's [`BASE_DEMAND`]. // 1110:004c
     pub base_demand: u8,
     /// `Werbungskosten`: what advertising costs per bed and level.
     /// // 1110:64c6
@@ -234,7 +235,36 @@ impl Default for Settlement {
     }
 }
 
+/// `1110:004c` as the program starts.
+pub const BASE_DEMAND: u8 = 0x50; // 1110:004c
+
 impl Settlement {
+    /// The tables a new game starts with: `ABRECHNE.DAT`'s (1008:57dc,
+    /// 1008:55ee: the 11th `MinPreis` isn't read and stays 0) and
+    /// `MODATYP.DAT`'s (1010:000e), no sums yet.
+    #[must_use]
+    pub fn new_game(a: &formats::data::Abrechnung, m: &formats::data::Modatyp) -> Self {
+        let mut min_price = [0; 11];
+        min_price[..10].copy_from_slice(&a.min_price);
+        Settlement {
+            factors: (0..FACTORS)
+                .map(|n| a.factors.get(n).copied().unwrap_or([0; 4]))
+                .collect(),
+            min_rent: a.min_rent,
+            max_rent: a.max_rent,
+            rent_range: a.rent_range(),
+            min_price,
+            max_price: a.max_price,
+            sums: [0; SUMS],
+            base_demand: BASE_DEMAND,
+            advertising_cost: m.werbungskosten,
+            living_costs: m.lebenshaltungskosten,
+            class_mix: m.klassenmischung,
+            mix_divisor: m.klassenmischungdivisor,
+            decay: m.verfallwahrscheinlichkeit,
+        }
+    }
+
     /// A factor's weight (0), divisor (1), low (2) or high (3) value.
     fn factor(&self, n: usize, column: usize) -> i32 {
         self.factors.get(n).map_or(0, |f| f[column])

@@ -285,9 +285,10 @@ impl Plot {
         self.record[4]
     }
 
-    /// Probably the plot's number of squares: what its greenery is
-    /// measured against (1008:0f37), and the weight of
-    /// [`Plot::quality`]. // +0x352
+    /// The plot's area: a new island counts its corners above the sea
+    /// (1068:25fd), and raising and lowering the land count up and down.
+    /// What its greenery is measured against (1008:0f37), and the weight
+    /// of [`Plot::quality`]. // +0x352
     #[must_use]
     pub fn area(&self) -> u16 {
         self.word(0x352).cast_unsigned()
@@ -706,6 +707,39 @@ impl Default for Books {
     }
 }
 
+impl Books {
+    /// The books of a new game: the four rings of the history (120 months
+    /// of a `Longint` for each player, then two `Longint`s and two bytes)
+    /// empty but the last, at 50 for everyone, with the headers `1, -1,
+    /// 1, 0`, `1, -1, 1, 0`, `2, 0, 1, 0` and `100, 1, 1, 0`; this and
+    /// last year's sums 0, and kinds 0x6c to 0x6e player 1's `money`,
+    /// `-loan` and their difference. // 1070:2e6c
+    #[must_use]
+    pub fn new_game(money: i32, loan: i32) -> Self {
+        const RING: usize = 0xf0a;
+        const HEADERS: [(i32, i32, u8); 4] = [(1, -1, 1), (1, -1, 1), (2, 0, 1), (100, 1, 1)];
+        let mut history = vec![0; HISTORY_SIZE];
+        for (ring, (a, b, c)) in HEADERS.into_iter().enumerate() {
+            let base = ring * RING;
+            let fill: i32 = if ring == 3 { 50 } else { 0 };
+            for month in 0..120 {
+                for player in 0..8 {
+                    set_longint_at(&mut history, base + 0x20 * month + 4 * player, fill);
+                }
+            }
+            set_longint_at(&mut history, base + 0xf00, a);
+            set_longint_at(&mut history, base + 0xf04, b);
+            history[base + 0xf08] = c;
+            history[base + 0xf09] = 0;
+        }
+        let mut year = [0; 29];
+        year[26] = money;
+        year[27] = loan.wrapping_neg();
+        year[28] = money.wrapping_sub(loan);
+        Books { year, history }
+    }
+}
+
 /// The size of [`World::player_block`]. // 1078:34ad
 pub const PLAYER_BLOCK_SIZE: usize = 0x88;
 
@@ -1014,6 +1048,11 @@ pub struct World {
     /// 4·class` the facilities', by 1010:2493's class (`Longint`s).
     /// // *1110:6f20, 0x19b bytes
     pub totals: Vec<u8>,
+    /// Two periods, in days, set when the game's data is loaded
+    /// (`Random(2000) + 2000` and `Random(200) + 300`, 1078:075f): the
+    /// economy's two waves (1078:0692), which the original only ever
+    /// works out for day 0. // 1110:6fb0, 1110:6fb2
+    pub economy_periods: [i16; 2],
     /// The people and vehicles.
     pub people: People,
     /// The monthly settlement's tables and sums.
@@ -1089,6 +1128,7 @@ impl Default for World {
             road_demolition_cost: 0,
             connection_values: [0; 6],
             totals: vec![0; TOTALS_SIZE],
+            economy_periods: [0; 2],
             people: People::default(),
             settlement: Settlement::default(),
             computers_play: true,
@@ -1405,6 +1445,10 @@ impl World {
             connection_values: bytes(save, "1110:6508")?,
             // Unit 1078:34ad.
             totals: bytes::<TOTALS_SIZE>(save, "*1110:6f20")?.to_vec(),
+            economy_periods: [
+                word(save, "1110:6fb0")?.cast_signed(),
+                word(save, "1110:6fb2")?.cast_signed(),
+            ],
             people: people(save)?,
             settlement: settlement(save)?,
             computers_play: byte(save, "1110:0057")? != 0,
@@ -1439,6 +1483,48 @@ impl World {
     pub(crate) fn plot_of(&mut self, pos: Pos) -> Option<&mut Plot> {
         let plot = self.island.plot_at(pos);
         self.find_plot(plot)
+    }
+
+    /// The plots of a new island, from the plot map's `count` numbers:
+    /// each record goes in front of the list, so the last comes first,
+    /// with nothing on it and its ratings at 50. Then each corner above
+    /// the sea counts in its square's plot's area (1030:1e62's plot), and
+    /// each palm on it in its palms. // 1068:2bba, 1068:25fd
+    pub fn create_plots(&mut self, count: u16) {
+        self.plots = (1..=count)
+            .rev()
+            .map(|id| {
+                let mut plot = Plot::new(id.cast_signed());
+                for at in 3..=0x19 {
+                    plot.set_byte(at, 50);
+                }
+                plot
+            })
+            .collect();
+        // The counts by plot number, added up as the original goes.
+        let mut counts = vec![(0u16, 0i16); usize::from(count) + 1];
+        for j in 0..=250 {
+            for i in 0..=250 {
+                let pos = (i, j);
+                let plot = self.island.plot_at(pos);
+                if plot == 0 || self.island.heights.at(pos) == 0 {
+                    continue;
+                }
+                // The original counts through a nil pointer for a number
+                // without a record; every number has one here.
+                if let Some(c) = counts.get_mut(usize::from(plot)) {
+                    c.0 = c.0.wrapping_add(1);
+                    if self.island.buildings.at(pos) == PALM {
+                        c.1 = c.1.wrapping_add(1);
+                    }
+                }
+            }
+        }
+        for p in &mut self.plots {
+            let (area, palms) = counts[usize::from(p.id().cast_unsigned())];
+            p.set_area(area);
+            p.set_palms(palms);
+        }
     }
 
     /// Fills the plots' lists of houses and facilities from the lists,

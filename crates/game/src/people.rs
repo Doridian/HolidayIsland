@@ -334,7 +334,60 @@ impl Default for People {
     }
 }
 
+/// The last row of each of `ANIMDAT3.DAT`'s tracks, which its loader
+/// reads that many rows of (the first words of `1110:3620`).
+/// // 1088:80a7
+#[must_use]
+pub fn track_last_rows() -> [i16; 16] {
+    movement::TRACK_ENDS.map(|(last, _)| last)
+}
+
 impl People {
+    /// The people as the game's data leaves them for a new game
+    /// (1088:868c): the records 1 to 0x640 cleared, `+0x1a` 100, records
+    /// 1 to 0x23 of kind 6 and every record's `+0x14` 1; nobody else
+    /// yet ([`People::last`] 0x2f, no ships or boats). The tables come
+    /// from `ANIMDAT2.DAT`, `NEINTRAG.DAT` and `ANIMDAT3.DAT` (1088:80a7),
+    /// at 47 rows of 4 bytes, 4 bytes and 31 rows of 3 `Integer`s apiece.
+    /// The original leaves the rest of the records (`+0x1e` on, and all
+    /// of record 0 but `+0x14`) and the tracks' unused rows as the heap
+    /// had them; the port has 0.
+    #[must_use]
+    pub fn new_game(paths: &[Vec<[u8; 4]>], entries: &[[u8; 4]], tracks: &[Vec<[i16; 3]>]) -> Self {
+        // BUG(original): the rest of the records and the tracks' unused rows are left as the heap had them; the port has 0.
+        let mut people = People::default();
+        for (n, record) in people.records.iter_mut().enumerate() {
+            let r = &mut record.0;
+            if n >= 1 {
+                r[0x1a..0x1c].copy_from_slice(&100i16.to_le_bytes());
+                if n <= 0x23 {
+                    r[0x17] = 6;
+                }
+            }
+            r[0x14] = 1;
+            r[0x15] = 0;
+        }
+        for (g, group) in paths.iter().enumerate().take(40) {
+            for (row, cells) in group.iter().enumerate().take(47) {
+                let at = g * 0xbc + row * 4;
+                people.paths[at..at + 4].copy_from_slice(cells);
+            }
+        }
+        for (row, cells) in entries.iter().enumerate().take(101) {
+            people.entries[row * 4..row * 4 + 4].copy_from_slice(cells);
+        }
+        for (g, group) in tracks.iter().enumerate().take(16) {
+            for (row, cells) in group.iter().enumerate().take(31) {
+                for (k, v) in cells.iter().enumerate() {
+                    let at = g * 0xba + row * 6 + k * 2;
+                    people.tracks[at..at + 2].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+        }
+        people.last = FIRST;
+        people
+    }
+
     /// The records from the map's block, 0x28 bytes each.
     #[must_use]
     pub fn parse_records(data: &[u8]) -> Option<Vec<Person>> {

@@ -5,6 +5,7 @@ the drawing (segment `1050`) in
 [`game::darstellung`](../crates/game/src/darstellung.rs) and the main
 screen around it (`THauptschirm`, segment `1020`) in
 [`game::hauptschirm`](../crates/game/src/hauptschirm.rs).
+A normal game's island is generated ([island-generator.md](island-generator.md)).
 
 ## The map
 

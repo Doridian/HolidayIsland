@@ -204,6 +204,34 @@ fn copy(dst: &mut Surface, src: &Surface) {
     dst.blit(0, 0, src, all, Rop::Copy, all);
 }
 
+/// The origin and parity the scroll position `wo`, `ns` shows; with
+/// `keep`, as after turning the view. // 1020:0697, 1020:06f1
+fn scroll_origin(wo: i16, ns: i16, keep: bool) -> (Pos, i16) {
+    let (wo, ns) = (i32::from(wo), i32::from(ns));
+    // `div 2`, truncating, of sums that may round differently.
+    let (i, j) = if keep {
+        (wo + ns + 1002, ns - wo + 1001)
+    } else {
+        (wo + ns + 1001, ns + 1000 - wo)
+    };
+    let (i, j) = (i / 2 - 626, j / 2 - 375);
+    let short = |n: i32| i16::try_from(n).unwrap_or(0);
+    ((short(i), short(j)), short((wo + 250 + ns) % 2))
+}
+
+/// The view a new island is first seen from: `hauptschirm_init`'s scroll
+/// position ([`START_WO`], [`START_NS`]), turned 0. A generated island
+/// gets no `game_start_setup`, so it stays there. // 1020:2501
+#[must_use]
+pub fn start_viewpoint() -> Viewpoint {
+    let (origin, parity) = scroll_origin(START_WO, START_NS, false);
+    Viewpoint {
+        rotation: 0,
+        origin,
+        parity,
+    }
+}
+
 impl Hauptschirm {
     /// The main screen as `hauptschirm_init` (1020:2501) and the start of a
     /// game (`game_start_setup`, 1010:2820) leave it, looking at the map
@@ -215,6 +243,21 @@ impl Hauptschirm {
     /// If there aren't as many bitmaps as files.
     #[must_use]
     pub fn new(camera: Camera, origin: Pos, bitmaps: Vec<Surface>, font: &Font, title: &[u8]) -> Self {
+        Hauptschirm::build(camera, Some(origin), bitmaps, font, title)
+    }
+
+    /// The main screen for a new island, as `hauptschirm_init` (1020:2501)
+    /// leaves it without a map file: at its first scroll position
+    /// ([`start_viewpoint`]).
+    ///
+    /// # Panics
+    /// If there aren't as many bitmaps as files.
+    #[must_use]
+    pub fn new_game(camera: Camera, bitmaps: Vec<Surface>, font: &Font, title: &[u8]) -> Self {
+        Hauptschirm::build(camera, None, bitmaps, font, title)
+    }
+
+    fn build(camera: Camera, origin: Option<Pos>, bitmaps: Vec<Surface>, font: &Font, title: &[u8]) -> Self {
         assert_eq!(bitmaps.len(), BITMAP_FILES.len(), "one bitmap per file");
         let mut h = Hauptschirm {
             camera,
@@ -252,7 +295,10 @@ impl Hauptschirm {
         let width = LAYOUT[0].1.width();
         font.draw(&mut h.title, title, (0, 1), width, Align::Center, 1);
         h.paint_frame();
-        h.set_origin(origin);
+        match origin {
+            Some(origin) => h.set_origin(origin),
+            None => h.update_bars(),
+        }
         h
     }
 
@@ -328,16 +374,7 @@ impl Hauptschirm {
     /// The camera's origin and parity from the scroll position.
     /// // 1020:0697, 1020:06f1
     fn origin(&self) -> (Pos, i16) {
-        let (wo, ns) = (i32::from(self.wo), i32::from(self.ns));
-        // `div 2`, truncating, of sums that may round differently.
-        let (i, j) = if self.keep_origin {
-            (wo + ns + 1002, ns - wo + 1001)
-        } else {
-            (wo + ns + 1001, ns + 1000 - wo)
-        };
-        let (i, j) = (i / 2 - 626, j / 2 - 375);
-        let short = |n: i32| i16::try_from(n).unwrap_or(0);
-        ((short(i), short(j)), short((wo + 250 + ns) % 2))
+        scroll_origin(self.wo, self.ns, self.keep_origin)
     }
 
     /// The origin to the camera, and the scroll bars to the position, as

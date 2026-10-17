@@ -49,6 +49,10 @@ explains a bug in detail, the row links there instead of repeating it.
 | 1050:245b | Leaves its locals unset for a view rotation past 3 | Returns false |
 | 1008:0297, 10a8:173b | Return an unset byte for a scenario past 7, or a levelling state past the known ones | Return false |
 | 10a0:03ca | Handing over a sold building reads outside the layer for a square off the map, reads a nil record for a site no record holds, and writes owners outside the layer for a building past the map's edge ([auction.md](auction.md)) | Does nothing, or skips the squares off the map |
+| 10b0:4d19 | A river that wanders in circles over land never reaches the sea or fails, and the generator never ends ([island-generator.md](island-generator.md#rivers)) | After 251 × 251 steps the river fails and is taken out |
+| 10b0:48d7 | A river's ways on the flat that tie all the way round their row and column (its distance wraps) are looked along for ever | Stops after one round of the distance, the open ways' last winning |
+| 10b0:4cb1 | Taking a failed river out finds a river square `reset_ground` leaves alone (one with a building) again and again | Stops there; river squares have no buildings |
+| 1010:0414 | With no names in `NAMEN.TXT` the computers' names divide by zero | Their names stay empty |
 | Data files: `HAUSNAME.TXT` (1048:358f), `ANIMDAT2.DAT`, `ANIMDAT3.DAT` (1088:80a7), `NAMEN.TXT` (1010:0414), the high scores | A missing `***` end marker loops for ever; a group or list longer than its room overruns the next memory; a high score file of another size isn't checked | The file fails to load |
 
 ## Simulation logic
@@ -83,6 +87,12 @@ explains a bug in detail, the row links there instead of repeating it.
 | 1028:26e4 | Enter bids without checking the player's money, and even after the third call, when the mouse can't | yes |
 | 1028:08e7 | Player 8 gets nothing for an item (`make_available` has no case for 8); item 6 gives nothing but its message, and an unknown item nothing at all, for the price | yes |
 | 10a8:0167 | A computer's bid overflows when its range (what it can pay or three times the price, less the price) passes about 2 150 000, and wraps | yes |
+| 10b0:3c5c | The atoll's small hills stray from the ring by `ATVariation2` but are centred by half of `ATVariation1` | yes |
+| 10b0:4506 | A river's 1500th try at a start is taken without looking at its corners, so a river always starts, maybe on the flat or in the sea | yes |
+| 10b0:0e0c, 10b0:2053 | The generator's raising and lowering write the working copy back after an error, with the corners moved before it: rivers leave cliffs | yes |
+| 10b0:48d7 | A river's distance on the flat is an `Integer` that wraps: ways that tie to the map's edge look on round the other side | yes |
+| 10b0:424f | A river square of another ground (sand to grass on the flat, water at a bend) or on a slope that falls another way gets no piece: a gap in the river | yes |
+| 1088:868c, 1010:3ab4 | A new game leaves the people records' last bytes, record 0, the planes' unused track rows and the events' 13th value as the heap had them | no: 0 |
 | 1048:358f | A line shorter than three characters keeps the previous line's bytes, so one after a `***` line also ends a list of `HAUSNAME.TXT` | yes |
 
 ## UI quirks

@@ -10,6 +10,7 @@ pub mod computer;
 pub mod construction;
 pub mod darstellung;
 pub mod events;
+pub mod generator;
 pub mod hauptschirm;
 pub mod hintergrund;
 pub mod location;
