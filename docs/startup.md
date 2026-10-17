@@ -77,6 +77,7 @@ no picture.
 | 1260–1300 × 1004–1044 | 1280×1024 | `tit12x10.BMP`, `bck12x10.BMP` |
 
 The result is in `screen_width`/`screen_height` (`1110:54fc`/`54fe`).
+What the forms do with it is in [layout.md](layout.md).
 
 ## Starting a game: states 1000–1500
 

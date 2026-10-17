@@ -163,7 +163,8 @@ Step 3 of `AnimationsTimer` (1020:1e9b), with the tooltips option
 2. The overview map, likewise with `+0x212`: buttons 16–20 (10b8:02e9) give
    `1110:1626 + button` (24–28).
 3. The main screen, if it or the bubble is active, it's enabled and
-   `+0x1da` is clear, with the cursor in rows 34–59 of the form (the button
+   `+0x1da` is clear (it isn't rolled up by a double click on its title
+   bar, [layout.md](layout.md#the-main-screen)), with the cursor in rows 34–59 of the form (the button
    bar) and its width: `button_at_mouse` (1018:394e) finds the button by
    `mouse_x` and the edges at `1110:12c0` (the first whose edges hold it,
    none in the gaps); its text is `1110:163c + button` (the button's
@@ -189,8 +190,6 @@ tooltips wait for those forms.
 
 ## Open questions
 
-- What the main screen's `+0x1da` is (step 3 skips the button bar's
-  tooltips while it's set).
 - `FUN_10e8_6258`, the "active" test of step 3, is assumed to be the
   form's `Active`.
 - Whether the tutorial is ever scenario 7 (its texts exist in

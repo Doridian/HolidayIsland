@@ -56,6 +56,7 @@
 1008:55ee func load_abrechne
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
+1010:064a func init_game_globals  # allocates the Klassenmischung/text buffers, loads MODATYP, fills window_forms
 1010:0799 func save_window_positions  # Top, Left, Width, Height, +0x29, +0x2a of the forms in 1110:646c but 2; 10 and 11 as zeros
 1010:08d7 func load_window_positions
 1010:0faa func score
@@ -363,6 +364,7 @@
 1030:38da func game_done  # calls the units' done routines (text_done, ...) before Application.Terminate
 1030:390e func generate_island_busy
 1030:3932 func load_game_data
+1030:3c42 func creditform_show  # TCreditform: credits.bmp, 640x480 centred on the screen, disables the options
 1038:014b func infobox_draw_line
 1038:098d func infobox_draw_button
 1038:0a44 func infobox_draw_button_pressed
@@ -1316,7 +1318,7 @@
 1110:54f2 data hausnr | pointer32  # far pointer to the table loaded from the file of that name
 1110:54f6 data hauspos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54fa data sabotage_armed
-1110:54fc data screen_width  # the layout size picked from the form size, see docs/startup.md
+1110:54fc data screen_width  # the layout size picked from the form size (state 110), see docs/layout.md
 1110:54fe data screen_height
 1110:5500 data map_heights | pointer32  # 251x251 layers, [i*251+j]; game::world
 1110:5504 data map_ground
@@ -1334,6 +1336,10 @@
 1110:5536 data view_squares  # array[0..10, 0..60] of (i, j): the squares spawn_people looks at, from the view origin; saved
 1110:5fbe data button_clicked  # Byte: the button under the mouse or clicked, 0x17 none; saved
 1110:5fc0 data tile_dcs
+1110:6042 data cursor_pos_x
+1110:6044 data cursor_pos_y
+1110:6046 data drag_grab_x  # where a title bar was grabbed, from the form's left (cursor_pos minus Left)
+1110:6048 data drag_grab_y
 1110:6056 data tool  # Integer: the tool, 6 raise, 7 lower, 8 demolish, 9..20 build (but 16 road), 21 sabotage, 22 pointer; saved
 1110:6058 data tool_building  # Integer: the building type the build tools build; saved
 1110:605a data mouse_square  # (i, j: Integer): the square under the mouse, each tick (1090:124f); saved
@@ -1344,6 +1350,7 @@
 1110:6348 data road_drag_to  # (i, j: Integer): the road drag's end, each tick while dragging (1090:0014); saved
 1110:634c data road_dragging  # Byte: the road tool is being dragged; the computers don't build roads meanwhile; saved
 1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
+1110:646c data window_forms  # 17 far pointers: the forms whose windows a map file keeps (auktion, baumenue, dateimenue, endeform, geldmenu, helpform, highscoreform, infobox2, kompass, fernseher, nil, nil, sabowin, hauptschirm, schlussform, umenu, uebersichtsmap2), see docs/layout.md
 1110:64b0 data werbung_to_text
 1110:64b4 data renovierung_to_text
 1110:64b8 data pointer_double_click

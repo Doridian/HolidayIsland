@@ -173,6 +173,45 @@ pub(crate) fn unported_world_fields(save: &SaveGame) -> Fields {
 
 /// The `DGROUP` address of a global (`1110:xxxx`) or of a block a global
 /// points to (`*1110:xxxx`).
+/// The forms whose windows a map file keeps, in `1110:646c`'s order
+/// (set by 1010:064a): 2, the file menu, isn't saved, and 10 and 11 are
+/// empty slots, saved as zeros. The pause and the options aren't among
+/// them. // 1110:646c
+pub const WINDOW_FORMS: [Option<&str>; 17] = [
+    Some("Auktionsform"),
+    Some("Baumenue"),
+    Some("Dateimenue"),
+    Some("Endeform"),
+    Some("Geldmenuform"),
+    Some("Helpform"),
+    Some("highscoreform"),
+    Some("Infobox2"),
+    Some("Kompassform"),
+    Some("Fernseher"),
+    None,
+    None,
+    Some("Sabowin"),
+    Some("Hauptschirm"),
+    Some("Schlussform"),
+    Some("umenuform"),
+    Some("Uebersichtsmap2"),
+];
+
+/// Where `load_window_positions` puts a form whose saved window is
+/// `form` on the `screen` the game lays out for: its saved top left,
+/// moved up and left as far as it takes to keep its bottom (at least its
+/// 16-pixel title bar) and its right edge on the screen. Nothing keeps it
+/// off the top or the left edge. // 1010:08d7
+///
+/// The port also uses it to keep the forms on the screen when the
+/// window's size changes.
+#[must_use]
+pub fn keep_on_screen(form: vcl::Rect, screen: (i32, i32)) -> (i32, i32) {
+    let top = (screen.1 - form.height().max(16)).min(form.top);
+    let left = (screen.0 - form.width()).min(form.left);
+    (left, top)
+}
+
 fn global(dest: &str) -> Option<u16> {
     let hex = dest.strip_prefix('*').unwrap_or(dest).strip_prefix("1110:")?;
     u16::from_str_radix(hex, 16).ok()
@@ -680,6 +719,17 @@ pub fn differences(a: &World, b: &World) -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_kept_on_screen() {
+        // 1010:08d7: up and left until the bottom (at least 16 rows) and
+        // the right edge are on the screen; never down or right.
+        let r = |l, t, w, h| vcl::Rect::new(l, t, w, h);
+        assert_eq!(keep_on_screen(r(700, 500, 200, 100), (800, 600)), (600, 500));
+        assert_eq!(keep_on_screen(r(700, 590, 200, 0), (800, 600)), (600, 584));
+        assert_eq!(keep_on_screen(r(-5, -5, 200, 100), (800, 600)), (-5, -5));
+        assert_eq!(keep_on_screen(r(320, 272, 640, 479), (800, 600)), (160, 121));
+    }
     use crate::world::{BuildingSite, Facility, House, Plot};
 
     #[test]

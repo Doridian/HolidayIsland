@@ -1,7 +1,8 @@
 //! `THauptschirm`, the main screen (segment `1020`): a 640×479 window in the
 //! middle of the screen with a title bar, an info bar, the button bar, the
 //! island (`Hauptbild`) with a scroll bar on the right and one below, and
-//! the status bar.
+//! the status bar. It's that size on every screen; its title bar drags it
+//! (`docs/layout.md`).
 //!
 //! Like the start menu, the form is a set of `TImage`s the game draws into
 //! itself. This module keeps one [`Surface`] per image; the caller puts
@@ -27,6 +28,9 @@ use crate::world::{Pos, World};
 /// The form's size. // 1110:1578, 1110:157a
 pub const WIDTH: i32 = 640;
 pub const HEIGHT: i32 = 479;
+/// The title bar's height, which the form shrinks to while it's dragged.
+/// // 1020:1b8e
+pub const TITLE_HEIGHT: i32 = 16;
 
 /// The images' bounds in the form, from the layout table at `1110:1572`
 /// (entries 2 and 4–10, set by 1020:1ce9), and `CloseBild`'s and
@@ -222,6 +226,19 @@ pub struct Hauptschirm {
     pub corner: Surface,
     pub close: Surface,
     pub minimize: Surface,
+    /// The form's top left on the screen: [`Hauptschirm::layout`] centres
+    /// it, dragging its title bar moves it. `Left`, `Top`
+    pub left: i32,
+    pub top: i32,
+    /// The form's height: [`HEIGHT`], or [`TITLE_HEIGHT`] while its title
+    /// bar is held or after a double click on it. `Height`
+    pub height: i32,
+    /// Where the title bar was grabbed, from the form's top left.
+    /// // 1110:6046, 1110:6048
+    grab: (i32, i32),
+    /// The last press on the title bar was a double click, which leaves
+    /// the form rolled up to its title bar. // +0x1da
+    pub rolled_up: bool,
 }
 
 fn image(name: &str) -> Surface {
@@ -330,6 +347,11 @@ impl Hauptschirm {
             corner: image("eckimage"),
             close: image("CloseBild"),
             minimize: image("Kleinbild"),
+            left: 0,
+            top: 0,
+            height: HEIGHT,
+            grab: (0, 0),
+            rolled_up: false,
         };
         // 1020:1e4f: the game's name over the title bar.
         let width = LAYOUT[0].1.width();
@@ -673,10 +695,59 @@ impl Hauptschirm {
         self.camera
     }
 
-    /// The form's top left on a `width` × `height` screen. // 1020:1ce9
+    /// The form's top left on a `width` × `height` screen: centred, with
+    /// Delphi's `div` on each half. // 1020:1ce9
     #[must_use]
     pub fn position(width: i32, height: i32) -> (i32, i32) {
         (width / 2 - WIDTH / 2, height / 2 - HEIGHT / 2)
+    }
+
+    /// `hauptschirm_layout`: the form centred on the `screen` the game
+    /// lays out for, and its images at [`LAYOUT`]'s bounds (the caller's,
+    /// from [`Hauptschirm::images`]); `hauptschirm_show` (1020:283b) gives
+    /// it its full height. The port also runs it again when the window's
+    /// size changes. // 1020:1ce9
+    pub fn layout(&mut self, screen: (i32, i32)) {
+        (self.left, self.top) = Hauptschirm::position(screen.0, screen.1);
+        self.height = HEIGHT;
+        self.rolled_up = false;
+    }
+
+    /// The form's bounds on the screen.
+    #[must_use]
+    pub fn bounds(&self) -> Rect {
+        Rect::new(self.left, self.top, WIDTH, self.height)
+    }
+
+    /// `UeberschriftbildMouseDown`: the press is kept from the form's top
+    /// left, and the form shrinks to its title bar; a double click (the
+    /// press with `ssDouble`) leaves it like that when let go.
+    /// // 1020:1b8e
+    pub fn title_mouse_down(&mut self, shift: ShiftState, cursor: (i32, i32)) {
+        self.rolled_up = shift.contains(ShiftState::DOUBLE);
+        self.grab = (cursor.0 - self.left, cursor.1 - self.top);
+        self.height = TITLE_HEIGHT;
+    }
+
+    /// `UeberschriftbildMouseMove` with the `cursor` on the screen: while
+    /// the left button is down the form follows it, kept on the `screen`
+    /// by its width and its height then. Whether it moved. // 1020:1bd9
+    pub fn title_mouse_move(&mut self, shift: ShiftState, cursor: (i32, i32), screen: (i32, i32)) -> bool {
+        // BUG(original): nothing says the press was on the title bar, so a left drag that started off every form and comes over it moves the form by the last grab.
+        if !shift.contains(ShiftState::LEFT) {
+            return false;
+        }
+        self.left = (cursor.0 - self.grab.0).max(0).min(screen.0 - WIDTH);
+        self.top = (cursor.1 - self.grab.1).max(0).min(screen.1 - self.height);
+        true
+    }
+
+    /// `UeberschriftbildMouseUp`: the form gets its height back, unless
+    /// the press was a double click. // 1020:1c58
+    pub fn title_mouse_up(&mut self) {
+        if !self.rolled_up {
+            self.height = HEIGHT;
+        }
     }
 
     /// What the world's people code reads of this view

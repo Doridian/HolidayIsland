@@ -192,6 +192,11 @@ The widgets' are described in
 | 1040:3dc7 | The tooltip's timeout (`1110:009c`) is set to 10 and never read | yes |
 | 1048:01bd | The TV's `Panel1` is 332 × 256 and its films 335 × 257: their right 3 columns and bottom row are never seen ([films.md](films.md)) | yes |
 | 1000:3938 | A key on the background form sets its timer's interval to 1 in any state, so besides ending the intro's film it cuts the waits for the title and the start menu short | yes |
+| 1000:2466 (state 110) | A desktop up to 20 pixels smaller than 640×480, 800×600, 1024×768, 1152×870 or 1280×1024 is laid out as that size, so what sits at the right or bottom edge (the money menu, the compass, the load form) and the centred forms' right and bottom are cut off by up to 20 pixels ([layout.md](layout.md#the-screen-size)) | yes |
+| 1000:2466 (states 430, 450, 1130) | Any other desktop size has no title and no background picture: the intro's title and the desktop around the main screen stay black ([layout.md](layout.md#the-screen-size)) | yes |
+| 1020:1bd9 | The main screen's title bar moves the form on any left drag over it, also one that started off every form, by the last grab ([layout.md](layout.md#the-main-screen)) | yes |
+| 1018:2fa2 | The build menu's first position is `(screen_height - 480) div 2 + 59`, one row above the island (the main screen is 479 high, centred with `div 2` of each half) | yes |
+| 1110:54fc users | The sabotage window and the file menu open where the DFM put them (300, 167 and 305, 139), so on a desktop bigger than 640×480 they aren't over the centred main screen ([layout.md](layout.md#the-other-forms)) | yes |
 
 ## Sound
 
@@ -229,7 +234,12 @@ state into the simulation. See the open questions in
   not built yet: news never pause the game, since each player can dismiss
   their own TV ([fernseher.md](fernseher.md#multiplayer));
 - the animation options;
-- the human's view, used when people are placed;
+- the human's view, used when people are placed. Only its rotation and
+  origin count, not the window or desktop size: the main screen's map is
+  624×404 at every size, and the squares the people code looks at
+  (`1110:5536`, 11 × 61 from the view's origin) and `people::sees` are
+  fixed to it ([layout.md](layout.md#the-world-and-the-screen-size)), so
+  players with different window sizes don't diverge by that;
 - the road drag state (`1110:634c`, `704e`), which the computers read
   ([player-tools.md](player-tools.md#world-and-view));
 - the build menu's lists, player 1's;

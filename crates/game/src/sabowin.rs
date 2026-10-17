@@ -96,6 +96,7 @@ pub const WIDTH: i32 = 411;
 pub const HEIGHT: i32 = 217;
 pub const TITLE_HEIGHT: i32 = 16;
 /// The DFM's position.
+// BUG(original): the DFM's place on the screen, which isn't over the centred main screen on a desktop bigger than 640×480.
 pub const LEFT: i32 = 300;
 pub const TOP: i32 = 167;
 

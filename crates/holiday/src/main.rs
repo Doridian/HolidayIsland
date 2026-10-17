@@ -25,8 +25,12 @@
 //! whether to quit (`TEndeform`), and the end of a game shows its results
 //! and the high scores.
 //!
+//! The window's client area, divided by the UI scale, is the desktop the
+//! game lays out for, again whenever it changes (`docs/layout.md`).
+//!
 //! `holiday [--save-dir=DIR] [--soundfont=FILE.sf2] [--sound=hi|lo|off]
-//! [--films=hi|lo] [--no-audio] [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`,
+//! [--films=hi|lo] [--no-audio] [--window-size=WxH] [--fullscreen|--windowed]
+//! [--ui-scale=N] [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`,
 //! `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved games go to `DIR`
 //! (default `MAPS` in the platform's data directory,
 //! `platform::storage::save_dir`); the lists show those and the game's own
@@ -72,7 +76,7 @@ use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult};
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
 use game::optionen::Settings as Options;
-use game::savegame::{Fields, MapView};
+use game::savegame::{self, Fields, MapView};
 use game::simulation::{TICK_MS, Tick};
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
@@ -88,8 +92,6 @@ use vcl::{Palette, Rect};
 use crate::forms::{Focus, Forms, Request};
 use crate::sound::Sound;
 
-/// The layout `hintergrund_timer` picks for an 800×600 screen.
-const SCREEN: (usize, usize) = (800, 600);
 /// After the intro's film: when states 422 to 424 play `holiday.mid`
 /// (420's interval 10, 422's 1), when 430 shows the title (424's 1000)
 /// and when 500 shows the start menu (440's 3000, 450's 1).
@@ -214,17 +216,22 @@ struct StartMenu {
 }
 
 impl StartMenu {
-    /// What `startform_show` does: centre the form, draw the menu and show
-    /// it. // 1058:1a30
-    fn show(&mut self) {
-        let (w, h) = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
+    /// What `startform_show` does: centre the form on the `screen` the
+    /// game lays out for, draw the menu and show it. // 1058:1a30
+    fn show(&mut self, screen: (i32, i32)) {
+        self.place(screen);
+        self.form.components[0].visible = true;
+        self.menu.show();
+    }
+
+    /// The form centred on `screen` (1058:1a30, and `startform_init`,
+    /// 1058:27e6); the port also does it when the window's size changes.
+    fn place(&mut self, (w, h): (i32, i32)) {
         let (left, top) = StartForm::position(w, h);
         self.form.components[0].bounds = Rect::new(left, top, startform::WIDTH, startform::HEIGHT);
-        self.form.components[0].visible = true;
         if let Some(bild) = self.form.component_mut("Bild") {
             bild.bounds = Rect::new(0, 0, startform::WIDTH, startform::HEIGHT);
         }
-        self.menu.show();
     }
 
     fn hide(&mut self) {
@@ -295,6 +302,9 @@ struct Game {
     forms: Forms,
     /// The sound, shared with the start menu.
     sound: sound::Shared,
+    /// The screen size the game lays out for (`screen_width`,
+    /// `screen_height`, `hintergrund::screen_size`).
+    size: (i32, i32),
 }
 
 impl Game {
@@ -370,11 +380,52 @@ impl Game {
         self.file_menu.visible || self.forms.clock_stopped()
     }
 
+    /// The game's layout for a new screen `size` (a port extension: the
+    /// original lays out once, for the desktop it starts on). The main
+    /// screen is centred again as at the start (`hauptschirm_layout`,
+    /// 1020:1ce9); every other form moves with it, so it stays where it
+    /// was over the main screen, and is then kept on the screen the way
+    /// loading a game keeps the saved windows on it
+    /// (`savegame::keep_on_screen`, 1010:08d7), and off the top and left
+    /// edges too.
+    fn resize(&mut self, size: (i32, i32)) {
+        if size == self.size {
+            return;
+        }
+        self.size = size;
+        let (left, top) = (self.screen.left, self.screen.top);
+        self.screen.layout(size);
+        let delta = (self.screen.left - left, self.screen.top - top);
+        let follow = |bounds: Rect, l: &mut i32, t: &mut i32| {
+            let moved = Rect::new(
+                bounds.left + delta.0,
+                bounds.top + delta.1,
+                bounds.width(),
+                bounds.height(),
+            );
+            let (x, y) = savegame::keep_on_screen(moved, size);
+            (*l, *t) = (x.max(0), y.max(0));
+        };
+        let a = &mut self.auction;
+        follow(a.bounds(), &mut a.left, &mut a.top);
+        let m = &mut self.tools.menu;
+        follow(m.bounds(), &mut m.left, &mut m.top);
+        if let Some(s) = &mut self.tools.sabowin {
+            follow(s.bounds(), &mut s.left, &mut s.top);
+        }
+        let d = &mut self.file_menu.menu;
+        let bounds = Rect::new(d.left, d.top, dateimenue::WIDTH, dateimenue::HEIGHT);
+        follow(bounds, &mut d.left, &mut d.top);
+        self.forms.follow(follow);
+    }
+
     /// The mouse in `Hauptbild`'s coordinates.
     fn hauptbild_mouse(&self) -> (i32, i32) {
-        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
         let bild = hauptschirm::LAYOUT[3].1;
-        (self.mouse.0 - left - bild.left, self.mouse.1 - top - bild.top)
+        (
+            self.mouse.0 - self.screen.left - bild.left,
+            self.mouse.1 - self.screen.top - bild.top,
+        )
     }
 
     /// Hands the tools' actions to the world as the human's commands.
@@ -395,7 +446,7 @@ impl Game {
         let view = self.screen.camera().view;
         let actions = self
             .tools
-            .click(b, &self.world, &self.font, &self.tiles, &self.info, view, screen_size());
+            .click(b, &self.world, &self.font, &self.tiles, &self.info, view, self.size);
         self.tool_actions(actions);
         self.show_tools();
     }
@@ -411,7 +462,7 @@ impl Game {
             &self.tiles,
             &self.info,
             view,
-            screen_size(),
+            self.size,
         );
         self.tool_actions(actions);
         self.show_tools();
@@ -439,16 +490,8 @@ impl Game {
     /// Shows what a tick or command did, and says whether anything changed.
     fn show(&mut self, t: &Tick) -> bool {
         let view = self.screen.camera().view;
-        self.tools.world_changed(
-            t,
-            1,
-            &self.world,
-            &self.font,
-            &self.tiles,
-            &self.info,
-            view,
-            screen_size(),
-        );
+        self.tools
+            .world_changed(t, 1, &self.world, &self.font, &self.tiles, &self.info, view, self.size);
         self.show_tools();
         if t.loaded {
             // `game_show_state` (1010:26fa): the view from the file.
@@ -533,9 +576,8 @@ impl Game {
             let bitmap = Bitmap::parse(&std::fs::read(path).ok()?).ok()?;
             Some(Surface::from_bitmap(&bitmap))
         });
-        let screen = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
         self.auction
-            .open(&self.world, &self.font, &self.info, picture.as_ref(), screen);
+            .open(&self.world, &self.font, &self.info, picture.as_ref(), self.size);
         self.auction_captured = false;
         // 1028:0dde hides the TV (1048:077a).
         let r = self.forms.tv.close();
@@ -567,7 +609,7 @@ impl Game {
         if !over {
             return false;
         }
-        let screen = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
+        let screen = self.size;
         match input {
             Input::MouseDown { .. } => {
                 self.auction_captured = true;
@@ -638,7 +680,7 @@ impl Game {
                 )
             }
             _ => {
-                self.tools.menu.mouse_move(shift, (sx, sy), screen_size());
+                self.tools.menu.mouse_move(shift, (sx, sy), self.size);
                 baumenue::Response::Nothing
             }
         };
@@ -657,11 +699,13 @@ impl Game {
         else {
             return (false, false);
         };
-        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
-        let (fx, fy) = (sx - left, sy - top);
+        let main = self.screen.bounds();
+        let (fx, fy) = (sx - main.left, sy - main.top);
+        // While it's rolled up to its title bar only that part is there.
         let target = self.captured.or_else(|| {
             hauptschirm::LAYOUT
                 .iter()
+                .filter(|_| (0..main.height()).contains(&fy))
                 .find(|(_, r)| (r.left..r.right).contains(&fx) && (r.top..r.bottom).contains(&fy))
                 .map(|(name, _)| *name)
         });
@@ -687,6 +731,18 @@ impl Game {
             _ => {}
         }
         match (target, input) {
+            // Dragging the form by its title bar. // 1020:1b8e, 1020:1bd9, 1020:1c58
+            ("Ueberschriftbild", Input::MouseDown { .. }) => {
+                self.screen.title_mouse_down(shift, (sx, sy));
+                (true, false)
+            }
+            ("Ueberschriftbild", Input::MouseMove { .. }) => {
+                (self.screen.title_mouse_move(shift, (sx, sy), self.size), false)
+            }
+            ("Ueberschriftbild", Input::MouseUp { .. }) => {
+                self.screen.title_mouse_up();
+                (true, false)
+            }
             // `OnClick`: the left button let go over the button bar.
             (
                 "ButtonImage",
@@ -807,6 +863,7 @@ impl Game {
     }
 
     fn paint(&mut self, screen: &mut Surface, palette: &Palette) {
+        self.form.components[0].bounds = self.screen.bounds();
         for (name, image) in self.screen.images() {
             if let Some(c) = self.form.component_mut(name)
                 && let Kind::Image { picture } = &mut c.kind
@@ -868,12 +925,31 @@ enum Pending {
     Load(SaveGame),
 }
 
+/// What `backgroundimage` shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Picture {
+    /// Nothing yet: states 110 to 420.
+    None,
+    /// `tit<size>.BMP`: states 430 and 440.
+    Title,
+    /// `bck<size>.BMP`: state 450 on.
+    Background,
+}
+
 struct Holiday {
     dir: PathBuf,
     exe: Vec<u8>,
     form: Form,
     game: Option<Game>,
-    background: Bitmap,
+    /// The desktop: the window's client area divided by the UI scale, at
+    /// least [`platform::MIN_DESKTOP`] (a smaller window is letterboxed).
+    /// The maximized `THintergrund` covers it, and the framebuffer is
+    /// this big.
+    desktop: (i32, i32),
+    /// The screen size the game lays out for, from the desktop
+    /// (`hintergrund::screen_size`, state 110).
+    size: (i32, i32),
+    picture: Picture,
     start: StartMenu,
     palette: Palette,
     rgb: [[u8; 3]; 256],
@@ -898,15 +974,68 @@ struct Holiday {
 }
 
 impl Holiday {
-    fn set_picture(&mut self, bitmap: &Bitmap) {
+    /// `backgroundimage` shows `picture` for the screen size: the
+    /// title's or the background's of [`hintergrund::layout`], or none
+    /// for other sizes (states 430, 450 and 1130). The palette, which the
+    /// whole game is drawn with, is the picture's; without one (or with
+    /// `Picture::None`) it's the 800×600 one's, the port's stand-in for
+    /// the palette Windows would have had then. // 1000:2466
+    fn set_picture(&mut self, picture: Picture) {
+        self.picture = picture;
+        let layout = hintergrund::layout(self.size);
+        let fallback = &hintergrund::LAYOUTS[0];
+        let file = |l: &hintergrund::Layout| match picture {
+            Picture::None | Picture::Title => l.title,
+            Picture::Background => l.background,
+        };
+        let bitmap = bitmap(
+            &self.dir,
+            &format!("GRAFIK/{}", file(layout.unwrap_or(fallback)).to_ascii_uppercase()),
+        );
         self.palette = bitmap.palette;
         self.rgb = bitmap.palette.map(|c| [c.r, c.g, c.b]);
+        let shown = (picture != Picture::None && layout.is_some()).then(|| Surface::from_bitmap(&bitmap));
         if let Some(image) = self.form.component_mut("backgroundimage")
             && let Kind::Image { picture } = &mut image.kind
         {
-            *picture = Some(Surface::from_bitmap(bitmap));
+            *picture = shown;
         }
         self.repaint();
+    }
+
+    /// Lays everything out for a desktop of `width` × `height`: the
+    /// framebuffer, `THintergrund` maximized over it, the screen size
+    /// and its pictures (state 110), the film panel centred on the form
+    /// (state 110), the start menu (1058:1a30), the load form (1038:3b46)
+    /// and the game (`Game::resize`). The original does this once at the
+    /// start; the port again whenever the window's size changes.
+    fn layout(&mut self, width: i32, height: i32) {
+        let min = (
+            i32::try_from(platform::MIN_DESKTOP.0).unwrap_or(640),
+            i32::try_from(platform::MIN_DESKTOP.1).unwrap_or(480),
+        );
+        self.desktop = (width.max(min.0), height.max(min.1));
+        let (w, h) = self.desktop;
+        self.screen = Surface::new(usize::try_from(w).unwrap_or(0), usize::try_from(h).unwrap_or(0), 0);
+        // State 110: the maximized form's size, snapped to a layout, is
+        // the screen size; `backgroundimage` gets it at 0, 0.
+        self.size = hintergrund::screen_size(w, h);
+        self.form.components[0].bounds = Rect::new(0, 0, w, h);
+        if let Some(image) = self.form.component_mut("backgroundimage") {
+            image.bounds = Rect::new(0, 0, self.size.0, self.size.1);
+        }
+        if self.pending.is_some() || self.intro == Intro::Film {
+            let panel = self.film_panel();
+            self.sound.borrow_mut().set_film_panel(panel);
+        }
+        self.start.place(self.size);
+        if let Some(load) = &mut self.load {
+            load.place(self.size);
+        }
+        if let Some(game) = &mut self.game {
+            game.resize(self.size);
+        }
+        self.set_picture(self.picture);
     }
 
     fn repaint(&mut self) {
@@ -1073,7 +1202,7 @@ impl Holiday {
                     if let Err(e) = self.saves.write(hintergrund::LAST_MAP.as_bytes(), &game.map()) {
                         eprintln!("can't save {}: {e}", hintergrund::LAST_MAP);
                     }
-                    let r = game.forms.schluss.open_quit(screen_size());
+                    let r = game.forms.schluss.open_quit(game.size);
                     game.schluss_response(r);
                 }
                 Request::Exit => {
@@ -1098,7 +1227,7 @@ impl Holiday {
     /// disabled, so only the form gets it.
     fn load_mouse(&mut self, input: Input) {
         let Some(load) = &mut self.load else { return };
-        let (lx, ly) = LadenForm::position(screen_size().0, screen_size().1);
+        let (lx, ly) = LadenForm::position(self.size.0, self.size.1);
         let bit = |b: Button| match b {
             Button::Left => ShiftState::LEFT,
             Button::Right => ShiftState::RIGHT,
@@ -1161,6 +1290,7 @@ impl Holiday {
     /// disabled. // 1040:073c, 1040:09ca, 1040:0a4c
     fn file_menu_mouse(&mut self, input: Input, shift: ShiftState, buttons_up: bool) {
         let Some(game) = &mut self.game else { return };
+        let size = game.size;
         let m = &mut game.file_menu;
         let (x, y) = match input {
             Input::MouseMove { x, y } | Input::MouseDown { x, y, .. } | Input::MouseUp { x, y, .. } => {
@@ -1183,7 +1313,7 @@ impl Holiday {
                 }
                 m.menu.mouse_up(x, y, button == Button::Left)
             }
-            _ => m.menu.mouse_move(x, y, shift, screen_size()),
+            _ => m.menu.mouse_move(x, y, shift, size),
         };
         self.file_menu_response(response);
     }
@@ -1258,13 +1388,14 @@ impl Holiday {
             s.intro_music();
         }
         self.start = start_menu(&self.dir, &self.exe, Settings::from_world(&game.world));
-        self.start.show();
+        self.start.show(self.size);
         self.repaint();
     }
 
-    /// `FilmPanel`, centred on the screen (state 110).
-    fn film_panel() -> Rect {
-        let (w, h) = screen_size();
+    /// `FilmPanel`, centred on the maximized form, which is the desktop
+    /// (state 110).
+    fn film_panel(&self) -> Rect {
+        let (w, h) = self.desktop;
         Rect::new(
             (w - FILM_PANEL.0) / 2,
             (h - FILM_PANEL.1) / 2,
@@ -1280,7 +1411,7 @@ impl Holiday {
         let opened = {
             let mut s = self.sound.borrow_mut();
             s.effects_off(); // 10a0:2518
-            s.play_film(START_FILM, Self::film_panel())
+            s.play_film(START_FILM, self.film_panel())
         };
         self.pending = Some(pending);
         if !opened {
@@ -1308,6 +1439,7 @@ impl Holiday {
                     self.options,
                     high,
                     &self.sound,
+                    self.size,
                 ));
             }
             Some(Pending::Load(map)) => {
@@ -1321,6 +1453,7 @@ impl Holiday {
                     options,
                     high,
                     &self.sound,
+                    self.size,
                 ));
             }
             None => {}
@@ -1346,16 +1479,14 @@ impl Holiday {
         }
         if from < TITLE_AT && to >= TITLE_AT {
             // States 430 and 440.
-            let title = bitmap(&self.dir, "GRAFIK/TIT80X60.BMP");
-            self.set_picture(&title);
+            self.set_picture(Picture::Title);
         }
         if to >= MENU_AT {
             // States 450 and 500.
             self.intro = Intro::Done;
             self.sound.borrow_mut().effects_on(); // 10a0:254f
-            let background = self.background.clone();
-            self.start.show();
-            self.set_picture(&background);
+            self.start.show(self.size);
+            self.set_picture(Picture::Background);
         } else {
             self.intro = Intro::After(to);
         }
@@ -1413,7 +1544,7 @@ impl Holiday {
             Some(Action::Load) => {
                 // 1058:0c7d: the start menu is disabled and TLadenForm
                 // opens over it.
-                self.load = Some(load_menu(&self.dir, &self.exe, self.saves.games()));
+                self.load = Some(load_menu(&self.dir, &self.exe, self.saves.games(), self.size));
             }
             Some(Action::Quit) => self.quit = true,
             None => {}
@@ -1448,7 +1579,7 @@ impl App for Holiday {
         if let Some(panel) = self.game.as_ref().and_then(Game::film_panel) {
             self.sound.borrow_mut().set_film_panel(panel);
         }
-        self.overlay = self.sound.borrow().film_picture(screen_size());
+        self.overlay = self.sound.borrow().film_picture(self.desktop);
     }
 
     fn input(&mut self, input: Input) {
@@ -1525,6 +1656,13 @@ impl App for Holiday {
     fn finished(&self) -> bool {
         self.quit
     }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        self.layout(
+            i32::try_from(width).unwrap_or(i32::MAX),
+            i32::try_from(height).unwrap_or(i32::MAX),
+        );
+    }
 }
 
 fn read(dir: &Path, name: &str) -> Vec<u8> {
@@ -1543,11 +1681,6 @@ fn load_form(exe: &[u8], class: &str) -> Form {
         .find(|r| r.kind == ResId::Id(RT_RCDATA) && r.name == ResId::Name(class.as_bytes().to_vec()))
         .unwrap_or_else(|| panic!("no {class} form"));
     Form::load(&Object::parse(res.data).expect("bad form")).expect("bad form")
-}
-
-/// The screen's size, as the game lays out for it.
-fn screen_size() -> (i32, i32) {
-    (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap())
 }
 
 fn font(dir: &Path) -> Font {
@@ -1583,23 +1716,32 @@ fn start_menu(dir: &Path, exe: &[u8], settings: Settings) -> StartMenu {
 }
 
 /// `TLadenForm` as 1038:3b46 creates and shows it, with `games`: at the
-/// bottom of the screen, `Bild` filling it. // 1038:3b46
-fn load_menu(dir: &Path, exe: &[u8], games: Vec<Vec<u8>>) -> LoadMenu {
+/// bottom of the `screen`, `Bild` filling it. // 1038:3b46
+fn load_menu(dir: &Path, exe: &[u8], games: Vec<Vec<u8>>, screen: (i32, i32)) -> LoadMenu {
     let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
     let load = texts.texts.get(7).cloned().unwrap_or_default();
     let menu = LadenForm::new(font(dir), bitmaps(dir, &ladenform::BITMAP_FILES), &load, games);
     let mut form = load_form(exe, "TLADENFORM");
-    let (left, top) = LadenForm::position(screen_size().0, screen_size().1);
-    form.components[0].bounds = Rect::new(left, top, ladenform::WIDTH, ladenform::HEIGHT);
     form.components[0].visible = true;
     if let Some(bild) = form.component_mut("Bild") {
         bild.bounds = Rect::new(0, 0, ladenform::WIDTH, ladenform::HEIGHT);
         bild.visible = true;
     }
-    LoadMenu {
+    let mut load = LoadMenu {
         menu,
         form,
         captured: false,
+    };
+    load.place(screen);
+    load
+}
+
+impl LoadMenu {
+    /// At the bottom of the `screen`, centred across it (1038:3b46); the
+    /// port also does it when the window's size changes.
+    fn place(&mut self, (w, h): (i32, i32)) {
+        let (left, top) = LadenForm::position(w, h);
+        self.form.components[0].bounds = Rect::new(left, top, ladenform::WIDTH, ladenform::HEIGHT);
     }
 }
 
@@ -1607,6 +1749,7 @@ fn load_menu(dir: &Path, exe: &[u8], games: Vec<Vec<u8>>) -> LoadMenu {
 /// DFM's position. // 1040:154d
 fn file_menu(dir: &Path, exe: &[u8]) -> FileMenu {
     let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+    // BUG(original): the DFM's place on the screen (305, 139), which isn't over the centred main screen on a desktop bigger than 640×480.
     let mut form = load_form(exe, "TDATEIMENUE");
     let at = form.components[0].bounds;
     if let Some(image) = form.component_mut("Dateimenuebild") {
@@ -1732,6 +1875,7 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
 /// States 1000 to 1500 with `hintergrund+0x190`: the saved game `map`
 /// over a newly set up game, and the main screen at the file's view.
 /// // 1000:2466
+#[allow(clippy::too_many_arguments)]
 fn load_game(
     dir: &Path,
     exe: &[u8],
@@ -1740,6 +1884,7 @@ fn load_game(
     options: Options,
     high: HighScores,
     sound: &sound::Shared,
+    size: (i32, i32),
 ) -> Game {
     let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok()).unwrap_or_else(|e| panic!("{e}"));
     let world =
@@ -1753,6 +1898,7 @@ fn load_game(
         options,
         high,
         sound,
+        size,
     )
 }
 
@@ -1760,6 +1906,7 @@ fn load_game(
 /// clicked and `titel.avi` is over, without the progress window
 /// (`TWasNunForm`) and what isn't ported yet: load the scenario's map or
 /// generate an island, set up the main screen and show it. // 1000:2466
+#[allow(clippy::too_many_arguments)]
 fn start_game(
     dir: &Path,
     exe: &[u8],
@@ -1768,13 +1915,15 @@ fn start_game(
     mut options: Options,
     high: HighScores,
     sound: &sound::Shared,
+    size: (i32, i32),
 ) -> Game {
     let start = start_world(dir, settings, scenario_page, &mut options);
-    make_game(dir, exe, start, options, high, sound)
+    make_game(dir, exe, start, options, high, sound, size)
 }
 
 /// The main screen and the forms of a game that starts from `start`.
 /// // 1020:2501, 1010:2820
+#[allow(clippy::too_many_lines)]
 fn make_game(
     dir: &Path,
     exe: &[u8],
@@ -1782,6 +1931,7 @@ fn make_game(
     mut options: Options,
     high: HighScores,
     sound: &sound::Shared,
+    size: (i32, i32),
 ) -> Game {
     {
         let mut s = sound.borrow_mut();
@@ -1811,9 +1961,8 @@ fn make_game(
 
     // 1020:1ce9 and 1020:283b: centred, laid out and shown.
     let mut form = load_form(exe, "THAUPTSCHIRM");
-    let (w, h) = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
-    let (left, top) = Hauptschirm::position(w, h);
-    form.components[0].bounds = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT);
+    screen.layout(size);
+    form.components[0].bounds = screen.bounds();
     form.components[0].visible = true;
     for (name, bounds) in hauptschirm::LAYOUT {
         if let Some(c) = form.component_mut(name) {
@@ -1842,7 +1991,7 @@ fn make_game(
         names,
         auswahl(&read(dir, "TEXTE/AUSWAHL.TXT")),
         bitmaps(dir, &baumenue::BITMAP_FILES),
-        screen_size(),
+        size,
     );
     let mut tools = Tools::new(menu, fehler(&read(dir, "TEXTE/FEHLER.TXT")).expect("FEHLER.TXT"));
     tools.sabowin = Some(Forms::sabowin(dir, &font, &info));
@@ -1852,7 +2001,7 @@ fn make_game(
     let mut menu_form = load_form(exe, "TBAUMENUE");
     menu_form.components[0].visible = false;
     // The other forms, and what the map holds of them.
-    let mut forms = Forms::load(dir, exe, &font, &info, options, high, &screen);
+    let mut forms = Forms::load(dir, exe, &font, &info, options, high, &screen, size);
     forms.overview.load(&view_rest); // 10b8:4f1c
     forms.overview.game_start(&world);
     forms.tv.load_fields(&view_rest);
@@ -1889,6 +2038,7 @@ fn make_game(
         file_menu: file_menu(dir, exe),
         view_rest,
         sound: Rc::clone(sound),
+        size,
     }
 }
 
@@ -1900,6 +2050,7 @@ struct Args {
     quality: setup::Sound,
     films: setup::Film,
     no_audio: bool,
+    window: platform::WindowOptions,
 }
 
 fn args() -> Args {
@@ -1909,9 +2060,33 @@ fn args() -> Args {
     let mut quality = None;
     let mut films = None;
     let mut no_audio = false;
+    let mut window = platform::WindowOptions {
+        settings_file: platform::settings::settings_file(),
+        ..platform::WindowOptions::default()
+    };
+    let fail = |message: &str| -> ! {
+        eprintln!("{message}");
+        std::process::exit(2);
+    };
     for arg in std::env::args_os().skip(1) {
         let a = arg.to_str().unwrap_or_default();
-        if let Some(d) = a.strip_prefix("--save-dir=") {
+        if let Some(size) = a.strip_prefix("--window-size=") {
+            let parsed = size
+                .split_once(['x', 'X'])
+                .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)))
+                .filter(|&(w, h)| w > 0 && h > 0);
+            window.size = Some(parsed.unwrap_or_else(|| fail("--window-size= takes WIDTHxHEIGHT")));
+        } else if a == "--fullscreen" {
+            window.fullscreen = Some(true);
+        } else if a == "--windowed" {
+            window.fullscreen = Some(false);
+        } else if let Some(n) = a.strip_prefix("--ui-scale=") {
+            let n = n
+                .parse::<u32>()
+                .ok()
+                .filter(|n| (1..=platform::MAX_UI_SCALE).contains(n));
+            window.ui_scale = Some(n.unwrap_or_else(|| fail("--ui-scale= takes 1 to 4")));
+        } else if let Some(d) = a.strip_prefix("--save-dir=") {
             save_dir = Some(PathBuf::from(d));
         } else if let Some(f) = a.strip_prefix("--soundfont=") {
             soundfont = Some(PathBuf::from(f));
@@ -1955,6 +2130,7 @@ fn args() -> Args {
         quality,
         films,
         no_audio,
+        window,
     }
 }
 
@@ -1966,6 +2142,7 @@ fn main() {
         quality,
         films,
         no_audio,
+        window,
     } = args();
     let audio = if no_audio {
         platform::audio::Audio::silent()
@@ -1981,72 +2158,81 @@ fn main() {
             .unwrap_or_else(|| dir.join("MAPS")),
         game_maps: dir.join("MAPS"),
     };
-    let exe = read(&dir, "HOLIDAY.EXE");
-    let mut form = load_form(&exe, "THINTERGRUND");
-
-    // What states 110 and 400 do to the form and its image.
-    let (w, h) = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
-    form.components[0].bounds = Rect::new(0, 0, w, h);
-    form.components[0].visible = true;
-    if let Some(image) = form.component_mut("backgroundimage") {
-        image.bounds = Rect::new(0, 0, w, h);
-        image.visible = true;
-    }
-
-    let title = bitmap(&dir, "GRAFIK/TIT80X60.BMP");
-    let start = start_menu(&dir, &exe, Settings::default());
-    let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
-    // State 100: the `WaveMix` session gives up the wave device until the
-    // start menu (10a0:2518); state 400: `sunflow.avi`, or state 420 if
-    // it doesn't open.
-    let intro = {
-        let mut s = sound.borrow_mut();
-        s.effects_off();
-        if s.play_film(INTRO_FILM, Holiday::film_panel()) {
-            Intro::Film
-        } else {
-            Intro::After(Duration::ZERO)
-        }
-    };
-    let mut holiday = Holiday {
-        dir,
-        exe,
-        form,
-        game: None,
-        background,
-        start,
-        palette: title.palette,
-        rgb: [[0; 3]; 256],
-        screen: Surface::new(SCREEN.0, SCREEN.1, 0),
-        intro,
-        pending: None,
-        overlay: None,
-        buttons: ShiftState::default(),
-        keys: ShiftState::default(),
-        quit: false,
-        load: None,
-        saves,
-        last_press: None,
-        options: Options::default(),
-        sound,
-    };
-    // The title's palette, with no picture until state 430.
-    holiday.set_picture(&title);
-    if let Some(image) = holiday.form.component_mut("backgroundimage")
-        && let Kind::Image { picture } = &mut image.kind
-    {
-        *picture = None;
-    }
-    holiday.repaint();
-    if let Err(e) = platform::run("Holiday Island", holiday) {
+    let mut holiday = Holiday::new(dir, saves, sound);
+    holiday.start_intro();
+    if let Err(e) = platform::run("Holiday Island", window, holiday) {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+impl Holiday {
+    /// The game before the intro: `THintergrund` from its DFM, shown
+    /// maximized over an 800×600 desktop until the platform says how big
+    /// the window is ([`App::resize`]), and the start menu, hidden.
+    fn new(dir: PathBuf, saves: Saves, sound: sound::Shared) -> Holiday {
+        let exe = read(&dir, "HOLIDAY.EXE");
+        let mut form = load_form(&exe, "THINTERGRUND");
+        // What states 110 and 400 do to the form and its image.
+        form.components[0].visible = true;
+        if let Some(image) = form.component_mut("backgroundimage") {
+            image.visible = true;
+        }
+        let start = start_menu(&dir, &exe, Settings::default());
+        let mut holiday = Holiday {
+            dir,
+            exe,
+            form,
+            game: None,
+            desktop: (0, 0),
+            size: (0, 0),
+            picture: Picture::None,
+            start,
+            palette: [vcl::Rgb::default(); 256],
+            rgb: [[0; 3]; 256],
+            screen: Surface::new(0, 0, 0),
+            intro: Intro::Done,
+            pending: None,
+            overlay: None,
+            buttons: ShiftState::default(),
+            keys: ShiftState::default(),
+            quit: false,
+            load: None,
+            saves,
+            last_press: None,
+            options: Options::default(),
+            sound,
+        };
+        let (w, h) = platform::DEFAULT_DESKTOP;
+        holiday.layout(i32::try_from(w).unwrap_or(800), i32::try_from(h).unwrap_or(600));
+        holiday
+    }
+
+    /// State 100: the `WaveMix` session gives up the wave device until the
+    /// start menu (10a0:2518); state 400: `sunflow.avi`, or state 420 if
+    /// it doesn't open. The title's palette, with no picture until state
+    /// 430.
+    fn start_intro(&mut self) {
+        let panel = self.film_panel();
+        self.intro = {
+            let mut s = self.sound.borrow_mut();
+            s.effects_off();
+            if s.play_film(INTRO_FILM, panel) {
+                Intro::Film
+            } else {
+                Intro::After(Duration::ZERO)
+            }
+        };
+        self.set_picture(Picture::None);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The screen the older tests lay out for.
+    const SIZE: (i32, i32) = (800, 600);
 
     /// A scenario's main screen with the TV (opened by a message), the
     /// money menu, the overview map, the compass and the sabotage window
@@ -2067,7 +2253,7 @@ mod tests {
         };
         let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
         let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
-        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high, &sound);
+        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high, &sound, SIZE);
         game.world.clock.paused = false;
         let _ = game.update(Duration::from_millis(u64::from(TICK_MS) * 5));
         // A message of kind 0 opens the TV, which asks for the pause.
@@ -2091,7 +2277,7 @@ mod tests {
         assert!(game.forms.money.shown() && game.tools.down[4]);
         game.click_button(5);
         assert!(game.forms.overview.visible() && game.tools.down[5]);
-        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
+        let (left, top) = (game.screen.left, game.screen.top);
         let corner = hauptschirm::LAYOUT[7].1;
         let at = (left + corner.left + 8, top + corner.top + 8);
         let press = Input::MouseDown {
@@ -2122,7 +2308,7 @@ mod tests {
         assert_eq!(MapView::from_map(&map).news, [true, false, true, false]);
 
         let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
-        let mut screen = Surface::new(SCREEN.0, SCREEN.1, 0);
+        let mut screen = Surface::new(800, 600, 0);
         game.paint(&mut screen, &background.palette);
         if let Some(out) = std::env::var_os("HOLIDAY_PPM") {
             let mut ppm = format!("P6\n{} {}\n255\n", screen.width, screen.height).into_bytes();
@@ -2153,7 +2339,7 @@ mod tests {
         };
         let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
         let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
-        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high, &sound);
+        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high, &sound, SIZE);
         game.forms.settings.speech = false;
         game.world.clock.paused = false;
         let mut tick = Tick::default();
@@ -2178,13 +2364,13 @@ mod tests {
         sound.borrow_mut().advance(4000);
         let panel = game.film_panel().unwrap();
         sound.borrow_mut().set_film_panel(panel);
-        let (rect, rgb) = sound.borrow().film_picture(screen_size()).unwrap();
+        let (rect, rgb) = sound.borrow().film_picture(SIZE).unwrap();
         // 335 × 257, cut to the panel's 332 × 256.
         let tv = game.forms.tv.bounds();
         assert_eq!(rect, Rect::new(tv.left + 9, tv.top + 25, 332, 256));
         if let Some(out) = std::env::var_os("HOLIDAY_PPM") {
             let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
-            let mut screen = Surface::new(SCREEN.0, SCREEN.1, 0);
+            let mut screen = Surface::new(800, 600, 0);
             game.paint(&mut screen, &background.palette);
             let mut ppm = format!("P6\n{} {}\n255\n", screen.width, screen.height).into_bytes();
             for (i, &p) in screen.pixels.iter().enumerate() {
@@ -2212,7 +2398,7 @@ mod tests {
             ms += TICK_MS;
             assert!(ms <= 20_000, "the TV closes after the film");
         }
-        assert!(game.film_panel().is_none() && sound.borrow().film_picture(screen_size()).is_none());
+        assert!(game.film_panel().is_none() && sound.borrow().film_picture(SIZE).is_none());
         let _ = game.update(step);
         assert!(!game.world.clock.paused, "the pause ends with the TV");
     }
@@ -2237,17 +2423,252 @@ mod tests {
             Options::default(),
             high,
             &sound,
+            SIZE,
         );
-        let r = game.forms.schluss.open_quit(screen_size());
+        let r = game.forms.schluss.open_quit(SIZE);
         game.schluss_response(r);
         let panel = game.forms.schluss.film_panel().unwrap();
         assert_eq!((panel.width(), panel.height()), (432, 320));
         sound.borrow_mut().advance(1000);
-        let (rect, _) = sound.borrow().film_picture(screen_size()).unwrap();
+        let (rect, _) = sound.borrow().film_picture(SIZE).unwrap();
         assert_eq!(rect, panel);
         assert!(!sound.borrow().film_done() && !sound.borrow().effects.active());
         assert!(game.forms_key(0x20, ShiftState::default()));
         assert!(sound.borrow().film_done() && sound.borrow().effects.active());
         assert!(matches!(game.forms.requests.last(), Some(Request::Exit)));
+    }
+
+    /// The game's files, or none (the test is skipped).
+    fn game_dir() -> Option<PathBuf> {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orig");
+        if dir.join("GRAFIK").exists() {
+            Some(dir)
+        } else {
+            eprintln!("skipping: {} not found", dir.display());
+            None
+        }
+    }
+
+    /// The whole program on a `width` × `height` desktop, past the intro,
+    /// with scenario 1 started and the TV (opened by a message), the money
+    /// menu, the overview map and the compass open.
+    fn holiday_in_a_game(dir: &Path, (width, height): (i32, i32)) -> Holiday {
+        let sound = Sound::new(dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let saves = Saves {
+            dir: std::env::temp_dir().join("holiday-layout-test-saves"),
+            game_maps: dir.join("MAPS"),
+        };
+        let mut h = Holiday::new(dir.to_path_buf(), saves, sound);
+        h.resize(u32::try_from(width).unwrap(), u32::try_from(height).unwrap());
+        h.intro_step(Duration::ZERO, MENU_AT);
+        let settings = Settings {
+            scenario: 1,
+            ..Settings::default()
+        };
+        let high = forms::high_scores(dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+        h.start.hide();
+        let mut game = start_game(dir, &h.exe, &settings, true, Options::default(), high, &h.sound, h.size);
+        let mut tick = Tick::default();
+        let pos = game.world.viewpoint.origin;
+        game.world.post_message(
+            game::news::Message {
+                number: 0,
+                a: 1,
+                pos: Some((pos.0 + 12, pos.1 + 8)),
+                ..game::news::Message::default()
+            },
+            &mut tick,
+        );
+        let _ = game.show(&tick);
+        game.click_button(4);
+        game.click_button(5);
+        let corner = hauptschirm::LAYOUT[7].1;
+        let at = (game.screen.left + corner.left + 8, game.screen.top + corner.top + 8);
+        let press = Input::MouseDown {
+            x: at.0,
+            y: at.1,
+            button: Button::Left,
+        };
+        let release = Input::MouseUp {
+            x: at.0,
+            y: at.1,
+            button: Button::Left,
+        };
+        let _ = game.main_mouse(press, ShiftState::LEFT, false);
+        let _ = game.main_mouse(release, ShiftState::default(), true);
+        // The money menu's page once its command is applied.
+        let _ = game.update(Duration::ZERO);
+        assert!(game.forms.tv.visible && game.forms.money.shown());
+        assert!(game.forms.overview.visible() && game.forms.compass.visible());
+        h.game = Some(game);
+        h.repaint();
+        h
+    }
+
+    /// The bounds of the forms that are shown.
+    fn shown_forms(game: &Game) -> Vec<(&'static str, Rect)> {
+        let f = &game.forms;
+        [
+            ("main", true, game.screen.bounds()),
+            ("tv", f.tv.visible, f.tv.bounds()),
+            ("money", f.money.shown(), f.money.bounds()),
+            ("overview", f.overview.visible(), f.overview.bounds()),
+            ("compass", f.compass.visible(), f.compass.bounds()),
+            ("menu", game.tools.menu.height > 0, game.tools.menu.bounds()),
+            ("auction", game.auction.visible, game.auction.bounds()),
+        ]
+        .into_iter()
+        .filter(|&(_, shown, _)| shown)
+        .map(|(name, _, r)| (name, r))
+        .collect()
+    }
+
+    /// Writes the framebuffer as `name.ppm` into `HOLIDAY_PPM`, if set.
+    fn write_ppm(h: &Holiday, name: &str) {
+        let Some(out) = std::env::var_os("HOLIDAY_PPM") else {
+            return;
+        };
+        let mut ppm = format!("P6\n{} {}\n255\n", h.screen.width, h.screen.height).into_bytes();
+        for &i in &h.screen.pixels {
+            ppm.extend_from_slice(&h.rgb[usize::from(i)]);
+        }
+        std::fs::write(PathBuf::from(out).join(format!("{name}.ppm")), ppm).unwrap();
+    }
+
+    /// The main screen with the TV, the money menu, the overview map and
+    /// the compass open on four desktops: the original's 640×480, 800×600
+    /// and 1024×768, and 1366×700, which has no pictures. With
+    /// `HOLIDAY_PPM` set, each goes there as `layout-WxH.ppm`.
+    #[test]
+    fn layouts() {
+        let Some(dir) = game_dir() else { return };
+        for (size, main_at, background) in [
+            ((640, 480), (0, 1), true),
+            ((800, 600), (80, 61), true),
+            ((1024, 768), (192, 145), true),
+            ((1366, 700), (363, 111), false),
+        ] {
+            let h = holiday_in_a_game(&dir, size);
+            assert_eq!(h.size, size, "{size:?} is laid out for as it is");
+            let game = h.game.as_ref().unwrap();
+            assert_eq!((game.screen.left, game.screen.top), main_at, "centred");
+            // The money menu and the compass at the top right edge
+            // (1070:2e6c, 1038:2c04); the TV where the scenario's file
+            // put it.
+            assert_eq!(game.forms.compass.bounds().right, size.0);
+            assert_eq!(game.forms.money.bounds().top, 0);
+            let has_picture = h
+                .form
+                .component("backgroundimage")
+                .is_some_and(|c| matches!(c.kind, Kind::Image { picture: Some(_) }));
+            assert_eq!(has_picture, background);
+            write_ppm(&h, &format!("layout-{}x{}", size.0, size.1));
+        }
+    }
+
+    /// A smaller window than 640×480 gets a 640×480 desktop (which the
+    /// platform letterboxes), and one a little off a layout snaps to it.
+    #[test]
+    fn small_and_snapped_desktops() {
+        let Some(dir) = game_dir() else { return };
+        let h = holiday_in_a_game(&dir, (500, 400));
+        assert_eq!((h.desktop, h.size), ((640, 480), (640, 480)));
+        assert_eq!((h.screen.width, h.screen.height), (640, 480));
+        let h = holiday_in_a_game(&dir, (790, 590));
+        assert_eq!((h.desktop, h.size), ((790, 590), (800, 600)));
+        // BUG(original): laid out for 800×600 on 790×590, the compass's right edge is off the screen.
+        assert_eq!(h.game.as_ref().unwrap().forms.compass.bounds().right, 800);
+    }
+
+    /// Resizing in the middle of a game: the world doesn't change, nor
+    /// does the scroll position (the main screen shows the same part of
+    /// the island at every size), the main screen is centred again and
+    /// every form stays on the screen.
+    #[test]
+    fn resize_mid_game() {
+        let Some(dir) = game_dir() else { return };
+        let mut h = holiday_in_a_game(&dir, (800, 600));
+        {
+            let game = h.game.as_mut().unwrap();
+            game.screen.scroll(5, -3, &game.world, &game.tiles);
+            game.forms.compass.left = 0;
+            game.forms.compass.top = 400;
+        }
+        let game = h.game.as_ref().unwrap();
+        let world = game.world.clone();
+        let scroll = game.screen.scroll_position();
+        let camera = game.screen.camera();
+        let compass = game.forms.compass.bounds();
+        h.resize(1024, 768);
+        {
+            let game = h.game.as_ref().unwrap();
+            assert_eq!((game.screen.left, game.screen.top), (192, 145));
+            // It follows the main screen.
+            let moved = game.forms.compass.bounds();
+            assert_eq!((moved.left, moved.top), (compass.left + 112, compass.top + 84));
+        }
+        for (w, hh) in [(1024, 768), (640, 480), (1366, 700), (700, 500), (800, 600)] {
+            h.resize(w, hh);
+            let game = h.game.as_ref().unwrap();
+            let size = h.size;
+            assert!(game.world == world, "the world doesn't see the window");
+            assert_eq!(game.screen.scroll_position(), scroll);
+            assert_eq!(game.screen.camera(), camera);
+            assert_eq!(game.screen.bounds().left, size.0 / 2 - 320);
+            for (name, r) in shown_forms(game) {
+                assert!(
+                    r.left >= 0 && r.top >= 0 && r.right <= size.0 && r.bottom <= size.1,
+                    "{name} {r:?} on {size:?}"
+                );
+            }
+            write_ppm(&h, &format!("layout-resized-{w}x{hh}"));
+        }
+    }
+
+    /// The main screen's title bar drags it, kept on the screen, rolled up
+    /// to its title bar meanwhile; a double click leaves it rolled up.
+    #[test]
+    fn dragging_the_main_screen() {
+        let Some(dir) = game_dir() else { return };
+        let mut h = holiday_in_a_game(&dir, (1024, 768));
+        let game = h.game.as_mut().unwrap();
+        let (x, y) = (game.screen.left + 100, game.screen.top + 5);
+        let down = Input::MouseDown {
+            x,
+            y,
+            button: Button::Left,
+        };
+        let _ = game.main_mouse(down, ShiftState::LEFT, false);
+        assert_eq!(game.screen.height, hauptschirm::TITLE_HEIGHT);
+        let _ = game.main_mouse(Input::MouseMove { x: 5000, y: 5000 }, ShiftState::LEFT, false);
+        assert_eq!(
+            (game.screen.left, game.screen.top),
+            (1024 - 640, 768 - hauptschirm::TITLE_HEIGHT)
+        );
+        let _ = game.main_mouse(Input::MouseMove { x: 400, y: 30 }, ShiftState::LEFT, false);
+        assert_eq!((game.screen.left, game.screen.top), (300, 25));
+        let up = Input::MouseUp {
+            x: 400,
+            y: 30,
+            button: Button::Left,
+        };
+        let _ = game.main_mouse(up, ShiftState::default(), true);
+        assert_eq!(game.screen.height, hauptschirm::HEIGHT);
+        // A double click rolls it up.
+        let down = Input::MouseDown {
+            x: 400,
+            y: 30,
+            button: Button::Left,
+        };
+        let _ = game.main_mouse(down, ShiftState::LEFT | ShiftState::DOUBLE, false);
+        let _ = game.main_mouse(up, ShiftState::default(), true);
+        assert!(game.screen.rolled_up && game.screen.height == hauptschirm::TITLE_HEIGHT);
+        // The island isn't there while it's rolled up.
+        let on_map = Input::MouseDown {
+            x: 400,
+            y: 200,
+            button: Button::Left,
+        };
+        assert_eq!(game.main_mouse(on_map, ShiftState::LEFT, false), (false, false));
     }
 }

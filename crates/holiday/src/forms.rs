@@ -44,7 +44,7 @@ use vcl::form::{Form, Kind};
 use vcl::surface::Surface;
 use vcl::{Palette, Rect};
 
-use super::{Game, load_form, read, screen_size};
+use super::{Game, load_form, read};
 
 /// The button bar's buttons whose forms this module opens. // 1010:2c8b
 const PAUSE_BUTTON: u8 = 1;
@@ -272,7 +272,7 @@ impl Forms {
     /// The forms of a game, as the game's set-up creates them, on the
     /// main screen `screen` (for the overview's scroll position and view),
     /// with the view's fields of the map `fields`.
-    #[allow(clippy::too_many_lines)] // One form after the other.
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One form after the other.
     pub fn load(
         dir: &Path,
         exe: &[u8],
@@ -281,8 +281,8 @@ impl Forms {
         settings: Settings,
         high_scores: HighScores,
         screen: &Hauptschirm,
+        size: (i32, i32),
     ) -> Forms {
-        let size = screen_size();
         let texts = sonstige(&text(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
         let modatyp = modatyp(&text(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT");
         let (short_names, long_names) = hausname(&text(dir, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
@@ -441,6 +441,35 @@ impl Forms {
         self.clock_stopped() || (self.infobox.visible && self.infobox.modal)
     }
 
+    /// Moves each form with `follow` (`Game::resize`), which gets its
+    /// bounds and sets its top left.
+    pub fn follow(&mut self, follow: impl Fn(Rect, &mut i32, &mut i32)) {
+        let p = &mut self.pause;
+        follow(p.bounds(), &mut p.left, &mut p.top);
+        let o = &mut self.options;
+        follow(o.bounds(), &mut o.left, &mut o.top);
+        let t = &mut self.tv;
+        follow(t.bounds(), &mut t.left, &mut t.top);
+        let m = &mut self.money;
+        follow(m.bounds(), &mut m.left, &mut m.top);
+        let o = &mut self.overview;
+        follow(o.bounds(), &mut o.left, &mut o.top);
+        let c = &mut self.compass;
+        follow(c.bounds(), &mut c.left, &mut c.top);
+        let b = &mut self.infobox;
+        follow(b.bounds(), &mut b.left, &mut b.top);
+        let u = &mut self.umenu;
+        follow(u.bounds(), &mut u.left, &mut u.top);
+        let e = &mut self.ende;
+        follow(e.bounds(), &mut e.left, &mut e.top);
+        let s = &mut self.schluss;
+        follow(s.bounds(), &mut s.left, &mut s.top);
+        let h = &mut self.high;
+        follow(h.bounds(), &mut h.left, &mut h.top);
+        let h = &mut self.help;
+        follow(h.bounds(), &mut h.left, &mut h.top);
+    }
+
     /// Paints the forms over the main screen, in the order they lie.
     pub fn paint(&mut self, tools_sabowin: Option<&Sabowin>, screen: &mut Surface, palette: &Palette) {
         let m = &self.money;
@@ -596,7 +625,7 @@ impl Game {
     /// Button `b` of the button bar, 1 to 5 (1010:2c8b): its form opens,
     /// or closes if it's open.
     pub(crate) fn form_button(&mut self, b: u8) {
-        let size = screen_size();
+        let size = self.size;
         self.tools.button = b; // 1110:5fbe
         match b {
             PAUSE_BUTTON => {
@@ -652,6 +681,14 @@ impl Game {
     }
 
     /// The pointer's press or release asked for the info box
+    /// The main screen's client area on the screen, which the info box
+    /// is placed by: `ClientWidth` and `ClientHeight` of the borderless
+    /// form, one less than its height. // 1038:1ccf
+    fn main_client(&self) -> Rect {
+        let main = self.screen.bounds();
+        Rect::new(main.left, main.top, main.width(), main.height() - 1)
+    }
+
     /// ([`game::tools::Tools::info_box`]). // 1020:04bc, 1020:050b
     pub(crate) fn take_info_box(&mut self) {
         let Some(request) = self.tools.info_box.take() else {
@@ -659,8 +696,7 @@ impl Game {
         };
         match request {
             infobox::Request::Show { square, mouse, modal } => {
-                let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
-                let main = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT - 1);
+                let main = self.main_client();
                 self.forms
                     .infobox
                     .show(&self.world, &self.font, &self.info, square, mouse, main, modal);
@@ -749,7 +785,7 @@ impl Game {
         self.tv_response(r);
         self.forms.help.hide();
         let music = self.forms.settings.music;
-        let r = self.forms.schluss.open_end(results, music, screen_size());
+        let r = self.forms.schluss.open_end(results, music, self.size);
         self.schluss_response(r);
     }
 
@@ -791,9 +827,14 @@ impl Game {
         if !self.forms.settings.button_help {
             return self.forms.help.hide();
         }
-        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
-        let main = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT);
-        let ready = !self.forms.modal();
+        let main = Rect::new(
+            self.screen.left,
+            self.screen.top,
+            hauptschirm::WIDTH,
+            hauptschirm::HEIGHT,
+        );
+        // Not while the main screen is rolled up (`+0x1da`, 1020:2115).
+        let ready = !self.forms.modal() && !self.screen.rolled_up;
         // The build menu and the sabotage window take the focus from the
         // main screen.
         let focus = if self.tools.menu_focused || self.tools.sabowin_focused {
@@ -829,7 +870,7 @@ impl Game {
         let bar = helpform::button_bar_tooltip(main, self.mouse, self.forms.bar_x, ready && focus == Some(Focus::Main));
         tip = bar.or(tip);
         match tip {
-            Some((t, tp, l)) => self.forms.help.show(t, tp, l, screen_size()),
+            Some((t, tp, l)) => self.forms.help.show(t, tp, l, self.size),
             None => self.forms.help.hide(),
         }
     }
@@ -1007,9 +1048,7 @@ impl Game {
 
     /// The buildings' overview opens (1080:0ea8), with the focus.
     fn open_umenu(&mut self) {
-        self.forms
-            .umenu
-            .open(&self.world, &self.font, &self.info, screen_size());
+        self.forms.umenu.open(&self.world, &self.font, &self.info, self.size);
         self.set_focus(Focus::Umenu);
     }
 
@@ -1064,7 +1103,7 @@ impl Game {
             }
             Some(optionen::Action::Highscores) => {
                 // 1040:2579: over the options, which wait for it.
-                let r = self.forms.high.show(self.world.scenario, true, screen_size());
+                let r = self.forms.high.show(self.world.scenario, true, self.size);
                 self.high_response(&r);
             }
             // `TCreditform` isn't ported.
@@ -1105,7 +1144,7 @@ impl Game {
                 // The original raises an exception in the middle of
                 // opening the form; the port ends the film at once.
                 let first = r.action;
-                let ended = self.forms.schluss.film_ended(screen_size());
+                let ended = self.forms.schluss.film_ended(self.size);
                 self.sound.borrow_mut().effects_on();
                 self.schluss_sound(&ended);
                 r = schlussform::Response {
@@ -1124,7 +1163,7 @@ impl Game {
                 self.set_focus(Focus::Main);
             }
             Some(schlussform::Action::HighScores) => {
-                let r = self.forms.high.show(self.world.scenario, false, screen_size());
+                let r = self.forms.high.show(self.world.scenario, false, self.size);
                 self.high_response(&r);
             }
             Some(schlussform::Action::NewGame) => self.forms.requests.push(Request::NewGame),
@@ -1161,7 +1200,7 @@ impl Game {
         // once a second, so the original holds the last frame up to a
         // second longer; the port looks every frame.
         if self.forms.schluss.film_panel().is_some() && self.sound.borrow().film_done() {
-            let r = self.forms.schluss.film_ended(screen_size());
+            let r = self.forms.schluss.film_ended(self.size);
             self.schluss_response(r);
         }
         let ended = {
@@ -1191,7 +1230,7 @@ impl Game {
     /// Opens the quit question, unless the game is quitting.
     /// // 1020:0480, 1020:0577
     pub(crate) fn open_ende(&mut self) {
-        if self.forms.ende.open(screen_size()) {
+        if self.forms.ende.open(self.size) {
             self.forms.help.hide();
         }
     }
@@ -1266,7 +1305,7 @@ impl Game {
             _ => {}
         }
         let (x, y) = (sx - bounds.left, sy - bounds.top);
-        let size = screen_size();
+        let size = self.size;
         let down = matches!(input, Input::MouseDown { .. });
         let up = matches!(input, Input::MouseUp { .. });
         let l = left(input);
@@ -1344,8 +1383,7 @@ impl Game {
                     let r = self.forms.infobox.mouse_down(x, y, &self.font);
                     self.infobox_response(r);
                 } else if up {
-                    let (left, top) = Hauptschirm::position(size.0, size.1);
-                    let main = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT - 1);
+                    let main = self.main_client();
                     let r = self
                         .forms
                         .infobox
@@ -1418,7 +1456,7 @@ impl Game {
         match (image, input) {
             (Image::Title, Input::MouseDown { .. }) => o.title_mouse_down(x, shift, cursor),
             (Image::Title, Input::MouseUp { .. }) => o.title_mouse_up(x, y, w),
-            (Image::Title, _) => o.title_mouse_move(shift, cursor, screen_size()),
+            (Image::Title, _) => o.title_mouse_move(shift, cursor, self.size),
             (Image::Toggle, Input::MouseDown { .. }) => o.toggle_mouse_down(l),
             (Image::Toggle, Input::MouseUp { .. }) => o.toggle_mouse_up(x, y, l, w),
             (Image::Scroll, Input::MouseDown { .. }) => o.scroll_mouse_down(y, w),
@@ -1447,7 +1485,7 @@ impl Game {
     /// the others the keys while they have the focus. Whether one took it;
     /// if not it goes to the build menu or the main screen.
     pub(crate) fn forms_key(&mut self, key: u16, shift: ShiftState) -> bool {
-        let size = screen_size();
+        let size = self.size;
         if self.forms.high.visible {
             // `Thighscoreform` has no keys.
             return true;

@@ -220,6 +220,7 @@ impl Baumenue {
         };
         m.lay_out();
         m.left = width - m.width - 1;
+        // BUG(original): 480, not the main screen's 479 with each half divided, puts the menu one row above the island.
         m.top = (height - 480) / 2 + 0x3b;
         m
     }

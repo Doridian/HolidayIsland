@@ -47,6 +47,87 @@ pub const SCENARIO_OPPONENTS: [u8; 6] = [1, 3, 7, 2, 3, 0];
 /// name there. // 1110:1322
 pub const LAST_MAP: &str = "Last.map";
 
+/// The five screen sizes the game has pictures for, each with the form
+/// sizes state 110 snaps to it (`(min, max)` width and height, ±20
+/// pixels) and its title and background pictures in `GRAFIK\`, in the
+/// order state 110 tries them. // 1000:2466 (state 110), 1000:233b..23b0
+pub const LAYOUTS: [Layout; 5] = [
+    Layout {
+        size: (800, 600),
+        widths: (780, 820),
+        heights: (580, 620),
+        title: "tit80x60.BMP",      // 1000:233b
+        background: "bck80x60.BMP", // 1000:237c
+    },
+    Layout {
+        size: (640, 480),
+        widths: (620, 660),
+        heights: (460, 500),
+        title: "tit64x48.BMP",      // 1000:2348
+        background: "bck64x48.BMP", // 1000:2389
+    },
+    Layout {
+        size: (1024, 768),
+        widths: (1004, 1044),
+        heights: (748, 788),
+        title: "tit10x76.BMP",      // 1000:2355
+        background: "bck10x76.BMP", // 1000:2396
+    },
+    Layout {
+        size: (1152, 870),
+        widths: (1132, 1172),
+        heights: (850, 890),
+        title: "tit11x87.BMP",      // 1000:2362
+        background: "bck11x87.BMP", // 1000:23a3
+    },
+    Layout {
+        size: (1280, 1024),
+        widths: (1260, 1300),
+        heights: (1004, 1044),
+        title: "tit12x10.BMP",      // 1000:236f
+        background: "bck12x10.BMP", // 1000:23b0
+    },
+];
+
+/// One of [`LAYOUTS`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Layout {
+    /// `screen_width`, `screen_height`.
+    pub size: (i32, i32),
+    /// The form widths and heights that snap to it, both ends included.
+    pub widths: (i32, i32),
+    pub heights: (i32, i32),
+    pub title: &'static str,
+    pub background: &'static str,
+}
+
+/// The screen size the game lays out for (`screen_width`,
+/// `screen_height`, `1110:54fc`, `1110:54fe`) on a desktop where the
+/// maximized `THintergrund` is `width` × `height`: the first of
+/// [`LAYOUTS`] whose ranges hold it, else the form's size as it is.
+/// Every other form is placed from this size, never from the desktop's.
+/// // 1000:2466 (state 110)
+///
+/// BUG(original): a form up to 20 pixels smaller than a layout snaps up to it, so what the game puts at the right or bottom edge (the money menu, the compass, the load form) and the right and bottom of the centred forms are cut off by up to 20 pixels.
+#[must_use]
+pub fn screen_size(width: i32, height: i32) -> (i32, i32) {
+    LAYOUTS
+        .iter()
+        .find(|l| (l.widths.0..=l.widths.1).contains(&width) && (l.heights.0..=l.heights.1).contains(&height))
+        .map_or((width, height), |l| l.size)
+}
+
+/// The layout whose pictures states 430 (the title), 450 and 1130 (the
+/// background) load for `screen`, the size [`screen_size`] picked; none
+/// for any other size, which leaves `backgroundimage` empty and the
+/// form's black showing. // 1000:2466 (states 430, 450, 1130)
+///
+/// BUG(original): any screen size but the five has no title and no background picture: the intro's title and the desktop around the game stay black.
+#[must_use]
+pub fn layout(screen: (i32, i32)) -> Option<&'static Layout> {
+    LAYOUTS.iter().find(|l| l.size == screen)
+}
+
 /// Where a new game's island comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Island {
@@ -340,4 +421,24 @@ fn pick_names(w: &mut World, nobody: &[u8], names: &[Vec<u8>]) {
         }
     }
     w.player_names = player_names;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn screen_sizes() {
+        assert_eq!(screen_size(800, 600), (800, 600));
+        assert_eq!(screen_size(780, 620), (800, 600));
+        assert_eq!(screen_size(779, 600), (779, 600));
+        assert_eq!(screen_size(660, 460), (640, 480));
+        assert_eq!(screen_size(1024, 768), (1024, 768));
+        assert_eq!(screen_size(1152, 864), (1152, 870));
+        assert_eq!(screen_size(1280, 1024), (1280, 1024));
+        assert_eq!(screen_size(1366, 768), (1366, 768));
+        assert_eq!(screen_size(1920, 1080), (1920, 1080));
+        assert_eq!(layout((800, 600)).map(|l| l.background), Some("bck80x60.BMP"));
+        assert_eq!(layout((1366, 768)), None);
+    }
 }

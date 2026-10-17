@@ -129,20 +129,31 @@ files, storage, clock), so they run headless in tests.
   resolution. It maximizes its background form and lays out for whatever the
   Windows desktop is: at least 640×480, with 800×600 recommended. The port treats
   the window's client area, divided by the UI scale, as that desktop. Resizing
-  the window resizes the indexed framebuffer and re-runs the game's layout,
-  so a bigger window shows more of the island rather than bigger pixels. The UI
-  scale is an integer (1–4, automatic from the display's DPI by default, as in
-  Afterlife), and the GPU scales the framebuffer up by it with nearest-neighbour
-  filtering. The first milestone may pin the size to 640×480 or 800×600 until the
-  layout code is ported and understood. Arbitrary sizes are the goal once the
-  initial port is done. Sizes below 640×480 get letterboxed.
-- **Window handling like Afterlife.** A resizable window that remembers its size
-  and position. **Alt+Enter** or **F11** toggles fullscreen (borderless at the
-  desktop resolution; Ctrl+Cmd+F on macOS; the Fullscreen API on the web, with
-  the canvas following the page otherwise). Command-line options:
+  the window resizes the indexed framebuffer and re-runs the game's layout
+  ([layout.md](layout.md)), so a bigger window shows more of the desktop
+  rather than bigger pixels. As in the original, that means more room
+  around the main screen, not more island: the main screen is 640×479 at
+  every size, centred, and the floating forms are placed against the
+  screen's edges and centre; only the background picture changes (and
+  there's none for sizes other than 640×480, 800×600, 1024×768, 1152×870
+  and 1280×1024). A bigger map view would be a port extension; it isn't
+  built. The UI scale is an integer (1–4, automatic from the display's
+  DPI by default, as in Afterlife), and the GPU scales the framebuffer up
+  by it with nearest-neighbour filtering. Sizes below 640×480 get
+  letterboxed. The original lays out once at startup; the port lays out
+  again on every resize, a port extension
+  ([layout.md](layout.md#live-resizing-port-extension)). The `World`
+  never sees the window's size.
+- **Window handling like Afterlife.** A resizable window that remembers its size,
+  position and fullscreen state. **Alt+Enter** or **F11** toggles fullscreen
+  (borderless at the desktop resolution; Ctrl+Cmd+F on macOS; the Fullscreen
+  API on the web, with the canvas following the page otherwise, once there's a
+  web build). F11 is the original's shortcut for the button help, which the
+  port gives up for this. Command-line options:
   `--window-size=WxH`, `--fullscreen` / `--windowed`, `--ui-scale=N`. The port
-  keeps its own settings file (in the platform's config directory, browser
-  storage on the web), separate from anything the original reads.
+  keeps its own settings file (`settings.ini` in the platform's config
+  directory, `platform::settings`; browser storage on the web), separate from
+  anything the original reads.
 - **Game data.** Players point the port at the CD: an ISO image, or a folder
   with the CD's files. It reads the ISO and the installer's `_FILES.1` itself, so
   players don't need the Python tools; those stay for research. File lookup is

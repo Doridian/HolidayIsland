@@ -1,0 +1,267 @@
+# Screen layout and window sizes
+
+How the original lays its forms out for the Windows desktop, and how the
+port turns a resizable window into that desktop. In short: the original
+picks a screen size once, at startup, from the size of its maximized
+background form. The main screen is **always 640×479**, centred on that
+screen. A bigger desktop doesn't show more island; it shows more of the
+background picture, and leaves room around the main screen for the
+floating forms, which are placed against the screen's edges or its centre.
+Nothing is hidden or resized at any size; only the background and title
+pictures depend on it.
+
+## The screen size
+
+`THintergrund` is borderless and `wsMaximized` (its DFM), so it covers the
+desktop. State 110 of its timer (`hintergrund_timer`, 1000:2466) reads the
+form's `Width` and `Height` and snaps them to one of five layouts, with
+±20 pixels of slack; any other size is kept as it is. The result is
+`screen_width`/`screen_height` (`1110:54fc`/`54fe`), which every later
+placement reads. The form's own size (the real desktop) is only used to
+centre `FilmPanel` (432×320) for the intro's and the start's films.
+
+| Form width | Form height | Screen size | Title (states 430/440) | Background (states 450, 1130) |
+|---|---|---|---|---|
+| 780–820 | 580–620 | 800×600 | `tit80x60.BMP` | `bck80x60.BMP` |
+| 620–660 | 460–500 | 640×480 | `tit64x48.BMP` | `bck64x48.BMP` |
+| 1004–1044 | 748–788 | 1024×768 | `tit10x76.BMP` | `bck10x76.BMP` |
+| 1132–1172 | 850–890 | 1152×870 | `tit11x87.BMP` | `bck11x87.BMP` |
+| 1260–1300 | 1004–1044 | 1280×1024 | `tit12x10.BMP` | `bck12x10.BMP` |
+| any other | | as it is | none | none |
+
+The names are at `1000:233b`..`1000:23b0`. `backgroundimage` is set to the
+screen size at 0, 0 and shows the picture unscaled. Ported as
+`hintergrund::screen_size`, `hintergrund::layout` and `hintergrund::LAYOUTS`.
+
+Two quirks follow ([original-bugs.md](original-bugs.md#ui-quirks)):
+
+- A desktop up to 20 pixels smaller than a layout is laid out as that
+  layout, so whatever sits at the right or bottom edge is cut off by up
+  to 20 pixels (790×590 lays out for 800×600: the compass's right edge
+  is at 800).
+- Any size but the five has no pictures at all: the title stays black, and
+  so does the desktop around the main screen (1366×768, 1920×1080, ...).
+  The palette then is whatever Windows had; the port uses the 800×600
+  pictures' palette.
+
+Nothing in the original reacts to a change of the desktop's size later:
+no form has an `OnResize` handler (none in the DFMs), and state 110 runs
+once.
+
+## The main screen
+
+`THauptschirm` (`hauptschirm_layout`, 1020:1ce9) gets the width of entry 0
+of the layout table at `1110:1572` (11 entries of hidden, left, top,
+width, height; constant initialised data, nothing writes it) and is
+centred: `Left = screen_width div 2 - 640 div 2`, `Top = screen_height div
+2 - 479 div 2`. `hauptschirm_place` (1020:1c79) puts the images at the
+table's bounds; `hauptschirm_show` (1020:283b) sets its height to 479.
+
+| Entry | Image | Bounds |
+|---|---|---|
+| 0 | the form | 640 × 479 |
+| 1, 3 | (hidden 16×16 slots) | 0,0 and 624,0 |
+| 2 | `Ueberschriftbild` (title bar) | 16, 0, 608 × 16 |
+| 4 | `InfoImage` | 0, 16, 640 × 18 |
+| 5 | `ButtonImage` (23 buttons) | 0, 34, 640 × 25 |
+| 6 | `Hauptbild` (the island) | 0, 59, 624 × 404 |
+| 7 | `NSScrollbild` | 624, 59, 16 × 404 (1020:0a55) |
+| 8 | `Statusimage` | 0, 463, 219 × 16 |
+| 9 | `WOScrollbild` | 219, 463, 405 × 16 (1020:11dd) |
+| 10 | `eckimage` (compass knob) | 624, 463, 16 × 16 |
+
+The map view, the scroll bars' ranges (`NS_MAX` 476, `WO_MAX` 481), the
+drawing's 20 columns and 27 half rows (`darstellung::COLUMNS`,
+`HALF_ROWS`, `VIEW_WIDTH`/`VIEW_HEIGHT` 624×405 at `1110:12bc`) and the
+button bar are the same at every screen size.
+
+| Screen | Main screen's top left |
+|---|---|
+| 640×480 | 0, 1 |
+| 800×600 | 80, 61 |
+| 1024×768 | 192, 145 |
+| 1152×870 | 256, 196 |
+| 1280×1024 | 320, 273 |
+| 1366×700 (no layout) | 363, 111 |
+
+The main screen is a window like the others: its title bar drags it.
+
+- `UeberschriftbildMouseDown` (1020:1b8e): `+0x1da` is set to whether the
+  press has `ssDouble`; the cursor's offset from the form's top left goes
+  to `1110:6046`/`6048` (`drag_grab_x`/`_y`), and the form's height to 16,
+  its title bar.
+- `UeberschriftbildMouseMove` (1020:1bd9): with `ssLeft` the form follows
+  the cursor, kept at `0..screen_width - Width` and `0..screen_height -
+  Height` (16 then).
+- `UeberschriftbildMouseUp` (1020:1c58): the height goes back to 479
+  unless `+0x1da` is set. So a double click leaves the main screen rolled
+  up to its title bar until the next click on it. `+0x1da` also keeps the
+  button bar's tooltips away (1020:2115,
+  [endforms.md](endforms.md#open-questions)).
+
+The move handler doesn't check that the press was on the title bar, so a
+left drag that started off every form (on the background) moves the main
+screen when it passes over the title bar, by the last grab
+([original-bugs.md](original-bugs.md#ui-quirks)). The other forms' title
+bars work the same way, each with its own clamp (below).
+
+Ported in `game::hauptschirm`: `Hauptschirm::layout`, `bounds`,
+`title_mouse_down/move/up`, `left`, `top`, `height`, `rolled_up`.
+
+## The other forms
+
+Where each form goes. "Centred" is `(screen_width - Width) div 2`,
+`(screen_height - Height) div 2`. Positions are absolute screen
+coordinates; only the info box is placed relative to the main screen.
+
+| Form | Where | Placed by |
+|---|---|---|
+| `TStartform` | centred | 1058:27e6 (`startform_init`), 1058:1a30 (`startform_show`) |
+| `TLadenForm` | centred across, at the bottom (`screen_height - Height`) | 1038:3b46 |
+| `FilmPanel` (432×320) | centred on the background form, the real desktop | 1000:2466, state 110 |
+| `TCreditform` (not ported) | 640×480, centred; disables the options | 1030:3c42 |
+| `TBaumenue` | created at `screen_width - Width - 1`, `(screen_height - 480) div 2 + 59`; opening keeps it left of `screen_width - Width - 1` | 1018:2fa2, 1018:2b01 |
+| `TAuktionsform` | `(screen_width - 0x154) div 2`, `(screen_height - 0xeb) div 2` | 1028:0dde |
+| `TSabowin` | the DFM's 300, 167 | `Application.CreateForm` |
+| `TDateimenue` | the DFM's 305, 139 | `Application.CreateForm` |
+| `TInfobox2` | next to the mouse inside the main screen's client area, flipped left or up at its right or bottom | 1038:1ccf |
+| `TKompassform` | top right: `screen_width - Width`, 0 | 1038:2c04 |
+| `TEndeform` | centred | 1020:3b5f |
+| `TPauseform` | `screen_width div 2 - 0xaf`, `screen_height div 2 - 0x69` | 1040:3a45 |
+| `Thighscoreform` | centred | 1040:2bf0, 1040:2579 |
+| `THelpform` (tooltip) | at the asked spot, kept left of `screen_width - Width` and above `screen_height - 16` | 1040:3dc7 |
+| `TFernseher` | `(screen_width - 0x160) div 2`, `(screen_height - 0x14e) div 2` for a new game; a map file's own position otherwise | 1048:1ffd, 1048:25ea |
+| `TOptionenform` | centred across, at the top | 1060:14f1 |
+| `TSchlussform` | centred (the quit film's panel and the results) | 1068:09a5, 1068:1340 |
+| `TGeldmenuform` | top right: `screen_width -` the table's width, 0 (one column too far right, [geldmenu.md](geldmenu.md)) | 1070:2e6c |
+| `Tumenuform` | centred | 1080:145f, 1080:0ea8 |
+| `TUebersichtsmap2` | top left, 0, 0; its small/large switch (10b8:3e73) keeps the top left | 10b8:4538 |
+
+Every form's title bar drags it, kept on the screen by the same
+`max(0, ..)` / `min(screen - size, ..)` clamp as the main screen:
+1070:08e0 (money menu), 1020:38d4 (quit question, by its 16-pixel title
+bar), 1048:2955 (TV), 1060:29f0 (options), 1040:09ca (file menu),
+10b8:3c9b (overview), 1028:1c4d (auction), 1080:1e54 (buildings'
+overview), 1028:2ecc (sabotage), 1038:346f (compass), 1018:0461 (build
+menu). `screen_width`'s other readers are these handlers.
+
+So the layout differs by screen size only in where things land:
+
+- At 640×480 everything overlaps the main screen; the main screen fills
+  the screen but for its last row.
+- At 800×600 and up the forms placed at the screen's edges (money menu,
+  compass, build menu, overview, options) sit beside or above the
+  main screen, and the centred ones (TV, auction, pause, end forms) over
+  its middle.
+- The sabotage window and the file menu stay at their DFM positions,
+  which were chosen for 640×480: on bigger screens they're up and left of
+  the centred main screen, partly off it
+  ([original-bugs.md](original-bugs.md#ui-quirks)).
+
+### Saved windows
+
+A map file keeps the windows of the 17 forms in `1110:646c`
+(`window_forms`, filled by `init_game_globals`, 1010:064a): the auction,
+build menu, file menu, quit question, money menu, tooltip, high scores,
+info box, compass, TV, two empty slots, sabotage window, main screen, end
+form, buildings' overview and overview map. `save_window_positions`
+(1010:0799) writes each one's `Top`, `Left`, `Width`, `Height`, `Visible`
+and `Enabled` (not the file menu's; the empty slots as zeros), and
+`load_window_positions` (1010:08d7) reads them back and keeps each on the
+screen it's loaded on: `Top = min(screen_height - max(16, Height), Top)`
+and `Left = min(screen_width - Width, Left)`. Nothing keeps a window off
+the top or left edge. That clamp is `savegame::keep_on_screen`. The port
+doesn't apply the saved windows yet; it keeps them as read
+(`MapView::unported`) and writes them back.
+
+## The world and the screen size
+
+Nothing simulated reads `screen_width`, `screen_height` or the desktop.
+What the world reads of the view is the main screen's rotation, origin
+and parity (`World::viewpoint`, [people.md](people.md)): where people
+appear, which squares get spectators, builders and taxiing planes (the
+11 × 61 squares of `1110:5536` from the view's origin), and which
+sounds play (`people::sees`). All of that is sized for the fixed 624×404
+map view, so it is the same at every window size. The view's origin is
+already a multiplayer issue
+([original-bugs.md](original-bugs.md#design-issues-for-multiplayer));
+the window's size isn't one.
+
+Were the map view ever made bigger than the original's (a possible port
+extension, not done), the world's grid and `sees` would have to stay the
+original's size and the view draw more around them; the people outside
+that area are only drawn, never simulated differently.
+
+## The port
+
+The platform (`crates/platform`) has a resizable window:
+
+- **The desktop** is the window's client area divided by the UI scale,
+  rounded down (`platform::desktop`). The game gets it through
+  `App::resize`, before the first frame and after every change.
+- **The UI scale** is 1 to 4: the display's scale factor rounded, made
+  smaller while the desktop would be under 640×480
+  (`platform::ui_scale`), or fixed with `--ui-scale=N`. The GPU scales the
+  framebuffer up by it, nearest neighbour.
+- **Letterboxing**: a desktop smaller than 640×480 (either way) gets a
+  640×480 framebuffer, shown scaled down to fit, centred.
+- **Fullscreen**: F11 or Alt+Enter (Ctrl+Cmd+F on macOS) toggle borderless
+  fullscreen on the current monitor. The platform keeps those keys from
+  the game, which costs the original's F11 shortcut for the "Buttonhilfe"
+  button (0x13); the button itself still works.
+- **Command line**: `--window-size=WxH` (the client area in logical
+  pixels), `--fullscreen` / `--windowed`, `--ui-scale=N`. Without a size
+  the window opens at the remembered one, else at 800×600 desktop pixels.
+- **Settings file**: `settings.ini` in the config directory
+  (`$XDG_CONFIG_HOME/holiday-island`, `~/.config/holiday-island`;
+  `~/Library/Preferences/Holiday Island`; `%APPDATA%\Holiday Island`),
+  `platform::settings::WindowSettings`. It remembers the windowed size
+  (logical pixels), the position (where the window system reports one,
+  not on Wayland) and whether the window was fullscreen, and is written
+  when the game ends. The original reads nothing like it.
+
+The game (`crates/holiday`, `Holiday::layout`) then does what state 110
+does: the framebuffer and `THintergrund` get the desktop's size,
+`hintergrund::screen_size` picks the screen size the forms are placed
+for, `backgroundimage` gets that size and its picture, and `FilmPanel` is
+centred on the desktop.
+
+### Live resizing (port extension)
+
+The original lays out once. When the port's window changes size during
+the game, `Holiday::layout` runs again, which:
+
+- picks the screen size and the pictures again (state 110, 430/450);
+- centres a film that's playing in `FilmPanel` again;
+- centres the start menu (1058:1a30) and puts the load form at the bottom
+  (1038:3b46) again;
+- in a game (`Game::resize`): centres the main screen again
+  (`hauptschirm_layout`, 1020:1ce9, unrolling it), moves every other form
+  by as much as the main screen moved, so it stays where it was over it,
+  and then keeps it on the screen with `load_window_positions`' clamp
+  (1010:08d7), plus a `max(0, ..)` so it can't go off the top or left
+  edge either. Shown or not, every form is moved: the auction, build
+  menu, sabotage window, file menu, pause, options, TV, money menu,
+  overview map, compass, info box, buildings' overview, quit question,
+  end form, high scores and tooltip.
+
+The world isn't touched, nor is the scroll position: the map view has the
+same size at every screen size, so it keeps showing the same part of the
+island. A form pushed against an edge by a smaller window stays there when
+the window grows again.
+
+The tests (`crates/holiday/src/main.rs`): `layouts` draws the main screen
+with the TV, money menu, overview map and compass at 640×480, 800×600,
+1024×768 and 1366×700 (`layout-*.ppm` with `HOLIDAY_PPM`);
+`small_and_snapped_desktops`; `resize_mid_game` (the world, scroll
+position and camera unchanged, every shown form on the screen at each
+size); `dragging_the_main_screen`.
+
+## Not done
+
+- A bigger map view for bigger windows ("more island"): the original has
+  none, so it would be a port extension; see above for what it would need.
+- Applying the saved windows of a map file (1010:08d7) when a game is
+  loaded.
+- `TCreditform` (1030:3c42), the options' "INFO".
+- The web build's Fullscreen API and canvas sizing (no web build yet).
