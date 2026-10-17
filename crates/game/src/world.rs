@@ -1165,6 +1165,12 @@ pub struct World {
     /// player's view's (`crate::optionen::Settings::news`).
     /// // *1110:663a, unit 1048:25ea
     pub news: crate::news::News,
+    /// The fixes of the original's bugs this game plays with
+    /// (`crate::enhance`): the same for every player, so in the hash, and
+    /// saved in the port's chunk after the original's fields. A command
+    /// changes them ([`crate::command::Action::SetFix`]). The default,
+    /// and a file without the chunk, is none: the original.
+    pub fixes: crate::enhance::Fixes,
 }
 
 impl Default for World {
@@ -1229,6 +1235,7 @@ impl Default for World {
             unported: Fields::default(),
             money_menu_shown: false,
             news: crate::news::News::default(),
+            fixes: crate::enhance::Fixes::ORIGINAL,
         }
     }
 }
@@ -1583,6 +1590,10 @@ impl World {
             unported: Fields::default(),
             money_menu_shown: false,
             news: news(save)?,
+            // The port's chunk, if the file has one; else the original.
+            // Whoever starts the game from a file without it gives the
+            // player's defaults instead (`crate::enhance::fixes_in`).
+            fixes: crate::enhance::fixes_in(&save.trailing, crate::enhance::Fixes::ORIGINAL),
         };
         world.unported = crate::savegame::unported_world_fields(save);
         world.link_plots();

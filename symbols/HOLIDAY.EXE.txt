@@ -5,6 +5,7 @@
 1000:0c6a func load_globals  # the first unit of load_map; formats::savegame::layout
 1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
 1000:1ea0 func init_game_defaults  # guess: the defaults for a new game (island_shape 1, relief 2, land 2, rivers 5, player_colours 1..8, ...)
+1000:2241 func hintergrund_formactivate  # THintergrund.FormActivate: raise_window_forms once the main screen has been shown (1110:00a0); docs/layout.md#stacking
 1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
 1000:3938 func hintergrund_skip_film  # FormKeyDown's part: Timer1.Interval := 1 (the next state comes at once), and in state 0x19a (sunflow.avi) or 0x459 (titel.avi) the film ends (0x1a4, 0x460); docs/films.md
 1000:39b7 func hintergrund_film_panel_click  # FilmPanelClick: in state 0x19a or 0x459 the film ends
@@ -102,6 +103,7 @@
 1010:2970 func disable_forms  # (except): the 17 forms of 1110:646c but 10 and 11 disabled, their Enabled kept at 1110:645a
 1010:29cc func enable_forms  # the forms' Enabled back from 1110:645a
 1010:2a0c func enable_forms  # re-enables the forms in 1110:646c except 10 and 11
+1010:2a5a func raise_window_forms  # unless the info box (+0x1e6) or the end form is shown: Application.Restore, ProcessMessages, BringToFront of window_forms 0..16 but 10 and 11, then the main screen
 1010:2ac7 func button_bar_down
 1010:2ade func button_bar_up
 1010:2af5 func draw_button_bar
@@ -1142,10 +1144,15 @@
 10e8:17bf func tcontrol_set_width
 10e8:17e1 func tcontrol_set_height
 10e8:1cb8 func tcontrol_set_enabled  # (Boolean): sets +0x2a and sends CM_ENABLEDCHANGED (0xf0c)
+10e8:201c func tcontrol_bringtofront  # probably: SetZOrder(True) through the dynamic method -10
 10e8:22c6 func tcontrol_refresh  # probably: what the forms call after drawing into their TImage
+10f0:2e80 func tcustomform_set_visible  # probably: (Boolean), what Show/Hide call
 10f0:56ce func tcustomform_hide  # probably
 10f0:56e1 func tcustomform_show  # probably
+10f0:697e func tapplication_restore  # probably: if iconic, SetActiveWindow, ShowWindow(SW_RESTORE), focus
+10f0:69fd func tapplication_bringtofront  # probably: BringWindowToTop of GetLastActivePopup
 10f0:6aa7 func vcl_application_settitle  # guess: entry passes it 'Holiday Island' (1000:0002)
+10f0:6d18 func tapplication_processmessages  # probably: loops 10f0:6c4b until it returns false
 10f0:6e7b func vcl_application_createform
 10f0:6f16 func vcl_application_run
 1100:0764 func sys_str_int  # guess: Str(n:width, s)

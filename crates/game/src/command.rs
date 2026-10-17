@@ -90,6 +90,11 @@ pub enum Action {
     /// draw random numbers. Waits on a view. Single human.
     /// // 1110:662d, 1048:1b3e
     Speaker(crate::news::Speaker),
+    /// Switches one of the world's fixes on or off in the middle of a
+    /// game ([`World::fixes`], `crate::enhance`). A port extension: the
+    /// original has no fixes. In a multiplayer game it would be the
+    /// host's.
+    SetFix(crate::enhance::Fix, bool),
 }
 
 /// The sound of a tool that did its work. // 1028:3b7c, 1028:3cb1
@@ -134,6 +139,7 @@ impl World {
             Action::ShowTv(n) => self.tv_shown(n, &mut tick),
             Action::TvPause(on) => self.tv_pause(on),
             Action::Speaker(s) => self.set_speaker(s),
+            Action::SetFix(fix, on) => self.fixes.set(fix, on),
         }
         self.geldmenu_refresh(&tick); // 1070:2617
         tick

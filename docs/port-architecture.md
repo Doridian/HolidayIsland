@@ -144,6 +144,13 @@ files, storage, clock), so they run headless in tests.
   again on every resize, a port extension
   ([layout.md](layout.md#live-resizing-port-extension)). The `World`
   never sees the window's size.
+- **Enhancements, on by default.** Fixes of the original's bugs and port
+  extensions are switches with stable keys (`game::enhance`): the
+  world's fixes are part of the `World` (hashed, saved in a chunk the
+  original ignores, changed by command), the view's are the player's
+  settings. `--original` or `original=true` in `settings.ini` switches
+  everything off, which is the original exactly
+  ([original-bugs.md](original-bugs.md#options)).
 - **Window handling like Afterlife.** A resizable window that remembers its size,
   position and fullscreen state. **Alt+Enter** or **F11** toggles fullscreen
   (borderless at the desktop resolution; Ctrl+Cmd+F on macOS; the Fullscreen

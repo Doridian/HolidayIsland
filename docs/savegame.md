@@ -51,6 +51,29 @@ behind the far pointer the global holds. A file is 765–805 KB.
 after the first 13 units and opens it again at its end for the rest,
 which gives the same file.
 
+### The port's chunk
+
+The port writes its own data after the original's last field: the world's
+fixes ([original-bugs.md](original-bugs.md#options)). The original still
+loads such a file: `load_map` (1048:2a19) opens it (`Reset` with a record
+size of 1), `BlockRead`s the version and each unit's fixed sizes, and
+closes it, without looking at the file's length or at what follows.
+`save_map`'s `Rewrite`
+truncates, so the original saving over the file drops the chunk, and the
+game it saved loads in the port with the player's defaults.
+
+The chunk is `HIPORT`, a 0 byte and the chunk's version (1), a `Longint`
+length, and that many bytes of text: one `key=value` per line. The world's
+fixes are `fix.<key>=1` or `=0`, every fix the port knows
+(`game::enhance::fixes_chunk`). Reading (`game::enhance::fixes_in`): a
+file without the chunk (every original file, `formats::savegame::port_chunk`
+gives none) or without a fix's line gives that fix its default: the
+player's for a game loaded from the start menu, the running game's for one
+loaded from the file menu (`World::load_map`); lines the port doesn't know
+are skipped. `SaveGame::trailing` holds the chunk as read, and
+`World::to_map` writes it. A sidecar file was the other choice; the chunk
+keeps a game in one file and needs nothing from the original.
+
 ## World and view
 
 A map file holds the world and one player's screen. `game::savegame`

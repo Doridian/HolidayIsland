@@ -174,6 +174,108 @@ the top or left edge. That clamp is `savegame::keep_on_screen`. The port
 doesn't apply the saved windows yet; it keeps them as read
 (`MapView::unported`) and writes them back.
 
+## Stacking
+
+Every form is a top-level window of its own, and Windows stacks them; the
+game hardly does. What the binary and the DFMs show:
+
+- **Two tiers.** These DFMs have `FormStyle = fsStayOnTop` (Windows'
+  topmost windows): `TAuktionsform`, `TInfobox2`, `TDateimenue`,
+  `TEndeform`, `TKompassform`, `TFernseher`, `TOptionenform`,
+  `Thighscoreform`, `TPauseform`, `THelpform`, `TCreditform` and
+  `TDummyForm`. The others are normal: `THintergrund`, `THauptschirm`,
+  `TBaumenue`, `TSabowin`, `TGeldmenuform`, `Tumenuform`,
+  `TUebersichtsmap2`, `TSchlussform`, `TStartform`, `TLadenForm`,
+  `TWasNunForm`. A topmost window always lies over every normal one.
+- **Siblings.** Delphi 1 makes the application's hidden window the owner
+  of every form, the background (the main form) too, so none is kept
+  over another by ownership: within a tier the last one raised is on top.
+- **What raises a form.** Showing it: `TCustomForm.Show` (10f0:56e1) is
+  `Visible := True` (10f0:2e80), whose `ShowWindow` activates the window,
+  and then `BringToFront` (10e8:201c, `SetZOrder(True)`). A press on it,
+  which activates it, unless it's disabled (`disable_forms`, 1010:2970,
+  while a modal form is up; a disabled form takes no press at all).
+  The focus (`SetFocus`, VMT+0x78), which activates it. And the game's own
+  `BringToFront` calls:
+  - each form when it opens: the money menu (1070:2b71), build menu
+    (1018:2c11), overview map (10b8:414b), info box (1038:1e6b), tooltip
+    (1040:3e9e), file menu (1040:0fa7);
+  - the main screen when a form closes: the money menu (1070:2bd7),
+    overview map (10b8:3fa2), build menu (1018:2c96), info box
+    (1038:1f0a); `Show` of the main screen when the TV hides (1048:085a)
+    and the auction closes (1028:056f); the focus to it after the pause
+    (1040:3bac) and the options (1060:0e80);
+  - the main screen on Space in the build menu (1018:3347), money menu
+    (1070:39f9) and overview map (10b8:4def), at the start of a game
+    (1010:2964), after loading one from the file menu (`game_show_state`,
+    1010:2819) and after "Weiterspielen" (1068:0194).
+- **The background.** A press where no form is activates `THintergrund`,
+  which goes over every normal form. Its `FormActivate` (1000:2241), once
+  the main screen has been shown (`1110:00a0`, set by 1020:283e), calls
+  1010:2a5a: unless the info box is shown (`infobox2+0x1e6`) or the end
+  form is, `Application.Restore` and `ProcessMessages`, then
+  `BringToFront` of every form of `window_forms` (`1110:646c`, 0 to 16
+  but the empty 10 and 11) in turn and of the main screen last. So
+  normally the normal forms come back over the background, the main
+  screen on top of them; with the info box or the end form shown they
+  stay hidden behind it.
+
+Nothing calls `SendToBack` or `SetWindowPos` directly (the
+`SETWINDOWPOS` and `BRINGWINDOWTOTOP` calls are all the VCL's).
+
+So the main screen, as a normal form, goes over the money menu, build
+menu, overview map, sabotage window and buildings' overview whenever it's
+clicked or a form closes, and over none of the topmost forms. These are
+quirks ([original-bugs.md](original-bugs.md#ui-quirks)). The stacking is
+worked out from the code and Windows' rules, not watched in a running
+original.
+
+### In the port
+
+`holiday::stacking::Stack` keeps the order of the game's windows (the
+background, the main screen, the build menu, the auction, the file menu
+and the forms of `holiday::forms`). Every repaint and mouse event first
+tells it which are shown (`Game::sync_stack`): a form that opened since
+goes on top. The windows are painted in its order (`Game::paint`), and a
+mouse event that no window holds goes to the top window under the
+pointer (`Game::window_at`); a press raises that window
+(`Game::press_window`). The tooltip takes no presses, which go to what's
+under it. Before this the port painted the forms in a fixed order and
+gave a press to the first of a fixed list.
+
+With every enhancement off it does what's above: the two tiers, the
+main screen raised when those forms close (the end form too, for
+"Weiterspielen") and after a load, the background's raise and 1010:2a5a.
+The start of a game needs nothing: the main screen is shown first, so
+the forms shown after it lie over it. Space in the build menu, money menu
+and overview map raises the main screen in both modes.
+
+### `window_stacking` (enhancement)
+
+On by default ([original-bugs.md](original-bugs.md#options)). The
+floating forms then stack like the windows of a window manager:
+
+- a press raises the window it's on, the main screen too, over every
+  non-modal form, the `fsStayOnTop` ones among them;
+- a form that opens goes on top;
+- the pointer's events go to the top window under it;
+- the tiers are: the background at the bottom; the main screen and the
+  non-modal forms; the modal ones (pause, options, quit question, end
+  form, high scores, file menu, and the info box while it has buttons);
+  the tooltip;
+- closing a form, loading a game and a press on the background raise
+  nothing;
+- the button of a form that's open but lies under another window (in the
+  order before the press on the button) raises it, with the compass for
+  the overview map's, instead of closing it, like a task bar. Without
+  that a TV under the main screen (it lies inside the main screen at
+  every size) would be found again only by closing and opening it.
+
+The tests: `stacking::tests` (both modes' orders) and, with the game's
+files, `tests::window_stacking` (a press on the main screen at 800×600
+over the money menu and the TV, the TV's button; `stacking-original.ppm`
+and `stacking-enhanced.ppm` with `HOLIDAY_PPM`).
+
 ## The world and the screen size
 
 Nothing simulated reads `screen_width`, `screen_height` or the desktop.

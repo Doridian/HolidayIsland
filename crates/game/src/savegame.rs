@@ -578,7 +578,11 @@ impl World {
     /// their copy. // 1048:2bae
     #[must_use]
     pub fn to_map(&self, view: &MapView) -> SaveGame {
-        SaveGame::build(&mut Saving { world: self, view })
+        let mut save = SaveGame::build(&mut Saving { world: self, view });
+        // The port's chunk after the original's fields, which the
+        // original doesn't read (`docs/savegame.md`).
+        save.trailing = crate::enhance::fixes_chunk(self.fixes);
+        save
     }
 
     /// Puts back what `load_map` (1048:2a19) leaves as it was, from
@@ -640,6 +644,8 @@ impl World {
     pub fn load_map(&self, save: &SaveGame) -> Result<World, crate::world::Error> {
         let mut w = World::from_map(save)?;
         w.keep_unsaved(self);
+        // A file without the port's chunk leaves the fixes as they are.
+        w.fixes = crate::enhance::fixes_in(&save.trailing, self.fixes);
         Ok(w)
     }
 }
@@ -713,6 +719,7 @@ pub fn differences(a: &World, b: &World) -> Vec<&'static str> {
     same!(unported);
     same!(money_menu_shown);
     same!(news);
+    same!(fixes);
     out
 }
 
@@ -805,5 +812,18 @@ mod tests {
         assert_eq!(back.unported, Fields::default());
         assert_eq!(differences(&back, &expected), Vec::<&str>::new());
         assert!(back.unported.is_empty());
+        // The port's chunk follows the original's fields.
+        assert!(bytes.ends_with(&save.trailing));
+        assert_eq!(save.trailing, crate::enhance::fixes_chunk(w.fixes));
+        // A file without it loads over a game and keeps that game's fixes.
+        let mut original = parsed.clone();
+        original.trailing.clear();
+        let mut playing = w.clone();
+        playing.fixes = crate::enhance::Fixes::all_on();
+        assert_eq!(playing.load_map(&original).unwrap().fixes, playing.fixes);
+        assert_eq!(
+            World::from_map(&original).unwrap().fixes,
+            crate::enhance::Fixes::ORIGINAL
+        );
     }
 }

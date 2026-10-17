@@ -1,25 +1,75 @@
 # Bugs in the original game
 
 The port reproduces the original's behaviour, bugs included, so that it
-plays and computes the same. The plan is to make each of these fixable later
-behind an option. This file lists every bug and quirk found so far, so that
-none gets lost.
+plays and computes the same. Each bug can be fixed behind an
+enhancement, a switch that is on by default; with every one off the port
+is the original. This file lists every bug and quirk found so far, so
+that none gets lost.
 
 Each place in the code that keeps one is marked with a `// BUG(original):`
-comment, so `grep -rn "BUG(original)" crates` finds them all. Add a row
-here whenever you keep a bug or work around one. Where another doc
-explains a bug in detail, the row links there instead of repeating it.
+comment, so `grep -rn "BUG(original)" crates` finds them all. Where an
+enhancement fixes it, the code branches on the enhancement and the
+original's path stays there, still marked. Add a row here whenever you
+keep a bug or work around one. Where another doc explains a bug in
+detail, the row links there instead of repeating it.
 
-## Planned options
+The tables' last column ("Kept") says what the port does about it: `yes`
+for kept with no fix yet, or the key of the enhancement that fixes it
+(kept with that enhancement off). The crashes' table says what the port
+does instead ("Port today").
 
-- Fixes that change the simulation become flags in the `World`, e.g. a
-  `fixes: Fixes` set. They are saved with the game and agreed by every
-  player, because they change the world's hash.
-- Fixes that only change the UI become view settings.
-- With every flag off, the port behaves exactly as the original does.
+## Options
+
+Built in [`game::enhance`](../crates/game/src/enhance.rs):
+
+- **World fixes** (`enhance::Fix`, a set is `enhance::Fixes`) change the
+  simulation. They are the world's (`World::fixes`): every player has the
+  same, they are in the world's hash (`World` derives `Hash`), and
+  `Action::SetFix` changes one in the middle of a game, through
+  `World::apply` like any command. A saved game keeps them in the port's
+  chunk after the original's fields, which the original doesn't read
+  ([savegame.md](savegame.md#the-ports-chunk)). A new game, a scenario
+  and a game from a file without the chunk (any original file) get the
+  player's defaults; loading a file without the chunk from the file
+  menu keeps the running game's. `World::default()` and `World::from_map`
+  of an original file have none, so the tests are in original mode unless
+  they ask for a fix. None is built yet.
+- **View enhancements** (`enhance::Enhancement`, a set is
+  `enhance::Enhancements`) change one player's screen, sound or input.
+  They are that player's settings. The first is `window_stacking`
+  ([layout.md](layout.md#stacking)).
+- Each has a stable key, a one-line description and is on by default.
+  `enhance::Config::resolve` works them out: everything on, or off with
+  the master switch, then each per-key override in order. The player
+  sets them in the port's `settings.ini`
+  (`platform::settings::EnhanceSettings`, written by hand; the port
+  keeps the lines when it writes the window's state) and on the command
+  line:
+
+  ```text
+  original=true                 # settings.ini: everything off
+  enhance.window_stacking=off   # settings.ini: one off (on/off, 1/0, true/false, yes/no)
+  --original                    # this run: everything off, settings.ini's switches ignored
+  --enhance=window_stacking=on  # this run: one on or off, over both
+  --enhancements                # lists them with their state and exits
+  ```
+
+  An unknown key in `settings.ini` is reported and skipped; on the
+  command line it stops the program with the list.
+- Adding one: a line in `Fix`'s or `Enhancement`'s list in
+  `game::enhance`, a branch on it where the bug is kept (`world.fixes.has(..)`
+  or the view's set), with the original's path marked `// BUG(original):`,
+  and its key in the bug's row below. Tests construct either mode
+  (`Config::ORIGINAL`, `Config::default()`); the existing tests use
+  `Config::ORIGINAL`.
 - Crashes and hangs have no "original" mode, because the port can't
   crash. It does the fallback listed below. The option there would be
   a better fallback, where one makes sense.
+- Not built: an in-game list to switch them. The cheap place would be
+  the options form, whose "INFO" button asks for `TCreditform`, which the
+  port doesn't have (a 640 × 480 form with one picture): a list of the
+  keys' descriptions drawn with the game's font in that form, a click
+  switching one, and the world's fixes sent as `Action::SetFix`.
 
 ## Crashes and hangs
 
@@ -195,6 +245,9 @@ The widgets' are described in
 | 1000:2466 (state 110) | A desktop up to 20 pixels smaller than 640×480, 800×600, 1024×768, 1152×870 or 1280×1024 is laid out as that size, so what sits at the right or bottom edge (the money menu, the compass, the load form) and the centred forms' right and bottom are cut off by up to 20 pixels ([layout.md](layout.md#the-screen-size)) | yes |
 | 1000:2466 (states 430, 450, 1130) | Any other desktop size has no title and no background picture: the intro's title and the desktop around the main screen stay black ([layout.md](layout.md#the-screen-size)) | yes |
 | 1020:1bd9 | The main screen's title bar moves the form on any left drag over it, also one that started off every form, by the last grab ([layout.md](layout.md#the-main-screen)) | yes |
+| DFMs, Windows | The `fsStayOnTop` forms (TV, compass, info box, auction, pause, options, quit question, high scores, file menu, tooltip) always lie over the others, wherever those are clicked: the end form can lie under the TV and compass, and the TV over the island can't be put behind the main screen ([layout.md](layout.md#stacking)) | `window_stacking` |
+| 1070:2bd7, 10b8:3fa2, 1018:2c96, 1038:1f0a, 1048:085a, 1028:056f, 1040:3bac, 1060:0e80, 1068:0194, 1010:2819 | Closing the money menu, overview map, build menu, info box, TV, auction, pause, options or end form ("Weiterspielen"), and loading a game from the file menu, raise the main screen over the other forms that aren't `fsStayOnTop`, which then lie hidden under it where they overlap it ([layout.md](layout.md#stacking)) | `window_stacking` |
+| 1000:2241, 1010:2a5a | A press on the background raises `THintergrund` over the main screen and the other forms that aren't `fsStayOnTop`; its `OnActivate` raises them back in `window_forms`' order, the main screen on top, but not while the info box or the end form is shown, which leaves them hidden behind the background until one is raised ([layout.md](layout.md#stacking)) | `window_stacking` |
 | 1018:2fa2 | The build menu's first position is `(screen_height - 480) div 2 + 59`, one row above the island (the main screen is 479 high, centred with `div 2` of each half) | yes |
 | 1110:54fc users | The sabotage window and the file menu open where the DFM put them (300, 167 and 305, 139), so on a desktop bigger than 640×480 they aren't over the centred main screen ([layout.md](layout.md#the-other-forms)) | yes |
 

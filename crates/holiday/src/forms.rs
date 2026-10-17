@@ -44,7 +44,8 @@ use vcl::form::{Form, Kind};
 use vcl::surface::Surface;
 use vcl::{Palette, Rect};
 
-use super::{Game, load_form, read};
+use super::{Game, dateimenue, load_form, read};
+use crate::stacking::Win;
 
 /// The button bar's buttons whose forms this module opens. // 1010:2c8b
 const PAUSE_BUTTON: u8 = 1;
@@ -470,100 +471,137 @@ impl Forms {
         follow(h.bounds(), &mut h.left, &mut h.top);
     }
 
-    /// Paints the forms over the main screen, in the order they lie.
-    pub fn paint(&mut self, tools_sabowin: Option<&Sabowin>, screen: &mut Surface, palette: &Palette) {
-        let m = &self.money;
-        let layout = m.layout();
-        let images: Vec<_> = m
-            .images()
-            .iter()
-            .zip(layout)
-            .map(|(&(name, s), (_, r))| (name, r, Some(s)))
-            .collect();
-        paint_form(&mut self.money_form, m.bounds(), m.shown(), &images, screen, palette);
-        let o = &self.overview;
-        let images: Vec<_> = o.images().iter().map(|&(i, r, s)| (i.name(), r, Some(s))).collect();
-        paint_form(
-            &mut self.overview_form,
-            o.bounds(),
-            o.visible(),
-            &images,
-            screen,
-            palette,
-        );
-        if let Some(s) = tools_sabowin {
-            let images = [(
-                "Saboimage",
-                Rect::new(0, 0, sabowin::WIDTH, sabowin::HEIGHT),
-                Some(s.image()),
-            )];
-            paint_form(&mut self.sabowin_form, s.bounds(), s.visible, &images, screen, palette);
+    /// Paints the form `w` over the screen, if it's one of this
+    /// module's and shown; the caller goes through them in the order
+    /// they lie ([`crate::stacking::Stack::order`]).
+    #[allow(clippy::too_many_lines)] // One form after the other.
+    pub fn paint_window(&mut self, w: Win, tools_sabowin: Option<&Sabowin>, screen: &mut Surface, palette: &Palette) {
+        match w {
+            Win::Money => {
+                let m = &self.money;
+                let layout = m.layout();
+                let images: Vec<_> = m
+                    .images()
+                    .iter()
+                    .zip(layout)
+                    .map(|(&(name, s), (_, r))| (name, r, Some(s)))
+                    .collect();
+                paint_form(&mut self.money_form, m.bounds(), m.shown(), &images, screen, palette);
+            }
+            Win::Overview => {
+                let o = &self.overview;
+                let images: Vec<_> = o.images().iter().map(|&(i, r, s)| (i.name(), r, Some(s))).collect();
+                paint_form(
+                    &mut self.overview_form,
+                    o.bounds(),
+                    o.visible(),
+                    &images,
+                    screen,
+                    palette,
+                );
+            }
+            Win::Sabowin => {
+                if let Some(s) = tools_sabowin {
+                    let images = [(
+                        "Saboimage",
+                        Rect::new(0, 0, sabowin::WIDTH, sabowin::HEIGHT),
+                        Some(s.image()),
+                    )];
+                    paint_form(&mut self.sabowin_form, s.bounds(), s.visible, &images, screen, palette);
+                }
+            }
+            Win::Umenu => {
+                let u = &self.umenu;
+                let images: Vec<_> = u.images().iter().map(|&(n, r, s)| (n, r, Some(s))).collect();
+                paint_form(&mut self.umenu_form, u.bounds(), u.visible, &images, screen, palette);
+            }
+            Win::Infobox => {
+                let b = &self.infobox;
+                let images: Vec<_> = b.images().iter().map(|&(n, r, s)| (n, r, Some(s))).collect();
+                paint_form(&mut self.infobox_form, b.bounds(), b.visible, &images, screen, palette);
+            }
+            Win::Tv => {
+                let t = &self.tv;
+                let images: Vec<_> = t
+                    .images()
+                    .iter()
+                    .zip(fernseher::LAYOUT)
+                    .map(|(&(n, s), (_, r))| (n, r, Some(s)))
+                    .collect();
+                paint_form(&mut self.tv_form, t.bounds(), t.visible, &images, screen, palette);
+            }
+            Win::Compass => {
+                let k = &self.compass;
+                let images = [(
+                    "Bild",
+                    Rect::new(0, 0, kompassform::WIDTH, kompassform::HEIGHT),
+                    Some(&k.image),
+                )];
+                paint_form(
+                    &mut self.compass_form,
+                    k.bounds(),
+                    k.visible(),
+                    &images,
+                    screen,
+                    palette,
+                );
+            }
+            Win::Pause => {
+                let p = &self.pause;
+                let images = [(pauseform::LAYOUT[0].0, pauseform::LAYOUT[0].1, Some(p.image()))];
+                paint_form(&mut self.pause_form, p.bounds(), p.visible, &images, screen, palette);
+            }
+            Win::Options => {
+                let o = &self.options;
+                let images = [(optionen::LAYOUT[0].0, optionen::LAYOUT[0].1, Some(o.image()))];
+                paint_form(&mut self.options_form, o.bounds(), o.visible, &images, screen, palette);
+            }
+            Win::Ende => {
+                let e = &self.ende;
+                let images = [(
+                    endeform::IMAGE,
+                    Rect::new(0, 0, endeform::WIDTH, endeform::HEIGHT),
+                    Some(e.image()),
+                )];
+                paint_form(&mut self.ende_form, e.bounds(), e.visible, &images, screen, palette);
+            }
+            Win::Schluss => {
+                let s = &self.schluss;
+                let images = s.components();
+                paint_form(
+                    &mut self.schluss_form,
+                    s.bounds(),
+                    s.visible(),
+                    &images,
+                    screen,
+                    palette,
+                );
+            }
+            Win::High => {
+                let h = &self.high;
+                let images = [(
+                    highscoreform::IMAGE,
+                    Rect::new(0, 0, highscoreform::WIDTH, highscoreform::HEIGHT),
+                    Some(h.image()),
+                )];
+                paint_form(&mut self.high_form, h.bounds(), h.visible, &images, screen, palette);
+            }
+            Win::Help => {
+                let h = &self.help;
+                let images = [(
+                    helpform::IMAGE,
+                    Rect::new(0, 0, helpform::WIDTH, helpform::HEIGHT),
+                    Some(h.image()),
+                )];
+                paint_form(&mut self.help_form, h.bounds(), h.visible(), &images, screen, palette);
+            }
+            Win::Background | Win::Main | Win::Menu | Win::Auction | Win::FileMenu => {}
         }
-        let u = &self.umenu;
-        let images: Vec<_> = u.images().iter().map(|&(n, r, s)| (n, r, Some(s))).collect();
-        paint_form(&mut self.umenu_form, u.bounds(), u.visible, &images, screen, palette);
-        let b = &self.infobox;
-        let images: Vec<_> = b.images().iter().map(|&(n, r, s)| (n, r, Some(s))).collect();
-        paint_form(&mut self.infobox_form, b.bounds(), b.visible, &images, screen, palette);
-        let t = &self.tv;
-        let images: Vec<_> = t
-            .images()
-            .iter()
-            .zip(fernseher::LAYOUT)
-            .map(|(&(n, s), (_, r))| (n, r, Some(s)))
-            .collect();
-        paint_form(&mut self.tv_form, t.bounds(), t.visible, &images, screen, palette);
-        let k = &self.compass;
-        let images = [(
-            "Bild",
-            Rect::new(0, 0, kompassform::WIDTH, kompassform::HEIGHT),
-            Some(&k.image),
-        )];
-        paint_form(
-            &mut self.compass_form,
-            k.bounds(),
-            k.visible(),
-            &images,
-            screen,
-            palette,
-        );
-        let p = &self.pause;
-        let images = [(pauseform::LAYOUT[0].0, pauseform::LAYOUT[0].1, Some(p.image()))];
-        paint_form(&mut self.pause_form, p.bounds(), p.visible, &images, screen, palette);
-        let o = &self.options;
-        let images = [(optionen::LAYOUT[0].0, optionen::LAYOUT[0].1, Some(o.image()))];
-        paint_form(&mut self.options_form, o.bounds(), o.visible, &images, screen, palette);
-        let e = &self.ende;
-        let images = [(
-            endeform::IMAGE,
-            Rect::new(0, 0, endeform::WIDTH, endeform::HEIGHT),
-            Some(e.image()),
-        )];
-        paint_form(&mut self.ende_form, e.bounds(), e.visible, &images, screen, palette);
-        let s = &self.schluss;
-        let images = s.components();
-        paint_form(
-            &mut self.schluss_form,
-            s.bounds(),
-            s.visible(),
-            &images,
-            screen,
-            palette,
-        );
-        let h = &self.high;
-        let images = [(
-            highscoreform::IMAGE,
-            Rect::new(0, 0, highscoreform::WIDTH, highscoreform::HEIGHT),
-            Some(h.image()),
-        )];
-        paint_form(&mut self.high_form, h.bounds(), h.visible, &images, screen, palette);
-        let h = &self.help;
-        let images = [(
-            helpform::IMAGE,
-            Rect::new(0, 0, helpform::WIDTH, helpform::HEIGHT),
-            Some(h.image()),
-        )];
-        paint_form(&mut self.help_form, h.bounds(), h.visible(), &images, screen, palette);
+    }
+
+    /// The tooltip is shown.
+    pub fn help_visible(&self) -> bool {
+        self.help.visible()
     }
 
     /// The form's bounds on the screen while the grab's form is shown.
@@ -588,6 +626,25 @@ impl Forms {
 
 fn inside(r: Rect, x: i32, y: i32) -> bool {
     (r.left..r.right).contains(&x) && (r.top..r.bottom).contains(&y)
+}
+
+/// The grab of the window `w`, if it's one of this module's forms.
+fn grab_of(w: Win) -> Option<Grab> {
+    Some(match w {
+        Win::Pause => Grab::Pause,
+        Win::Options => Grab::Options,
+        Win::Tv => Grab::Tv,
+        Win::Money => Grab::Money,
+        Win::Overview => Grab::Overview(Image::Map),
+        Win::Compass => Grab::Compass,
+        Win::Sabowin => Grab::Sabowin,
+        Win::Infobox => Grab::Infobox,
+        Win::Umenu => Grab::Umenu,
+        Win::Ende => Grab::Ende,
+        Win::Schluss => Grab::Schluss,
+        Win::High => Grab::High,
+        Win::Background | Win::Main | Win::Menu | Win::Auction | Win::Help | Win::FileMenu => return None,
+    })
 }
 
 impl Game {
@@ -625,6 +682,9 @@ impl Game {
     /// Button `b` of the button bar, 1 to 5 (1010:2c8b): its form opens,
     /// or closes if it's open.
     pub(crate) fn form_button(&mut self, b: u8) {
+        if self.raise_buried(b) {
+            return;
+        }
         let size = self.size;
         self.tools.button = b; // 1110:5fbe
         match b {
@@ -975,6 +1035,8 @@ impl Game {
             self.open_umenu();
         }
         if r.focus_main {
+            // Space: `BringToFront` of the main screen (1070:39f9, 10b8:4def).
+            self.stack.raise(Win::Main);
             self.set_focus(Focus::Main);
         }
         if let Some((key, shift)) = r.main_screen_key {
@@ -1001,6 +1063,8 @@ impl Game {
             self.set_focus(Focus::Main);
         }
         if r.focus_main {
+            // Space: `BringToFront` of the main screen (1070:39f9, 10b8:4def).
+            self.stack.raise(Win::Main);
             self.set_focus(Focus::Main);
         }
         self.commands(r.action);
@@ -1235,48 +1299,188 @@ impl Game {
         }
     }
 
-    /// The form under the screen's `x`, `y` that takes a press, top first,
-    /// among those the modal forms leave.
+    /// The form of this module under the screen's `x`, `y` that takes a
+    /// press: the top window there ([`Game::window_at`]), if it's one of
+    /// this module's and the modal forms leave it. A disabled form takes
+    /// no press, even where it lies over the modal one.
     fn form_at(&self, x: i32, y: i32) -> Option<Grab> {
         let f = &self.forms;
-        let order: &[Grab] = if f.high.visible {
-            &[Grab::High]
+        let g = grab_of(self.window_at(x, y))?;
+        if self.modal_grabs().is_some_and(|a| !a.contains(&g)) {
+            return None;
+        }
+        match g {
+            Grab::Overview(_) => {
+                let r = f.overview.bounds();
+                let (image, _, _) = f.overview.image_at(x - r.left, y - r.top)?;
+                Some(Grab::Overview(image))
+            }
+            _ => Some(g),
+        }
+    }
+
+    /// The forms a modal form leaves enabled, while one is up.
+    fn modal_grabs(&self) -> Option<&'static [Grab]> {
+        let f = &self.forms;
+        if f.high.visible {
+            Some(&[Grab::High])
         } else if f.schluss.visible() {
-            &[Grab::Schluss]
+            Some(&[Grab::Schluss])
         } else if f.ende.visible {
-            &[Grab::Ende]
+            Some(&[Grab::Ende])
         } else if f.options.visible {
-            &[Grab::Options]
+            Some(&[Grab::Options])
         } else if f.pause.visible {
-            &[Grab::Pause]
+            Some(&[Grab::Pause])
         } else if f.infobox.visible && f.infobox.modal {
-            &[Grab::Tv, Grab::Infobox]
+            Some(&[Grab::Tv, Grab::Infobox])
         } else {
-            &[
-                Grab::Compass,
-                Grab::Tv,
-                Grab::Infobox,
-                Grab::Umenu,
-                Grab::Sabowin,
-                Grab::Money,
-                Grab::Overview(Image::Map),
-            ]
+            None
+        }
+    }
+
+    /// A press on the window `w`, the top one under the mouse. In Windows
+    /// it activates `w`, which raises it, unless it's disabled (every
+    /// other form while a modal one is up); a press on the background is
+    /// [`crate::stacking::Stack::background_pressed`]. Whether the order
+    /// changed.
+    pub(crate) fn press_window(&mut self, w: Win) -> bool {
+        let before = self.stack.order(self.infobox_modal());
+        self.stack.before_press = Some(before.clone());
+        let enabled = match self.modal_grabs() {
+            None => true,
+            Some(a) => grab_of(w).is_some_and(|g| a.contains(&g)),
         };
-        let sabowin = self.tools.sabowin.as_ref();
-        order.iter().copied().find_map(|g| {
-            let r = f.grab_bounds(g, sabowin)?;
-            if !inside(r, x, y) {
-                return None;
+        if w == Win::Background {
+            let (infobox, schluss) = (self.forms.infobox.visible, self.forms.schluss.visible());
+            self.stack.background_pressed(true, infobox, schluss);
+        } else if enabled {
+            self.stack.raise(w);
+        }
+        before != self.stack.order(self.infobox_modal())
+    }
+
+    /// Whether the window `w` is shown.
+    pub(crate) fn shown(&self, w: Win) -> bool {
+        let f = &self.forms;
+        match w {
+            Win::Background | Win::Main => true,
+            Win::Menu => self.tools.menu.height > 0,
+            Win::Auction => self.auction.visible,
+            Win::FileMenu => self.file_menu.visible,
+            Win::Sabowin => self.tools.sabowin.as_ref().is_some_and(|s| s.visible),
+            Win::Help => f.help_visible(),
+            w => grab_of(w).is_some_and(|g| f.grab_bounds(g, None).is_some()),
+        }
+    }
+
+    /// Whether the screen's `x`, `y` is on the window `w` as it's shown.
+    /// The tooltip (`Enabled = False` in its DFM) never is: presses go to
+    /// what lies under it.
+    fn on_window(&self, w: Win, x: i32, y: i32) -> bool {
+        match w {
+            Win::Background => true,
+            Win::Main => inside(self.screen.bounds(), x, y),
+            Win::Menu => self.tools.menu.contains(x, y),
+            Win::Auction => self.auction.contains(x - self.auction.left, y - self.auction.top),
+            Win::FileMenu => {
+                let m = &self.file_menu;
+                m.visible
+                    && inside(
+                        Rect::new(m.menu.left, m.menu.top, dateimenue::WIDTH, dateimenue::HEIGHT),
+                        x,
+                        y,
+                    )
             }
-            match g {
-                Grab::Overview(_) => {
-                    let (image, _, _) = f.overview.image_at(x - r.left, y - r.top)?;
-                    Some(Grab::Overview(image))
-                }
-                Grab::Sabowin => sabowin?.contains(x - r.left, y - r.top).then_some(g),
-                _ => Some(g),
+            Win::Help => false,
+            Win::Sabowin => self.tools.sabowin.as_ref().is_some_and(|s| {
+                let r = s.bounds();
+                s.contains(x - r.left, y - r.top)
+            }),
+            w => grab_of(w)
+                .and_then(|g| self.forms.grab_bounds(g, None))
+                .is_some_and(|r| inside(r, x, y)),
+        }
+    }
+
+    /// Where the window `w` is on the screen, while it's shown; none for
+    /// the background.
+    fn window_bounds(&self, w: Win) -> Option<Rect> {
+        if !self.shown(w) {
+            return None;
+        }
+        match w {
+            Win::Background => None,
+            Win::Main => Some(self.screen.bounds()),
+            Win::Menu => Some(self.tools.menu.bounds()),
+            Win::Auction => Some(self.auction.bounds()),
+            Win::FileMenu => {
+                let m = &self.file_menu.menu;
+                Some(Rect::new(m.left, m.top, dateimenue::WIDTH, dateimenue::HEIGHT))
             }
-        })
+            Win::Help => Some(self.forms.help.bounds()),
+            Win::Sabowin => self.tools.sabowin.as_ref().map(Sabowin::bounds),
+            w => grab_of(w).and_then(|g| self.forms.grab_bounds(g, None)),
+        }
+    }
+
+    /// With the `window_stacking` enhancement, the button of a form
+    /// that's open but lies under another window raises it (with the
+    /// compass for the overview map's) instead of closing it, as a task
+    /// bar does. Under the order before the press that clicked the
+    /// button: the press raised the main screen. Whether it did.
+    fn raise_buried(&mut self, b: u8) -> bool {
+        let w = match b {
+            TV_BUTTON => Win::Tv,
+            MONEY_BUTTON => Win::Money,
+            OVERVIEW_BUTTON => Win::Overview,
+            _ => return false,
+        };
+        let Some(r) = self.window_bounds(w).filter(|_| self.stack.enhanced) else {
+            return false;
+        };
+        let order = self
+            .stack
+            .before_press
+            .clone()
+            .unwrap_or_else(|| self.stack.order(self.infobox_modal()));
+        let covered = order
+            .iter()
+            .skip_while(|&&o| o != w)
+            .skip(1)
+            .filter(|&&o| o != Win::Help)
+            .filter_map(|&o| self.window_bounds(o))
+            .any(|o| o.left < r.right && r.left < o.right && o.top < r.bottom && r.top < o.bottom);
+        if covered {
+            self.stack.raise(w);
+            if w == Win::Overview {
+                self.stack.raise(Win::Compass);
+            }
+        }
+        covered
+    }
+
+    /// The top window under the screen's `x`, `y`; the background where
+    /// there's none.
+    pub(crate) fn window_at(&self, x: i32, y: i32) -> Win {
+        self.stack
+            .order(self.infobox_modal())
+            .into_iter()
+            .rev()
+            .find(|&w| self.shown(w) && self.on_window(w, x, y))
+            .unwrap_or(Win::Background)
+    }
+
+    /// The info box has buttons and disables the other forms.
+    pub(crate) fn infobox_modal(&self) -> bool {
+        self.forms.infobox.visible && self.forms.infobox.modal
+    }
+
+    /// Tells the stack which windows are shown now
+    /// ([`crate::stacking::Stack::sync`]).
+    pub(crate) fn sync_stack(&mut self) {
+        let shown: Vec<Win> = crate::stacking::ALL.into_iter().filter(|&w| self.shown(w)).collect();
+        self.stack.sync(|w| shown.contains(&w));
     }
 
     /// A mouse event for the forms of this module: whether one of them
@@ -1562,9 +1766,5 @@ impl Game {
     pub(crate) fn forms_save(&self, rest: &mut Fields) {
         self.forms.overview.save(rest);
         self.forms.tv.store_fields(rest);
-    }
-
-    pub(crate) fn paint_forms(&mut self, screen: &mut Surface, palette: &Palette) {
-        self.forms.paint(self.tools.sabowin.as_ref(), screen, palette);
     }
 }

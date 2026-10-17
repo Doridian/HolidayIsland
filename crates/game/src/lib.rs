@@ -13,6 +13,7 @@ pub mod construction;
 pub mod darstellung;
 pub mod dateimenue;
 pub mod endeform;
+pub mod enhance;
 pub mod events;
 pub mod fernseher;
 pub mod geldmenu;
