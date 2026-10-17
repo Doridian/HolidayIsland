@@ -24,6 +24,12 @@ use crate::simulation::{Accounting, Clock, Options};
 /// off the map while the drawing walks across it.
 pub type Pos = (i16, i16);
 
+/// Whether `(i, j)` is on the map: both 0 to 250. // 1030:1f93
+#[must_use]
+pub fn on_map((i, j): Pos) -> bool {
+    (0..=250).contains(&i) && (0..=250).contains(&j)
+}
+
 /// One 251 × 251 byte layer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Layer(Vec<u8>);
@@ -153,19 +159,39 @@ pub const PLOT_SIZE: usize = 0x364;
 /// record (`+0x360`) means nothing here, the `Vec`'s order is the list's.
 /// // *1110:6f0c
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Plot(Vec<u8>);
+pub struct Plot {
+    record: Vec<u8>,
+    /// The first squares of the houses on the plot, newest first: the
+    /// list at `+0x358` (1068:1d05), which loading a map rebuilds from the
+    /// houses (1068:2d49) and isn't in the file.
+    pub houses: Vec<Pos>,
+    /// The same for the facilities, the list at `+0x35c` (1068:1d55).
+    pub facilities: Vec<Pos>,
+}
 
 impl Plot {
     /// A record of zeros with the number `id`.
     #[must_use]
     pub fn new(id: i16) -> Self {
-        let mut plot = Plot(vec![0; PLOT_SIZE]);
-        plot.0[..2].copy_from_slice(&id.to_le_bytes());
+        let mut plot = Plot::from_record(vec![0; PLOT_SIZE]);
+        plot.record[..2].copy_from_slice(&id.to_le_bytes());
         plot
     }
 
+    fn from_record(record: Vec<u8>) -> Self {
+        Plot {
+            record,
+            houses: Vec::new(),
+            facilities: Vec::new(),
+        }
+    }
+
     fn word(&self, at: usize) -> i16 {
-        i16::from_le_bytes([self.0[at], self.0[at + 1]])
+        i16::from_le_bytes([self.record[at], self.record[at + 1]])
+    }
+
+    fn set_word(&mut self, at: usize, value: i16) {
+        self.record[at..at + 2].copy_from_slice(&value.to_le_bytes());
     }
 
     /// The plot's number in the [`PlotMap`]. // +0
@@ -174,21 +200,58 @@ impl Plot {
         self.word(0)
     }
 
-    /// How many palms were planted on it. // +0x354
+    /// How many palms were planted on it, plus the squares of its parks
+    /// (`HAUSDATA.DAT` kind 6, [`World::register_building`]); a palm that
+    /// dies isn't taken off. // +0x354
     #[must_use]
     pub fn palms(&self) -> i16 {
         self.word(0x354)
     }
 
     pub fn set_palms(&mut self, palms: i16) {
-        self.0[0x354..0x356].copy_from_slice(&palms.to_le_bytes());
+        self.set_word(0x354, palms);
+    }
+
+    /// The squares of its buildings other than parks. // +0x356
+    #[must_use]
+    pub fn built(&self) -> i16 {
+        self.word(0x356)
+    }
+
+    pub fn set_built(&mut self, squares: i16) {
+        self.set_word(0x356, squares);
+    }
+
+    /// How many airports and harbours (`HAUSDATA.DAT` kinds 9 and 10) are
+    /// on it. // +2
+    #[must_use]
+    pub fn ports(&self) -> u8 {
+        self.record[2]
+    }
+
+    pub fn set_ports(&mut self, n: u8) {
+        self.record[2] = n;
+    }
+
+    /// The `Longint` at `at`, 0 past the record. The sums
+    /// [`World::register_building`] keeps are at `+0x22` (the houses'
+    /// capacity), `+0x4e + 0x2c·class` and `+0xc6 + 4·class` (the
+    /// facilities').
+    #[must_use]
+    pub fn longint(&self, at: usize) -> i32 {
+        longint_at(&self.record, at)
+    }
+
+    /// Sets the `Longint` at `at`; nothing past the record.
+    pub fn set_longint(&mut self, at: usize, value: i32) {
+        set_longint_at(&mut self.record, at, value);
     }
 
     /// Not known yet: a value 0–255 that scenario 6 averages over the
     /// plots, weighted by [`Plot::weight`]. // +4
     #[must_use]
     pub fn value_4(&self) -> u8 {
-        self.0[4]
+        self.record[4]
     }
 
     /// Not known yet (its size?): the weight of [`Plot::value_4`].
@@ -198,6 +261,24 @@ impl Plot {
         self.word(0x352).cast_unsigned()
     }
 }
+
+/// The `Longint` at `at` in `record`, 0 past its end.
+fn longint_at(record: &[u8], at: usize) -> i32 {
+    record
+        .get(at..at + 4)
+        .and_then(|b| b.try_into().ok())
+        .map_or(0, i32::from_le_bytes)
+}
+
+/// Sets the `Longint` at `at` in `record`; nothing past its end.
+fn set_longint_at(record: &mut [u8], at: usize, value: i32) {
+    if let Some(b) = record.get_mut(at..at + 4) {
+        b.copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// The size of [`World::totals`]. // 1078:34ad
+pub const TOTALS_SIZE: usize = 0x19b;
 
 /// The size of a [`House`] record. // 1068:2e05
 pub const HOUSE_SIZE: usize = 0x2c;
@@ -267,15 +348,42 @@ impl House {
         self.0[7] = condition;
     }
 
+    /// How well it's connected: `Angeschlossenumrechnung`
+    /// ([`World::connection_values`]) for how far its nearest road is
+    /// (1030:1706), when it was built. // +2
+    #[must_use]
+    pub fn connection(&self) -> u8 {
+        self.0[2]
+    }
+
+    pub fn set_connection(&mut self, value: u8) {
+        self.0[2] = value;
+    }
+
     /// Probably its price per night: `HAUSPREI.DAT`'s third column when
     /// it was built. // +0x12, `Longint`
     #[must_use]
     pub fn price(&self) -> i32 {
-        i32::from_le_bytes([self.0[0x12], self.0[0x13], self.0[0x14], self.0[0x15]])
+        longint_at(&self.0, 0x12)
     }
 
-    /// Not known yet, maybe its guests: how much beach life it gets
-    /// follows it. // +0x10
+    pub fn set_price(&mut self, price: i32) {
+        set_longint_at(&mut self.0, 0x12, price);
+    }
+
+    /// Not known yet: 0x50 when it's built (1068:1a08). // +0x16
+    #[must_use]
+    pub fn value_16(&self) -> u8 {
+        self.0[0x16]
+    }
+
+    pub fn set_value_16(&mut self, value: u8) {
+        self.0[0x16] = value;
+    }
+
+    /// Not known yet, probably its guests: how much beach life it gets
+    /// follows it, and with its capacity (`HAUSDATA.DAT` column 3) how
+    /// likely it sends someone out ([`World::building_slice`]). // +0x10
     #[must_use]
     pub fn value_10(&self) -> i16 {
         self.word(0x10)
@@ -352,10 +460,28 @@ impl Facility {
         self.0[0]
     }
 
+    pub fn set_building(&mut self, building: u8) {
+        self.0[0] = building;
+    }
+
     /// Like [`House::value_1`]. // +1
     #[must_use]
     pub fn value_1(&self) -> u8 {
         self.0[1]
+    }
+
+    pub fn set_value_1(&mut self, value: u8) {
+        self.0[1] = value;
+    }
+
+    /// Like [`House::connection`]. // +2
+    #[must_use]
+    pub fn connection(&self) -> u8 {
+        self.0[2]
+    }
+
+    pub fn set_connection(&mut self, value: u8) {
+        self.0[2] = value;
     }
 
     /// The square the building starts at. // +3, +5
@@ -383,6 +509,29 @@ impl Facility {
 
     pub fn set_value_c(&mut self, value: i32) {
         self.0[0xc..0x10].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// Probably how full it is, in percent: the chance that it sends
+    /// someone out ([`World::building_slice`]). A full championship's
+    /// building gets [`Facility::value_c`] of its capacity
+    /// ([`World::replace_building`]). // +0x15
+    #[must_use]
+    pub fn fill(&self) -> u8 {
+        self.0[0x15]
+    }
+
+    pub fn set_fill(&mut self, percent: u8) {
+        self.0[0x15] = percent;
+    }
+
+    /// Like [`House::price`]. // +0x16, `Longint`
+    #[must_use]
+    pub fn price(&self) -> i32 {
+        longint_at(&self.0, 0x16)
+    }
+
+    pub fn set_price(&mut self, price: i32) {
+        set_longint_at(&mut self.0, 0x16, price);
     }
 }
 
@@ -467,6 +616,9 @@ pub struct Tables {
     /// `HAUSPREI.DAT`, one row per building type; the first column is the
     /// building's price. // *1110:736e
     pub hausprei: Vec<[i32; 4]>,
+    /// `GROUNDNR.DAT`, one row per kind of ground and form; the first
+    /// column is how many variants its tile has. // *1110:54e6
+    pub groundnr: Vec<[i16; 2]>,
 }
 
 impl Tables {
@@ -487,6 +639,12 @@ impl Tables {
     #[must_use]
     pub fn hausprei(&self, building: u8, column: usize) -> i32 {
         self.hausprei.get(usize::from(building)).map_or(0, |r| r[column])
+    }
+
+    /// A `GROUNDNR.DAT` cell, 0 for a row the table doesn't have.
+    #[must_use]
+    pub fn groundnr(&self, row: usize, column: usize) -> i16 {
+        self.groundnr.get(row).map_or(0, |r| r[column])
     }
 }
 
@@ -704,6 +862,19 @@ pub struct World {
     /// `MaxLageeinfluss` (`MODATYP.DAT`): twice the largest radius a
     /// building's effect on the location map can have. // 1110:64bf
     pub max_location_effect: u8,
+    /// `Strassenabrisskosten` (`MODATYP.DAT`): what demolishing a road
+    /// square costs. // 1110:64ea
+    pub road_demolition_cost: i32,
+    /// `Angeschlossenumrechnung` (`MODATYP.DAT`, `array[-1..4] of Byte`):
+    /// a house's [`House::connection`] by how far its nearest road is, 1
+    /// to 4 squares, or -1 for none that close. // 1110:6508
+    pub connection_values: [u8; 6],
+    /// Sums over the whole island, mostly not known yet: `+0` (`Word`) the
+    /// plots with an airport or harbour, `+2` the houses' capacity
+    /// (`HAUSDATA.DAT` column 3), `+0x2e + 0x2c·class` and `+0xa6 +
+    /// 4·class` the facilities', by 1010:2493's class (`Longint`s).
+    /// // *1110:6f20, 0x19b bytes
+    pub totals: Vec<u8>,
     /// The tables from the CD the simulation reads; empty until the game's
     /// data is loaded.
     pub tables: Arc<Tables>,
@@ -752,6 +923,9 @@ impl Default for World {
             sabotage: Default::default(),
             championships: Default::default(),
             max_location_effect: 0,
+            road_demolition_cost: 0,
+            connection_values: [0; 6],
+            totals: vec![0; TOTALS_SIZE],
             tables: Arc::default(),
             random: Random::default(),
         }
@@ -854,7 +1028,7 @@ impl World {
     /// # Errors
     /// If a field is missing or has the wrong size.
     pub fn from_map(save: &SaveGame) -> Result<Self, Error> {
-        Ok(World {
+        let mut world = World {
             island: Island {
                 heights: layer(save, "*1110:5500")?,
                 ground: layer(save, "*1110:5504")?,
@@ -930,7 +1104,7 @@ impl World {
             // Unit 1068:313e.
             plots: save
                 .fields("*1110:6f0c")
-                .map(|r| (r.len() == PLOT_SIZE).then(|| Plot(r.to_vec())))
+                .map(|r| (r.len() == PLOT_SIZE).then(|| Plot::from_record(r.to_vec())))
                 .collect::<Option<_>>()
                 .ok_or(Error::Field("*1110:6f0c"))?,
             // Unit 1068:2e05.
@@ -956,15 +1130,71 @@ impl World {
             sabotage: parse_sabotage(field(save, "*1110:705a")?).ok_or(Error::Field("*1110:705a"))?,
             championships: parse_championships(field(save, "*1110:705e")?).ok_or(Error::Field("*1110:705e"))?,
             max_location_effect: byte(save, "1110:64bf")?,
+            // Unit 1010:000e's values, saved with the map.
+            road_demolition_cost: longint(save, "1110:64ea")?,
+            connection_values: bytes(save, "1110:6508")?,
+            // Unit 1078:34ad.
+            totals: bytes::<TOTALS_SIZE>(save, "*1110:6f20")?.to_vec(),
             tables: Arc::default(),
             random: Random::default(),
-        })
+        };
+        world.link_plots();
+        Ok(world)
+    }
+
+    /// The plot with the number `plot`, if there is one. // 1068:2591
+    pub(crate) fn find_plot(&mut self, plot: u16) -> Option<&mut Plot> {
+        self.plots
+            .iter_mut()
+            .find(|p| p.id() >= 0 && p.id().cast_unsigned() == plot)
+    }
+
+    /// The plot of the square `pos`, if there is one. // 1030:1e62, 1068:2591
+    pub(crate) fn plot_of(&mut self, pos: Pos) -> Option<&mut Plot> {
+        let plot = self.island.plot_at(pos);
+        self.find_plot(plot)
+    }
+
+    /// Fills the plots' lists of houses and facilities from the lists,
+    /// each in front of the ones before it, as loading a map does. The
+    /// original writes through a nil pointer for a building on no plot.
+    /// // 1068:2d49
+    fn link_plots(&mut self) {
+        for n in 0..self.houses.len() {
+            let pos = self.houses[n].pos();
+            if let Some(p) = self.plot_of(pos) {
+                p.houses.insert(0, pos);
+            }
+        }
+        for n in 0..self.facilities.len() {
+            let pos = self.facilities[n].pos();
+            if let Some(p) = self.plot_of(pos) {
+                p.facilities.insert(0, pos);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plots_list_their_buildings() {
+        let mut w = World::default();
+        for i in 0..20 {
+            for j in 0..20 {
+                w.island.plot_map.set((i, j), 3);
+            }
+        }
+        w.plots = vec![Plot::new(3)];
+        w.houses = vec![House::new((1, 1)), House::new((2, 2)), House::new((30, 30))];
+        w.facilities = vec![Facility::new(41, (5, 5))];
+        w.link_plots();
+        // Each in front of the ones before it; (30, 30) has no plot.
+        assert_eq!(w.plots[0].houses, [(2, 2), (1, 1)]);
+        assert_eq!(w.plots[0].facilities, [(5, 5)]);
+    }
 
     #[test]
     fn corners() {

@@ -197,7 +197,7 @@ impl World {
 
     /// `player`'s money, or 99 999 999 while the money is frozen and for a
     /// player not in the game. // 1078:0191
-    fn money_of(&self, player: u8) -> i32 {
+    pub(crate) fn money_of(&self, player: u8) -> i32 {
         if self.finances.frozen || player == 0 || player > self.player_count {
             return NO_MONEY;
         }
@@ -382,6 +382,7 @@ mod tests {
                 hausnr: Vec::new(),
                 hausdata,
                 hausprei,
+                groundnr: Vec::new(),
             }),
             player_count: 2,
             renovation_cost: 3,

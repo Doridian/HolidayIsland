@@ -238,6 +238,7 @@ fn palms_grow() {
         hausnr: hausnr(&read("DATA/HAUSNR.DAT")).unwrap(),
         hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
         hausprei: hausprei(&read("DATA/HAUSPREI.DAT")).unwrap(),
+        groundnr: groundnr(&read("DATA/GROUNDNR.DAT")).unwrap(),
     });
     world.random = Random::new(0xdead_beef);
     let before = palm_stages(&world);

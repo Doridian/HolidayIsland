@@ -7,15 +7,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use formats::bmp::Bitmap;
-use formats::data::{fontdat, hausdata, hausnr, hausprei, modatyp, monate, sonstige};
+use formats::data::{fontdat, groundnr, hausdata, hausnr, hausprei, modatyp, monate, sonstige};
 use formats::savegame::SaveGame;
 use game::darstellung::Camera;
+use game::events::Event;
 use game::hauptschirm::{BITMAP_FILES, Hauptschirm, InfoTexts};
 use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::monate::Date;
 use game::startform::Settings;
 use game::text::Font;
-use game::world::{Tables, World};
+use game::world::{Facility, House, Tables, World};
 use vcl::random::Random;
 use vcl::surface::Surface;
 
@@ -43,6 +44,7 @@ fn tables() -> Arc<Tables> {
         hausnr: hausnr(&read("DATA/HAUSNR.DAT")).unwrap(),
         hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
         hausprei: hausprei(&read("DATA/HAUSPREI.DAT")).unwrap(),
+        groundnr: groundnr(&read("DATA/GROUNDNR.DAT")).unwrap(),
     })
 }
 
@@ -262,6 +264,55 @@ fn new_year() {
             if world.island.owners.at(pos) >= 2 {
                 assert_eq!(condition, 0x7f, "{file}: {pos:?}");
             }
+        }
+    }
+}
+
+#[test]
+fn disasters_demolish() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tables = tables();
+    for (n, file) in (1..=6).zip(SCENARIO_FILES) {
+        let settings = Settings {
+            scenario: n,
+            difficulty: 1,
+            ..Settings::default()
+        };
+        let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+        let mut world = load_world(&map, &settings, true).unwrap();
+        world.tables = Arc::clone(&tables);
+        world.random = Random::new(0x1234_5678);
+        world.clock.paused = false;
+        // A flood on the next day, and an earthquake going on.
+        world.disasters = true;
+        world.events = vec![Event {
+            chance: 0x10000,
+            first_day: 0,
+            last_day: i32::MAX,
+            duration: 1000,
+            start: 0x2b,
+            kind: 2,
+            ..Event::default()
+        }];
+        world.earthquake = true;
+        let before = world.houses.len() + world.facilities.len();
+        for _ in 0..2000 {
+            world.tick();
+        }
+        assert!(world.flood, "{file}");
+        let after = world.houses.len() + world.facilities.len();
+        assert!(after < before, "{file}: {before} buildings, then {after}");
+        // The demolished buildings' records went with them.
+        for pos in world
+            .houses
+            .iter()
+            .map(House::pos)
+            .chain(world.facilities.iter().map(Facility::pos))
+        {
+            assert_ne!(world.island.buildings.at(pos), 255, "{file}: {pos:?}");
         }
     }
 }

@@ -196,13 +196,6 @@ impl World {
         let _ = step;
     }
 
-    /// The buildings whose `(x + y) mod 30` is `slice` may send out a
-    /// person (1090:1a25, `Random(100)`). // 1078:0002, 330 bytes
-    fn building_slice(&mut self, slice: i16) {
-        // TODO: port 1078:0002.
-        let _ = slice;
-    }
-
     /// The people and cars move (`*1110:6fd6`). // 1090:5293, about
     /// 3850 bytes, and 1090:2ce5, 9498 bytes
     fn people_tick(&mut self) {

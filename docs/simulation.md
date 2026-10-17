@@ -23,7 +23,7 @@ to scroll while the mouse is held on a scroll bar arrow (step 6).
 | 2 | Status bar message timeout: if `1110:009a` > 0, counts it down; at 0 clears the status bar (1030:22de with `''`). Messages set it to 20 (1030:232d, 1030:235a) | inline | | view |
 | 3 | With tooltips on (`1110:0060`): the help bubble (`helpform`, 1040:3dc7 / 1040:3ead) for the money menu's buttons (1070:0294), the overview map's (10b8:02e9) and the button bar (1018:394e) under the mouse | inline | | view |
 | 4 | Unless paused (`1110:0067`): the game clock, [below](#the-clock-step-4) | inline | | world |
-| 5 | `1110:009e := (1110:009e + 1) mod 30`, then `building_slice(1110:009e)` | 1078:0002 | 330 | world |
+| 5 | `1110:009e := (1110:009e + 1) mod 30`, then `building_slice(1110:009e)`, [below](#the-buildings-tick-10780002) | 1078:0002 | 330 | world |
 | 6 | Scrolls the view by the timer's `Tag`: 1–4 `scroll_ns` by −1, −16, 16, 1; 5–8 `scroll_wo` by −1, −18, 18, 1 | 1020:0cf7, 1020:147f | | view |
 | 7 | During an earthquake (`1110:0087` = 1): moves the form by `Random(7) - 3` in x and y; on the first tick of each hour also `quake_damage` | inline; 10a0:0d1c | 192 | view; world |
 | 8 | With the TV (`fernseher`) visible: its tick, which plays the news film and closes it after 3 s (`GetTickCount`) | 1048:1b3e | 1107 | view |
@@ -104,8 +104,8 @@ list (1068:30d0), so the file has them in reverse.
    0. Then for each `j`, for each `i` of the area (byte loops): the
    building site's effect comes off the location map (1030:1d10 with
    `remove`), the building goes on and the part is `first + (i - i0) +
-   width * (j - j0)`. Then `register_building` (1078:0eda, not ported)
-   and the redraw.
+   width * (j - j0)`. Then `register_building` (1078:0eda,
+   [below](#the-buildings-records-10780eda)) and the redraw.
 2. If a computer player (2 to the player count) owns the square,
    `HAUSDATA.DAT` column 3 comes off its budget `*1110:6512 + owner *
    0x34 + budget * 4 - 0x68` (13 `Longint`s for each of players 2–8).
@@ -122,14 +122,102 @@ The original also closes the info box if it shows a square of the site
 (1038:1ee0). `find_building_site` (1078:1995) finds the record whose area
 holds a square showing type 31; the go-slow sabotage uses it.
 
-`register_building` (1078:0eda) adds the building's `HAUSNR.DAT` column
-5 to its plot's `+0x354` (kind 6, `HAUSDATA.DAT` column 5) or `+0x356`,
-makes its record by `1110:1341[kind]` (0: a house, 1068:1a08; 1, 2: a
-"facility" in `*1110:6f14`, 1068:1b3e; 0x2c and 0x1b bytes, both with
-condition `+7` = 127, `+1` = `HAUSDATA.DAT` column 4 and `HAUSPREI.DAT`'s
-third column at `+0x12`/`+0x16`), adds `HAUSDATA.DAT` column 3 to sums in
-the plot and in `*1110:6f20` by the class 1010:2493 gives, counts kinds 9
-and 10 in the plot's `+2`, and puts the building's location effect on.
+### The buildings' records (1078:0eda)
+
+Ported in [`game::construction`](../crates/game/src/construction.rs).
+`register_building(i, j, building)` does nothing on a square without a
+plot (1030:1e62 gives 0): no record, no sums, not even the location
+effect. Otherwise, on the plot record (1068:2591):
+
+1. `HAUSNR.DAT` column 5 (the type's number of squares, also the step
+   between its looks) goes onto `+0x354` for a park (`HAUSDATA.DAT`
+   kind, column 5, 6), the palms' counter, else onto `+0x356` (`Integer`s).
+2. The record, by `1110:1341[kind]` (`array[0..10]`; kind -1 reads
+   `1110:1340` = 3, kind 11 `1110:134c` = 2): 0 a house (1068:1a08,
+   kinds 0 and 1), 1 or 2 a facility (1068:1b3e; 1 for kinds 2, 3, 8, 2
+   for 4, 5, 6, 9, 10, 11), 3 none (kinds -1, 7). Both go in front of
+   their list (`*1110:6f10`, `*1110:6f14`) and of the plot's list
+   (`+0x358`, `+0x35c`, 8-byte nodes; loading a map rebuilds those from
+   the lists, 1068:2d49, each building in front of the ones before). A
+   house gets condition 127, `HAUSPREI.DAT` column 2 at `+0x12`, 0x50 at
+   `+0x16`, `HAUSDATA.DAT` column 4 at `+1`, 0 at `+0xc`, `+0xe`, `+0x10`,
+   `+0x2b` (the rest of the 0x2c bytes isn't set); a facility the same
+   with the price at `+0x16`, everything else 0. Both get at `+2`
+   `Angeschlossenumrechnung[d]` (`1110:6508`, `array[-1..4]`), `d` being
+   the first ring (1 to 4) around the building's area with a square on
+   the same plot that's a road (ground 10–58) or an airport or harbour
+   (kinds 9, 10), else -1 (1030:1706, 1030:15d2).
+3. `HAUSDATA.DAT` column 3 (the capacity, it seems: beds for houses)
+   goes into a `Longint` sum on the plot and in `*1110:6f20`: for a
+   house `+0x22` and `+2`; for record kind 1 `+0x4e + 0x2c·class` and
+   `+0x2e + 0x2c·class`; for 2 `+0xc6 + 4·class` and `+0xa6 +
+   4·class`. The class (1010:2493) is `1110:134c[kind]` for kinds 2–10
+   (2 → 0, 3 → 1, 4 → 3, 5 → 4, 6 → 5, 7 → 10, 8 → 2, 9 and 10 → 6), for
+   kind 11 9, 7 or 8 for the rubbish dump (0x1c), the power station
+   (0x20) and the sewage works (0x21), else 10.
+4. Airports and harbours (kinds 9, 10) count in the plot's `+2` (a
+   byte); the first on a plot adds one to `*1110:6f20`'s first `Word`.
+5. The building's effect goes onto the location map (1030:1d10).
+
+`unregister_building` (1078:124e, through 1078:1684) undoes all of that
+for the building whose first square it gets, removing the first record
+at that square (1068:1e6d, 1068:1fe0) and the effect (1030:1d10 with
+`remove`). `find_record` (1078:169a) finds a building's record by its
+first square, which 1030:154c works out from a square's part: `r :=
+part mod squares`, then `(i - r mod width, j - r div width)`.
+
+### Demolishing (1078:280b)
+
+Ported in [`game::construction`](../crates/game/src/construction.rs)
+and [`game::roads`](../crates/game/src/roads.rs).
+`demolish(j, i, player)`: player 0 (the disasters) skips the check that
+the square is the player's. Errors (`FEHLER.TXT`, 1030:232d) only show
+for player 1: 0x18 "Geht nicht!", 0x17 "Gehört Ihnen nicht!", 0xe not
+enough money, 0x1d "Die Zuschauer protestieren!". By the square's
+building:
+
+- Not in the set at `1110:1378` (11 and 52 the bridges, 12 palms, 36
+  beach life, 255) and the player's:
+  - A building site (31): for each square of the site's area
+    (1078:1995): its people leave (1088:6975), building 255, part 0, its
+    ground back (10b0:3199), owner 0, occupancy 0, and 1088:6c5a. The
+    owner gets `price * days left div building time` back (`HAUSPREI`
+    column 0, `HAUSDATA` column 0; player 1 also in the books, kind
+    0x6a), and the site goes off the list. The site's effect stays on
+    the location map.
+  - A full championship building (`1110:1418`): 0x1d.
+  - Any other building, for `price div 20` (0xe if player 1 can't pay):
+    the house's beach life is cleared (1078:267e, `clear_square` with
+    its `Random(1)`), a rental's vehicles go (1078:273a: 0x0a, 0x1a,
+    0x1b, 0x6d), the people leave, the building is unregistered, and its
+    area (byte loops from its first square) is emptied as above.
+- Otherwise by the ground: a road (10–58), the player's, for
+  `Strassenabrisskosten` (`1110:64ea`): its people leave, owner 0; a
+  road over a river (55–58) goes back to the river piece (55 → 59, 56 →
+  61, 57 → 60, 58 → 62) and loses its bridge (building 11), any other
+  gets its ground back. Then its flat road neighbours get the pieces
+  their neighbours call for (1080:302a, 1080:232a).
+- A bridge over the sea (ground 95–100), the player's, for nothing: from
+  the square along the bridge by its part (2, 4 towards `i - 1`; 3, 5
+  towards `j + 1`; then 0, 4 towards `i + 1`; 1, 5 towards `j - 1`) every
+  square of bridge ground becomes water (1078:276f), then the square
+  itself, and the roads at both ends are reconnected. 1078:276f adds up
+  `Strassenabrisskosten` per square in a sum nothing uses.
+- Anything else: 0x18.
+
+The empty squares' ground (10b0:3199): with a corner at sea level water
+(2); a corner one or two steps up sand (0), or sand to grass (4) with
+part 1 or 0 if a corner is 3 high or more; else grass (1). A part past
+the tile's `GROUNDNR.DAT` variants (`1110:1202[ground] + form`) becomes
+0.
+
+A road square's piece (1080:232a): a road gets its ground back first,
+then `piece[mask] + base`, `mask` having 1, 2, 4, 8 for a road or bridge
+at `(i + 1, j)`, `(i, j + 1)`, `(i - 1, j)`, `(i, j - 1)` (`piece` the
+jump table at 1080:230a: 10, 11, 10, 0x13, 11, 11, 0x12, 0xd, 10, 0x14,
+10, 0xe, 0x11, 0xf, 0xc, 0x10) and `base` by the new ground (1080:22be:
+sand 0, grass 0xf, water 0x5f, sand to grass 0x1e). The map's edge
+counts as water (1000:3e0d) and flat (1000:3e8d).
 
 ### The new year (1008:4f64)
 
@@ -191,9 +279,9 @@ Ported in [`game::events`](../crates/game/src/events.rs). On the first
 tick of each hour of an earthquake, 100 squares (`Random(250)` for `i`,
 then `j`) whose building isn't in the set at `1110:1358` (12 palms, 36
 beach life, 255 none) lose their people (1088:6975) and building
-(`demolish(0, ...)`, 1078:280b); player 1's count half their price
-(`HAUSPREI` column 0) as damage. The flood (10a0:0b49) uses the same set,
-also on the building.
+(`demolish(0, ...)`, 1078:280b, [above](#demolishing-1078280b));
+player 1's count half their price (`HAUSPREI` column 0) as damage. The
+flood (10a0:0b49) uses the same set, also on the building.
 
 ### Animations (step 9)
 
@@ -212,9 +300,19 @@ part of the world, although the original lets the player switch them off
 | Draw the sprites | 1088:38c4 (1088:3a19, 4285) | 219 | view |
 | `Hauptbild.Refresh`, then more drawing | 1090:1836, 1090:1919 | 227, 256 | view |
 
-`building_slice` (step 5, 1078:0002) spreads work over 30 ticks: each
-building whose `(x + y) mod 30` is the tick's number probably sends out
-a person (1090:1a25, not a function in Ghidra yet) with a chance from `HAUSDATA.DAT` (`Random(100)`).
+### The buildings' tick (1078:0002)
+
+Ported in [`game::construction`](../crates/game/src/construction.rs).
+`building_slice(n)` spreads its work over 30 ticks: each house whose
+`(i + j) mod 30` is `n` (as `Longint`s) draws `Random(100)` and sends
+out a person if that's below `+0x10 * 100 div capacity` (`HAUSDATA.DAT`
+column 3), probably its occupancy in percent; then each facility whose
+`(i * j) mod 30` is `n` the same with its `+0x15` byte. Sending out
+(1090:1a25, about 2400 bytes, not a function in Ghidra) is the people's
+code: by the building type at the square it adds a guest, car or boat
+(1088:0324, 1088:4ae2), some with a `Random(2)`. A house type with no
+capacity stops the original with a division by zero; the port skips
+the house.
 
 ## State
 
@@ -245,6 +343,8 @@ What the driver and the ported parts use, all saved in the map file:
 | `1110:64bf` | `MaxLageeinfluss` | same |
 | `*1110:6f08` | The building sites (count `1110:6f18`) | list, reversed (unit 1068:32b5) |
 | `*1110:6f14` | The facilities (count `1110:6f1c`) | list (unit 1068:32b5) |
+| `*1110:6f20` | Sums over the island: plots with an airport or harbour, capacities by class ([above](#the-buildings-records-10780eda)) | same (unit 1078:34ad) |
+| `1110:64ea`, `1110:6508` | `Strassenabrisskosten`, `Angeschlossenumrechnung` (`MODATYP.DAT`) | same |
 | `*1110:6512` | The computer players' budgets, 13 `Longint`s for each of players 2–8 | same (unit 1010:0d4c) |
 | `[1110:6f04]+0x191`, `*[..]+0x24b` | The money menu's books: kinds 0x52–0x6e, the monthly history | same (unit 1070:3bf8) |
 | `1110:1334`, `1110:64c2` | Renovation interval per player, `Renovierungskosten` | same |
@@ -339,8 +439,11 @@ A building type's effect (1030:1d10 adds, 1030:1dc6 removes) is centred on
 `*1110:5528` gives each square its plot (`Grundstück`): 126 × 251 `Word`s,
 `[i div 2][j]`, 0 for none. 1030:1e62 reads it, and for a square with 0
 looks at the neighbour its form (0–3) points to. The plots themselves are
-the list at `*1110:6f0c` (0x364-byte records, `+0` the number, `+0x354`
-the palms planted, `+0x360` the next), saved by 1068:313e.
+the list at `*1110:6f0c` (0x364-byte records, `+0` the number, `+2` its
+airports and harbours, `+0x22`, `+0x4e`.., `+0xc6`.. capacities,
+`+0x354` the palms planted and park squares, `+0x356` the other
+buildings' squares, `+0x358` and `+0x35c` lists of its houses and
+facilities, `+0x360` the next), saved by 1068:313e.
 
 ## Beach life (1008:1b4b)
 
@@ -403,12 +506,15 @@ the square's:
 | 1 surfing | 0x71–0x74 empty, 0x75–0x78 full | 0x38 full; 0x37 location; 0x36–0x31, 0x24, 0x1e, 0x14, 10 surfers (10a0:10c6); 0x2b reputation + 50; 0x2a message 0x57; 3 location undone; 2 the surfers leave (1088:2d2a); 1 empty |
 | 2 Miss Holiday Island | 0x79, 0x7a empty, 0x7b, 0x7c full | 0x19 full; 0x18 location; 0x17 reputation + 30; 0x14 message 0x59; 2 location undone; 1 empty |
 
-The championship messages scroll the view to the building first. Not
-ported yet: `replace_building` (10a0:0026, which also updates the
-building's record and sends people away), `send_surfers` (10a0:10c6,
-five `Random(2)`s and the people) and `remove_people_at` (1088:2d2a).
-They're stubs, so a championship's
-building doesn't fill yet and the random numbers part from the
+The championship messages scroll the view to the building first.
+`replace_building` (10a0:0026) is ported but for its first part, the
+spectators leaving an emptied tennis court (people of kinds 0x4d–0x50)
+or stage (0x41): the type goes on the area and into the record
+(1078:169a); a full building (`1110:1418`) gets `min(plot+0xee,
+capacity)` at `+0xc` and that in percent of the capacity at `+0x15`,
+an empty one (`1110:1438`) 0 for both. Not ported yet: `send_surfers`
+(10a0:10c6, five `Random(2)`s and the people) and `remove_people_at`
+(1088:2d2a). They're stubs, so the random numbers part from the
 original's while surfers would be sent.
 
 ## The news (1048:0a54)
@@ -484,9 +590,12 @@ running event counts its days, and on the day they reach its duration:
 The disasters keep their damage at `1110:7050` (`Longint`), and at their
 start copy `1110:0072` (probably the player's insurance) to `1110:7054`;
 at the end an insured player 1 gets the damage back (`add_money`, and the
-money menu's books, 1070:1419). Not ported yet: the flood's demolition
-(10a0:0b49 knocks down everything at sea level but palms and beach life
-and counts player 1's buildings as damage), the oil slick (10a0:074d and 10a0:0915: a random
+money menu's books, 1070:1419). The flood (10a0:0b49) goes through every
+square, `i` then `j` from 0 to 250: one at sea level (lowest corner
+below 2) whose building isn't in `1110:1358` is demolished for no one,
+player 1's counting half their price as damage; then, still at sea
+level, the people on it leave if `layer_551c` or `layer_5520` isn't 255
+there (not ported, the people). Not ported yet: the oil slick (10a0:074d and 10a0:0915: a random
 sea square with up to 2000 `Random(250)`s and a random walk of oil, the
 location map × 50 % within 30 cells), the books, and `make_available`
 (the build menu's list of types is still a form's). While an oil slick
@@ -507,16 +616,19 @@ the original's.
 
 Ported: the driver's world steps in their order (`World::tick`), the date,
 `add_money`, `set_loan`, `format_money`, the start money, the accounting
-scheduler (1008:5307), `construction_tick` (with stubs for registering
-the building and the builders), `year_end`, `january_second` with the
-scenarios' goals, the net worth and the score, `quake_damage` (with stubs
-for the demolition and the people), `vegetation_tick` with the location map,
-`beach_life_tick`, `effects_tick` (with stubs for the buildings and
-people it changes), `events_tick` (with stubs for the flood's
-demolition, the oil slick and new building types), and the news' random
-text. The tables the simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`,
-`HAUSPREI.DAT`) are
-in `World::tables`, loaded from the CD by whoever starts the game.
+scheduler (1008:5307), `construction_tick` (with a stub for the
+builders), `year_end`, `january_second` with the scenarios' goals, the
+net worth and the score, `quake_damage` (with a stub for the people),
+`vegetation_tick` with the location map,
+`beach_life_tick`, `effects_tick` (with stubs for the people it
+changes), `events_tick` (with stubs for the oil slick and new building
+types), the buildings' records (`register_building`,
+`unregister_building`, `find_record`), `demolish` with the road pieces,
+`building_slice` (with a stub for sending people out), the flood's
+demolition, `replace_building`, and the news' random text. The tables
+the simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`, `HAUSPREI.DAT`,
+`GROUNDNR.DAT`) are in `World::tables`, loaded from the CD by whoever
+starts the game.
 
 What the view shows comes out of `World::tick` in `Tick`: the squares
 that changed (`redraw`; the view redraws the whole island for them rather
@@ -528,12 +640,16 @@ news, the TV, auctions, the status bar timeout, tooltips, scrolling by
 the timer, music and the shaking aren't ported.
 
 Stubs (named after the table above, each with its address and a TODO):
-`settlement_step`, `building_slice`, `people_tick`, `spawn_people`, and
-inside the ported routines `register_building` (1078:0eda),
-`remove_workers` (1088:6bac), `demolish` (1078:280b), `remove_people_from`
-(1088:6975), `replace_building`, `send_surfers`, `remove_people_at`,
-`flood_start`'s demolition, `oil_slick_start`, `oil_slick_end` and
-`make_available` (which doesn't touch the building sites). Where a stub
+`settlement_step`, `people_tick`, `spawn_people`, and inside the ported
+routines, all people and cars (`*1110:6fd6`): `remove_workers`
+(1088:6bac), `send_person` (1090:1a25), `people_map_changed`
+(1088:6c5a), `float_money` (1088:0153, the human's costs rising from the
+square), `remove_people_from` (1088:6975), `send_spectators_away`
+(10a0:0026's first part), `send_surfers`, `remove_people_at`,
+`flood_people` (10a0:0b49's second part); and `oil_slick_start`,
+`oil_slick_end` and `make_available` (which doesn't touch the building
+sites). Demolishing refreshes the money menu (1070:2617) in the original,
+which the port leaves to the view. Where a stub
 stands for code that draws random numbers, the port's numbers part from
 the original's once it runs.
 
@@ -553,10 +669,21 @@ the original's once it runs.
   stores that player's view origin. Both need a multiplayer answer.
 - The houses' `+0x10` value, which sets their beach life, isn't
   identified (guests?), nor is `1110:0072` for sure (insurance?).
-- Until `register_building` (1078:0eda) is ported, a finished building
-  gets no house or facility record and no location effect, so the beach
-  life, renovations and net worth don't see it; until `demolish` is, an
-  earthquake only counts its damage.
+- `demolish` reports the error messages for player 1 as a `Result`; a
+  player's demolition isn't a command yet, so only the disasters call it.
+  The floating cost (1088:0153) is a people record in the original but
+  only for the human: it may belong to the view.
+- What the plots' `+0xee` is (a full championship building takes its
+  `+0xc` from it, at most its capacity: spectators?), the facilities'
+  `+0xc` and `+0x15` (visitors and how full, in percent?), houses'
+  `+0x16` (0x50 when built) and the rest of `*1110:6f20` and the plots'
+  sums, which the settlement probably fills.
+- Demolishing a building site doesn't take its effect (type 31's 90 %)
+  off the location map. A demolished park comes off its plot's
+  `+0x354`, a dead palm doesn't. The original's bridge demolition costs
+  nothing, though it adds up a cost.
+- The plots' lists of houses and facilities hold the buildings' first
+  squares in the port, not pointers; nothing ported reads them yet.
 - The books' totals (kinds 0x5e, 0x6b) are worked out by 1070:1452, which
   the original runs at the year's end and whenever the money menu is
   shown (1070:2617, only with the form's height above 0): a view

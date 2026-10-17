@@ -1,7 +1,7 @@
 //! Sabotage and the championships: the timed effects `effects_tick`
 //! counts down once a day (segment `10a0`).
 
-use crate::construction::BUILDING_SITE;
+use crate::construction::{BUILDING_SITE, EMPTY_CHAMPIONSHIPS, FULL_CHAMPIONSHIPS, Record};
 use crate::news::Message;
 use crate::simulation::Tick;
 use crate::world::{Pos, World};
@@ -245,19 +245,72 @@ impl World {
     }
 }
 
+impl World {
+    /// A championship's building at `pos` becomes `building`, a full or
+    /// an empty one: the spectators of an emptied one leave, the type goes
+    /// on the new one's area (its size from `HAUSNR.DAT`) and into its
+    /// record (1078:169a). A full one's record gets the plot's `+0xee`
+    /// (spectators?), at most its capacity (`HAUSDATA.DAT` column 3), as
+    /// [`Facility::value_c`](crate::world::Facility::value_c) and that in
+    /// percent of the capacity as how full it is; an empty one 0 for both.
+    /// // 10a0:0026
+    ///
+    /// The original writes through a nil pointer when the building has no
+    /// record, and would write those fields into a house's record; the
+    /// buildings are facilities, and the port leaves the records alone
+    /// otherwise.
+    pub(crate) fn replace_building(&mut self, building: u8, pos: Pos, tick: &mut Tick) {
+        self.send_spectators_away(building);
+        let record = self.find_record(pos); // 1078:169a
+        let t = std::sync::Arc::clone(&self.tables);
+        // Byte loops, as in place_building.
+        let (i0, j0) = (pos.0.to_le_bytes()[0], pos.1.to_le_bytes()[0]);
+        let i1 = t.hausnr(building, 3).wrapping_add(pos.0).wrapping_sub(1).to_le_bytes()[0];
+        let j1 = t.hausnr(building, 4).wrapping_add(pos.1).wrapping_sub(1).to_le_bytes()[0];
+        for i in i0..=i1 {
+            for j in j0..=j1 {
+                let square = (i16::from(i), i16::from(j));
+                if crate::world::on_map(square) {
+                    self.island.buildings.set(square, building);
+                    tick.redraw.push(square); // 1050:21f9
+                }
+            }
+        }
+        match record {
+            Some(Record::House(n)) => self.houses[n].set_building(building),
+            Some(Record::Facility(n)) => {
+                self.facilities[n].set_building(building);
+                if FULL_CHAMPIONSHIPS.contains(&building) {
+                    let capacity = i32::from(t.hausdata(building, 3));
+                    let at = self.facilities[n].pos();
+                    let spectators = self.plot_of(at).map_or(0, |p| p.longint(0xee)).min(capacity);
+                    let percent = spectators.wrapping_mul(100).checked_div(capacity).unwrap_or(0);
+                    let f = &mut self.facilities[n];
+                    f.set_value_c(spectators);
+                    f.set_fill(percent.to_le_bytes()[0]);
+                } else if EMPTY_CHAMPIONSHIPS.contains(&building) {
+                    let f = &mut self.facilities[n];
+                    f.set_value_c(0);
+                    f.set_fill(0);
+                }
+            }
+            None => {}
+        }
+    }
+}
+
 /// The parts of the effects that aren't ported yet. Where the original
 /// draws random numbers in them, the port's numbers part from the
 /// original's once they run.
 #[allow(clippy::unused_self)]
 impl World {
-    /// Puts building type `building` on the area of the one at `pos` (its
-    /// size from `HAUSNR.DAT`), updates its record (1078:169a) and, for
-    /// some types, sends the people inside away (1088:2df2). // 10a0:0026,
-    /// 623 bytes
-    fn replace_building(&mut self, building: u8, pos: Pos, tick: &mut Tick) {
-        // TODO: port 10a0:0026 once the people (`*1110:6fd6`) and the
-        // building records (1078:169a) are.
-        let _ = (building, pos, tick);
+    /// When a championship ends: for the empty tennis court (0x6f) the
+    /// people of kinds 0x4d–0x50, for Miss Holiday Island's stage (0x79,
+    /// 0x7a) those of kind 0x41, leave (1088:2df2). // 10a0:0026's first
+    /// part
+    fn send_spectators_away(&mut self, building: u8) {
+        // TODO: port with the people (`*1110:6fd6`, up to `1110:6ff4`).
+        let _ = building;
     }
 
     /// Five tries to send a surfer from the beach at `pos` into the sea
@@ -269,7 +322,7 @@ impl World {
     }
 
     /// Takes the people at `pos` off the island. // 1088:2d2a, 200 bytes
-    fn remove_people_at(&mut self, pos: Pos) {
+    pub(crate) fn remove_people_at(&mut self, pos: Pos) {
         // TODO: port 1088:2d2a with the people.
         let _ = pos;
     }
@@ -390,6 +443,7 @@ mod tests {
                 hausnr,
                 hausdata,
                 hausprei: Vec::new(),
+                groundnr: Vec::new(),
             }),
             ..World::default()
         };
@@ -404,6 +458,47 @@ mod tests {
         days(&mut w, 1);
         assert_eq!(w.building_sites[0].days, 35);
         assert_eq!(w.sabotage[0].countdown, 9);
+    }
+
+    #[test]
+    fn replacing_fills_the_record() {
+        let mut hausnr = vec![[0; 8]; 0x71];
+        hausnr[0x6f] = [1, 0, 0, 3, 3, 9, 0, 0];
+        hausnr[0x70] = [1, 0, 0, 3, 3, 9, 0, 0];
+        let mut hausdata = vec![[0; 10]; 0x71];
+        hausdata[0x6f][5] = 5;
+        hausdata[0x70][3] = 5000;
+        hausdata[0x70][5] = 5;
+        let mut w = World {
+            tables: std::sync::Arc::new(crate::world::Tables {
+                hausnr,
+                hausdata,
+                hausprei: Vec::new(),
+                groundnr: Vec::new(),
+            }),
+            ..World::default()
+        };
+        let pos = (40, 40);
+        for i in 40..43 {
+            for j in 40..43 {
+                w.island.buildings.set((i, j), 0x6f);
+                w.island.plot_map.set((i, j), 2);
+            }
+        }
+        let mut plot = crate::world::Plot::new(2);
+        plot.set_longint(0xee, 3000);
+        w.plots.push(plot);
+        w.facilities.push(crate::world::Facility::new(0x6f, pos));
+        let mut tick = Tick::default();
+        w.replace_building(0x70, pos, &mut tick);
+        assert_eq!(w.island.buildings.at((42, 42)), 0x70);
+        assert_eq!(tick.redraw.len(), 9);
+        let f = &w.facilities[0];
+        assert_eq!((f.building(), f.value_c(), f.fill()), (0x70, 3000, 60));
+        w.replace_building(0x6f, pos, &mut tick);
+        let f = &w.facilities[0];
+        assert_eq!((f.building(), f.value_c(), f.fill()), (0x6f, 0, 0));
+        assert_eq!(w.island.buildings.at((40, 41)), 0x6f);
     }
 
     #[test]

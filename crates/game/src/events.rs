@@ -198,7 +198,7 @@ impl World {
                     match e.start {
                         0x2b => {
                             self.flood = true;
-                            self.flood_start(); // 10a0:0b49
+                            self.flood_start(tick); // 10a0:0b49
                             // The original redraws the island here
                             // (1020:0d48).
                             tick.redraw_all = true;
@@ -323,7 +323,35 @@ impl World {
                 self.damage.amount = self.damage.amount.wrapping_add(half);
             }
             self.remove_people_from((i, j));
-            self.demolish(0, (i, j), tick);
+            // For no one, so it never refuses.
+            let _ = self.demolish(0, (i, j), tick);
+        }
+    }
+
+    /// The flood begins: no damage yet, insurance as for an earthquake,
+    /// and every square at sea level (lowest corner below 2) whose building
+    /// isn't one of [`UNSHAKEN`] loses it ([`World::demolish`] for no one),
+    /// the player's counted as damage at half their price (marked: only
+    /// player 1's), and then the people on it. // 10a0:0b49
+    fn flood_start(&mut self, tick: &mut Tick) {
+        self.quake_start();
+        for i in 0..=250 {
+            for j in 0..=250 {
+                let building = self.island.buildings.at((i, j));
+                if UNSHAKEN.contains(&building) {
+                    continue;
+                }
+                if self.island.lowest_corner((i, j)) < 2 {
+                    if self.island.owners.at((i, j)) == 1 {
+                        let half = self.tables.hausprei(building, 0) / 2;
+                        self.damage.amount = self.damage.amount.wrapping_add(half);
+                    }
+                    let _ = self.demolish(0, (i, j), tick);
+                }
+                if self.island.lowest_corner((i, j)) < 2 {
+                    self.flood_people((i, j));
+                }
+            }
         }
     }
 
@@ -341,14 +369,12 @@ impl World {
 /// The parts of the events that aren't ported yet.
 #[allow(clippy::unused_self)]
 impl World {
-    /// The flood begins: no damage yet, insurance as for an earthquake,
-    /// and every square at sea level (lowest corner below 2) whose building
-    /// isn't one of [`UNSHAKEN`] loses it (1078:280b), the player's counted
-    /// as damage (`HAUSPREI.DAT`), and its people (1088:2df2).
-    /// // 10a0:0b49, 389 bytes
-    fn flood_start(&mut self) {
-        // TODO: port the demolition once 1078:280b and the people are.
-        self.quake_start();
+    /// The people on a flooded square (one whose `layer_551c` or
+    /// `layer_5520` isn't 255) leave (1088:2df2), and both layers become
+    /// 255 there. // 10a0:0b49's second part
+    fn flood_people(&mut self, pos: Pos) {
+        // TODO: port with the people (`*1110:6fd6`, 1088:2df2).
+        let _ = pos;
     }
 
     /// An oil slick begins: 1000 tries at a random spot (`Random(250)`
@@ -370,19 +396,9 @@ impl World {
 
     /// Takes the people on `pos` off the island (1088:2df2), and those in
     /// the building there. // 1088:6975, 567 bytes
-    fn remove_people_from(&mut self, pos: Pos) {
+    pub(crate) fn remove_people_from(&mut self, pos: Pos) {
         // TODO: port 1088:6975 with the people (`*1110:6fd6`).
         let _ = pos;
-    }
-
-    /// Demolishes what's on `pos` for `player` (0: for no one, without
-    /// costs or error messages): a building site, a building (its price
-    /// back, through 1078:1684), a road or a river piece. // 1078:280b,
-    /// 2662 bytes
-    fn demolish(&mut self, player: u8, pos: Pos, tick: &mut Tick) {
-        // TODO: port 1078:280b once the building records (1078:1684) and
-        // the people are. Until then an earthquake only counts its damage.
-        let _ = (player, pos, tick);
     }
 
     /// Building type `building` becomes available in the build menu
@@ -574,11 +590,14 @@ mod tests {
     fn quake_damage() {
         let mut hausprei = vec![[0; 4]; 13];
         hausprei[5][0] = 1001;
+        let mut hausnr = vec![[0; 8]; 13];
+        hausnr[5] = [1, 0, 0, 1, 1, 1, 0, 0];
         let mut w = World {
             tables: std::sync::Arc::new(crate::world::Tables {
-                hausnr: Vec::new(),
+                hausnr,
                 hausdata: Vec::new(),
                 hausprei,
+                groundnr: Vec::new(),
             }),
             random: Random::new(4),
             ..World::default()
@@ -595,6 +614,51 @@ mod tests {
         w.quake_damage(&mut Tick::default());
         assert_eq!(w.damage.amount, 500);
         assert_eq!(w.random, r);
+        // Demolished for no one: nobody pays.
+        assert_eq!(w.island.buildings.at(squares[0]), 255);
+        assert_eq!(w.island.owners.at(squares[0]), 0);
+        assert_eq!(w.island.buildings.at(squares[1]), 12);
+        assert_eq!(w.finances.money, [0; 8]);
+    }
+
+    #[test]
+    fn flood_demolishes_at_sea_level() {
+        let mut hausprei = vec![[0; 4]; 13];
+        hausprei[5][0] = 1001;
+        let mut hausnr = vec![[0; 8]; 13];
+        hausnr[5] = [1, 0, 0, 1, 1, 1, 0, 0];
+        let mut w = World {
+            tables: std::sync::Arc::new(crate::world::Tables {
+                hausnr,
+                hausdata: vec![[0; 10]; 13],
+                hausprei,
+                groundnr: Vec::new(),
+            }),
+            ..World::default()
+        };
+        // The human's and a computer's building at sea level, one on a
+        // hill and a palm.
+        for (pos, owner) in [((10, 10), 1), ((20, 20), 2), ((30, 30), 1), ((40, 40), 1)] {
+            w.island.buildings.set(pos, 5);
+            w.island.owners.set(pos, owner);
+        }
+        w.island.buildings.set((40, 40), 12);
+        for i in 29..=30 {
+            for j in 29..=30 {
+                w.island.heights.set((i, j), 2);
+            }
+        }
+        let mut tick = Tick::default();
+        w.flood_start(&mut tick);
+        assert_eq!(w.damage.amount, 500);
+        assert_eq!(w.island.buildings.at((10, 10)), 255);
+        assert_eq!(w.island.buildings.at((20, 20)), 255);
+        assert_eq!(w.island.owners.at((20, 20)), 0);
+        assert_eq!(w.island.buildings.at((30, 30)), 5);
+        assert_eq!(w.island.buildings.at((40, 40)), 12);
+        // The empty squares get the sea's ground.
+        assert_eq!(w.island.ground.at((10, 10)), 2);
+        assert!(tick.redraw.contains(&(20, 20)));
     }
 
     #[test]

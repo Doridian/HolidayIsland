@@ -65,7 +65,7 @@ pub const VIEW_HEIGHT: i32 = 405;
 const HALF_WIDTH: [i32; 2] = [32, 30];
 /// The first `GROUNDNR.DAT` row of each kind of ground; each has one row per
 /// form (slope). // 1110:1202
-const GROUND_ROWS: [u8; 10] = [0, 19, 38, 38, 57, 57, 0, 0, 0, 76];
+pub(crate) const GROUND_ROWS: [u8; 10] = [0, 19, 38, 38, 57, 57, 0, 0, 0, 76];
 /// How far each form lifts its tile, beyond the height of the corner it's
 /// measured from. // 1110:00ac
 const FORM_LIFT: [i32; 19] = [9, -9, -9, 9, 9, 0, -9, 0, 18, 0, -18, 0, 9, 0, -9, 0, 0, 0, 0];
