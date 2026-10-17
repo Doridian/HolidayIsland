@@ -165,13 +165,13 @@ open sea (1010:20e0) within 10 rings, counted if `add_person` took it
 
 10a8:302e sets the computers' status text (`1110:70f2`, saved, not
 shown) to `Gar nix`, counts `1110:70c2` up and gives player `70c2 mod
-opponents + 2` a turn (10a8:2d5a, 716 bytes): a state machine
-(`*1110:70ca`, a byte each) that builds (10a8:2463, 1533 bytes, and the
-planning code around it), sells through events (1010:3006 with event 9),
-sabotages and demolishes, with `Random`s. The whole of segment `10a8` is
-about 14 KB and not ported yet: `World::computer_turn` is a stub, so
-while computers play the port's random numbers part from the original's
-from the first free step on. Their price changes (steps 0x82, 0x84) and
+opponents + 2` a turn (10a8:2d5a): a state machine (`*1110:70ca`, a byte
+each) that builds (10a8:2463 and the planning code around it), manages
+its loans, sells through events (1010:3006 with event 9) and demolishes,
+with `Random`s. Ported in [`game::computer`](../crates/game/src/computer.rs),
+described in [computer.md](computer.md), but for raising and lowering
+land and building roads (stubs), after which the port's random numbers
+part from the original's. Their price changes (steps 0x82, 0x84) and
 renovations ([year_end](simulation.md#the-new-year-10084f64)) are ported.
 
 ## What the records' fields are

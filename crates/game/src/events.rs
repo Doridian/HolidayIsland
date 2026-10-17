@@ -240,7 +240,7 @@ impl World {
                     },
                     tick,
                 );
-                self.make_available(e.building.to_le_bytes()[0]); // 10a0:0691
+                self.make_available(e.building.to_le_bytes()[0], 0); // 10a0:0691
             }
             _ => {}
         }
@@ -384,14 +384,6 @@ impl World {
     /// insured, the oil gone. // 10a0:0915, 213 bytes
     fn oil_slick_end(&mut self) {
         // TODO: port with 10a0:074d.
-    }
-
-    /// Building type `building` becomes available in the build menu
-    /// (1018:23f8) and to the computer players (10a8:0523, for some types
-    /// with the next ones of its group). // 10a0:0691 with kind 0
-    fn make_available(&mut self, building: u8) {
-        // TODO: port once the build menu's list of types is world state.
-        let _ = building;
     }
 }
 

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use formats::savegame::{MAP_SIZE, SaveGame};
 use vcl::random::Random;
 
+use crate::computer::Computers;
 use crate::events::{Auction, Damage, Event, parse_events};
 use crate::monate::Date;
 use crate::money::Finances;
@@ -986,6 +987,15 @@ pub struct World {
     /// The computer players' turns so far, which picks whose turn it is.
     /// // 1110:70c2
     pub computer_turns: i32,
+    /// The computer players' state (segment `10a8`).
+    pub computers: Computers,
+    /// `Fundamentbaukosten` (`MODATYP.DAT`): what a building on any land
+    /// costs more for each square that isn't level. // 1110:64f6
+    pub foundation_cost: i32,
+    /// The human is dragging out a road (the road tool, 1080:3195): the
+    /// view's, but the computers don't build roads meanwhile (marked).
+    /// // 1110:634c
+    pub road_dragging: bool,
     /// The human's view, which the people code reads (marked).
     pub viewpoint: Viewpoint,
     /// The tables from the CD the simulation reads; empty until the game's
@@ -1043,6 +1053,9 @@ impl Default for World {
             settlement: Settlement::default(),
             computers_play: true,
             computer_turns: 0,
+            computers: Computers::default(),
+            foundation_cost: 0,
+            road_dragging: false,
             viewpoint: Viewpoint::default(),
             tables: Arc::default(),
             random: Random::default(),
@@ -1266,6 +1279,8 @@ impl World {
                 max_debt: longint(save, "1110:64ce")?,
                 interest_rate: longint(save, "1110:64d2")?,
                 start_money: longint(save, "1110:64d6")?,
+                credit_size: longint(save, "1110:64ca")?,
+                credit_refused: bytes::<8>(save, "1110:6f28")?.map(|b| b != 0),
                 frozen: false,
             },
             // Unit 1008:539f.
@@ -1339,6 +1354,10 @@ impl World {
             settlement: settlement(save)?,
             computers_play: byte(save, "1110:0057")? != 0,
             computer_turns: longint(save, "1110:70c2")?,
+            // Unit 10a8:32ec.
+            computers: Computers::from_map(save)?,
+            foundation_cost: longint(save, "1110:64f6")?,
+            road_dragging: byte(save, "1110:634c")? != 0,
             viewpoint: viewpoint(save)?,
             tables: Arc::default(),
             random: Random::default(),

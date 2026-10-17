@@ -437,3 +437,59 @@ fn settlement_moves_money() {
         }
     }
 }
+
+#[test]
+fn computers_build() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tables = tables();
+    // "König": seven computer players.
+    let settings = Settings {
+        scenario: 3,
+        difficulty: 1,
+        ..Settings::default()
+    };
+    let map = SaveGame::parse(&read("SZENARIO/KOENIG.HIS")).unwrap();
+    let mut world = load_world(&map, &settings, true).unwrap();
+    world.tables = Arc::clone(&tables);
+    world.random = Random::new(0x1234_5678);
+    world.clock.paused = false;
+    assert_eq!(world.player_count, 8);
+    assert!(world.computers_play);
+    let computer = |w: &World, pos| (2..=w.player_count).contains(&w.island.owners.get(pos).unwrap_or(0));
+    let facilities = |w: &World| w.facilities.iter().filter(|f| computer(w, f.pos())).count();
+    let start_facilities = facilities(&world);
+    let start_money = world.finances.money;
+    let year = world.date.year;
+    let mut started = Vec::new();
+    while world.date.year < year + 3 {
+        let sites = world.building_sites.len();
+        world.tick();
+        if world.building_sites.len() > sites {
+            let s = world.building_sites[0];
+            started.push((world.island.owners.at(s.pos), s.building, s.budget));
+        }
+    }
+    // Several of them started building sites, of types from their
+    // COMPBAU.DAT lists, each on the budget of its category.
+    assert!(started.len() >= 5, "{started:?}");
+    let builders: std::collections::BTreeSet<u8> = started.iter().map(|s| s.0).collect();
+    assert!(builders.len() >= 3, "{started:?}");
+    for &(owner, building, budget) in &started {
+        assert!((2..=8).contains(&owner), "{started:?}");
+        let k = usize::try_from(budget).unwrap();
+        let row = &world.computers.types[k * 41..k * 41 + 41];
+        assert!(row[1..=usize::from(row[0])].contains(&building), "{started:?}");
+    }
+    // The sites were finished.
+    assert!(facilities(&world) > start_facilities);
+    let money = world.finances.money;
+    assert!(
+        builders
+            .iter()
+            .all(|&p| money[usize::from(p - 1)] != start_money[usize::from(p - 1)])
+    );
+    assert_ne!(world.computers.status.len(), 0);
+}

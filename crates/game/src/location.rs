@@ -9,6 +9,17 @@ use crate::world::{Pos, World};
 const LAST: i32 = 0x7d;
 
 impl World {
+    /// The location quality of the square `(i, j)`'s cell, 0 off the map.
+    /// // 1030:180d
+    #[must_use]
+    pub fn location_at(&self, (i, j): Pos) -> u8 {
+        if crate::world::on_map((i, j)) {
+            self.island.location.get((i / 2, j / 2)).unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
     /// Puts `building`'s effect on the location map around the building
     /// at `pos`. // 1030:1d10
     pub fn add_location_effect(&mut self, pos: Pos, building: u8) {

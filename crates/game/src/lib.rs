@@ -3,6 +3,7 @@
 
 pub mod accounts;
 pub mod beach_life;
+pub mod computer;
 pub mod construction;
 pub mod darstellung;
 pub mod events;

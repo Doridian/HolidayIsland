@@ -8,8 +8,7 @@ use crate::world::{FIRST_BOOK, World};
 
 /// The books' kinds of this year (`GELDMENU.TXT`'s lines): the takings
 /// of the houses, hotels, restaurants (`Gaststaetten`) and other
-/// buildings, then their costs, new buildings (not booked by anything
-/// ported), advertising, interest and everything else (`Sonstiges`). Last
+/// buildings, then their costs, new buildings, advertising, interest and everything else (`Sonstiges`). Last
 /// year's are 13 lower. // 1070:1419
 pub const BOOK_HOUSE_RENT: u8 = 0x5f;
 pub const BOOK_HOTEL_RENT: u8 = 0x60;
@@ -19,6 +18,8 @@ pub const BOOK_HOUSE_COSTS: u8 = 0x63;
 pub const BOOK_HOTEL_COSTS: u8 = 0x64;
 pub const BOOK_RESTAURANT_COSTS: u8 = 0x65;
 pub const BOOK_FACILITY_COSTS: u8 = 0x66;
+/// New buildings: their prices. // 1078:1d21
+pub const BOOK_NEW_BUILDINGS: u8 = 0x67;
 pub const BOOK_ADVERTISING: u8 = 0x68;
 pub const BOOK_INTEREST: u8 = 0x69;
 /// `Sonstiges`: the original books demolitions, renovations, insurance

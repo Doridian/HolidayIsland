@@ -25,6 +25,13 @@ pub struct Finances {
     pub interest_rate: i32,
     /// `Startgeld`. // 1110:64d6
     pub start_money: i32,
+    /// `Kreditgroesse`: the step a computer player borrows and pays back
+    /// in ([`World::manage_loans`]). // 1110:64ca
+    pub credit_size: i32,
+    /// Each player's bank said no: the last loan would have gone past
+    /// `MaxSchulden`. Paying a step back clears it. `array[1..8] of
+    /// Boolean`. // 1110:6f28
+    pub credit_refused: [bool; 8],
     /// Freezes everyone's money: `add_money` does nothing while it's set.
     /// Only `init_game_defaults` writes it (false). // 1110:0070
     pub frozen: bool,
@@ -89,6 +96,54 @@ impl World {
         };
         f.loan[i] = amount;
         f.interest[i] = (amount / 24).wrapping_mul(f.interest_rate) / 50;
+    }
+
+    /// `player`'s loan; 0 for a player outside 1..8 (the original reads
+    /// the money of player 8 for player 0). // 1078:057a
+    #[must_use]
+    pub fn loan_of(&self, player: u8) -> i32 {
+        usize::from(player)
+            .checked_sub(1)
+            .and_then(|i| self.finances.loan.get(i))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Adds `amount` to `player`'s loan, at least 0, and works out its
+    /// interest again. // 1078:04ce
+    pub fn change_loan(&mut self, player: u8, amount: i32) {
+        let loan = self.loan_of(player).wrapping_add(amount).max(0);
+        self.set_loan(player, loan); // 1078:0466's arithmetic
+    }
+
+    /// `player` borrows `amount`: if the loan would go past `MaxSchulden`
+    /// the bank says no ([`Finances::credit_refused`]), else the money
+    /// and the loan go up by it. // 1078:05c6
+    pub fn take_loan(&mut self, player: u8, amount: i32) {
+        let Some(i) = usize::from(player).checked_sub(1).filter(|&i| i < 8) else {
+            return;
+        };
+        if self.finances.max_debt.wrapping_sub(amount) < self.loan_of(player) {
+            self.finances.credit_refused[i] = true;
+        } else {
+            self.add_money(player, amount);
+            self.change_loan(player, amount);
+        }
+    }
+
+    /// `player` pays `amount` of the loan back if they have it and owe
+    /// anything; a computer player's payment is a cost to
+    /// [`World::add_money`], so on the harder levels some of it comes back.
+    /// // 1078:061b
+    pub fn repay_loan(&mut self, player: u8, amount: i32) {
+        let Some(i) = usize::from(player).checked_sub(1).filter(|&i| i < 8) else {
+            return;
+        };
+        if self.money_of(player) >= amount && self.loan_of(player) > 0 {
+            self.add_money(player, amount.wrapping_neg());
+            self.change_loan(player, amount.wrapping_neg());
+            self.finances.credit_refused[i] = false;
+        }
     }
 }
 

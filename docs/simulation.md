@@ -358,6 +358,7 @@ What the driver and the ported parts use, all saved in the map file:
 | `1110:64c6`, `64fa`, `64fe`, `*1110:6502`, `650e` | `Werbungskosten`, `Lebenshaltungskosten`, `Klassenmischung` and its divisor, `Verfallwahrscheinlichkeit` | same (unit 1010:0d4c) |
 | `1110:6f90` | Each player's guests this month | same (unit 1078:34ad) |
 | `1110:0057`, `1110:70c2` | The computer players play; their turns so far | same |
+| `1110:7062`..`1110:70f2`, `1110:6f28`, `1110:634c`, `1110:00a2` | The computer players' state, the bank's no, the human's road drag ([computer.md](computer.md#state)) | same (unit 10a8:32ec) |
 | `1110:1334`, `1110:64c2` | Renovation interval per player, `Renovierungskosten` | same |
 | `1110:006e`, `006f`, `0071`, `133c` | Scenario, cheated(?), won, the score's unknown flag | same |
 | `*1110:6f24+0x7f+p` | Player `p` is out | `*1110:6f24` |
@@ -610,8 +611,9 @@ player 1's counting half their price as damage; then, still at sea
 level, the people on it leave if `layer_551c` or `layer_5520` isn't 255
 there (`flood_people`, in `game::people`). Not ported yet: the oil slick (10a0:074d and 10a0:0915: a random
 sea square with up to 2000 `Random(250)`s and a random walk of oil, the
-location map × 50 % within 30 cells), the books, and `make_available`
-(the build menu's list of types is still a form's). While an oil slick
+location map × 50 % within 30 cells), the books, and `make_available`'s
+build menu (still a form's; the computer players' part is ported,
+[computer.md](computer.md#state)). While an oil slick
 would start, the port's random numbers part from the original's.
 
 ## Random
@@ -630,7 +632,9 @@ the original's.
 Ported: the driver's world steps in their order (`World::tick`), the date,
 `add_money`, `set_loan`, `format_money`, the start money, the accounting
 scheduler (1008:5307) with the monthly settlement (1008:1bf7, all its
-steps and the books' month, [settlement.md](settlement.md)), `construction_tick`, `year_end`, `january_second` with the scenarios' goals, the
+steps and the books' month, [settlement.md](settlement.md)), the
+computer players' turns ([computer.md](computer.md)) with the build check
+and new building sites, `construction_tick`, `year_end`, `january_second` with the scenarios' goals, the
 net worth and the score, `quake_damage`,
 `vegetation_tick` with the location map,
 `beach_life_tick`, `effects_tick`, `events_tick` (with stubs for the oil slick and new building
@@ -664,10 +668,11 @@ news, the TV, auctions, the status bar timeout, tooltips, scrolling by
 the timer, music and the shaking aren't ported.
 
 Stubs (named after the table above, each with its address and a TODO):
-`computer_turn` (10a8:2d5a, the computer players' decisions, about 14 KB
-with their callees), and inside the ported routines `oil_slick_start`,
-`oil_slick_end` and `make_available` (which doesn't touch the building
-sites). 1088:7fb1,
+inside the ported routines `oil_slick_start`, `oil_slick_end`, and for
+the computer players ([computer.md](computer.md)) `level_corner`
+(10b0:2c83), `level_road_square` (10b0:53fe) and `build_road`
+(1078:2396). `make_available` only gives the computers the type; the
+build menu's part is the view's. 1088:7fb1,
 which runs `spawn_people` again after the player scrolls or turns the
 view, isn't ported. Demolishing refreshes the money menu (1070:2617) in the original,
 which the port leaves to the view. Where a stub
@@ -682,9 +687,9 @@ the original's once it runs.
   multiplayer these need to become world state everyone agrees on.
 - `1110:0070` stops all money changes; nothing found sets it. `1110:133c`,
   which a scenario sets on easy, is unknown.
-- The computer players' turns (segment `10a8`) aren't ported, so while
-  they play the port's random numbers part from the original's on the
-  settlement's free steps ([settlement.md](settlement.md#the-computer-players)).
+- The computer players ([computer.md](computer.md)) can't level land or
+  build roads yet (segment `10b0`, 1078:2396), so once one would, the
+  port's island and random numbers part from the original's.
 - The sounds' countdown `1110:723c` (people_tick's first loop) stops a
   sound from playing again while it still plays; the port leaves it to
   the view, which doesn't play the sounds yet.
@@ -723,7 +728,7 @@ the original's once it runs.
   view. A scenario's `*1110:6f24+0x80` out flags come from its map; state
   1500 may change them (not ported).
 - Renovations only charge player 1; computer players' buildings get
-  renovated for free (they may pay in their own turns, not ported). The
+  renovated for free (their turns don't pay for it either). The
   settlement likewise charges only the human for advertising, insurance
   and the cost of living.
 - 1010:1129 counts palms on the square's plot through a nil pointer when

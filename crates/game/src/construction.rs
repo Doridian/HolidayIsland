@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use crate::accounts::BOOK_OTHER;
+use crate::accounts::{BOOK_NEW_BUILDINGS, BOOK_OTHER};
 use crate::darstellung::GROUND_ROWS;
 use crate::roads::{BRIDGES, CROSSINGS, ROADS};
 use crate::simulation::Tick;
-use crate::world::{Facility, House, MAX_BEACH_LIFE, NO_BUILDING, Pos, World, on_map};
+use crate::world::{BuildingSite, Facility, House, MAX_BEACH_LIFE, NO_BUILDING, Pos, World, on_map};
 
 /// The building type of a building site. // 1078:1995
 pub const BUILDING_SITE: u8 = 31;
@@ -789,6 +789,266 @@ fn redraw_area(tick: &mut Tick, low: Pos, high: Pos) {
     }
 }
 
+/// [`World::can_build`]'s answers (`FEHLER.TXT`'s texts, shown to player
+/// 1): the area is past the map's edge.
+pub const OFF_THE_MAP: u8 = 0x16;
+
+impl World {
+    /// Whether `player` can build `building` with its first square at
+    /// `(i, j)`, and what it costs: its price (`HAUSPREI.DAT` column 0),
+    /// and for a building on any land (`HAUSDATA.DAT` column 7 is 2), not
+    /// a palm, `Fundamentbaukosten` for each square that isn't level. 0
+    /// when it can, else the error (`FEHLER.TXT`): 0x16 past the map, 0xe
+    /// not enough money (only for player 1), 2 a road, 0xf a river's
+    /// crossing, 0x10 a river, 1 a building, 0xc a square's highest corner
+    /// isn't the first square's, the wrong ground for column 7 (0x11 sand,
+    /// 0x12 grass, 0xb not water, 0x13 water; 4 to 7 water along one
+    /// side) or the wrong form for column 8 (0x14 flat, 10 not steep,
+    /// 0x15 sloping; 4 to 7 sloping along one side, 8 no palm). The
+    /// squares go by rows of `j`, and the first error wins. // 1030:04e3
+    ///
+    /// For error 1 the original keeps the square in the way at
+    /// `1110:64ba` (for the message, the view's).
+    #[must_use]
+    #[allow(clippy::many_single_char_names)] // The original's i, j, w and d.
+    pub fn can_build(&self, (i, j): Pos, building: u8, player: u8) -> (u8, i32) {
+        let t = &self.tables;
+        let (w, d) = (t.hausnr(building, 3), t.hausnr(building, 4));
+        if i < 0 || j < 0 || w.wrapping_add(i).wrapping_sub(1) >= 251 || d.wrapping_add(j).wrapping_sub(1) >= 251 {
+            return (OFF_THE_MAP, 0);
+        }
+        let mut cost = t.hausprei(building, 0);
+        let poor = |w: &World, cost: i32| player == 1 && w.money_of(player) < cost;
+        if poor(self, cost) {
+            return (NOT_ENOUGH_MONEY, cost);
+        }
+        let island = &self.island;
+        let top = island.highest_corner((i, j));
+        let ground_kind = t.hausdata(building, 7);
+        let form_kind = t.hausdata(building, 8);
+        let mut error = 0;
+        for b in j..=j.wrapping_add(d).wrapping_sub(1) {
+            for a in i..=i.wrapping_add(w).wrapping_sub(1) {
+                if error != 0 {
+                    return (error, cost);
+                }
+                let pos = (a, b);
+                if island.lowest_corner(pos) < island.highest_corner(pos)
+                    && ground_kind == 2
+                    && building != crate::world::PALM
+                {
+                    cost = cost.wrapping_add(self.foundation_cost);
+                    if poor(self, cost) {
+                        error = NOT_ENOUGH_MONEY;
+                    }
+                }
+                if error == 0 {
+                    error = self.ground_error(pos, (i, j), top, ground_kind);
+                }
+                if error == 0 {
+                    error = form_error(island.forms.at(pos), island.buildings.at(pos), pos, (i, j), form_kind);
+                }
+            }
+        }
+        (error, cost)
+    }
+
+    /// [`World::can_build`]'s ground: no road or river, no building but
+    /// a palm, the first square's highest corner, the ground column 7
+    /// asks for. // 1030:04e3
+    fn ground_error(&self, pos: Pos, (i, j): Pos, top: u8, kind: i16) -> u8 {
+        let g = self.island.ground.at(pos);
+        match g {
+            10..=54 => return 2,
+            55..=58 => return 0xf,
+            59.. => return 0x10,
+            _ => {}
+        }
+        let here = self.island.buildings.at(pos);
+        if here != NO_BUILDING && here != crate::world::PALM {
+            return 1;
+        }
+        if self.island.highest_corner(pos) != top {
+            return 0xc;
+        }
+        let (sand, water) = (if g == 0 { 0 } else { 0x11 }, if g == 2 { 0 } else { 0x13 });
+        // 4 to 7: water along the first row or column, sand on the rest,
+        // or the other way round.
+        let (first_i, first_j) = (pos.0 == i, pos.1 == j);
+        match kind {
+            1 if g != 1 => 0x12,
+            2 if g == 2 => 0xb,
+            0 => sand,
+            3 => water,
+            4 => {
+                if first_i {
+                    sand
+                } else {
+                    water
+                }
+            }
+            5 => {
+                if first_j {
+                    water
+                } else {
+                    sand
+                }
+            }
+            6 => {
+                if first_i {
+                    water
+                } else {
+                    sand
+                }
+            }
+            7 => {
+                if first_j {
+                    sand
+                } else {
+                    water
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    /// `player` starts building `building` at `pos` for `cost`: a palm is
+    /// planted, anything else becomes a building site ([`World::place_site`]),
+    /// and the cost is paid. For player 1 the books' new buildings get the
+    /// price and the cost rises from the square. // 1078:1d21
+    ///
+    /// For player 1 and a type of which there's one (`HAUSDATA.DAT` column
+    /// 6 is 1), the original also takes it out of the build menu
+    /// (1018:26b9, 1010:2c8b), the view's.
+    pub fn start_building(&mut self, cost: i32, budget: i8, player: u8, building: u8, pos: Pos, tick: &mut Tick) {
+        if building == crate::world::PALM {
+            self.plant_palm(pos, tick); // 1010:1129
+        } else {
+            self.place_site(budget, player, pos, building, tick); // 1078:1b5e
+        }
+        self.add_money(player, cost.wrapping_neg());
+        if player == 1 {
+            let price = self.tables.hausprei(building, 0);
+            self.book(BOOK_NEW_BUILDINGS, price.wrapping_neg()); // 1070:1419
+            tick.books = true; // 1070:2617
+            self.float_money(cost, pos); // 1088:0153
+        }
+    }
+
+    /// The area of `building` at `(i, j)` (byte loops) becomes `player`'s
+    /// building site: a palm on it comes off its plot's count (the first
+    /// square's plot) and the location map, and each square gets the
+    /// site's effect and a random look (`Random` of `HAUSNR.DAT`'s count
+    /// for type 31). Then the site's record. // 1078:1b5e
+    fn place_site(&mut self, budget: i8, player: u8, (i, j): Pos, building: u8, tick: &mut Tick) {
+        let plot = self.island.plot_at((i, j)); // 1030:1e62
+        let t = Arc::clone(&self.tables);
+        let last = |v: i16, column| v.wrapping_add(t.hausnr(building, column)).wrapping_sub(1).to_le_bytes()[0];
+        let (i0, i1, j0, j1) = (i.to_le_bytes()[0], last(i, 3), j.to_le_bytes()[0], last(j, 4));
+        let looks = t.hausnr(BUILDING_SITE, 0).cast_unsigned();
+        for a in i0..=i1 {
+            for b in j0..=j1 {
+                let pos = (i16::from(a), i16::from(b));
+                if !on_map(pos) {
+                    continue;
+                }
+                if self.island.buildings.at(pos) == crate::world::PALM {
+                    // The original writes through a nil pointer for a
+                    // square without a plot.
+                    if let Some(p) = self.find_plot(plot) {
+                        p.set_palms(p.palms().wrapping_sub(1));
+                    }
+                    self.remove_location_effect(pos, crate::world::PALM); // 1030:1d10
+                }
+                self.island.buildings.set(pos, BUILDING_SITE);
+                self.add_location_effect(pos, BUILDING_SITE);
+                let part = self.random.random(looks).to_le_bytes()[0];
+                self.island.parts.set(pos, part);
+                self.island.owners.set(pos, player);
+                tick.redraw.push(pos); // 1050:21f9, 10b8:1624
+            }
+        }
+        self.add_site(budget, building, (i, j)); // 1078:15d9
+    }
+
+    /// A building site's record goes in front of the list, with
+    /// `HAUSDATA.DAT` column 0's days (1 while the money is frozen); for a
+    /// computer player's square, the type's capacity (column 3) goes onto
+    /// its `budget`. // 1078:15d9, 1068:1c7d
+    fn add_site(&mut self, budget: i8, building: u8, (i, j): Pos) {
+        let owner = self.island.owners.get((i, j)).unwrap_or(0);
+        let days = if self.finances.frozen {
+            1
+        } else {
+            self.tables.hausdata(building, 0)
+        };
+        self.building_sites.insert(
+            0,
+            BuildingSite {
+                // Not written: whatever the heap had.
+                byte_0: 0,
+                // `Byte`s.
+                pos: (i16::from(i.to_le_bytes()[0]), i16::from(j.to_le_bytes()[0])),
+                days,
+                building,
+                budget,
+            },
+        );
+        if (2..=self.player_count).contains(&owner) {
+            let index = i32::from(owner - 2) * 13 + i32::from(budget);
+            let capacity = i32::from(self.tables.hausdata(building, 3));
+            if let Some(b) = usize::try_from(index)
+                .ok()
+                .and_then(|i| self.computer_budgets.get_mut(i))
+            {
+                *b = b.wrapping_add(capacity);
+            }
+        }
+    }
+}
+
+/// [`World::can_build`]'s form: what column 8 asks for of the square's
+/// form `f` (16 flat, 0–3 one side raised). // 1030:04e3
+fn form_error(f: u8, here: u8, pos: Pos, (i, j): Pos, kind: i16) -> u8 {
+    let flat = if f == 16 { 0 } else { 0x14 };
+    let sloping = |side: u8| if f == side { 0 } else { 0x15 };
+    match kind {
+        0 => flat,
+        1 if (8..=11).contains(&f) => 10,
+        2 if f > 3 => 0x15,
+        4 => {
+            if pos.0 == i {
+                flat
+            } else {
+                sloping(0)
+            }
+        }
+        5 => {
+            if pos.1 == j {
+                sloping(1)
+            } else {
+                flat
+            }
+        }
+        6 => {
+            if pos.0 == i {
+                sloping(2)
+            } else {
+                flat
+            }
+        }
+        7 => {
+            if pos.1 == j {
+                flat
+            } else {
+                sloping(3)
+            }
+        }
+        8 if here == crate::world::PALM => 0x1b,
+        _ => 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -796,7 +1056,7 @@ mod tests {
     use vcl::random::Random;
 
     use super::*;
-    use crate::world::{BuildingSite, Plot, Tables};
+    use crate::world::{BuildingSite, PALM, Plot, Tables};
 
     fn world() -> World {
         let mut hausnr = vec![[0; 8]; 127];
@@ -1148,5 +1408,105 @@ mod tests {
         assert_eq!(w.find_building_site((12, 22)), None);
         w.island.buildings.set((12, 22), BUILDING_SITE);
         assert_eq!(w.find_building_site((12, 22)), None);
+    }
+
+    /// A 2 × 2 type 50 on any land, flat, for 1000, on a plot of flat
+    /// sand at height 1.
+    fn build_world() -> World {
+        let mut w = plot_world();
+        let mut t = (*w.tables).clone();
+        t.hausnr[50] = [1, 0, 0, 2, 2, 4, 0, 0];
+        t.hausnr[usize::from(BUILDING_SITE)] = [3, 0, 0, 1, 1, 1, 0, 0];
+        t.hausdata[50] = [6, 0, 0, 80, 0, 9, 0, 2, 0, 100];
+        t.hausdata[usize::from(BUILDING_SITE)][9] = 100;
+        t.hausprei[50] = [1000, 10, 0, 0];
+        w.tables = Arc::new(t);
+        w.player_count = 3;
+        w.foundation_cost = 7;
+        for i in 0..100 {
+            for j in 0..100 {
+                w.island.heights.set((i, j), 1);
+                w.island.forms.set((i, j), 16);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn can_build() {
+        let mut w = build_world();
+        assert_eq!(w.can_build((30, 30), 50, 2), (0, 1000));
+        assert_eq!(w.can_build((-1, 30), 50, 2).0, OFF_THE_MAP);
+        assert_eq!(w.can_build((250, 30), 50, 2).0, OFF_THE_MAP);
+        // Only the human needs the money.
+        assert_eq!(w.can_build((30, 30), 50, 1), (NOT_ENOUGH_MONEY, 1000));
+        w.finances.money[0] = 5000;
+        assert_eq!(w.can_build((30, 30), 50, 1), (0, 1000));
+        w.island.ground.set((31, 31), 12);
+        assert_eq!(w.can_build((30, 30), 50, 2).0, 2);
+        w.island.ground.set((31, 31), 56);
+        assert_eq!(w.can_build((30, 30), 50, 2).0, 0xf);
+        w.island.ground.set((31, 31), 2);
+        assert_eq!(w.can_build((30, 30), 50, 2).0, 0xb);
+        w.island.ground.set((31, 31), 0);
+        w.island.buildings.set((30, 31), 41);
+        assert_eq!(w.can_build((30, 30), 50, 2).0, 1);
+        // A palm is in nobody's way.
+        w.island.buildings.set((30, 31), PALM);
+        assert_eq!(w.can_build((30, 30), 50, 2).0, 0);
+        w.island.forms.set((31, 30), 3);
+        assert_eq!(w.can_build((30, 30), 50, 2).0, 0x14);
+        w.island.forms.set((31, 30), 16);
+        // A raised corner: the square isn't level, which costs the
+        // foundation, and its highest corner isn't the first square's.
+        w.island.heights.set((31, 31), 2);
+        assert_eq!(w.can_build((30, 30), 50, 2), (0xc, 1007));
+        // From (31, 31) all four squares have the raised corner: their
+        // highest corners agree, and each pays the foundation.
+        assert_eq!(w.can_build((31, 31), 50, 2), (0, 1028));
+    }
+
+    #[test]
+    fn start_a_building_site() {
+        let mut w = build_world();
+        w.finances.money = [0, 5000, 0, 0, 0, 0, 0, 0];
+        w.island.buildings.set((31, 30), PALM);
+        w.plots[0].set_palms(3);
+        let mut tick = Tick::default();
+        w.start_building(1000, 4, 2, 50, (30, 30), &mut tick);
+        for pos in [(30, 30), (30, 31), (31, 30), (31, 31)] {
+            assert_eq!(w.island.buildings.at(pos), BUILDING_SITE);
+            assert_eq!(w.island.owners.at(pos), 2);
+            assert!(w.island.parts.at(pos) < 3);
+        }
+        assert_eq!(w.plots[0].palms(), 2);
+        assert_eq!(tick.redraw.len(), 4);
+        assert_eq!(
+            w.building_sites[0],
+            BuildingSite {
+                byte_0: 0,
+                pos: (30, 30),
+                days: 6,
+                building: 50,
+                budget: 4,
+            }
+        );
+        // The computer's budget gets the capacity; difficulty 0 gives
+        // nothing back.
+        assert_eq!(w.computer_budgets[4], 80);
+        assert_eq!(w.finances.money[1], 4000);
+        // Finished, the budget is back.
+        for _ in 0..6 {
+            w.construction_tick(&mut tick);
+        }
+        assert_eq!(w.building_sites.len(), 0);
+        assert_eq!(w.computer_budgets[4], 0);
+        assert_eq!(w.island.buildings.at((30, 30)), 50);
+        // The human's books and the money rising.
+        w.finances.money[0] = 5000;
+        w.start_building(1200, 0, 1, 50, (40, 40), &mut tick);
+        assert_eq!(w.book_value(BOOK_NEW_BUILDINGS), -1000);
+        assert!(tick.books);
+        assert_eq!(w.finances.money[0], 3800);
     }
 }

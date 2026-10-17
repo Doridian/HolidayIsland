@@ -507,7 +507,7 @@ impl World {
             }
             _ => {
                 if self.computers_play {
-                    self.computer_players_tick(); // 10a8:302e
+                    self.computer_players_tick(tick); // 10a8:302e
                 }
             }
         }
@@ -1422,7 +1422,7 @@ impl World {
 
     /// Makes event `n` certain to come in its window (chance `0x3fffc`)
     /// with `value`, `arg` and its message at `pos`. // 1010:3006
-    fn schedule_event(&mut self, n: usize, value: i32, arg: i32, pos: Pos) {
+    pub(crate) fn schedule_event(&mut self, n: usize, value: i32, arg: i32, pos: Pos) {
         if let Some(e) = self.events.get_mut(n) {
             e.chance = 0x3fffc;
             e.value = value;
@@ -1537,35 +1537,6 @@ impl World {
         } else {
             p.min(top.wrapping_mul(3))
         }
-    }
-
-    /// The computer players' turn, one of them at a time in turn
-    /// (`1110:70c2` counts the turns). // 10a8:302e
-    ///
-    /// The original first sets the computer players' status text
-    /// (`1110:70f2`, saved but not shown) to `Gar nix` (10a8:3026).
-    fn computer_players_tick(&mut self) {
-        self.computer_turns = self.computer_turns.wrapping_add(1);
-        // `computer_opponents` (1110:1478), which the start screen keeps
-        // one below the player count.
-        let opponents = i32::from(self.player_count.saturating_sub(1));
-        if opponents > 0 {
-            let player = rem(self.computer_turns, opponents).wrapping_add(2);
-            self.computer_turn(player.to_le_bytes()[0]);
-        }
-    }
-}
-
-/// The computer players' decisions, still to port.
-#[allow(clippy::unused_self)]
-impl World {
-    /// One computer player's turn: a state machine (`*1110:70ca`, one
-    /// byte a player) that plans and builds (10a8:2463), sells,
-    /// sabotages and demolishes, with `Random`s. // 10a8:2d5a, 716 bytes
-    /// and the rest of segment `10a8` (about 14 KB)
-    fn computer_turn(&mut self, player: u8) {
-        // TODO: port 10a8:2d5a and its callees.
-        let _ = player;
     }
 }
 

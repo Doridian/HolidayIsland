@@ -151,8 +151,27 @@
 1030:0148 func date_text  # (Self, var s): '1. Januar 1996', suffix by land
 1030:0382 func date_day
 1030:0397 func date_month
+1030:04e3 func can_build  # (i, j, building, player; var cost): 0 or the error (FEHLER.TXT): 0x16 off the map, 0xe money (player 1 only), 2 road, 0xf river crossing, 0x10 river, 1 building (square at 1110:64ba), 0xc heights, 0x11/0x12/0x13/0xb ground by HAUSDATA col 7, 0x14/10/0x15/0x1b form by col 8; cost := price + Fundamentbaukosten per sloping square; game::construction
+1030:0ad2 func byte_list_create  # (var list: pointer): getmem(0x100), count 0
+1030:0af2 func byte_list_push  # (list, value): the new count, 255 when full (254 entries)
+1030:0b3d func byte_list_get  # (list, n): entry n (from 1), 255 past the end
+1030:0b76 func byte_list_remove  # (list, n): takes entry n out, the rest moving up
+1030:0c01 func byte_list_count
+1030:0c18 func byte_list_clear
+1030:0c42 func byte_list_save
+1030:0c62 func byte_list_load
+1030:0c82 func candidates_create  # three byte lists (direction, i, j), 12 bytes; game::computer::Candidates
+1030:0caf func candidates_push  # (list, j, i, direction): on the map only; the count, or 255
+1030:0d20 func candidates_get  # (list, n, var pos): entry n's direction and square
+1030:0d71 func candidates_remove  # (list, n)
+1030:0dcb func candidates_count  # (list): the count, 255 if the three lists disagree
+1030:0e15 func candidates_clear
+1030:0e42 func candidates_free
+1030:0e6f func candidates_save
+1030:0eab func candidates_load
 1030:0f19 func max_longint
 1030:0f53 func min_longint  # (a, b: Longint): the smaller
+1030:0fb2 func abs_difference  # (a, b: Longint): |b - a|
 1030:0fdd func group_digits
 1030:11a0 func format_money  # (n: Longint; var s): n * waehrungsfaktor with digit groups; game::money
 1030:1418 func get_tile_dcs
@@ -274,7 +293,7 @@
 1068:0288 func schluss_load_texts
 1068:1a08 func new_house  # (i, j, building): a 0x2c-byte record in front of *1110:6f10 and of its plot's +0x358 list; condition 127, price HAUSPREI col 2, +0x16 0x50, +1 HAUSDATA col 4, +2 1110:6509[road_distance]
 1068:1b3e func new_facility  # (i, j, building): the same, 0x1b bytes, in front of *1110:6f14 and the plot's +0x35c list; price at +0x16
-1068:1c7d func add_building_site
+1068:1c7d func add_building_site  # (i, j, building, budget): a 13-byte record in front of *1110:6f08, HAUSDATA col 0 days (1 while frozen)
 1068:1d05 func plot_add_house  # (record, var list): in front of a plot's house list (8-byte nodes)
 1068:1d55 func plot_add_facility
 1068:1e6d func remove_house  # (i, j): the first house there off *1110:6f10 and its plot's list (1068:2243)
@@ -299,16 +318,24 @@
 1078:0191 func money_of  # (player): money, 99999999 while frozen or for no player
 1078:01e7 func add_money  # (player: Byte; amount: Longint): saturating; player 1 redraws the info bar; game::money
 1078:0466 func set_loan  # (player, amount): loan and its monthly interest amount div 24 * zinssatz div 50
+1078:04ce func change_loan  # (player, amount): loan += amount, at least 0, and its interest again; game::money
 1078:057a func loan_of  # (player): 1110:6f4c + 4p
 1078:05a0 func interest_of  # (player): 1110:6f6c + 4p
+1078:05c6 func take_loan  # (player, amount): if the loan would pass MaxSchulden, 1110:6f27+player := 1, else money and loan += amount; game::money
+1078:061b func repay_loan  # (player, amount): if money >= amount and loan > 0: money and loan -= amount, 1110:6f27+player := 0; game::money
 1078:0780 func mix_classes  # (var guests: 11 Longints): Klassenmischung with the remainders carried on
 1078:0eda func register_building  # (i, j, building), near: on a plot only: HAUSNR col 5 squares on the plot (+0x354 parks, +0x356), the record by 1110:1341[kind], HAUSDATA col 3 into the plot's and *1110:6f20's sums by class, kinds 9/10 counted at plot+2 and 6f20+0, location effect; game::construction
 1078:124e func unregister_building  # (i, j, building), near: undoes register_building
+1078:15d9 func add_site_budget  # (i, j, building, budget): add_building_site; a computer's square: HAUSDATA col 3 onto its budget; game::construction
 1078:1684 func unregister_building_call  # near: calls 1078:124e
 1078:169a func find_record  # (i, j): the house or facility record of the building there, by its first square (1030:154c)
 1078:1995 func find_building_site  # (i, j): the record in *1110:6f08 whose area holds (i, j), if building 31 is there; else nil
+1078:1b5e func place_site  # (building, j, i, player, budget): the area becomes building site 31 (palms off their plot's count and the location map, Random(looks) each), owned by player; then 1078:15d9; game::construction
+1078:1d21 func start_building  # (j, i, building, player, budget, cost): a palm (1010:1129) or a site (1078:1b5e), pays cost; player 1: books 0x67 the price, float_money, one-of-a-kind types off the build menu; game::construction
 1078:1de9 func place_building
 1078:203d func finish_building
+1078:2178 func lay_road  # the road 1080:3216 planned; not ported
+1078:2396 func build_road  # (from_j, from_i, to_j, to_i, var end, player): plans (1080:3216) and lays a road, Strassenbaukosten a square; player 1: money check and messages; not ported (game::computer stub)
 1078:267e func remove_house_beach_life  # (i, j): clear_square on the beach life of the house there (kinds 0, 1)
 1078:273a func remove_renters  # (i, j): remove_people_at for the rentals 0x0a, 0x1a, 0x1b, 0x6d
 1078:276f func remove_bridge_square  # nested in demolish: people off, the square water (ground 2), adds Strassenabrisskosten to demolish's unused sum
@@ -318,6 +345,9 @@
 1080:22be func road_set  # (i, j): where the ground's road pieces start: sand 0, grass 0xf, water 0x5f, sand to grass 0x1e; game::roads
 1080:232a func road_piece  # (i, j): the road piece for the neighbours (jump table 1080:230a), or a river piece 0x3b..0x3e becomes a crossing 0x37..0x3a with building 11
 1080:302a func reconnect_roads  # (i, j): the flat road neighbours (i+1, i-1, j+1, j-1) get road_piece
+1080:3195 func road_drag_start  # the road tool: 1110:6344.. := the square, 1110:634c := 1
+1080:31ed func road_drag_end  # with 1110:634c: build_road(1, ...)
+1080:3216 func plan_road  # 2598 bytes, the road's route; not ported
 1088:000c func person_visible  # (i, j): 1050:245b
 1088:0025 func person_fill  # (n, i, j, +4, +6, +8, +0xa, +0x14, +0x15, +0x16, kind, +0x18, +0x1a (Longint), +0x1e, +0x20, +0x22, +0x24, +0x26): fills a people record
 1088:0153 func float_money  # (amount, i, j): the first free people record 0x24..0x2e gets kind 1, +6 = 0xf, the amount in +0x1a: the cost rising from a square (player 1 only)
@@ -397,11 +427,51 @@
 10a0:10c6 func send_surfers  # (i, j): five tries, Random(2): a surfer (people kind 0x20 or 0x21) from there, counted in *1110:551c
 10a0:117e func effects_tick  # once a day: the five sabotage slots *1110:705a and three championships *1110:705e count down and act; game::sabotage
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
-10a8:2d5a func computer_turn  # (player): the computer player's state machine (*1110:70ca); not ported
-10a8:302e func computer_players_tick  # status text := 'Gar nix', 1110:70c2 += 1, computer_turn(70c2 mod opponents + 2)
+10a8:0167 func computer_bid  # nested in 10a8:0221: what a computer bids, from its money, loan and MaxSchulden with Random(1000); not ported
+10a8:0221 func computer_bid_for  # (player): the bid of player for the auction (*1110:6536 +0x204 the square); not ported
+10a8:0373 func computer_bids  # every player's bid into 1110:654e+4p (1028:0dde); not ported
+10a8:03a6 func compbau_matches  # (building, category): COMPBAU.DAT row: HAUSDATA col 4, one of two kinds (col 5), one of four types, 255 for any; game::computer
+10a8:0523 func offer_type  # (building): onto each matching category's list, not checking one-of-a-kind or the row's end; game::computer
+10a8:0582 func step_square  # (var pos, n, direction): 0 j+n, 1 i+n, 2 j-n, 3 i-n, if it stays within 0..250
+10a8:064b func road_square  # (j, i): 0 a road can go there, 1 water, 2 river, 3 building, 4 road, 5 too steep, 6 off the map; game::computer
+10a8:078a func choose_type  # (player): Random(count) of the category's list (*1110:70ea) into *1110:70da
+10a8:0927 func category_fits  # nested in 10a8:0987: budget + have <= wanted: category := n
+10a8:0987 func choose_category  # (player): by what the plot lacks for its beds (+0x22): transport, energy, water, rubbish, greenery, nature, leisure, shops, sport, rentals, restaurants with Randoms; else houses (10)
+10a8:0cb6 func road_along  # (player, i, j, width, depth): an own road within 3 squares of every column, or else every row
+10a8:0e30 func walk_to_road  # (player, var pos): 100 steps of Random(5) - 2 on the plot until a road (any square in a new area)
+10a8:0f67 func area_free  # nested: on the map, only palms/beach life, ground below 10, a harbour's highest corner 1
+10a8:1098 func own_house_near  # nested: one of the player's houses within 2 squares
+10a8:11f7 func site_allowed  # nested: houses need location 180, kinds 9 and 11 no own house near
+10a8:1269 func site_fits  # nested in 10a8:1309
+10a8:1309 func try_sites  # (player, var pos): 51 tries of Random(17) twice around the centre
+10a8:13f6 func find_road_near  # (player): 10a8:0e30 from *1110:70a2 into *1110:70a6
+10a8:1454 func find_site  # (player): 10a8:1309 from *1110:70a6 into *1110:70a2
+10a8:14b2 func collect_road_ends  # (type, j, i, player): free, road-flat squares above the sea within 2 of the area, four directions each, into *1110:70e2
+10a8:163b func build_on_site  # (player): can_build (0xe ignored), start_building; road ends for a new area's transport building
+10a8:173b func level_site  # (player): phase 0 the height (mean of the corners, 1..9, by HAUSDATA col 7), phase 1 a corner at a time (10b0:2c83)
+10a8:1b0a func build_road_on  # (player): build_road 5 squares in the direction; the ends into *1110:70e6
+10a8:1ded func next_road_start  # (player): Random(count) of *1110:70e2 (first roads) or *1110:70e6, taken out
+10a8:1f44 func find_road_start  # (player): up to 10 starts until the next square can take a road
+10a8:2060 func find_road_start_call
+10a8:207b func start_area  # (player): random walk (Random(4), Random(20)) to a plot of 200 squares
+10a8:21de func change_area  # (player): random walk (Random(4), Random(15)) to another plot, if the old one has 200 squares
+10a8:2463 func build_step  # (player): the building state machine (*1110:70c6, 0..11); game::computer
+10a8:2a60 func manage_loans  # (player): borrow Kreditgroesse while in the red and allowed, pay it back while rich; game::computer
+10a8:2ade func worst_building  # (player, var pos): the emptiest of its houses and facilities that earn less than they cost
+10a8:2cc1 func order_building  # (player, building): state 1, build state 2 with that type
+10a8:2d5a func computer_turn  # (player): the turn's state machine (*1110:70ca): build, think (loans), sell (unused), wait, demolish/sell the worst building; game::computer
+10a8:302e func computer_players_tick  # status text := 'Gar nix', 1110:70c2 += 1, computer_turn(70c2 mod opponents + 2); game::computer
+10a8:3080 func save_computers
+10a8:32ec func load_computers
+10a8:3558 func init_computers  # Random(200) + 25 twice, Random(7), Random(2) per computer player; states 2 and 9
 10a8:37da func load_compbau
+10a8:388b func create_computers  # the arrays, the type lists from COMPBAU.DAT (types 0..0x7e with HAUSDATA col 6 = 0), init_computers
+10a8:3a6c func free_computers
+10b0:2b9b func set_corner_height  # 10b0:069f or 10b0:1907; not ported
+10b0:2c83 func level_corner  # (i, j, height, player, var cost): raise (10b0:069f) or lower (10b0:1907) the corner; 0x16 off 1..249; not ported (game::computer stub)
 10b0:3199 func reset_ground  # (i, j: Byte): an empty square's ground by its corners (water, sand, sand to grass, grass); a variant past GROUNDNR's count becomes 0
 10b0:52d4 func generate_island  # makes a new island from the start menu settings (segment 10b0); not ported
+10b0:53fe func level_road_square  # (j, i, direction, player): the corners towards the direction to the height there; not ported (game::computer stub)
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
 10b8:1624 func uebersichtsmap_redraw_area  # guess: (self, i, j, w, h): redraws an area of the overview map
@@ -524,6 +594,7 @@
 1110:0096 data game_speed  # Longint: ticks per hour of game time (a day is six), 4 by default
 1110:009a data status_message_timeout
 1110:009e data building_slice_tick  # Integer 0..29: building_slice argument
+1110:00a2 data height_limit  # Word, 20 at first; level_site starts its lowest corner there
 1110:0102 data player_names  # guess: array of string[255], player 1 first ("Holiday", "Moritz", ..., "Lisa", then "keiner")
 1110:0a02 data last_player_name  # string: the name the start menu offers
 1110:12bc data view_width
@@ -532,8 +603,11 @@
 1110:133e data view_keep_origin
 1110:1340 data record_kinds  # array[-1..11] of Byte really 1110:1341 array[0..10]: by HAUSDATA kind, 0 house, 1/2 facility, 3 none
 1110:134c data facility_classes  # array[2..10] of Byte (from 1110:134e): 0 1 3 4 5 10 2 6 6
+1110:1358 data free_squares  # set of Byte: 12, 36, 255 (palms, beach life, none)
 1110:1378 data not_buildings  # set of Byte: 11, 12, 36, 52, 255; demolish treats these as roads/bridges
 1110:13b8 data palm_ground  # set of Byte: the ground kinds palms grow on (0, 1, 4)
+1110:13d8 data road_forms  # set of Byte: 0, 1, 2, 3, 16 (forms a road can be built on)
+1110:13f8 data crossable_rivers  # set of Byte: 59..62
 1110:1418 data full_championships  # set of Byte: 0x70, 0x75..0x78, 0x7b, 0x7c
 1110:1438 data empty_championships  # set of Byte: 0x6f, 0x71..0x74, 0x79, 0x7a
 1110:1478 data computer_opponents  # Byte 0..7, initially 7
@@ -615,6 +689,7 @@
 1110:5534 data view_parity
 1110:5536 data view_squares  # array[0..10, 0..60] of (i, j): the squares spawn_people looks at, from the view origin; saved
 1110:5fc0 data tile_dcs
+1110:634c data road_dragging  # Byte: the road tool is being dragged; the computers don't build roads meanwhile; saved
 1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
 1110:64b0 data werbung_to_text
 1110:64b4 data renovierung_to_text
@@ -626,6 +701,7 @@
 1110:64d2 data zinssatz
 1110:64d6 data startgeld
 1110:64ea data strassenabrisskosten  # Longint, MODATYP.DAT; saved in the map
+1110:64f6 data fundamentbaukosten
 1110:64fa data lebenshaltungskosten
 1110:64fe data klassenmischungdivisor
 1110:6502 data klassenmischung
@@ -691,6 +767,7 @@
 1110:6f14 data facilities | pointer32  # list of 0x1b-byte records: +0 type, +3 i, +5 j, +7 condition, +8 next, +0xc Longint, +0x15 fill %, +0x16 price
 1110:6f20 data totals | pointer32  # 0x19b bytes: +0 plots with airport/harbour, +2 houses' capacity, +0x2e+0x2c*class, +0xa6+4*class facilities'
 1110:6f24 data player_block | pointer32  # 0x88 bytes per-player values; +0x2f+player reputation (50 at first)
+1110:6f28 data credit_refused  # array[1..8] of Boolean, saved
 1110:6f30 data money  # array[1..8] of Longint
 1110:6f50 data loan
 1110:6f70 data loan_interest
@@ -714,7 +791,30 @@
 1110:7056 data oil_slick_pos  # i, j
 1110:705a data sabotage_slots | pointer32  # 5 records of 10 bytes: attacker, victim, kind, i, j, countdown (Word), active
 1110:705e data championships | pointer32  # 3 records of 8 bytes: kind (tennis, surfing, Miss HI), i, j, countdown (Word), active
+1110:7062 data computer_waited  # array[1..8] of Word
+1110:7072 data computer_demolish_wait  # array[1..8] of Word
+1110:7082 data computer_levelling  # array[1..8] of Word: level_site's phase
+1110:7092 data computer_level  # array[1..8] of Byte
+1110:709a data computer_blocked_by  # array[1..8] of Byte
+1110:70a2 data computer_site | pointer32  # array[2..8] of (i, j)
+1110:70a6 data computer_centre | pointer32  # array[2..8] of (i, j)
+1110:70aa data computer_road | pointer32  # array[2..8] of (i, j)
+1110:70ae data computer_road_direction | pointer32  # array[2..8] of Byte
+1110:70b2 data computer_unknown_b2 | pointer32  # array[2..8] of Integer: Random(7) at first, never read
+1110:70b6 data computer_unknown_b6 | pointer32  # 1 at first, never read
+1110:70ba data computer_unknown_ba | pointer32  # Random(2) + 7 at first, never read
+1110:70be data computer_unknown_be | pointer32  # 70b2's at first, never read
 1110:70c2 data computer_turns  # Longint
+1110:70c6 data computer_build_state | pointer32  # array[2..8] of Byte, 0..11
+1110:70ca data computer_state | pointer32  # array[2..8] of Byte, 0..5
+1110:70ce data computer_category | pointer32  # array[2..8] of Byte, COMPBAU.DAT row
+1110:70d2 data computer_new_area | pointer32  # array[2..8] of Boolean
+1110:70d6 data computer_first_road | pointer32  # array[2..8] of Boolean
+1110:70da data computer_building | pointer32  # array[2..8] of Byte
+1110:70de data computer_counters | pointer32  # array[2..8] of 12 bytes
+1110:70e2 data computer_road_ends | pointer32  # array[2..8] of candidate lists (1030:0c82)
+1110:70e6 data computer_roads | pointer32  # array[2..8] of candidate lists
+1110:70ea data computer_types | pointer32  # 13 x (count, 40 types)
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
 1110:70f2 data computer_status_text  # string, saved
 1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
