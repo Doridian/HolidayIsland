@@ -241,6 +241,7 @@ fn palms_grow() {
         animdat1: animdat1(&read("DATA/ANIMDAT1.DAT")).unwrap(),
         animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
         form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
+        road_cost: modatyp(&read("DATA/MODATYP.DAT")).unwrap().strassenbaukosten,
     });
     world.random = Random::new(0xdead_beef);
     let before = palm_stages(&world);
@@ -297,6 +298,7 @@ fn world_tables() -> Arc<Tables> {
         animdat1: animdat1(&read("DATA/ANIMDAT1.DAT")).unwrap(),
         animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
         form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
+        road_cost: modatyp(&read("DATA/MODATYP.DAT")).unwrap().strassenbaukosten,
     })
 }
 
@@ -362,5 +364,75 @@ fn people_on_the_island() {
         h.paint_map(&world, &tiles);
         h.show_people(&world, &tiles, &font, &texts);
         write_ppm(&with_suffix(&out, "people-view1"), &compose(&h, &palette), &palette);
+    }
+}
+
+#[test]
+fn computers_shape_the_island() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tiles = tiles();
+    let palette = bitmap("GFXGROUN.BMP").palette;
+    // "König", seven computer players, for three years.
+    let file = SCENARIO_FILES[2];
+    let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+    let settings = Settings {
+        scenario: 3,
+        difficulty: 1,
+        ..Settings::default()
+    };
+    let mut world = load_world(&map, &settings, true).unwrap();
+    world.tables = world_tables();
+    world.random = Random::new(0x1234_5678);
+    world.clock.paused = false;
+    let before = world.clone();
+    let year = world.date.year;
+    while world.date.year < year + 3 {
+        world.tick();
+    }
+    // Where the computers built the most roads.
+    let squares = || (0..251).flat_map(|i| (0..251).map(move |j| (i, j)));
+    let road = |w: &World, pos| (10..=0x3a).contains(&w.island.ground.at(pos)) && w.island.owners.at(pos) > 1;
+    let new_roads: Vec<_> = squares().filter(|&p| road(&world, p) && !road(&before, p)).collect();
+    let moved = squares()
+        .filter(|&p| world.island.heights.at(p) != before.island.heights.at(p))
+        .count();
+    assert!(new_roads.len() >= 20, "{}", new_roads.len());
+    assert!(moved >= 5, "{moved}");
+    // Every new road square has the piece its neighbours call for, or a
+    // ramp's, a crossing's or a bridge's.
+    for &pos in &new_roads {
+        let form = world.island.forms.at(pos);
+        assert!(form == 16 || form <= 3, "{pos:?} has form {form}");
+    }
+    let busiest = *new_roads
+        .iter()
+        .max_by_key(|&&(i, j)| {
+            new_roads
+                .iter()
+                .filter(|&&(a, b)| (a - i).abs() < 12 && (b - j).abs() < 12)
+                .count()
+        })
+        .unwrap();
+    eprintln!(
+        "{} new road squares, {moved} corners moved; most around {busiest:?}",
+        new_roads.len()
+    );
+    if let Some(out) = std::env::var_os("ISLAND_PPM").map(PathBuf::from) {
+        let origin: (i16, i16) = std::env::var("ISLAND_ORIGIN")
+            .ok()
+            .and_then(|s| {
+                let (a, b) = s.split_once(',')?;
+                Some((a.parse().ok()?, b.parse().ok()?))
+            })
+            // Puts the busiest area in the middle of the screen (view 0).
+            .unwrap_or((busiest.0 - 18, busiest.1 + 4));
+        for (w, name) in [(&before, "computers-before"), (&world, "computers")] {
+            let mut h = main_screen_at(&map, origin);
+            h.paint_map(w, &tiles);
+            write_ppm(&with_suffix(&out, name), &compose(&h, &palette), &palette);
+        }
     }
 }

@@ -738,7 +738,7 @@ impl World {
 
     /// The building on `pos`, [`NO_BUILDING`] unless both coordinates are
     /// 1..=249. // 1000:3dc9
-    fn building_or_none(&self, (i, j): Pos) -> u8 {
+    pub(crate) fn building_or_none(&self, (i, j): Pos) -> u8 {
         if (1..=249).contains(&i) && (1..=249).contains(&j) {
             self.island.buildings.at((i, j))
         } else {
@@ -748,7 +748,7 @@ impl World {
 
     /// The part of `pos`, 0 unless both coordinates are 1..=249.
     /// // 1000:3ed1
-    fn part_or_zero(&self, (i, j): Pos) -> u8 {
+    pub(crate) fn part_or_zero(&self, (i, j): Pos) -> u8 {
         if (1..=249).contains(&i) && (1..=249).contains(&j) {
             self.island.parts.at((i, j))
         } else {

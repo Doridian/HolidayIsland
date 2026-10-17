@@ -157,6 +157,11 @@ symbols/        what we know about HOLIDAY.EXE, as text
   the simulation waits on a dialog. These rules keep the
   [multiplayer stretch goal](port-architecture.md#stretch-goal-network-multiplayer)
   possible.
+- Keep the original's bugs and quirks, so the port behaves the same, but
+  record each one. Mark it in the code with `// BUG(original): ...` and add
+  it to [original-bugs.md](original-bugs.md), so it can be made optionally
+  fixable later. Where the original crashes or hangs, pick a safe fallback
+  and record that as well.
 - Parse all data files field by field, little-endian, with bounds checks:
   no `unsafe` in the parsers or the game crate.
 - `cargo fmt` and `cargo clippy` clean.

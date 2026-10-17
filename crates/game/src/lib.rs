@@ -19,6 +19,7 @@ pub mod sabotage;
 pub mod settlement;
 pub mod simulation;
 pub mod startform;
+pub mod terrain;
 pub mod text;
 pub mod vegetation;
 pub mod widgets;

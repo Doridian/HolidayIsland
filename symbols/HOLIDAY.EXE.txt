@@ -11,6 +11,7 @@
 1000:3e51 func highest_corner_or_zero  # (i, j): highest_corner, 0 unless both are 1..249
 1000:3e8d func form_or_flat  # (i, j): the form, 16 (flat) unless both are 1..249
 1000:3ed1 func part_or_zero  # (i, j): the part, 0 unless both are 1..249
+1000:3f15 func owner_or_zero  # (i, j): the owner, 0 unless both are 1..249; game::roads
 1008:0002 func bankrupt
 1008:0297 func scenario_won
 1008:042b func scenario_lost
@@ -80,6 +81,8 @@
 1010:1f2d func open_sea  # (i, j): flat water (ground 2, form 16) with free marker layers
 1010:1f8f func find_road  # (var j, var i; i0, j0, i1, j1, rings): like find_sea, for a free road square on the plot of (i0, j0)
 1010:20e0 func find_sea  # (var j, var i; i0, j0, i1, j1, rings): the nearest open sea ring by ring around the area: columns, then rows; the ring or -1
+1010:2225 func plot_table_add  # (a, b, var sum): sum := a + b for the 51 Longints of a plot's 0xcc-byte table (1068:27a5)
+1010:23d6 func plot_table_clear  # (var table): the 51 Longints of a plot's 0xcc-byte table := 0
 1010:2493 func facility_class  # (building): capacity class 0..10, 1110:134c[kind] for kinds 2..10, by type for kind 11 (0x1c 9, 0x20 7, 0x21 8), else 10; game::construction
 1010:254d func set_view
 1010:25dc func back_to_start_menu  # guess: saves Maps\Last.map, hides the forms, restarts holiday.mid, shows a new TStartform
@@ -195,6 +198,7 @@
 1030:228d func show_date  # (s): the date text on the info bar at x 450
 1030:22de func show_status_message  # (s): a text on the status bar
 1030:232d func show_error_message
+1030:235a func show_building_in_the_way  # (i, j): the building's name and FEHLER.TXT 0x1d in the status bar (timeout 20, play_sound(0xc)); error 1 for a type past 0x7e; nothing for a palm
 1030:23d3 func draw_text  # (image, colour row, x, y, width, refresh, align 0/1/2, text): wrapped FONT.BMP glyphs, SRCAND mask then SRCINVERT colour
 1030:2972 func load_fontdat
 1030:2b19 func text_init  # unit init: font_bitmap := GRAFIK\font.bmp, then load_fontdat
@@ -296,12 +300,17 @@
 1068:1c7d func add_building_site  # (i, j, building, budget): a 13-byte record in front of *1110:6f08, HAUSDATA col 0 days (1 while frozen)
 1068:1d05 func plot_add_house  # (record, var list): in front of a plot's house list (8-byte nodes)
 1068:1d55 func plot_add_facility
+1068:1da5 func plot_append_houses  # (list, var list): appends a house list at the end of a plot's (1068:27a5)
+1068:1e09 func plot_append_facilities  # the same for facilities
 1068:1e6d func remove_house  # (i, j): the first house there off *1110:6f10 and its plot's list (1068:2243)
 1068:1fe0 func remove_facility  # (i, j): the same for *1110:6f14 (1068:233c)
 1068:2153 func remove_building_site
 1068:2243 func plot_remove_house
 1068:233c func plot_remove_facility
 1068:2591 func find_plot  # (id: Word): the plot record in the list at *1110:6f0c with that number, or nil
+1068:2698 func new_plot  # : a 0x364-byte plot in front of *1110:6f0c, numbered ++1110:552c: area 1, ratings +3..+0x19 50, sums 0; game::terrain
+1068:27a5 func merge_plots  # (keep, gone): gone's counts, sums (1010:2225), areas and building lists go to keep, ratings 50, the plot map's gone := keep, remove_plot(gone); keep's number afterwards; game::terrain
+1068:2a2b func remove_plot  # (id): the last plot (the list's head) takes id's number and place, and its squares in the plot map; game::terrain
 1068:2d49 func link_plots  # after loading: every house, then facility, in front of its plot's list
 1068:2e05 func load_houses  # unit routine: the house list *1110:6f10 (count 1110:6f1a, 0x2c-byte records)
 1068:313e func load_plots  # unit routine: the plot list *1110:6f0c (count 1110:552c, 0x364-byte records)
@@ -324,18 +333,21 @@
 1078:05c6 func take_loan  # (player, amount): if the loan would pass MaxSchulden, 1110:6f27+player := 1, else money and loan += amount; game::money
 1078:061b func repay_loan  # (player, amount): if money >= amount and loan > 0: money and loan -= amount, 1110:6f27+player := 0; game::money
 1078:0780 func mix_classes  # (var guests: 11 Longints): Klassenmischung with the remainders carried on
+1078:09f6 func corner_risen  # (i, j): a corner rose from the sea: a new plot, the one around it (area + 1), or the plots around merged (1068:27a5, bytes for the first); game::terrain
+1078:0d00 func corner_sunk  # (i, j): a corner sank to 0: its plot's area - 1, or the plot goes if it was alone; the plot map entry 0 if the paired row's corner is at 0 too; game::terrain
 1078:0eda func register_building  # (i, j, building), near: on a plot only: HAUSNR col 5 squares on the plot (+0x354 parks, +0x356), the record by 1110:1341[kind], HAUSDATA col 3 into the plot's and *1110:6f20's sums by class, kinds 9/10 counted at plot+2 and 6f20+0, location effect; game::construction
 1078:124e func unregister_building  # (i, j, building), near: undoes register_building
 1078:15d9 func add_site_budget  # (i, j, building, budget): add_building_site; a computer's square: HAUSDATA col 3 onto its budget; game::construction
 1078:1684 func unregister_building_call  # near: calls 1078:124e
 1078:169a func find_record  # (i, j): the house or facility record of the building there, by its first square (1030:154c)
 1078:1995 func find_building_site  # (i, j): the record in *1110:6f08 whose area holds (i, j), if building 31 is there; else nil
+1078:1a66 func set_connection_at  # (i, j, value): the house or facility record of the building there gets +2 := value; game::roads
 1078:1b5e func place_site  # (building, j, i, player, budget): the area becomes building site 31 (palms off their plot's count and the location map, Random(looks) each), owned by player; then 1078:15d9; game::construction
 1078:1d21 func start_building  # (j, i, building, player, budget, cost): a palm (1010:1129) or a site (1078:1b5e), pays cost; player 1: books 0x67 the price, float_money, one-of-a-kind types off the build menu; game::construction
 1078:1de9 func place_building
 1078:203d func finish_building
-1078:2178 func lay_road  # the road 1080:3216 planned; not ported
-1078:2396 func build_road  # (from_j, from_i, to_j, to_i, var end, player): plans (1080:3216) and lays a road, Strassenbaukosten a square; player 1: money check and messages; not ported (game::computer stub)
+1078:2178 func lay_road  # (from_i, from_j, end_i, end_j): the plot's +0x356 += the road's length (unless the drag started on water, 1110:704e), the buildings within 8 before and 4 after it get their connection again (1030:1706, 1078:1a66); game::roads
+1078:2396 func build_road  # (from_j, from_i, to_j, to_i, var end, player): plans (1080:3216) and lays (1078:2178) a road, Strassenbaukosten per new square (computers too); player 1: money for the drag's length, books 0x6a, float_money, messages 0xe, 0x1f, 1030:235a; game::roads
 1078:267e func remove_house_beach_life  # (i, j): clear_square on the beach life of the house there (kinds 0, 1)
 1078:273a func remove_renters  # (i, j): remove_people_at for the rentals 0x0a, 0x1a, 0x1b, 0x6d
 1078:276f func remove_bridge_square  # nested in demolish: people off, the square water (ground 2), adds Strassenabrisskosten to demolish's unused sum
@@ -344,10 +356,16 @@
 1080:1141 func load_umenu
 1080:22be func road_set  # (i, j): where the ground's road pieces start: sand 0, grass 0xf, water 0x5f, sand to grass 0x1e; game::roads
 1080:232a func road_piece  # (i, j): the road piece for the neighbours (jump table 1080:230a), or a river piece 0x3b..0x3e becomes a crossing 0x37..0x3a with building 11
+1080:261a func bridge_piece  # (i, j): building 0x34 and the sea bridge piece: ramps 0x5f..0x62 (part = form), flat 99 (part 4) next to an i-bridge or ramp, else 100 (part 5); game::roads
+1080:2831 func can_road  # (i, j): no building but a palm, not water, the drag's start ground (1110:704e) 0, 1, 4, 5 or 10..0x3e; flat and below 0x3a, or a river piece 0x3b/0x3c (0x3d/0x3e) or ramp 0/2 (1/3) along the drag from 1110:6346 (1110:6344); game::roads
+1080:29d8 func road_fits  # (i, j): no building but a palm, not water, flat or a ramp (forms 0..3); game::roads
+1080:2a82 func can_bridge  # (i, j): water (2, 3), flat or a ramp; the edge and off the map count as flat water; game::roads
+1080:2b0c func place_road  # (i, j): if road_fits: flat road_piece, ramp road_set + 0x15 + form, part 0, building 255; the flat road neighbours re-pieced; layers 551c, 5520 := 255; game::roads
+1080:2e6a func place_bridge  # (i, j): if can_bridge: bridge_piece, layers 551c, 5520 := 255; the flat road neighbours re-pieced; game::roads
 1080:302a func reconnect_roads  # (i, j): the flat road neighbours (i+1, i-1, j+1, j-1) get road_piece
-1080:3195 func road_drag_start  # the road tool: 1110:6344.. := the square, 1110:634c := 1
+1080:3195 func road_drag_start  # the road tool: 1110:6344.. := the square, 1110:704e/704f its ground and form, 1110:634c := 1
 1080:31ed func road_drag_end  # with 1110:634c: build_road(1, ...)
-1080:3216 func plan_road  # 2598 bytes, the road's route; not ported
+1080:3216 func plan_road  # (player, from_i, from_j, to_i, to_j, var end_j, var end_i, var squares): from water (1110:704e) a bridge between facing ramps (1080:2a82, 1080:2e6a), else a road (1080:2831, 1080:2b0c) along the longer axis; squares no one else owns get it and the player; counts the unowned ones; 1110:0056 := 0, then 1; 1110:634c := 0; sound 0x11 for player 1; game::roads
 1088:000c func person_visible  # (i, j): 1050:245b
 1088:0025 func person_fill  # (n, i, j, +4, +6, +8, +0xa, +0x14, +0x15, +0x16, kind, +0x18, +0x1a (Longint), +0x1e, +0x20, +0x22, +0x24, +0x26): fills a people record
 1088:0153 func float_money  # (amount, i, j): the first free people record 0x24..0x2e gets kind 1, +6 = 0xf, the amount in +0x1a: the cost rising from a square (player 1 only)
@@ -467,11 +485,20 @@
 10a8:37da func load_compbau
 10a8:388b func create_computers  # the arrays, the type lists from COMPBAU.DAT (types 0..0x7e with HAUSDATA col 6 = 0), init_computers
 10a8:3a6c func free_computers
-10b0:2b9b func set_corner_height  # 10b0:069f or 10b0:1907; not ported
-10b0:2c83 func level_corner  # (i, j, height, player, var cost): raise (10b0:069f) or lower (10b0:1907) the corner; 0x16 off 1..249; not ported (game::computer stub)
+10b0:0002 func gen_raise_corner  # nested in the island generator: raises a map corner and its neighbours two lower (no checks)
+10b0:01f0 func risen_contains  # nested in 10b0:069f: whether (i, j) is in the list of corners risen from the sea
+10b0:025b func risen_add  # nested in 10b0:069f: (i, j) onto the list of corners risen from the sea (0xa2 bytes, 80 entries)
+10b0:0291 func check_raise  # nested in 10b0:03fa: a square of the working copy: 1 building (a palm goes for Palmenabrisskosten), 2 road, 0x10 river, 0x1c layer_551c; the square in 069f's frame
+10b0:03fa func raise_step  # nested in 10b0:069f: (di, dj): the four squares checked (10b0:0291), the copy's corner + 1, the bounds, the cost (LandausWasserhebekosten from 0, else Landhebekosten), then the neighbours (i+1, j+1, i-1, j-1) exactly 2 lower
+10b0:069f func raise_corner  # (i, j, player, var cost): 0xd off the map, 4 at 20, 5..8 too close to the edge; the 41x41 copy (*1110:721e, *1110:7222), 10b0:03fa, 0xe for player 1 without the money; back on the map with 1078:09f6, 10b0:33bc; add_person(0x2a) at the error; game::terrain
+10b0:12c7 func lower_step  # nested in 10b0:1907: (di, dj): the four squares' buildings (palms go, 1 otherwise, even after an error), their ground (2 road, 0x10 river), the copy's corner - 1, the cost (LandinWassersenkkosten to 0, else Landsenkkosten), then the neighbours exactly 2 higher
+10b0:1907 func lower_corner  # (i, j, player, var cost): 3 off the map or at 0; the copy, 10b0:12c7, 0xe for player 1 without the money; back on the map, 10b0:33bc, 1078:0d00 at 0; add_person(0x2a) at the error; game::terrain
+10b0:2b9b func set_corner_height  # (i, j, height, player, var cost): raise_corner or lower_corner until the corner is at height or one fails; nothing off 1..249; game::terrain
+10b0:2c83 func level_corner  # (i, j, height, player, var cost): one step of raise_corner or lower_corner towards height; 0x16 off 1..249; game::terrain
 10b0:3199 func reset_ground  # (i, j: Byte): an empty square's ground by its corners (water, sand, sand to grass, grass); a variant past GROUNDNR's count becomes 0
+10b0:33bc func reshape  # (min_i, min_j, max_i, max_j: Byte): the squares to max + 1 get their form from the corners (table 1110:1224, 19 if none fits), plain ground reset_ground; game::terrain
 10b0:52d4 func generate_island  # makes a new island from the start menu settings (segment 10b0); not ported
-10b0:53fe func level_road_square  # (j, i, direction, player): the corners towards the direction to the height there; not ported (game::computer stub)
+10b0:53fe func level_road_square  # (j, i, direction, player): the two corners towards the direction to the height of one behind; not level, both a step below (lowest lower) or above; whether they got there; game::terrain
 10b0:5653 func load_maperste_table
 10b0:56ce func load_maperste
 10b8:1624 func uebersichtsmap_redraw_area  # guess: (self, i, j, w, h): redraws an area of the overview map
@@ -572,6 +599,7 @@
 1108:1f5c func sys_val_longint
 1108:1fa4 func sys_filesize
 1110:004c data base_demand  # Byte, only read from the map: the base of the settlement's demand (factors 9, 22)
+1110:0056 data people_spawn  # Byte: the animation option for new people; plan_road (1080:3216) clears it while it works and sets it after, whatever it was
 1110:0057 data computers_play  # 1 by init_game_defaults
 1110:0058 data view_owner_pointers
 1110:0059 data view_occupancy_pointers
@@ -597,6 +625,7 @@
 1110:00a2 data height_limit  # Word, 20 at first; level_site starts its lowest corner there
 1110:0102 data player_names  # guess: array of string[255], player 1 first ("Holiday", "Moritz", ..., "Lisa", then "keiner")
 1110:0a02 data last_player_name  # string: the name the start menu offers
+1110:1224 data form_table  # array[0..18, 0..3] of Integer: per form the corners (i, j), (i, j-1), (i-1, j-1), (i-1, j) above (i, j); 10b0:33bc; game::terrain::FORMS
 1110:12bc data view_width
 1110:12be data view_height
 1110:1322 data load_map_name  # string: the file state 1500 loads from MAPS when hintergrund+0x190 is set, Last.map
@@ -689,6 +718,7 @@
 1110:5534 data view_parity
 1110:5536 data view_squares  # array[0..10, 0..60] of (i, j): the squares spawn_people looks at, from the view origin; saved
 1110:5fc0 data tile_dcs
+1110:6344 data road_drag_start  # (i, j: Integer): the road tool's start square; plan_road sets it to the road's start; 1110:6348 the current square
 1110:634c data road_dragging  # Byte: the road tool is being dragged; the computers don't build roads meanwhile; saved
 1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
 1110:64b0 data werbung_to_text
@@ -700,7 +730,13 @@
 1110:64ce data max_schulden
 1110:64d2 data zinssatz
 1110:64d6 data startgeld
+1110:64da data landauswasserhebekosten  # Longint, MODATYP.DAT; saved in the map
+1110:64de data landhebekosten  # Longint, MODATYP.DAT; saved in the map
+1110:64e2 data landinwassersenkkosten  # Longint, MODATYP.DAT; saved in the map
+1110:64e6 data landsenkkosten  # Longint, MODATYP.DAT; saved in the map
 1110:64ea data strassenabrisskosten  # Longint, MODATYP.DAT; saved in the map
+1110:64ee data strassenbaukosten  # Longint, MODATYP.DAT; not saved in the map (unit 1010:0d4c skips it); game::world::Tables::road_cost
+1110:64f2 data palmenabrisskosten  # Longint, MODATYP.DAT; saved in the map
 1110:64f6 data fundamentbaukosten
 1110:64fa data lebenshaltungskosten
 1110:64fe data klassenmischungdivisor
@@ -786,6 +822,8 @@
 1110:6ff2 data people_last_building  # Integer: the building remove_people_from last found
 1110:6ff4 data people_last  # Integer: the last record of the general range in use
 1110:7040 data surfer_beach  # (i, j): the beach of the next surfer, -1 once taken
+1110:704e data road_drag_ground  # Byte: the ground at the road tool's start (1080:3195); plan_road builds bridges from water (2, 3); saved (unit 1080:3c6d); the port passes it to build_road
+1110:704f data road_drag_form  # Byte: the form there; saved
 1110:7050 data disaster_damage  # Longint
 1110:7054 data disaster_insured
 1110:7056 data oil_slick_pos  # i, j
@@ -817,6 +855,8 @@
 1110:70ea data computer_types | pointer32  # 13 x (count, 40 types)
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
 1110:70f2 data computer_status_text  # string, saved
+1110:721e data land_heights_copy  # pointer32: 41x41 heights around the corner being moved (10b0:069f, 10b0:1907)
+1110:7222 data land_buildings_copy  # pointer32: the buildings
 1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
 1110:723a data uebersichtsmap2
 1110:723c data sound_busy  # array[1..42] of Integer from 1110:723e: ticks each sound still plays; play_sound (10a0:30b6) only plays at 0 and sets it from 1110:3dce, people_tick counts it down; not saved, the view's

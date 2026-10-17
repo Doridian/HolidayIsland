@@ -46,7 +46,7 @@ candidate lists are saved for players 2 to the player count only.
 | `1110:70f2` | The status text, a `string` (shown nowhere) |
 | `*1110:6512` | The budgets: 13 `Longint`s for each of players 2–8, the capacity (`HAUSDATA.DAT` column 3) of its building sites per category; a site adds it (1078:15d9), finishing takes it off (1078:203d) |
 | `1110:6f28` | `array[1..8] of Boolean`: the bank said no |
-| `1110:634c` | The human drags out a road (1080:3195); the computers don't build roads meanwhile |
+| `1110:634c` | The human drags out a road (1080:3195); the computers don't build roads meanwhile, building one clears it |
 
 When the game's data is loaded (1030:3745), 10a8:388b builds the type
 lists (for each category 0–10 the types 0–0x7e whose row matches and
@@ -189,24 +189,67 @@ gets the type's capacity. The cost is paid; for player 1 the books' new
 buildings (0x67) get the price and the cost rises from the square, and
 a type that's one of a kind leaves the build menu.
 
+## Levelling and roads
+
+Raising and lowering the land is ported in
+[`game::terrain`](../crates/game/src/terrain.rs), the road planner in
+[`game::roads`](../crates/game/src/roads.rs), both world code that the
+human's tools (not ported) will call too.
+
+- A corner moves one step at a time (10b0:069f up, 10b0:1907 down) on a
+  41 × 41 working copy of the heights and buildings around it
+  (`*1110:721e`, `*1110:7222`). Each step checks the four squares around
+  the corner: a building stops it (1; a palm goes for
+  `Palmenabrisskosten`), a road (2), a river (0x10), and when raising
+  `layer_551c` (0x1c). Neighbours exactly two steps off follow,
+  recursively (i + 1, j + 1, i - 1, j - 1). Raising also needs the corner
+  below 20 (4) and as far from the map's edge as it is high (5–8). The
+  cost adds up `LandausWasserhebekosten` (from 0), `Landhebekosten`,
+  `LandinWassersenkkosten` (to 0) or `Landsenkkosten` per corner; only
+  player 1 must have it (0xe), and the computers drop it. On an error
+  nothing changes and a marker (person kind 0x2a) appears at the square
+  that caused it. Otherwise the copy goes back, the corners that rose
+  from the sea get a plot (1078:09f6: new, grown or merged, 1068:2698,
+  1068:27a5), a corner sunk to 0 shrinks its plot or removes it
+  (1078:0d00, 1068:2a2b, the last plot taking its number), and the
+  touched squares get their forms from the corners (10b0:33bc, the table
+  at `1110:1224`, 19 if none fits) and plain ground its tile back.
+- `level_corner` (10b0:2c83) is one step towards a height;
+  `set_corner_height` (10b0:2b9b) steps until it's there or fails;
+  `level_road_square` (10b0:53fe) sets the square's two corners towards
+  the road's direction to the height of one behind, and if the square
+  isn't level then, both a step below (if its lowest corner is lower) or
+  above.
+- `build_road` (1078:2396) for player `p` from `from` towards `to`:
+  `plan_road` (1080:3216) goes along the longer axis while each square
+  takes a road (1080:2831: no building but a palm, not water, flat and not
+  a river, or a crossable river piece or a ramp along the road's way) and
+  lays it on squares that aren't roads and that no one else owns
+  (1080:2b0c: the piece for its neighbours, or a ramp's `0x15 + form`),
+  making them `p`'s; from a drag that started on water it builds a bridge
+  between facing ramps instead (1080:2a82, 1080:2e6a, 1080:261a). Then
+  1078:2178 counts the road on its plot (`+0x356`) and works out the
+  connection of the buildings near it again. Every new square (no owner
+  before) costs `Strassenbaukosten` (`1110:64ee`, `MODATYP.DAT`, not in
+  the map), which the computers pay too. Player 1 also needs the money for
+  the drag's length and gets the messages (0xe, 0x1f, 1030:235a).
+- The human's road drag (`1110:6344` start, `1110:704e` its ground,
+  `1110:704f` its form) is passed to `build_road` as arguments instead of
+  living in the world; the computers pass sand (0) as the start's ground,
+  what `1110:704e` holds before any drag. Only `1110:634c`, which the
+  computers wait on and building a road clears, is still in the world.
+
+None of this draws random numbers, but the markers are people
+(1088:0324). The bugs kept are in
+[original-bugs.md](original-bugs.md).
+
 ## Not ported yet
 
-- Raising and lowering the land (segment `10b0`): `level_corner`
-  (10b0:2c83, through 10b0:069f and 10b0:1907) and `level_road_square`
-  (10b0:53fe, through 10b0:2b9b) are stubs that fail, so a site that
-  isn't level is given up and road starts that need levelling are
-  skipped.
-- Planning and laying a road (1078:2396 with 1080:3216, 2598 bytes, and
-  1078:2178), which the human's road tool uses too: `build_road` is a stub
-  that builds nothing. Neither draws random numbers, but without roads a
-  computer builds only the transport building of each new area, then
-  tries its road starts for 20 turns and moves on.
 - The auction bids (10a8:0373 with 10a8:0221 and 10a8:0167, `Random(1000)`),
-  which the auction form calls; the auctions aren't ported.
-
-So the computers' random numbers follow the original's until the first
-time one of them levels land or builds a road; from then on the island
-differs, and with it the numbers.
+  which the auction form (1028:0dde, 2 KB, with its timers) calls; the
+  auctions aren't ported.
+- The human's levelling and road tools, which would call the routines
+  above through commands.
 
 ## Open questions
 
@@ -221,3 +264,5 @@ differs, and with it the numbers.
   time in a hundred); nothing else pays its debts.
 - `1110:634c` is the human's UI state in the world: for multiplayer the
   computers' wait on another player's road tool needs a decision.
+- Building any road turns the animations' `1110:0056` on (1080:3216),
+  whatever the player chose; the port keeps it.

@@ -75,6 +75,18 @@ impl Layer {
         );
         self.0[i * MAP_SIZE + j] = value;
     }
+
+    /// The byte at the flat index `i * 251 + j`, 0 outside the layer: what
+    /// the original's unchecked index arithmetic reads for a `j` just off
+    /// a row (the next or previous row's end).
+    #[must_use]
+    pub fn flat(&self, (i, j): Pos) -> u8 {
+        usize::try_from(i32::from(i) * 251 + i32::from(j))
+            .ok()
+            .and_then(|n| self.0.get(n))
+            .copied()
+            .unwrap_or(0)
+    }
 }
 
 /// Side of the location quality map: one cell for each 2 × 2 squares.
@@ -152,6 +164,15 @@ impl PlotMap {
             self.0[a * MAP_SIZE + j] = plot;
         }
     }
+
+    /// Every entry `from` becomes `to`. // 1068:27a5, 1068:2a2b
+    pub fn replace(&mut self, from: u16, to: u16) {
+        for entry in &mut self.0 {
+            if *entry == from {
+                *entry = to;
+            }
+        }
+    }
 }
 
 /// The size of a [`Plot`] record. // 1068:313e
@@ -201,6 +222,10 @@ impl Plot {
     #[must_use]
     pub fn id(&self) -> i16 {
         self.word(0)
+    }
+
+    pub fn set_id(&mut self, id: i16) {
+        self.set_word(0, id);
     }
 
     /// How many palms were planted on it, plus the squares of its parks
@@ -265,6 +290,10 @@ impl Plot {
     #[must_use]
     pub fn area(&self) -> u16 {
         self.word(0x352).cast_unsigned()
+    }
+
+    pub fn set_area(&mut self, area: u16) {
+        self.set_word(0x352, area.cast_signed());
     }
 
     /// The byte at `at`, 0 past the record. The settlement keeps its
@@ -702,6 +731,10 @@ pub struct Tables {
     /// `DARSTELL.DAT`'s `AnsichtFormkorrektur`: a square's form as seen
     /// from each rotation. // *1110:667e
     pub form_korrektur: [[u8; 19]; 4],
+    /// `Strassenbaukosten` (`MODATYP.DAT`): what a road square costs. The
+    /// map file doesn't save it (unit 1010:0d4c skips it), so it stays
+    /// what the game's data gave it. // 1110:64ee
+    pub road_cost: i32,
 }
 
 impl Tables {
@@ -992,6 +1025,8 @@ pub struct World {
     /// `Fundamentbaukosten` (`MODATYP.DAT`): what a building on any land
     /// costs more for each square that isn't level. // 1110:64f6
     pub foundation_cost: i32,
+    /// What raising and lowering the land costs (`MODATYP.DAT`).
+    pub land_costs: crate::terrain::LandCosts,
     /// The human is dragging out a road (the road tool, 1080:3195): the
     /// view's, but the computers don't build roads meanwhile (marked).
     /// // 1110:634c
@@ -1055,6 +1090,7 @@ impl Default for World {
             computer_turns: 0,
             computers: Computers::default(),
             foundation_cost: 0,
+            land_costs: crate::terrain::LandCosts::default(),
             road_dragging: false,
             viewpoint: Viewpoint::default(),
             tables: Arc::default(),
@@ -1357,6 +1393,13 @@ impl World {
             // Unit 10a8:32ec.
             computers: Computers::from_map(save)?,
             foundation_cost: longint(save, "1110:64f6")?,
+            land_costs: crate::terrain::LandCosts {
+                from_water: longint(save, "1110:64da")?,
+                raise: longint(save, "1110:64de")?,
+                into_water: longint(save, "1110:64e2")?,
+                lower: longint(save, "1110:64e6")?,
+                palm: longint(save, "1110:64f2")?,
+            },
             road_dragging: byte(save, "1110:634c")? != 0,
             viewpoint: viewpoint(save)?,
             tables: Arc::default(),

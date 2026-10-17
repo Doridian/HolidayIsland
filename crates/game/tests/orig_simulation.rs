@@ -51,6 +51,7 @@ fn tables() -> Arc<Tables> {
         animdat1: animdat1(&read("DATA/ANIMDAT1.DAT")).unwrap(),
         animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
         form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
+        road_cost: modatyp(&read("DATA/MODATYP.DAT")).unwrap().strassenbaukosten,
     })
 }
 
@@ -462,6 +463,14 @@ fn computers_build() {
     let facilities = |w: &World| w.facilities.iter().filter(|f| computer(w, f.pos())).count();
     let start_facilities = facilities(&world);
     let start_money = world.finances.money;
+    let roads = |w: &World| {
+        let squares = (0..=250).flat_map(|i| (0..=250).map(move |j| (i, j)));
+        squares
+            .filter(|&pos| (10..=0x3a).contains(&w.island.ground.at(pos)) && computer(w, pos))
+            .count()
+    };
+    let start_roads = roads(&world);
+    let start_heights = world.island.heights.clone();
     let year = world.date.year;
     let mut started = Vec::new();
     while world.date.year < year + 3 {
@@ -492,4 +501,16 @@ fn computers_build() {
             .all(|&p| money[usize::from(p - 1)] != start_money[usize::from(p - 1)])
     );
     assert_ne!(world.computers.status.len(), 0);
+    // They laid roads, and levelled land for their sites and roads.
+    let new_roads = roads(&world) - start_roads;
+    let moved = (0..=250)
+        .flat_map(|i| (0..=250).map(move |j| (i, j)))
+        .filter(|&pos| world.island.heights.at(pos) != start_heights.at(pos))
+        .count();
+    eprintln!(
+        "{new_roads} road squares, {moved} corners moved, {} sites",
+        started.len()
+    );
+    assert!(new_roads >= 20, "{new_roads}");
+    assert!(moved >= 5, "{moved}");
 }

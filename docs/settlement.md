@@ -169,9 +169,9 @@ opponents + 2` a turn (10a8:2d5a): a state machine (`*1110:70ca`, a byte
 each) that builds (10a8:2463 and the planning code around it), manages
 its loans, sells through events (1010:3006 with event 9) and demolishes,
 with `Random`s. Ported in [`game::computer`](../crates/game/src/computer.rs),
-described in [computer.md](computer.md), but for raising and lowering
-land and building roads (stubs), after which the port's random numbers
-part from the original's. Their price changes (steps 0x82, 0x84) and
+described in [computer.md](computer.md), with raising and lowering
+land ([`game::terrain`](../crates/game/src/terrain.rs)) and building
+roads ([`game::roads`](../crates/game/src/roads.rs)). Their price changes (steps 0x82, 0x84) and
 renovations ([year_end](simulation.md#the-new-year-10084f64)) are ported.
 
 ## What the records' fields are

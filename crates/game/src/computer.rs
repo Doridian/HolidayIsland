@@ -12,9 +12,9 @@
 //! [`World::random`] in the original's order. Their status text
 //! (`1110:70f2`) is saved with the map but shown nowhere.
 //!
-//! Not ported yet, as named stubs: levelling a corner and a road square
-//! (the island code in segment `10b0`) and planning and laying a road
-//! (1078:2396 with 1080:3216).
+//! They level land with [`game::terrain`](crate::terrain) and lay roads
+//! with [`World::build_road`] (`game::roads`), which the human's tools
+//! share.
 
 // The original's names: squares `(i, j)`, sizes `w`, `d`, the player `p`.
 #![allow(clippy::many_single_char_names)]
@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use formats::savegame::SaveGame;
 
+use crate::roads::{CROSSABLE, NO_DRAG_GROUND};
 use crate::simulation::Tick;
 use crate::world::{Error, NO_BUILDING, PALM, Pos, World, on_map};
 
@@ -98,8 +99,6 @@ const FREE: [u8; 3] = [PALM, 36, NO_BUILDING];
 /// The forms a road can be built on: flat, or one side raised.
 /// // 1110:13d8 (`set of Byte`)
 const ROAD_FORMS: [u8; 5] = [0, 1, 2, 3, 16];
-/// The river pieces a road can cross. // 1110:13f8 (`set of Byte`)
-const CROSSABLE: [u8; 4] = [59, 60, 61, 62];
 
 /// The size of a list of `COMPBAU.DAT` types (the count, then 40), and of
 /// all 13 of them. // *1110:70ea, 0x215 bytes
@@ -794,7 +793,7 @@ impl World {
                     STATUS_EVEN_OUT
                 };
                 self.set_status(text);
-                if self.level_site(p) {
+                if self.level_site(p, tick) {
                     self.computers.build_state[k] = BUILD;
                 }
             }
@@ -842,7 +841,7 @@ impl World {
                 let c = &mut self.computers;
                 c.counters[k][TRIES_ROAD_START] = c.counters[k][TRIES_ROAD_START].wrapping_add(1);
                 if c.counters[k][TRIES_ROAD_START] < 21 {
-                    if self.find_road_start(p) {
+                    if self.find_road_start(p, tick) {
                         self.computers.build_state[k] = ROAD; // 10a8:2060
                     }
                 } else {
@@ -1178,7 +1177,7 @@ impl World {
     /// random start (`Random` of the width and depth plus 1, stepping by
     /// 17), or the owner of one that's someone else's. Whether it's done.
     /// // 10a8:173b
-    fn level_site(&mut self, p: u8) -> bool {
+    fn level_site(&mut self, p: u8, tick: &mut Tick) -> bool {
         let (d, k) = (usize::from(p - 1), slot(p));
         let (i0, j0) = self.computers.site[k];
         let building = self.computers.building[k];
@@ -1222,7 +1221,7 @@ impl World {
                         } else {
                             let level = self.computers.level[d].min(10);
                             if self.island.heights.get(pos).unwrap_or(0) != level {
-                                done = Some(self.level_corner(p, level, pos));
+                                done = Some(self.level_corner(p, level.into(), pos, tick).0); // 10b0:2c83
                             }
                         }
                         if done.is_some() {
@@ -1247,22 +1246,6 @@ impl World {
         }
     }
 
-    /// Raises or lowers the corner `pos` to `height` for `p`: the island
-    /// code (segment `10b0`, 10b0:069f and 10b0:1907), not ported. An
-    /// error, 0 when done. // 10b0:2c83
-    #[allow(clippy::unused_self)] // A stub.
-    fn level_corner(&mut self, p: u8, height: u8, (i, j): Pos) -> u16 {
-        if !(1..=249).contains(&i) || !(1..=249).contains(&j) {
-            return 0x16;
-        }
-        // TODO: port 10b0:069f and 10b0:1907, which change the heights
-        // and the forms, charge `Landhebekosten` and the like and send
-        // diggers (1088:0324). Until then the corner can't be moved, which
-        // ends the levelling.
-        let _ = (p, height);
-        0x16
-    }
-
     /// `p` builds a road five squares on from its road start, in its
     /// direction; the end becomes its square, and the new road's ends
     /// (and the start's sides, for an area's first road) where roads may
@@ -1274,7 +1257,10 @@ impl World {
         let Some(to) = step(dir, 5, start) else {
             return false;
         };
-        let Some(end) = self.build_road(p, start, to, tick) else {
+        // 1078:2396, with the start's ground as the module `roads`
+        // explains.
+        // BUG(original): the computers use the ground the human's last drag started on (1110:704e); the port passes sand.
+        let Ok(end) = self.build_road(p, start, to, NO_DRAG_GROUND, tick) else {
             return false;
         };
         self.computers.site[k] = end;
@@ -1299,22 +1285,6 @@ impl World {
             sides(self, start);
         }
         true
-    }
-
-    /// Plans and lays a road from `from` towards `to` for `player`, paying
-    /// `Strassenbaukosten` a square: where it ended, if any was built.
-    /// // 1078:2396
-    fn build_road(&mut self, player: u8, from: Pos, to: Pos, tick: &mut Tick) -> Option<Pos> {
-        if !on_map(from) || !on_map(to) {
-            self.road_dragging = false;
-            return None;
-        }
-        // TODO: port the road planner (1080:3216, 2598 bytes, with
-        // 1080:2a82, 1080:2831, 1080:2b0c, 1080:2e6a) and laying the road
-        // (1078:2178), which the human's road tool uses too. Until then no
-        // road gets built; the original draws no random numbers there.
-        let _ = (player, tick);
-        None
     }
 
     /// The next of `p`'s road starts, `Random(count)` of the area's first
@@ -1346,7 +1316,7 @@ impl World {
     /// for a road ([`World::road_square`] 0), or one that has to be
     /// levelled can be. In an area's first roads each start's square is
     /// levelled towards its direction first. // 10a8:1f44 (through 10a8:2060)
-    fn find_road_start(&mut self, p: u8) -> bool {
+    fn find_road_start(&mut self, p: u8, tick: &mut Tick) -> bool {
         let k = slot(p);
         let mut tries: i32 = 1;
         while tries < 11 {
@@ -1355,26 +1325,14 @@ impl World {
             }
             let (pos, dir) = (self.computers.road[k], self.computers.road_direction[k]);
             if self.computers.first_road[k] != 0 {
-                self.level_road_square(p, dir, pos);
+                self.level_road_square(p, dir, pos, tick); // 10b0:53fe
             }
             match step(dir, 1, pos).map(|next| (next, self.road_square(next))) {
                 Some((_, 0)) => return true,
-                Some((next, 5)) if self.level_road_square(p, dir, next) => return true,
+                Some((next, 5)) if self.level_road_square(p, dir, next, tick) => return true,
                 _ => tries += 1,
             }
         }
-        false
-    }
-
-    /// Makes the square `pos` fit a road coming from `direction` for `p`,
-    /// raising or lowering its corners (10b0:2b9b, through 10b0:069f and
-    /// 10b0:1907): whether it does. Not ported: the island code (segment
-    /// `10b0`). // 10b0:53fe
-    #[allow(clippy::unused_self)] // A stub.
-    fn level_road_square(&mut self, p: u8, direction: u8, (i, j): Pos) -> bool {
-        // TODO: port 10b0:53fe with 10b0:2b9b once the land can be raised
-        // and lowered.
-        let _ = (p, direction, i, j);
         false
     }
 
@@ -1719,16 +1677,29 @@ mod tests {
             (THINKING, ROAD_START, 0, 1)
         );
         assert!(turns >= 6, "{turns}");
-        // No road can be built yet (1078:2396 isn't ported): it tries the
-        // starts for 20 turns, then moves on to another area.
+        // Then it lays roads from them, paying for each square.
+        Arc::make_mut(&mut w.tables).road_cost = 7;
+        let money = w.finances.money[1];
         let mut tick = Tick::default();
+        let road = |w: &World| -> Vec<Pos> {
+            (0..=250)
+                .flat_map(|i| (0..=250).map(move |j| (i, j)))
+                .filter(|&pos| crate::roads::ROADS.contains(&w.island.ground.at(pos)) && w.island.owners.at(pos) == 2)
+                .collect()
+        };
         for _ in 0..200 {
             w.computer_turn(2, &mut tick);
-            if w.computers.build_state[0] == CHANGE_AREA {
+            if !road(&w).is_empty() {
                 break;
             }
         }
-        assert_eq!(w.computers.build_state[0], CHANGE_AREA);
+        let squares = road(&w).len();
+        assert!(squares >= 2, "{squares}");
+        assert_eq!(w.finances.money[1], money - 7 * i32::try_from(squares).unwrap());
+        assert_eq!(w.computers.first_road[0], 0);
+        assert_eq!(w.computers.build_state[0], CHOOSE_CATEGORY);
+        // The road's end is where it goes on from.
+        assert!(!w.computers.roads[0].is_empty());
     }
 
     #[test]
@@ -1773,10 +1744,20 @@ mod tests {
         w.computers.building[k] = 40;
         // Heights 1 and 4 around: the mean is 2, any land suits.
         w.island.heights.set((31, 31), 4);
-        assert!(!w.level_site(2));
+        assert!(!w.level_site(2, &mut Tick::default()));
         assert_eq!((w.computers.levelling[d], w.computers.level[d]), (1, 2));
-        // The corners can't be moved yet (10b0:2c83), which ends it.
-        assert!(w.level_site(2));
+        // A corner at a time, until all nine are at 2.
+        let mut turns = 0;
+        while !w.level_site(2, &mut Tick::default()) {
+            turns += 1;
+            assert!(turns < 20);
+        }
+        assert!(turns >= 8, "{turns}");
+        for i in 29..=31 {
+            for j in 29..=31 {
+                assert_eq!(w.island.heights.at((i, j)), 2, "{i} {j}");
+            }
+        }
         assert_eq!(w.computers.levelling[d], 0);
         // Someone else's square stops it.
         w.computers.levelling[d] = 1;
@@ -1785,11 +1766,11 @@ mod tests {
                 w.island.owners.set((i, j), 5);
             }
         }
-        assert!(w.level_site(2));
+        assert!(w.level_site(2, &mut Tick::default()));
         assert_eq!(w.computers.blocked_by[d], 5);
         // At sea level there's nothing to level to.
         w.island.heights = crate::world::Layer::filled(0);
-        assert!(w.level_site(2));
+        assert!(w.level_site(2, &mut Tick::default()));
         assert_eq!(w.computers.levelling[d], 0);
     }
 

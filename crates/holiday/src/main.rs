@@ -417,6 +417,9 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         form_korrektur: darstell(&read(dir, "DATA/DARSTELL.DAT"))
             .expect("DARSTELL.DAT")
             .form_korrektur,
+        road_cost: modatyp(&read(dir, "DATA/MODATYP.DAT"))
+            .expect("MODATYP.DAT")
+            .strassenbaukosten,
     });
     let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
     let origin = map.field("1110:5530").map_or((0, 0), |d| {

@@ -668,10 +668,10 @@ news, the TV, auctions, the status bar timeout, tooltips, scrolling by
 the timer, music and the shaking aren't ported.
 
 Stubs (named after the table above, each with its address and a TODO):
-inside the ported routines `oil_slick_start`, `oil_slick_end`, and for
-the computer players ([computer.md](computer.md)) `level_corner`
-(10b0:2c83), `level_road_square` (10b0:53fe) and `build_road`
-(1078:2396). `make_available` only gives the computers the type; the
+inside the ported routines `oil_slick_start`, `oil_slick_end`.
+Raising and lowering the land (`game::terrain`) and building roads
+(`game::roads`) are ported as world code the computers use
+([computer.md](computer.md#levelling-and-roads)). `make_available` only gives the computers the type; the
 build menu's part is the view's. 1088:7fb1,
 which runs `spawn_people` again after the player scrolls or turns the
 view, isn't ported. Demolishing refreshes the money menu (1070:2617) in the original,
@@ -687,9 +687,9 @@ the original's once it runs.
   multiplayer these need to become world state everyone agrees on.
 - `1110:0070` stops all money changes; nothing found sets it. `1110:133c`,
   which a scenario sets on easy, is unknown.
-- The computer players ([computer.md](computer.md)) can't level land or
-  build roads yet (segment `10b0`, 1078:2396), so once one would, the
-  port's island and random numbers part from the original's.
+- The computers' roads ignore the ground the human's last road drag
+  started on (`1110:704e`), which the original lets them use
+  ([computer.md](computer.md#levelling-and-roads)).
 - The sounds' countdown `1110:723c` (people_tick's first loop) stops a
   sound from playing again while it still plays; the port leaves it to
   the view, which doesn't play the sounds yet.

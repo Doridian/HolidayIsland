@@ -409,7 +409,7 @@ impl World {
     /// How well a new building at `pos` is connected:
     /// [`World::connection_values`] for the distance to the nearest road.
     /// // 1068:1a08
-    fn connection(&self, building: u8, (i, j): Pos) -> u8 {
+    pub(crate) fn connection(&self, building: u8, (i, j): Pos) -> u8 {
         let t = &self.tables;
         let end = (
             t.hausnr(building, 3).wrapping_add(i).wrapping_sub(1),
