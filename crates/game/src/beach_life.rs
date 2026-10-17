@@ -10,7 +10,7 @@ use crate::world::{MAX_BEACH_LIFE, NO_BUILDING, Pos, World};
 /// The building type of beach life, `Strandleben` in `HAUSNR.DAT`.
 pub const BEACH_LIFE: u8 = 36;
 
-/// The class a house's [`House::value_10`](crate::world::House::value_10)
+/// The class a house's [`House::guests`](crate::world::House::guests)
 /// falls in, which is how much beach life it should have: 0–2, 3–10,
 /// 11–30, 31–60, 61–110, more. // 1008:1b4b
 #[must_use]
@@ -31,7 +31,7 @@ impl World {
     pub(crate) fn beach_life_tick(&mut self, tick: &mut Tick) {
         for house in 0..self.houses.len() {
             if self.random.random(30) == 0 {
-                let class = beach_life_class(self.houses[house].value_10());
+                let class = beach_life_class(self.houses[house].guests());
                 self.beach_life_step(house, class, tick);
             }
         }
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn grows_to_its_class_and_back() {
         let mut w = world();
-        w.houses[0].set_value_10(200);
+        w.houses[0].set_guests(200);
         let mut tick = Tick::default();
         for _ in 0..5 {
             w.beach_life_step(0, 5, &mut tick);
@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn at_its_class() {
         let mut w = world();
-        w.houses[0].set_value_10(20);
+        w.houses[0].set_guests(20);
         let mut tick = Tick::default();
         w.beach_life_step(0, 2, &mut tick);
         w.beach_life_step(0, 2, &mut tick);
@@ -312,7 +312,7 @@ mod tests {
         let mut w = world();
         w.houses = (0..300).map(|n| House::new((n % 250, 10))).collect();
         for h in &mut w.houses {
-            h.set_value_10(1);
+            h.set_guests(1);
         }
         // Class 0 with no beach life: a chosen house draws `Random(5)`
         // after its `Random(30)`, and on a 0 adds beach life with a random

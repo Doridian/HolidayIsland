@@ -253,7 +253,7 @@ impl World {
     /// on the new one's area (its size from `HAUSNR.DAT`) and into its
     /// record (1078:169a). A full one's record gets the plot's `+0xee`
     /// (spectators?), at most its capacity (`HAUSDATA.DAT` column 3), as
-    /// [`Facility::value_c`](crate::world::Facility::value_c) and that in
+    /// [`Facility::visitors`](crate::world::Facility::visitors) and that in
     /// percent of the capacity as how full it is; an empty one 0 for both.
     /// // 10a0:0026
     ///
@@ -288,11 +288,11 @@ impl World {
                     let spectators = self.plot_of(at).map_or(0, |p| p.longint(0xee)).min(capacity);
                     let percent = spectators.wrapping_mul(100).checked_div(capacity).unwrap_or(0);
                     let f = &mut self.facilities[n];
-                    f.set_value_c(spectators);
+                    f.set_visitors(spectators);
                     f.set_fill(percent.to_le_bytes()[0]);
                 } else if EMPTY_CHAMPIONSHIPS.contains(&building) {
                     let f = &mut self.facilities[n];
-                    f.set_value_c(0);
+                    f.set_visitors(0);
                     f.set_fill(0);
                 }
             }
@@ -469,10 +469,10 @@ mod tests {
         assert_eq!(w.island.buildings.at((42, 42)), 0x70);
         assert_eq!(tick.redraw.len(), 9);
         let f = &w.facilities[0];
-        assert_eq!((f.building(), f.value_c(), f.fill()), (0x70, 3000, 60));
+        assert_eq!((f.building(), f.visitors(), f.fill()), (0x70, 3000, 60));
         w.replace_building(0x6f, pos, &mut tick);
         let f = &w.facilities[0];
-        assert_eq!((f.building(), f.value_c(), f.fill()), (0x6f, 0, 0));
+        assert_eq!((f.building(), f.visitors(), f.fill()), (0x6f, 0, 0));
         assert_eq!(w.island.buildings.at((40, 41)), 0x6f);
     }
 

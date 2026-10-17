@@ -15,10 +15,26 @@
 1008:0297 func scenario_won
 1008:042b func scenario_lost
 1008:0512 func january_second
+1008:05d9 func advertising_cost  # (player): beds (*1110:6f24+0x3c+4p) * advertising level (*1110:6f24+p-1) * Werbungskosten; game::settlement
+1008:062c func insurance_cost  # assets(1) div 120 if insured (1110:0072), else 0
 1008:0660 func renovation_price
+1008:06b6 func per_place  # (a, b: Longint): a*50 div b clamped to 0..100, 0 unless b > 0
+1008:0709 func fair_price  # (stars, class): MinPreis + (MaxPreis - MinPreis) * stars div 100
+1008:0776 func price_rating  # (price: Longint; stars, class): r = fair_price*50 div price (100 if price <= 0); r from 50 on, else (r - 25)*2, clamped 0..100
+1008:0829 func fair_rent  # (stars): MinMiete + stars * (MaxMiete - MinMiete) div 100
+1008:0863 func rent_rating  # (rent: Longint; stars): like price_rating with fair_rent; 100 for no rent
+1008:0907 func price_class  # (price: Longint; class): (price - MinPreis)*10 div MaxPreis - MinPreis, clamped 0..9
+1008:097f func rent_class  # (rent: Longint): (rent - MinMiete)*10 div (MaxMiete - MinMiete), clamped 0..9
+1008:09c8 func clear_capacity_block  # (var block): zeroes block+0x2c+0x2c*k (k 0..2, with 10 more Longints each) and block+0xa4+4k (k 3..9)
 1008:0a56 func building_value
 1008:0b0b func assets
 1008:0c6e func net_worth
+1008:0d10 func factor_scale  # (value: Longint; n): value on ABRECHNE factor n's low..high as 0..100
+1008:0de9 func factor_weigh  # (acc, value: Longint; n): (acc*(d - w) + acc*w*value div 50) div d, clamped 0..100
+1008:0ea1 func factor_approach  # (acc, value: Longint; n): acc + ((value - acc)*w + d div 2) div d, clamped 0..100
+1008:0f37 func rate_plot  # (plot): greenery +3, shop price level +0xf, quality +4, quality by class +5..; docs/settlement.md
+1008:15dd func send_rental_by_road  # (kind): the facility at 1110:4c8e sends one more out (find_road) or takes one back
+1008:16be func send_rental_by_sea  # (kind): the same with find_sea (surf school)
 1008:179f func is_beach_square  # (plot, i, j): on the map, on that plot, ground 0, form 16, no building, no owner, height 1
 1008:1848 func find_beach_square  # (j, i, var pos): the first is_beach_square in rings 1..6 around the building at (i, j); game::beach_life
 1008:19ea func add_beach_life  # the house at 1110:4c8a gets one more beach life square (find_beach_square, place_beach_life)
@@ -26,7 +42,7 @@
 1008:1a81 func change_beach_life  # one of the house's beach life squares (Random(n)) gets a random look
 1008:1aea func beach_life_step  # (class): add below the class, remove above it, at it Random(5): add / remove / change
 1008:1b4b func beach_life_tick  # every house in *1110:6f10, Random(30) = 0: beach_life_step(class of +0x10); game::beach_life
-1008:1bf7 func settlement_step  # (step): the monthly settlement, one if-branch per step 2..~0x50; docs/simulation.md
+1008:1bf7 func settlement_step  # (step): the monthly settlement, one if-branch per step 2..0x8b, the computer players on the others; game::settlement, docs/settlement.md
 1008:4f64 func year_end
 1008:5212 func construction_tick
 1008:5307 func accounting_tick  # once an hour of game time: construction_tick on a new day, else the settlement step counter; game::simulation
@@ -55,8 +71,14 @@
 1010:1820 func ui_scrollbar_paged  # VMT+0x24 of scroll bars: play_sound(9)
 1010:1838 func ui_listbox_draw  # (image): VMT+0x14 of list boxes: listbox_draw, then the visible rows centred
 1010:1919 func ui_listbox_selected  # VMT+0x1c of list boxes: play_sound(9)
+1010:1ae2 func raise_facility_price  # (building; price: Longint): a step up, capped by HAUSPREI column 2 (transport, full championships) or 3 times it
+1010:1c86 func lower_facility_price  # (price: Longint): a step down
+1010:1d62 func raise_rent  # (rent: Longint): +4/8/20/40 below 80/200/400/1561, else 1600
+1010:1e05 func lower_rent  # (rent: Longint): -40/20/8/4 above 400/200/80, from 4; else 0
 1010:1ea5 func markers_free  # (i, j): on the map and both people marker layers (551c, 5520) are 255
+1010:1efa func road_square_free  # is_road_of_plot and markers_free
 1010:1f2d func open_sea  # (i, j): flat water (ground 2, form 16) with free marker layers
+1010:1f8f func find_road  # (var j, var i; i0, j0, i1, j1, rings): like find_sea, for a free road square on the plot of (i0, j0)
 1010:20e0 func find_sea  # (var j, var i; i0, j0, i1, j1, rings): the nearest open sea ring by ring around the area: columns, then rows; the ring or -1
 1010:2493 func facility_class  # (building): capacity class 0..10, 1110:134c[kind] for kinds 2..10, by type for kind 11 (0x1c 9, 0x20 7, 0x21 8), else 10; game::construction
 1010:254d func set_view
@@ -65,6 +87,7 @@
 1010:2820 func game_start_setup  # after load_map: scroll position from the map, scroll bars, button bar, draws the island
 1010:2a0c func enable_forms  # re-enables the forms in 1110:646c except 10 and 11
 1010:2af5 func draw_button_bar
+1010:3006 func schedule_event  # (i, j, ?, value, ?, arg: Longint; n): event n certain (chance 0x3fffc) with value (+0x14), arg (+0x2c) and square (+0x30)
 1010:3084 func events_tick  # once a day: counts event_days, starts the due events of *1110:6536 by kind (auction, news, disaster, new building type), ends them after their duration; game::events
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
@@ -135,7 +158,9 @@
 1030:1418 func get_tile_dcs
 1030:154c func building_origin  # (var pos; i, j): the building's first square from the part: r := part mod HAUSNR col 5, (i - r mod width, j - r div width)
 1030:15d2 func is_road_on_plot  # (j, i, plot): on the map and plot, and a road (ground 10..0x3a) or a building of kind 9/10 (airport, harbour)
+1030:16a2 func is_road_of_plot  # (i, j, plot): on the map and plot, ground 10..0x3a
 1030:1706 func road_distance  # (i, j, i_end, j_end): ring 1..4 around the area with a road on the same plot (1030:15d2), else -1
+1030:180d func location_at  # (i, j): *1110:5524[i div 2][j div 2], 0 off the map
 1030:185d func change_location  # (i, j, value, radius: Longint, remove): location map * value % around (i div 2, j div 2), fading with distance; then the overview map; game::location
 1030:1ae9 func change_location_quiet  # same as change_location without redrawing the overview map
 1030:1d10 func add_location_effect  # (i, j, building, remove): a building type's effect (HAUSDATA col 9) on the location map, through change_location_quiet
@@ -261,14 +286,22 @@
 1068:2d49 func link_plots  # after loading: every house, then facility, in front of its plot's list
 1068:2e05 func load_houses  # unit routine: the house list *1110:6f10 (count 1110:6f1a, 0x2c-byte records)
 1068:313e func load_plots  # unit routine: the plot list *1110:6f0c (count 1110:552c, 0x364-byte records)
-1070:1345 func books_last_months
+1070:1345 func guests_last_months
 1070:1419 func books_add
+1070:1452 func geldmenu_year_total  # (Self): kind 0x6b := sum of 0x5f..0x6a, then redraws
+1070:210a func geldmenu_month_end  # (Self): the four history rings (cash, net worth, guests, reputation) get a month; game::accounts
+1070:2617 func geldmenu_refresh  # (Self): geldmenu_year_total if the form's height (+0x24) is above 0
 1070:269d func books_close_year
 1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
 1078:0002 func building_slice  # (n): houses with (i + j) mod 30 = n: Random(100) < guests*100 div capacity (HAUSDATA col 3); facilities with (i * j) mod 30 = n: Random(100) < +0x15; then 1090:1a25; game::construction
+1078:014c func guests_of  # (player): 1110:6f8c + 4p (player 0 reads player 8's interest)
+1078:0172 func set_guests_of  # (player, guests: Longint)
 1078:0191 func money_of  # (player): money, 99999999 while frozen or for no player
 1078:01e7 func add_money  # (player: Byte; amount: Longint): saturating; player 1 redraws the info bar; game::money
 1078:0466 func set_loan  # (player, amount): loan and its monthly interest amount div 24 * zinssatz div 50
+1078:057a func loan_of  # (player): 1110:6f4c + 4p
+1078:05a0 func interest_of  # (player): 1110:6f6c + 4p
+1078:0780 func mix_classes  # (var guests: 11 Longints): Klassenmischung with the remainders carried on
 1078:0eda func register_building  # (i, j, building), near: on a plot only: HAUSNR col 5 squares on the plot (+0x354 parks, +0x356), the record by 1110:1341[kind], HAUSDATA col 3 into the plot's and *1110:6f20's sums by class, kinds 9/10 counted at plot+2 and 6f20+0, location effect; game::construction
 1078:124e func unregister_building  # (i, j, building), near: undoes register_building
 1078:1684 func unregister_building_call  # near: calls 1078:124e
@@ -280,6 +313,7 @@
 1078:273a func remove_renters  # (i, j): remove_people_at for the rentals 0x0a, 0x1a, 0x1b, 0x6d
 1078:276f func remove_bridge_square  # nested in demolish: people off, the square water (ground 2), adds Strassenabrisskosten to demolish's unused sum
 1078:280b func demolish  # (j, i, player): player 0 for disasters; building site (refund price*days div time), building (price div 20), road (1110:64ea), sea bridge (free); error messages 0xe, 0x17, 0x18, 0x1d for player 1; game::construction
+1080:0123 func umenu_refresh  # refreshes TUmenuform if shown
 1080:1141 func load_umenu
 1080:22be func road_set  # (i, j): where the ground's road pieces start: sand 0, grass 0xf, water 0x5f, sand to grass 0x1e; game::roads
 1080:232a func road_piece  # (i, j): the road piece for the neighbours (jump table 1080:230a), or a river piece 0x3b..0x3e becomes a crossing 0x37..0x3a with building 11
@@ -363,6 +397,8 @@
 10a0:10c6 func send_surfers  # (i, j): five tries, Random(2): a surfer (people kind 0x20 or 0x21) from there, counted in *1110:551c
 10a0:117e func effects_tick  # once a day: the five sabotage slots *1110:705a and three championships *1110:705e count down and act; game::sabotage
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
+10a8:2d5a func computer_turn  # (player): the computer player's state machine (*1110:70ca); not ported
+10a8:302e func computer_players_tick  # status text := 'Gar nix', 1110:70c2 += 1, computer_turn(70c2 mod opponents + 2)
 10a8:37da func load_compbau
 10b0:3199 func reset_ground  # (i, j: Byte): an empty square's ground by its corners (water, sand, sand to grass, grass); a variant past GROUNDNR's count becomes 0
 10b0:52d4 func generate_island  # makes a new island from the start menu settings (segment 10b0); not ported
@@ -465,6 +501,8 @@
 1108:1e21 func sys_randomize  # Randomize: RandSeed from DOS time (INT 21h AH=2Ch)
 1108:1f5c func sys_val_longint
 1108:1fa4 func sys_filesize
+1110:004c data base_demand  # Byte, only read from the map: the base of the settlement's demand (factors 9, 22)
+1110:0057 data computers_play  # 1 by init_game_defaults
 1110:0058 data view_owner_pointers
 1110:0059 data view_occupancy_pointers
 1110:0062 data sound_enabled  # SETUP.DAT line 5 is not N
@@ -532,11 +570,12 @@
 1110:4a92 data miete_spanne | long  # MaxMiete - MinMiete
 1110:4a96 data min_preis  # MinPreis: array[0..9] of Longint
 1110:4ac2 data max_preis  # MaxPreis: array[0..9] of Longint
+1110:4aee data settlement_sums  # 12 x array[1..8] of Longint: takings, costs, advertising, rest, interest, month; docs/settlement.md
 1110:4c6e data abrechne_factor1 | pointer32  # 38 Longints, column of ABRECHNE.DAT
 1110:4c72 data abrechne_factor2 | pointer32  # 38 Longints, column of ABRECHNE.DAT
 1110:4c76 data abrechne_factor3 | pointer32  # 38 Longints, column of ABRECHNE.DAT
 1110:4c7a data abrechne_factor4 | pointer32  # 38 Longints, column of ABRECHNE.DAT
-1110:4c8a data beach_life_house | pointer32  # the house beach_life_tick is at
+1110:4c8a data beach_life_house | pointer32  # the house beach_life_tick and the settlement are at
 1110:4d50 data base_dir | char[144]  # string[0x90], line 1 of SETUP.DAT
 1110:4de2 data data_dir | char[144]  # base_dir + "Data\"
 1110:4e74 data texte_dir | char[144]  # base_dir + "Texte\"
@@ -581,13 +620,17 @@
 1110:64b4 data renovierung_to_text
 1110:64be data land
 1110:64bf data max_lageeinfluss  # MODATYP.DAT MaxLageeinfluss
+1110:64c6 data werbungskosten
 1110:64ca data kreditgroesse
 1110:64ce data max_schulden
 1110:64d2 data zinssatz
 1110:64d6 data startgeld
 1110:64ea data strassenabrisskosten  # Longint, MODATYP.DAT; saved in the map
+1110:64fa data lebenshaltungskosten
+1110:64fe data klassenmischungdivisor
 1110:6502 data klassenmischung
 1110:6508 data angeschlossenumrechnung  # array[-1..4] of Byte, MODATYP.DAT; a house's +2 by road_distance
+1110:650e data verfallwahrscheinlichkeit  # array[0..2] of Byte
 1110:6516 data baumenue
 1110:6532 data hauptschirm
 1110:6536 data ereignis | pointer32  # 41 records of 0x34 bytes: 12 Longints from EREIGNIS.DAT + 1 more
@@ -651,6 +694,7 @@
 1110:6f30 data money  # array[1..8] of Longint
 1110:6f50 data loan
 1110:6f70 data loan_interest
+1110:6f90 data player_guests  # array[1..8] of Longint
 1110:6fb4 data umenuform
 1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
@@ -670,7 +714,9 @@
 1110:7056 data oil_slick_pos  # i, j
 1110:705a data sabotage_slots | pointer32  # 5 records of 10 bytes: attacker, victim, kind, i, j, countdown (Word), active
 1110:705e data championships | pointer32  # 3 records of 8 bytes: kind (tennis, surfing, Miss HI), i, j, countdown (Word), active
+1110:70c2 data computer_turns  # Longint
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
+1110:70f2 data computer_status_text  # string, saved
 1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
 1110:723a data uebersichtsmap2
 1110:723c data sound_busy  # array[1..42] of Integer from 1110:723e: ticks each sound still plays; play_sound (10a0:30b6) only plays at 0 and sets it from 1110:3dce, people_tick counts it down; not saved, the view's

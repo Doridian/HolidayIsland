@@ -19,6 +19,7 @@ use crate::monate::Date;
 use crate::money::Finances;
 use crate::people::{DIRECTIONS_SIZE, ENTRIES_SIZE, PATHS_SIZE, People, TRACKS_SIZE, Viewpoint};
 use crate::sabotage::{Championship, Sabotage, parse_championships, parse_sabotage};
+use crate::settlement::{FACTORS, SUMS, Settlement};
 use crate::simulation::{Accounting, Clock, Options};
 
 /// A map position. Coordinates are `Integer`s in the original and may be
@@ -248,18 +249,35 @@ impl Plot {
         set_longint_at(&mut self.record, at, value);
     }
 
-    /// Not known yet: a value 0–255 that scenario 6 averages over the
-    /// plots, weighted by [`Plot::weight`]. // +4
+    /// The plot's quality, 0–100 (`Gesamtqualitaet einer Insel`), which
+    /// the settlement works out from its greenery, its shops' prices and
+    /// its facilities (1008:0f37); scenario 6 averages it over the plots,
+    /// weighted by [`Plot::area`]. // +4
     #[must_use]
-    pub fn value_4(&self) -> u8 {
+    pub fn quality(&self) -> u8 {
         self.record[4]
     }
 
-    /// Not known yet (its size?): the weight of [`Plot::value_4`].
-    /// // +0x352
+    /// Probably the plot's number of squares: what its greenery is
+    /// measured against (1008:0f37), and the weight of
+    /// [`Plot::quality`]. // +0x352
     #[must_use]
-    pub fn weight(&self) -> u16 {
+    pub fn area(&self) -> u16 {
         self.word(0x352).cast_unsigned()
+    }
+
+    /// The byte at `at`, 0 past the record. The settlement keeps its
+    /// ratings there (`game::settlement`).
+    #[must_use]
+    pub fn byte(&self, at: usize) -> u8 {
+        self.record.get(at).copied().unwrap_or(0)
+    }
+
+    /// Sets the byte at `at`; nothing past the record.
+    pub fn set_byte(&mut self, at: usize, value: u8) {
+        if let Some(b) = self.record.get_mut(at) {
+            *b = value;
+        }
     }
 }
 
@@ -327,14 +345,16 @@ impl House {
         (self.word(3), self.word(5))
     }
 
-    /// `HAUSDATA.DAT`'s column 4 for its type, copied when it was built
-    /// (1068:1a08). // +1
+    /// Its stars (`Sterne`), 0–100: `HAUSDATA.DAT`'s column 4 for its
+    /// type when it was built (1068:1a08), then each month from that, its
+    /// condition, connection and location (1008:1bf7 step 0xc). Its value
+    /// follows them. // +1
     #[must_use]
-    pub fn value_1(&self) -> u8 {
+    pub fn stars(&self) -> u8 {
         self.0[1]
     }
 
-    pub fn set_value_1(&mut self, value: u8) {
+    pub fn set_stars(&mut self, value: u8) {
         self.0[1] = value;
     }
 
@@ -361,8 +381,9 @@ impl House {
         self.0[2] = value;
     }
 
-    /// Probably its price per night: `HAUSPREI.DAT`'s third column when
-    /// it was built. // +0x12, `Longint`
+    /// Its rent per guest and month: `HAUSPREI.DAT`'s third column when
+    /// it was built; the computer players change theirs each month
+    /// (1008:1bf7 step 0x82). // +0x12, `Longint`
     #[must_use]
     pub fn price(&self) -> i32 {
         longint_at(&self.0, 0x12)
@@ -372,26 +393,40 @@ impl House {
         set_longint_at(&mut self.0, 0x12, price);
     }
 
-    /// Not known yet: 0x50 when it's built (1068:1a08). // +0x16
+    /// How fair its rent is for its stars, 0–100 (`Mietniveau`): 0x50
+    /// when it's built (1068:1a08), then each month 1008:0863. // +0x16
     #[must_use]
-    pub fn value_16(&self) -> u8 {
+    pub fn rent_rating(&self) -> u8 {
         self.0[0x16]
     }
 
-    pub fn set_value_16(&mut self, value: u8) {
+    pub fn set_rent_rating(&mut self, value: u8) {
         self.0[0x16] = value;
     }
 
-    /// Not known yet, probably its guests: how much beach life it gets
-    /// follows it, and with its capacity (`HAUSDATA.DAT` column 3) how
-    /// likely it sends someone out ([`World::building_slice`]). // +0x10
+    /// Its guests, at most its capacity (`HAUSDATA.DAT` column 3): the
+    /// share of its plot's guests the settlement gives it each month
+    /// (step 0x16). Its rent is paid per guest; how much beach life it
+    /// gets follows them, and with its capacity how likely it sends
+    /// someone out ([`World::building_slice`]). // +0x10
     #[must_use]
-    pub fn value_10(&self) -> i16 {
+    pub fn guests(&self) -> i16 {
         self.word(0x10)
     }
 
-    pub fn set_value_10(&mut self, value: i16) {
+    pub fn set_guests(&mut self, value: i16) {
         self.set_word(0x10, value);
+    }
+
+    /// How many guests would come, at most its capacity (1008:1bf7 step
+    /// 0x10). // +0xc, `Longint`
+    #[must_use]
+    pub fn demand(&self) -> i32 {
+        longint_at(&self.0, 0xc)
+    }
+
+    pub fn set_demand(&mut self, value: i32) {
+        set_longint_at(&mut self.0, 0xc, value);
     }
 
     /// How many squares of beach life (building type 36) it has around
@@ -465,13 +500,13 @@ impl Facility {
         self.0[0] = building;
     }
 
-    /// Like [`House::value_1`]. // +1
+    /// Like [`House::stars`]. // +1
     #[must_use]
-    pub fn value_1(&self) -> u8 {
+    pub fn stars(&self) -> u8 {
         self.0[1]
     }
 
-    pub fn set_value_1(&mut self, value: u8) {
+    pub fn set_stars(&mut self, value: u8) {
         self.0[1] = value;
     }
 
@@ -501,20 +536,23 @@ impl Facility {
         self.0[7] = condition;
     }
 
-    /// Not known yet: what scenario 5 counts for building type 0x6d.
+    /// Its visitors, at most its capacity: the share of the guests who
+    /// want what it offers that it gets each month (1008:1bf7 step
+    /// 0x44); scenario 5 counts them for the surf schools (0x6d).
     /// // +0xc, `Longint`
     #[must_use]
-    pub fn value_c(&self) -> i32 {
+    pub fn visitors(&self) -> i32 {
         i32::from_le_bytes([self.0[0xc], self.0[0xd], self.0[0xe], self.0[0xf]])
     }
 
-    pub fn set_value_c(&mut self, value: i32) {
+    pub fn set_visitors(&mut self, value: i32) {
         self.0[0xc..0x10].copy_from_slice(&value.to_le_bytes());
     }
 
-    /// Probably how full it is, in percent: the chance that it sends
-    /// someone out ([`World::building_slice`]). A full championship's
-    /// building gets [`Facility::value_c`] of its capacity
+    /// How full it is, in percent of its capacity (1008:1bf7 step 0x46):
+    /// its income, and the chance that it sends someone out
+    /// ([`World::building_slice`]). A full championship's
+    /// building gets [`Facility::visitors`] of its capacity
     /// ([`World::replace_building`]). // +0x15
     #[must_use]
     pub fn fill(&self) -> u8 {
@@ -523,6 +561,40 @@ impl Facility {
 
     pub fn set_fill(&mut self, percent: u8) {
         self.0[0x15] = percent;
+    }
+
+    /// How many visitors would come, at most its capacity (1008:1bf7
+    /// step 0x3a). // +0x10, `Longint`
+    #[must_use]
+    pub fn demand(&self) -> i32 {
+        longint_at(&self.0, 0x10)
+    }
+
+    pub fn set_demand(&mut self, value: i32) {
+        set_longint_at(&mut self.0, 0x10, value);
+    }
+
+    /// Which tenth of its class's range of prices (`MinPreis` to
+    /// `MaxPreis`) its price per visitor falls in, 0–9 (1008:0907).
+    /// // +0x14
+    #[must_use]
+    pub fn price_class(&self) -> u8 {
+        self.0[0x14]
+    }
+
+    pub fn set_price_class(&mut self, class: u8) {
+        self.0[0x14] = class;
+    }
+
+    /// How fair its price is for its stars, 0–100 (`Preisniveau`,
+    /// 1008:0776). // +0x1a
+    #[must_use]
+    pub fn price_rating(&self) -> u8 {
+        self.0[0x1a]
+    }
+
+    pub fn set_price_rating(&mut self, rating: u8) {
+        self.0[0x1a] = rating;
     }
 
     /// Like [`House::price`]. // +0x16, `Longint`
@@ -906,6 +978,14 @@ pub struct World {
     pub totals: Vec<u8>,
     /// The people and vehicles.
     pub people: People,
+    /// The monthly settlement's tables and sums.
+    pub settlement: Settlement,
+    /// The computer players take their turns (the option; on at first).
+    /// // 1110:0057
+    pub computers_play: bool,
+    /// The computer players' turns so far, which picks whose turn it is.
+    /// // 1110:70c2
+    pub computer_turns: i32,
     /// The human's view, which the people code reads (marked).
     pub viewpoint: Viewpoint,
     /// The tables from the CD the simulation reads; empty until the game's
@@ -960,6 +1040,9 @@ impl Default for World {
             connection_values: [0; 6],
             totals: vec![0; TOTALS_SIZE],
             people: People::default(),
+            settlement: Settlement::default(),
+            computers_play: true,
+            computer_turns: 0,
             viewpoint: Viewpoint::default(),
             tables: Arc::default(),
             random: Random::default(),
@@ -967,8 +1050,10 @@ impl Default for World {
     }
 }
 
+/// The field stored at `dest`; when the map stores one twice (some of
+/// `MODATYP.DAT`'s values), the later read wins, as in the original.
 fn field<'a>(save: &'a SaveGame, dest: &'static str) -> Result<&'a [u8], Error> {
-    save.field(dest).ok_or(Error::Field(dest))
+    save.fields(dest).last().ok_or(Error::Field(dest))
 }
 
 fn layer(save: &SaveGame, dest: &'static str) -> Result<Layer, Error> {
@@ -1030,6 +1115,54 @@ fn books(save: &SaveGame) -> Result<Books, Error> {
             i32::from_le_bytes([data[4 * n], data[4 * n + 1], data[4 * n + 2], data[4 * n + 3]])
         }),
         history: bytes::<HISTORY_SIZE>(save, "*[1110:6f04]+0x24b")?.to_vec(),
+    })
+}
+
+/// `n` `Longint`s.
+fn longint_array<const N: usize>(save: &SaveGame, dest: &'static str) -> Result<[i32; N], Error> {
+    let data = field(save, dest)?;
+    if data.len() != 4 * N {
+        return Err(Error::Field(dest));
+    }
+    Ok(std::array::from_fn(|i| {
+        i32::from_le_bytes([data[4 * i], data[4 * i + 1], data[4 * i + 2], data[4 * i + 3]])
+    }))
+}
+
+/// The settlement's tables and sums (units 1008:539f and 1010:0d4c).
+fn settlement(save: &SaveGame) -> Result<Settlement, Error> {
+    let columns: [[i32; FACTORS]; 4] = [
+        longint_array(save, "*1110:4c6e")?,
+        longint_array(save, "*1110:4c72")?,
+        longint_array(save, "*1110:4c76")?,
+        longint_array(save, "*1110:4c7a")?,
+    ];
+    // MaxPreis has 11 values in the map; the 11th is the sums' first.
+    let max_price: [i32; 11] = longint_array(save, "1110:4ac2")?;
+    let month: [i32; SUMS - 1] = longint_array(save, "1110:4aee")?;
+    let mut sums = [0; SUMS];
+    sums[0] = max_price[10];
+    sums[1..].copy_from_slice(&month);
+    let mix = field(save, "*1110:6502")?;
+    if mix.len() != 200 {
+        return Err(Error::Field("*1110:6502"));
+    }
+    Ok(Settlement {
+        factors: (0..FACTORS).map(|n| columns.map(|c| c[n])).collect(),
+        min_rent: longint(save, "1110:4a8a")?,
+        max_rent: longint(save, "1110:4a8e")?,
+        rent_range: longint(save, "1110:4a92")?,
+        min_price: longint_array(save, "1110:4a96")?,
+        max_price: std::array::from_fn(|i| max_price[i]),
+        sums,
+        base_demand: byte(save, "1110:004c")?,
+        advertising_cost: longint(save, "1110:64c6")?,
+        living_costs: longint(save, "1110:64fa")?,
+        class_mix: std::array::from_fn(|k| {
+            std::array::from_fn(|c| i16::from_le_bytes([mix[20 * k + 2 * c], mix[20 * k + 2 * c + 1]]))
+        }),
+        mix_divisor: longint(save, "1110:64fe")?,
+        decay: bytes(save, "1110:650e")?,
     })
 }
 
@@ -1129,6 +1262,7 @@ impl World {
                 money: longints(save, "1110:6f30")?,
                 loan: longints(save, "1110:6f50")?,
                 interest: longints(save, "1110:6f70")?,
+                guest_count: longints(save, "1110:6f90")?,
                 max_debt: longint(save, "1110:64ce")?,
                 interest_rate: longint(save, "1110:64d2")?,
                 start_money: longint(save, "1110:64d6")?,
@@ -1202,6 +1336,9 @@ impl World {
             // Unit 1078:34ad.
             totals: bytes::<TOTALS_SIZE>(save, "*1110:6f20")?.to_vec(),
             people: people(save)?,
+            settlement: settlement(save)?,
+            computers_play: byte(save, "1110:0057")? != 0,
+            computer_turns: longint(save, "1110:70c2")?,
             viewpoint: viewpoint(save)?,
             tables: Arc::default(),
             random: Random::default(),

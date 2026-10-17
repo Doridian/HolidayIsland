@@ -172,6 +172,13 @@ the harbours only if nobody is on the square.
 - `send_surfers` (10a0:10c6): five tries; the nearest open sea within 15
   rings (1010:20e0: columns, then rows), `Random(2)` for the kind, and the
   beach counts each that came.
+- `remove_first_at_home` (1088:2c3b): like `remove_people_at`, but only
+  the first, and the square it was on gets a free `551c` afterwards.
+- The rentals' people (the settlement's step 0x78, 1008:15dd and
+  1008:16be, [settlement.md](settlement.md#the-rentals-people)): one more
+  goes out to the nearest road on the rental's plot (`find_road`,
+  1010:1f8f, 10 rings in `find_sea`'s order) or the open sea (1010:20e0,
+  10 rings), or one comes back.
 
 ## Moving (1090:5293)
 

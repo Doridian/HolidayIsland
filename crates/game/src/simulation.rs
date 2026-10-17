@@ -80,6 +80,7 @@ pub struct Accounting {
 }
 
 /// What a tick did that the view shows.
+#[allow(clippy::struct_excessive_bools)] // One flag for each of the original's calls.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Tick {
     /// The date moved on: the original redraws it (1030:228d) and starts
@@ -102,6 +103,17 @@ pub struct Tick {
     /// The scenario was won or lost ([`World::january_second`]): the
     /// original shows the end of the game (`schlussform`, 1068:1016).
     pub game_over: Option<GameOver>,
+    /// The books changed: the original refreshes the money menu
+    /// (1070:2617), working out this year's total (1070:1452) if it's
+    /// shown.
+    pub books: bool,
+    /// The original refreshes `TUmenuform` if it's shown (1080:0123).
+    pub umenu: bool,
+    /// Buildings whose occupancy changed by at least a tenth, as their
+    /// first and last squares: the original redraws the area on the
+    /// overview map (10b8:1534) and, with the occupancy pointers shown
+    /// (`1110:0059`), on the main screen (1050:264d).
+    pub occupancy: Vec<(Pos, Pos)>,
 }
 
 /// How a game ended. // 1008:0512
@@ -185,18 +197,10 @@ impl World {
         if self.date.month == 1 && self.accounting.step == 5 {
             self.january_second(tick);
         }
-        self.settlement_step(self.accounting.step);
-    }
-}
-
-/// The subsystems still to port. The stubs keep the original's order of
-/// calls; most don't touch the world yet.
-#[allow(clippy::unused_self)]
-impl World {
-    /// One step of the monthly settlement. // 1008:1bf7, 13165 bytes
-    fn settlement_step(&mut self, step: i32) {
-        // TODO: port 1008:1bf7, step by step.
-        let _ = step;
+        // The step's low word.
+        #[allow(clippy::cast_possible_truncation)]
+        let step = self.accounting.step as i16;
+        self.settlement_step(step, tick); // 1008:1bf7
     }
 }
 

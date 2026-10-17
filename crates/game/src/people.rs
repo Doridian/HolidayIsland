@@ -768,7 +768,7 @@ impl World {
 
     /// Sets `layer_551c` on `pos`. The original writes outside the layer
     /// for a square off the map; the port doesn't.
-    fn set_marker(&mut self, pos: Pos, value: u8) {
+    pub(crate) fn set_marker(&mut self, pos: Pos, value: u8) {
         if self.island.layer_551c.get(pos).is_some() {
             self.island.layer_551c.set(pos, value);
         }
@@ -1852,6 +1852,66 @@ impl World {
         found
     }
 
+    /// Like [`World::remove_people_at`], but only the first walker or
+    /// surfer whose home is `pos` leaves, and its square's `layer_551c` is
+    /// cleared after it (for a walker too); says whether there was one.
+    /// // 1088:2c3b
+    pub(crate) fn remove_first_at_home(&mut self, pos: Pos) -> bool {
+        let last = self.people.last;
+        if last <= LAST_MONEY {
+            return false;
+        }
+        for n in FIRST..=last {
+            let Some(p) = self.people.get(n) else {
+                continue;
+            };
+            let (kind, home, at) = (p.kind(), p.home(), p.pos());
+            if home != pos || !(WALKERS.contains(&kind) || SURFERS.contains(&kind)) {
+                continue;
+            }
+            if WALKERS.contains(&kind) {
+                self.free_path_square(n); // 1088:5841
+            }
+            self.remove_person(n); // 1088:2df2
+            self.set_marker(at, FREE);
+            // The original goes on from the new last record to the old
+            // one, which are all free by then.
+            return true;
+        }
+        false
+    }
+
+    /// The nearest road square (ground 10–58, 1030:16a2) on the plot of
+    /// `low` with free marker layers (1010:1efa) around the area `low` to
+    /// `high`, ring by ring up to `rings`, in [`World::find_sea`]'s order.
+    /// // 1010:1f8f
+    pub(crate) fn find_road(&self, low: Pos, high: Pos, rings: i16) -> Option<Pos> {
+        let plot = self.island.plot_at(low); // 1030:1e62
+        let road = |w: &World, pos: Pos| {
+            crate::world::on_map(pos)
+                && w.island.plot_at(pos) == plot
+                && (10..0x3b).contains(&w.island.ground.at(pos))
+                && w.markers_free(pos)
+        };
+        for ring in 1..=rings {
+            for i in low.0 - ring..=high.0 + ring {
+                for j in [low.1 - ring, high.1 + ring] {
+                    if road(self, (i, j)) {
+                        return Some((i, j));
+                    }
+                }
+            }
+            for j in (low.1 - ring + 1)..(high.1 + ring) {
+                for i in [low.0 - ring, high.0 + ring] {
+                    if road(self, (i, j)) {
+                        return Some((i, j));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// The map changed for the people: the kinds of the records 0–0x23
     /// are cleared, and `1110:6fce` and `1110:6ff2`. // 1088:6c5a
     pub(crate) fn people_map_changed(&mut self) {
@@ -1945,7 +2005,7 @@ impl World {
     /// ring by ring up to `rings`: in each ring first the columns at
     /// `j - ring` and `j + ring` down `i`, then the rows at `i - ring` and
     /// `i + ring` along `j`. // 1010:20e0
-    fn find_sea(&self, low: Pos, high: Pos, rings: i16) -> Option<Pos> {
+    pub(crate) fn find_sea(&self, low: Pos, high: Pos, rings: i16) -> Option<Pos> {
         let open = |w: &World, pos: Pos| {
             crate::world::on_map(pos)
                 && w.island.ground.at(pos) == WATER

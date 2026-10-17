@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::accounts::BOOK_BUILDING;
+use crate::accounts::BOOK_OTHER;
 use crate::darstellung::GROUND_ROWS;
 use crate::roads::{BRIDGES, CROSSINGS, ROADS};
 use crate::simulation::Tick;
@@ -191,7 +191,7 @@ impl World {
 impl World {
     /// Which list a building's record goes in: an index into
     /// [`RECORD_KINDS`] by its `HAUSDATA.DAT` kind, 3 (none) past it.
-    fn record_kind(&self, building: u8) -> u8 {
+    pub(crate) fn record_kind(&self, building: u8) -> u8 {
         let kind = self.tables.hausdata(building, 5);
         usize::try_from(kind.wrapping_add(1))
             .ok()
@@ -325,8 +325,8 @@ impl World {
         house.set_condition(0x7f);
         house.set_building(building);
         house.set_price(t.hausprei(building, 2));
-        house.set_value_16(0x50);
-        house.set_value_1(t.hausdata(building, 4).to_le_bytes()[0]);
+        house.set_rent_rating(0x50);
+        house.set_stars(t.hausdata(building, 4).to_le_bytes()[0]);
         house.set_connection(self.connection(building, pos));
         self.houses.insert(0, house);
         if let Some(p) = self.plot_of(pos) {
@@ -339,7 +339,7 @@ impl World {
         let t = Arc::clone(&self.tables);
         let mut f = Facility::new(building, pos);
         f.set_connection(self.connection(building, pos));
-        f.set_value_1(t.hausdata(building, 4).to_le_bytes()[0]);
+        f.set_stars(t.hausdata(building, 4).to_le_bytes()[0]);
         f.set_price(t.hausprei(building, 2));
         self.facilities.insert(0, f);
         if let Some(p) = self.plot_of(pos) {
@@ -580,7 +580,7 @@ impl World {
             .unwrap_or(0);
         self.add_money(player, refund.wrapping_neg());
         if player == 1 {
-            self.book(BOOK_BUILDING, refund.wrapping_neg()); // 1070:1419
+            self.book(BOOK_OTHER, refund.wrapping_neg()); // 1070:1419
             self.float_money(refund, site.pos); // 1088:0153
         }
         self.building_sites.remove(n); // 1068:2153
@@ -596,7 +596,7 @@ impl World {
         }
         self.add_money(player, cost.wrapping_neg());
         if player == 1 {
-            self.book(BOOK_BUILDING, cost.wrapping_neg()); // 1070:1419
+            self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
         }
         let origin = self.building_origin(pos); // 1030:154c
         if player == 1 {
@@ -661,7 +661,7 @@ impl World {
         self.add_money(player, cost.wrapping_neg());
         self.remove_people_from(pos, tick); // 1088:6975
         if player == 1 {
-            self.book(BOOK_BUILDING, cost.wrapping_neg()); // 1070:1419
+            self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
             self.float_money(cost, pos); // 1088:0153
         }
         self.island.owners.set(pos, 0);
@@ -756,7 +756,7 @@ impl World {
                 continue;
             }
             let capacity = i32::from(self.tables.hausdata(house.building(), 3));
-            let Some(chance) = (i32::from(house.value_10()) * 100).checked_div(capacity) else {
+            let Some(chance) = (i32::from(house.guests()) * 100).checked_div(capacity) else {
                 continue;
             };
             if i32::from(self.random.random(100)) < chance {
@@ -930,7 +930,7 @@ mod tests {
         w.register_building(40, pos);
         let h = &w.houses[0];
         assert_eq!((h.building(), h.pos(), h.condition()), (40, pos, 0x7f));
-        assert_eq!((h.price(), h.value_16(), h.value_1()), (80, 0x50, 7));
+        assert_eq!((h.price(), h.rent_rating(), h.stars()), (80, 0x50, 7));
         // The road is a square past the area's last row.
         assert_eq!(h.connection(), 40);
         let p = &w.plots[0];
@@ -1016,7 +1016,7 @@ mod tests {
         let mut tick = Tick::default();
         assert_eq!(w.demolish(1, (11, 22), &mut tick), Ok(()));
         assert_eq!(w.finances.money[0], 9900);
-        assert_eq!(w.book_value(BOOK_BUILDING), -100);
+        assert_eq!(w.book_value(BOOK_OTHER), -100);
         assert_eq!(w.houses, []);
         assert_eq!(w.island.buildings.at((10, 20)), NO_BUILDING);
         assert_eq!(w.island.owners.at((11, 22)), 0);
@@ -1041,7 +1041,7 @@ mod tests {
         assert_eq!(w.demolish(1, (11, 21), &mut Tick::default()), Ok(()));
         // 2000 × 5 days of 10 back.
         assert_eq!(w.finances.money[0], 1100);
-        assert_eq!(w.book_value(BOOK_BUILDING), 1000);
+        assert_eq!(w.book_value(BOOK_OTHER), 1000);
         assert_eq!(w.building_sites, []);
         assert_eq!(w.island.buildings.at((11, 22)), NO_BUILDING);
         // A computer player's championship can't be demolished.
@@ -1112,7 +1112,7 @@ mod tests {
         let mut w = plot_world();
         let mut h = House::new((10, 20));
         h.set_building(40);
-        h.set_value_10(250);
+        h.set_guests(250);
         w.houses.push(h);
         let mut h = House::new((11, 20));
         h.set_building(40);

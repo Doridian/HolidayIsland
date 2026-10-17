@@ -15,6 +15,7 @@ pub mod news;
 pub mod people;
 pub mod roads;
 pub mod sabotage;
+pub mod settlement;
 pub mod simulation;
 pub mod startform;
 pub mod text;

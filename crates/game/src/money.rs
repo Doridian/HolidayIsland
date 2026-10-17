@@ -16,6 +16,9 @@ pub struct Finances {
     pub loan: [i32; 8],
     /// The monthly interest on it. // 1110:6f70
     pub interest: [i32; 8],
+    /// Each player's guests this month, counted by the settlement's step
+    /// 0x28 ([`Finances::guests`]). // 1110:6f90
+    pub guest_count: [i32; 8],
     /// `MaxSchulden`: how far a player may go into debt. // 1110:64ce
     pub max_debt: i32,
     /// `Zinssatz`: the yearly interest rate in percent. // 1110:64d2
@@ -25,6 +28,31 @@ pub struct Finances {
     /// Freezes everyone's money: `add_money` does nothing while it's set.
     /// Only `init_game_defaults` writes it (false). // 1110:0070
     pub frozen: bool,
+}
+
+impl Finances {
+    /// `player`'s guests. Player 0 reads the interest of player 8, the
+    /// `Longint` before the table, as the original does. // 1078:014c
+    #[must_use]
+    pub fn guests(&self, player: u8) -> i32 {
+        match usize::from(player).checked_sub(1) {
+            None => self.interest[7],
+            Some(i) => self.guest_count.get(i).copied().unwrap_or(0),
+        }
+    }
+
+    /// Sets `player`'s guests; player 0 writes player 8's interest.
+    /// // 1078:0172
+    pub fn set_guests(&mut self, player: u8, guests: i32) {
+        match usize::from(player).checked_sub(1) {
+            None => self.interest[7] = guests,
+            Some(i) => {
+                if let Some(g) = self.guest_count.get_mut(i) {
+                    *g = guests;
+                }
+            }
+        }
+    }
 }
 
 impl World {

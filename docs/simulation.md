@@ -73,15 +73,15 @@ one sees the new date.
   Then, every time, `settlement_step(step)` (1008:1bf7).
 
 So the step runs from 0 (the 1st) to about 150 over the month, five a
-day. `settlement_step` (1008:1bf7, **13165 bytes**, the `ABRECHNE` unit)
-is the monthly settlement spread over the month: a chain of `if step = n`
-for even `n` from 2 to about 0x50 (plus a few odd ones), each doing one
-part of the books for all players (clearing the month's sums at
-`1110:4aea`.., guests, rents, costs, interest, the computer players' turns
-through 1070:1419 and 1010:2493, the occupancy map at 0x48 ...). Its main
-callees are 1008:0de9, 1008:0d10, 1008:15dd, 1008:097f, 1008:09c8,
-1008:06b6, 1070:1419, 1070:2617, 1010:2493, 1010:3006. Money goes through
-`add_money` (1078:01e7).
+day. `settlement_step` (1008:1bf7, 13165 bytes, the `ABRECHNE` unit),
+called with the step's low word, is the monthly settlement spread over
+the month: a chain of `if step = n` for 48 steps from 2 to 0x8b, each
+doing one part of the month for all players (guests, rents, takings,
+costs, interest, ratings, reputation, the books), and the computer
+players' turns on every other step. Ported in
+[`game::settlement`](../crates/game/src/settlement.rs), step by step in
+[settlement.md](settlement.md). Money goes through `add_money`
+(1078:01e7).
 
 ### Building sites (1008:5212)
 
@@ -251,11 +251,11 @@ it ends without a score. Either way the original shows `schlussform`
 |---|---|---|
 | 0 (normal) | the year is 2056 | bankrupt (then `*1110:6f24+0x80` := 1) |
 | 1 Geld | net worth ≥ 50 000 000 | 2017 |
-| 2 Urlauber | the last 12 months' books ≥ 120 000 | 2017 |
+| 2 Urlauber | the last 12 months' guests ≥ 120 000 | 2017 |
 | 3 Koenig | players 2–8 are all out (`*1110:6f24+0x7f+p`), player 1 not | 2017 |
 | 4 Luxus | the guests (`+0x10`) of houses with a price (`+0x12`) over 320 ≥ 4000 | 2027 |
-| 5 Surfer | the `+0xc` values of the facilities of type 0x6d ≥ 4000 | 2007 |
-| 6 Oeko | the last 12 months ≥ 12 000 and the plots' `+4` averaged by their `+0x352` ≥ 71 | 2017 |
+| 5 Surfer | the visitors (`+0xc`) of the surf schools (0x6d) ≥ 4000 | 2007 |
+| 6 Oeko | the last 12 months' guests ≥ 12 000 and the plots' quality (`+4`) averaged by their `+0x352` ≥ 71 | 2017 |
 | 7 (not on the CD) | from 2001, or net worth ≥ 1 000 000 | bankrupt |
 
 - Net worth (1008:0c6e): the buildings' value (at least 0) plus money
@@ -266,8 +266,9 @@ it ends without a score. Either way the original shows `schlussform`
 - Bankrupt (1008:0002): not out yet, net worth below `-MaxSchulden`, and
   for player 1 last year's books (kind 0x5e, 1070:13f1) negative too.
 - The last 12 months (1070:1345): the books' history `*[1110:6f04]+0x24b`
-  holds 120 months of a `Longint` per player at `+0x1e14`, with the count
-  at `+0x2d1c` and the start at `+0x2d1d`.
+  holds 120 months of each player's guests at `+0x1e14`, with the count
+  at `+0x2d1c` and the start at `+0x2d1d` (its third ring,
+  [settlement.md](settlement.md#the-books-tgeldmenuform-10701419)).
 - The score (1010:0faa): the mean of net worth div 90 000, the 12 months
   div 1800 and the reputation, each clamped to 0..100; then with
   `1110:133c`, and again on easy (20) and normal (10), it drops by that
@@ -351,7 +352,12 @@ What the driver and the ported parts use, all saved in the map file:
 | `*1110:6f20` | Sums over the island: plots with an airport or harbour, capacities by class ([above](#the-buildings-records-10780eda)) | same (unit 1078:34ad) |
 | `1110:64ea`, `1110:6508` | `Strassenabrisskosten`, `Angeschlossenumrechnung` (`MODATYP.DAT`) | same |
 | `*1110:6512` | The computer players' budgets, 13 `Longint`s for each of players 2–8 | same (unit 1010:0d4c) |
-| `[1110:6f04]+0x191`, `*[..]+0x24b` | The money menu's books: kinds 0x52–0x6e, the monthly history | same (unit 1070:3bf8) |
+| `[1110:6f04]+0x191`, `*[..]+0x24b` | The money menu's books: kinds 0x52–0x6e, the monthly history ([settlement.md](settlement.md#the-books-tgeldmenuform-10701419)) | same (unit 1070:3bf8) |
+| `1110:4a8a`..`4ac2`, `*1110:4c6e`..`*1110:4c7a`, `1110:004c` | `ABRECHNE.DAT`: rents, prices, factors; the base demand | same (unit 1008:539f) |
+| `1110:4aee` | The month's sums, 12 × `array[1..8] of Longint` | same (unit 1008:539f) |
+| `1110:64c6`, `64fa`, `64fe`, `*1110:6502`, `650e` | `Werbungskosten`, `Lebenshaltungskosten`, `Klassenmischung` and its divisor, `Verfallwahrscheinlichkeit` | same (unit 1010:0d4c) |
+| `1110:6f90` | Each player's guests this month | same (unit 1078:34ad) |
+| `1110:0057`, `1110:70c2` | The computer players play; their turns so far | same |
 | `1110:1334`, `1110:64c2` | Renovation interval per player, `Renovierungskosten` | same |
 | `1110:006e`, `006f`, `0071`, `133c` | Scenario, cheated(?), won, the score's unknown flag | same |
 | `*1110:6f24+0x7f+p` | Player `p` is out | `*1110:6f24` |
@@ -623,7 +629,8 @@ the original's.
 
 Ported: the driver's world steps in their order (`World::tick`), the date,
 `add_money`, `set_loan`, `format_money`, the start money, the accounting
-scheduler (1008:5307), `construction_tick`, `year_end`, `january_second` with the scenarios' goals, the
+scheduler (1008:5307) with the monthly settlement (1008:1bf7, all its
+steps and the books' month, [settlement.md](settlement.md)), `construction_tick`, `year_end`, `january_second` with the scenarios' goals, the
 net worth and the score, `quake_damage`,
 `vegetation_tick` with the location map,
 `beach_life_tick`, `effects_tick`, `events_tick` (with stubs for the oil slick and new building
@@ -646,8 +653,10 @@ What the view shows comes out of `World::tick` in `Tick`: the squares
 that changed (`redraw`; the view redraws the whole island for them rather
 than the columns 1050:21f9 picks, and has no overview map yet), a flood
 (`redraw_all`), the news (`messages`), a started auction (`auction`), the
-people's sounds (`sounds`, not played yet) and the end of the game
-(`game_over`); finished buildings are in `redraw`. The people's pictures
+people's sounds (`sounds`, not played yet), the end of the game
+(`game_over`), the money menu's and `TUmenuform`'s refreshes (`books`,
+`umenu`) and the buildings whose occupancy changed (`occupancy`);
+finished buildings are in `redraw`. The people's pictures
 are in their records, which the view draws over the island after each
 tick (`Hauptschirm::show_people`, 1088:385d, 1088:38c4).
 The view draws the date and money on the info bar when they change; the
@@ -655,7 +664,8 @@ news, the TV, auctions, the status bar timeout, tooltips, scrolling by
 the timer, music and the shaking aren't ported.
 
 Stubs (named after the table above, each with its address and a TODO):
-`settlement_step`, and inside the ported routines `oil_slick_start`,
+`computer_turn` (10a8:2d5a, the computer players' decisions, about 14 KB
+with their callees), and inside the ported routines `oil_slick_start`,
 `oil_slick_end` and `make_available` (which doesn't touch the building
 sites). 1088:7fb1,
 which runs `spawn_people` again after the player scrolls or turns the
@@ -672,8 +682,9 @@ the original's once it runs.
   multiplayer these need to become world state everyone agrees on.
 - `1110:0070` stops all money changes; nothing found sets it. `1110:133c`,
   which a scenario sets on easy, is unknown.
-- `settlement_step`'s individual steps still need mapping before they
-  can be ported.
+- The computer players' turns (segment `10a8`) aren't ported, so while
+  they play the port's random numbers part from the original's on the
+  settlement's free steps ([settlement.md](settlement.md#the-computer-players)).
 - The sounds' countdown `1110:723c` (people_tick's first loop) stops a
   sound from playing again while it still plays; the port leaves it to
   the view, which doesn't play the sounds yet.
@@ -684,38 +695,37 @@ the original's once it runs.
 - The news (1048:0a54) pauses the game through the TV for the human
   player, depending on their options per kind of news; the archive also
   stores that player's view origin. Both need a multiplayer answer.
-- The houses' `+0x10` value, which sets their beach life, isn't
-  identified (guests?), nor is `1110:0072` for sure (insurance?).
+- The houses' `+0x10` is their guests ([settlement.md](settlement.md));
+  `1110:0072` is the insurance (a 120th of the buildings' value a month).
 - `demolish` reports the error messages for player 1 as a `Result`; a
   player's demolition isn't a command yet, so only the disasters call it.
   The floating cost (1088:0153) is a people record in the original but
   only for the human: it may belong to the view. The port keeps it in
   the world, as the original does.
-- What the plots' `+0xee` is (a full championship building takes its
-  `+0xc` from it, at most its capacity: spectators?), the facilities'
-  `+0xc` and `+0x15` (visitors and how full, in percent?), houses'
-  `+0x16` (0x50 when built) and the rest of `*1110:6f20` and the plots'
-  sums, which the settlement probably fills.
+- A full championship building takes its visitors from its plot's
+  guests (`+0xee`), at most its capacity. What `*1110:6f20 + 0x19a` (the
+  economy) is set by is open ([settlement.md](settlement.md#open-questions)).
 - Demolishing a building site doesn't take its effect (type 31's 90 %)
   off the location map. A demolished park comes off its plot's
   `+0x354`, a dead palm doesn't. The original's bridge demolition costs
   nothing, though it adds up a cost.
 - The plots' lists of houses and facilities hold the buildings' first
-  squares in the port, not pointers; nothing ported reads them yet.
+  squares in the port, not pointers; the settlement finds the records by
+  them.
 - The books' totals (kinds 0x5e, 0x6b) are worked out by 1070:1452, which
   the original runs at the year's end and whenever the money menu is
   shown (1070:2617, only with the form's height above 0): a view
   condition in world state. The port only works it out at the year's end.
-- Which kinds the books' 0x52–0x6e hold, what plots' `+4` and `+0x352`,
-  facilities' `+0xc` and houses' `+0x10` are (scenarios 6, 5, 4 suggest
-  an environment value and area, a count for type 0x6d, and guests), and
-  what `1110:133c` and `1110:006f` mean.
+- What the books' 0x6c–0x6e and the plots' `+0x352` (the area?) are,
+  and what `1110:133c` and `1110:006f` mean.
 - The high score entry also stores a floating-point value made by
   1100:1142/1100:1808 from `1110:0a02` (the date?); that's left to the
   view. A scenario's `*1110:6f24+0x80` out flags come from its map; state
   1500 may change them (not ported).
 - Renovations only charge player 1; computer players' buildings get
-  renovated for free (they may pay in their own turns, not ported).
+  renovated for free (they may pay in their own turns, not ported). The
+  settlement likewise charges only the human for advertising, insurance
+  and the cost of living.
 - 1010:1129 counts palms on the square's plot through a nil pointer when
   the square has none; the CD's maps have plots on all land, but a
   generated island may not. The port skips the count then.

@@ -6,8 +6,24 @@
 use crate::simulation::{GameOver, Tick};
 use crate::world::{FIRST_BOOK, World};
 
-/// The books' kind the original books building costs under (1070:1419).
-pub const BOOK_BUILDING: u8 = 0x6a;
+/// The books' kinds of this year (`GELDMENU.TXT`'s lines): the takings
+/// of the houses, hotels, restaurants (`Gaststaetten`) and other
+/// buildings, then their costs, new buildings (not booked by anything
+/// ported), advertising, interest and everything else (`Sonstiges`). Last
+/// year's are 13 lower. // 1070:1419
+pub const BOOK_HOUSE_RENT: u8 = 0x5f;
+pub const BOOK_HOTEL_RENT: u8 = 0x60;
+pub const BOOK_RESTAURANT_TAKINGS: u8 = 0x61;
+pub const BOOK_FACILITY_TAKINGS: u8 = 0x62;
+pub const BOOK_HOUSE_COSTS: u8 = 0x63;
+pub const BOOK_HOTEL_COSTS: u8 = 0x64;
+pub const BOOK_RESTAURANT_COSTS: u8 = 0x65;
+pub const BOOK_FACILITY_COSTS: u8 = 0x66;
+pub const BOOK_ADVERTISING: u8 = 0x68;
+pub const BOOK_INTEREST: u8 = 0x69;
+/// `Sonstiges`: the original books demolitions, renovations, insurance
+/// and the cost of living here.
+pub const BOOK_OTHER: u8 = 0x6a;
 /// The books' last year's total. // 1070:269d
 const BOOK_LAST_YEAR: u8 = 0x5e;
 /// The books' first kind of this year. // 1070:269d
@@ -15,12 +31,32 @@ const BOOK_THIS_YEAR: u8 = 0x5f;
 /// The books' total of this year. // 1070:1452
 const BOOK_THIS_YEAR_TOTAL: u8 = 0x6b;
 
-/// Where the books' monthly history keeps each player's `Longint`s:
-/// 120 months of 8 players. // 1070:1345
-const HISTORY: usize = 0x1e14;
-/// The history's number of months and first month. // 1070:1345
-const HISTORY_MONTHS: usize = 0x2d1c;
-const HISTORY_START: usize = 0x2d1d;
+/// The books' monthly history (`*[1110:6f04]+0x24b`) is four rings of
+/// this size, one after the other: 120 months of a `Longint` for each of
+/// 8 players (`0x20` bytes a month), then the highest and lowest value
+/// (`Longint`s at `+0xf00`, `+0xf04`, the scale of the money menu's
+/// charts), the number of months (`+0xf08`) and where they start
+/// (`+0xf09`). // 1070:210a
+const RING: usize = 0xf0a;
+/// The rings: each player's money less their loan, net worth, guests and
+/// reputation. // 1070:210a
+const RING_CASH: usize = 0;
+const RING_WORTH: usize = RING;
+const RING_GUESTS: usize = 2 * RING;
+const RING_REPUTATION: usize = 3 * RING;
+/// A ring's highest and lowest value, number of months and first month.
+const RING_MAX: usize = 0xf00;
+const RING_MIN: usize = 0xf04;
+const RING_MONTHS: usize = 0xf08;
+const RING_START: usize = 0xf09;
+/// The months a ring holds.
+const RING_LEN: usize = 120;
+
+/// Where the guests' ring keeps each player's `Longint`s. // 1070:1345
+const HISTORY: usize = RING_GUESTS;
+/// The guests' ring's number of months and first month. // 1070:1345
+const HISTORY_MONTHS: usize = RING_GUESTS + RING_MONTHS;
+const HISTORY_START: usize = RING_GUESTS + RING_START;
 
 /// What a player whose money can't be read has: when the money is frozen,
 /// or for a player not in the game. // 1078:0191
@@ -88,7 +124,7 @@ impl World {
         if self.island.owners.get(pos) == Some(1) {
             let cost = self.renovation_price(building, condition);
             self.add_money(1, cost.wrapping_neg());
-            self.book(BOOK_BUILDING, cost.wrapping_neg());
+            self.book(BOOK_OTHER, cost.wrapping_neg());
         }
     }
 
@@ -135,12 +171,12 @@ impl World {
             // A normal game is won in 2056.
             0 => self.date.year == 0x808,
             1 => self.net_worth(1) >= 50_000_000,
-            2 => self.books_last_months(1) >= 120_000,
+            2 => self.guests_last_months(1) >= 120_000,
             // Monopolus: everyone else is out.
             3 => self.player_out(1) == 0 && (2..=8).all(|p| self.player_out(p) != 0),
             4 => self.luxury_guests(1) >= 4000,
             5 => self.facility_sum(1) >= 4000,
-            6 => self.books_last_months(1) >= 12_000 && self.plot_average() > 0x46,
+            6 => self.guests_last_months(1) >= 12_000 && self.plot_average() > 0x46,
             // Not a scenario on the CD.
             7 => self.date.year >= 2001 || self.net_worth(1) >= 1_000_000,
             // The original returns an uninitialised byte.
@@ -226,14 +262,14 @@ impl World {
 
     /// The value of `player`'s houses, other buildings and building sites
     /// (their price). // 1008:0b0b
-    fn assets(&self, player: u8) -> i32 {
+    pub(crate) fn assets(&self, player: u8) -> i32 {
         let owned = |pos| self.island.owners.get(pos) == Some(player);
         let mut sum = 0i32;
         for h in self.houses.iter().filter(|h| owned(h.pos())) {
-            sum = sum.wrapping_add(self.building_value(h.building(), h.value_1(), h.condition()));
+            sum = sum.wrapping_add(self.building_value(h.building(), h.stars(), h.condition()));
         }
         for f in self.facilities.iter().filter(|f| owned(f.pos())) {
-            sum = sum.wrapping_add(self.building_value(f.building(), f.value_1(), f.condition()));
+            sum = sum.wrapping_add(self.building_value(f.building(), f.stars(), f.condition()));
         }
         for s in self.building_sites.iter().filter(|s| owned(s.pos)) {
             sum = sum.wrapping_add(self.tables.hausprei(s.building, 0));
@@ -241,14 +277,14 @@ impl World {
         sum
     }
 
-    /// A building's value: its price times `value_1` over `HAUSDATA.DAT`'s
+    /// A building's value: its price times `stars` over `HAUSDATA.DAT`'s
     /// column 4 if that's positive, else times its condition over 127.
     /// // 1008:0a56
-    fn building_value(&self, building: u8, value_1: u8, condition: u8) -> i32 {
+    fn building_value(&self, building: u8, stars: u8, condition: u8) -> i32 {
         let price = self.tables.hausprei(building, 0);
         let column_4 = i32::from(self.tables.hausdata(building, 4));
         if column_4 > 0 {
-            price.wrapping_mul(i32::from(value_1)) / column_4
+            price.wrapping_mul(i32::from(stars)) / column_4
         } else {
             price.wrapping_mul(i32::from(condition)) / 0x7f
         }
@@ -260,7 +296,7 @@ impl World {
         self.houses
             .iter()
             .filter(|h| self.island.owners.get(h.pos()) == Some(player) && h.price() > 320)
-            .fold(0i32, |sum, h| sum.wrapping_add(i32::from(h.value_10())))
+            .fold(0i32, |sum, h| sum.wrapping_add(i32::from(h.guests())))
     }
 
     /// The `+0xc` values of `player`'s buildings of type 0x6d.
@@ -269,7 +305,7 @@ impl World {
         self.facilities
             .iter()
             .filter(|f| f.building() == SCENARIO_5_BUILDING && self.island.owners.get(f.pos()) == Some(player))
-            .fold(0i32, |sum, f| sum.wrapping_add(f.value_c()))
+            .fold(0i32, |sum, f| sum.wrapping_add(f.visitors()))
     }
 
     /// The plots' `+4` values averaged by their weights, rounded. The
@@ -278,8 +314,8 @@ impl World {
     fn plot_average(&self) -> i32 {
         let (mut sum, mut weights) = (0i32, 0i32);
         for p in &self.plots {
-            let w = i32::from(p.weight());
-            sum = sum.wrapping_add(w.wrapping_mul(i32::from(p.value_4())));
+            let w = i32::from(p.area());
+            sum = sum.wrapping_add(w.wrapping_mul(i32::from(p.quality())));
             weights = weights.wrapping_add(w);
         }
         if weights == 0 {
@@ -289,15 +325,15 @@ impl World {
     }
 
     /// The human's score, 0–100: the mean of their net worth in 90 000s,
-    /// their last twelve months' books in 1800s and their reputation, each
+    /// their last twelve months' guests in 1800s and their reputation, each
     /// at most 100; lowered with `1110:133c` and on the easier levels (by
     /// 10, 20 on easy, but never below half). // 1010:0faa
     #[must_use]
     pub fn score(&self) -> i32 {
         let worth = (self.net_worth(1) / 90_000).clamp(0, 100);
-        let books = (self.books_last_months(1) / 1800).clamp(0, 100);
+        let guests = (self.guests_last_months(1) / 1800).clamp(0, 100);
         let reputation = i32::from(self.reputation(1)).min(100);
-        let mut score = (worth.wrapping_add(books).wrapping_add(reputation) / 3).clamp(0, 100);
+        let mut score = (worth.wrapping_add(guests).wrapping_add(reputation) / 3).clamp(0, 100);
         let lower = |s: i32, by: i32| (s - by).max(0).max(s / 2);
         if self.flag_133c {
             score = lower(score, 10);
@@ -345,10 +381,10 @@ impl World {
         }
     }
 
-    /// The sum of `player`'s last twelve months (or fewer, as many as
-    /// there are) in the books' history. // 1070:1345
+    /// `player`'s guests in the last twelve months (or fewer, as many as
+    /// there are) of the books' history. // 1070:1345
     #[must_use]
-    pub fn books_last_months(&self, player: u8) -> i32 {
+    pub fn guests_last_months(&self, player: u8) -> i32 {
         let h = &self.books.history;
         let months = h.get(HISTORY_MONTHS).copied().unwrap_or(0);
         let start = h.get(HISTORY_START).copied().unwrap_or(0);
@@ -361,6 +397,91 @@ impl World {
             }
         }
         sum
+    }
+
+    /// The month's end in the books' history: each player's money less
+    /// their loan, net worth, guests ([`Finances::guests`]) and reputation
+    /// go into the next month of their rings, the first two widening
+    /// their rings' scale. A full ring drops its first month. Run by the
+    /// settlement's step 0x8b. // 1070:210a
+    ///
+    /// [`Finances::guests`]: crate::money::Finances::guests
+    pub(crate) fn close_books_month(&mut self) {
+        for p in 1..=self.player_count {
+            let loan = self.finances.loan.get(usize::from(p) - 1).copied().unwrap_or(0); // 1078:057a
+            let cash = self.money_of(p).wrapping_sub(loan);
+            self.ring_put(RING_CASH, p, cash);
+            self.widen_scale(RING_CASH, cash);
+        }
+        self.ring_advance(RING_CASH);
+        for p in 1..=self.player_count {
+            let worth = self.net_worth(p);
+            self.ring_put(RING_WORTH, p, worth);
+            self.widen_scale(RING_WORTH, worth);
+        }
+        self.ring_advance(RING_WORTH);
+        for p in 1..=self.player_count {
+            let guests = self.finances.guests(p); // 1078:014c
+            self.ring_put(RING_GUESTS, p, guests);
+            // The scale only goes up, to an even number.
+            let top = self.ring_longint(RING_GUESTS + RING_MAX).max(guests);
+            self.ring_set_longint(RING_GUESTS + RING_MAX, top.wrapping_add(1) / 2 * 2);
+        }
+        self.ring_advance(RING_GUESTS);
+        for p in 1..=self.player_count {
+            let reputation = i32::from(self.reputation(p));
+            self.ring_put(RING_REPUTATION, p, reputation);
+        }
+        self.ring_advance(RING_REPUTATION);
+    }
+
+    /// The `Longint` at `at` in the history, 0 past it.
+    fn ring_longint(&self, at: usize) -> i32 {
+        self.books
+            .history
+            .get(at..at + 4)
+            .map_or(0, |b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
+    fn ring_set_longint(&mut self, at: usize, value: i32) {
+        if let Some(b) = self.books.history.get_mut(at..at + 4) {
+            b.copy_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    /// Writes `player`'s `value` into the month after the last of the
+    /// ring at `ring`. // 1070:210a
+    fn ring_put(&mut self, ring: usize, player: u8, value: i32) {
+        let h = &self.books.history;
+        let months = usize::from(h.get(ring + RING_MONTHS).copied().unwrap_or(0));
+        let start = usize::from(h.get(ring + RING_START).copied().unwrap_or(0));
+        let month = (months + start) % RING_LEN;
+        let at = (ring + month * 0x20 + usize::from(player) * 4).wrapping_sub(4);
+        self.ring_set_longint(at, value);
+    }
+
+    /// The ring at `ring` holds one more month, or drops its first one
+    /// once it has 120. // 1070:210a
+    fn ring_advance(&mut self, ring: usize) {
+        let h = &mut self.books.history;
+        if let Some(&months) = h.get(ring + RING_MONTHS) {
+            if usize::from(months) < RING_LEN {
+                h[ring + RING_MONTHS] = months + 1;
+            } else if let Some(start) = h.get_mut(ring + RING_START) {
+                *start = u8::try_from((usize::from(*start) + 1) % RING_LEN).unwrap_or(0);
+            }
+        }
+    }
+
+    /// The scale of the ring at `ring` takes in `value`, and stays as far
+    /// below 0 as above. // 1070:210a
+    fn widen_scale(&mut self, ring: usize, value: i32) {
+        let mut top = self.ring_longint(ring + RING_MAX).max(value);
+        let mut bottom = self.ring_longint(ring + RING_MIN).min(value);
+        top = top.max(bottom.wrapping_neg());
+        bottom = top.wrapping_neg().min(bottom);
+        self.ring_set_longint(ring + RING_MAX, top);
+        self.ring_set_longint(ring + RING_MIN, bottom);
     }
 }
 
@@ -409,7 +530,7 @@ mod tests {
         // 27 steps of condition at 3 per 1000 of 12 700.
         assert_eq!(w.finances.money[0], -(27 * 3 * 12_700 / 1000));
         assert_eq!(w.book_value(BOOK_LAST_YEAR), 0);
-        assert_eq!(w.book_value(BOOK_BUILDING), -1028);
+        assert_eq!(w.book_value(BOOK_OTHER), -1028);
         assert_eq!(w.houses[0].condition(), 0x7f);
         // Player 2's every three years: not in 2000.
         assert_eq!(w.facilities[0].condition(), 7);
@@ -424,7 +545,7 @@ mod tests {
         assert_eq!(w.finances.money[1], 0);
         assert_eq!(w.book_value(BOOK_LAST_YEAR), -1028);
         assert_eq!(w.book_value(0x5d), -1028);
-        assert_eq!(w.book_value(BOOK_BUILDING), 0);
+        assert_eq!(w.book_value(BOOK_OTHER), 0);
         assert_eq!(w.finances.max_debt, 110_000);
     }
 
@@ -436,7 +557,7 @@ mod tests {
         assert_eq!(w.net_worth(1), 3000);
         let mut h = House::new((1, 1));
         h.set_building(40);
-        h.set_value_1(2);
+        h.set_stars(2);
         w.houses.push(h);
         w.island.owners.set((1, 1), 1);
         let mut f = Facility::new(41, (2, 2));
@@ -516,7 +637,7 @@ mod tests {
         }
         // Months 123 down to 112, wrapping round the ring.
         let expected: i32 = (112..124).map(|m| m % 120).sum();
-        assert_eq!(w.books_last_months(2), expected);
+        assert_eq!(w.guests_last_months(2), expected);
         assert_eq!(w.scenario, 0);
         assert!(!w.scenario_won());
     }

@@ -374,3 +374,66 @@ fn people_from_the_map() {
     }
     assert!(changed > 0);
 }
+
+#[test]
+fn settlement_moves_money() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tables = tables();
+    for (n, file) in (1..=6).zip(SCENARIO_FILES) {
+        let settings = Settings {
+            scenario: n,
+            difficulty: 1,
+            ..Settings::default()
+        };
+        let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+        let mut world = load_world(&map, &settings, true).unwrap();
+        world.tables = Arc::clone(&tables);
+        world.random = Random::new(0x1234_5678);
+        world.clock.paused = false;
+        let (year, start) = (world.date.year, world.finances.money);
+        let interest = world.finances.interest[0];
+        let (mut months, mut books) = (0, 0);
+        // Three years and a bit.
+        while world.date.year < year + 3 || world.date.month < 2 {
+            let tick = world.tick();
+            books += usize::from(tick.books);
+            if tick.new_day && world.date.day == 1 {
+                months += 1;
+            }
+        }
+        let money = world.finances.money;
+        assert_ne!(money[0], start[0], "{file}");
+        assert!(money.iter().all(|m| m.abs() < 50_000_000), "{file}: {money:?}");
+        // The computer players' houses and shops earned or cost them
+        // money (in Surfer they all lose, their plots' ports being too
+        // small for their beds).
+        let players = usize::from(world.player_count);
+        assert!((1..players).all(|p| money[p] != start[p]), "{file}: {money:?}");
+        // Four of the settlement's steps refresh the money menu each month.
+        assert!(books >= 4 * (months - 1), "{file}: {books} in {months} months");
+        // A whole year of interest in last year's books, and the cost of
+        // living in its other costs.
+        assert_eq!(world.book_value(0x5c), -12 * interest, "{file}");
+        assert!(world.book_value(0x5d) <= -12 * world.settlement.living_costs, "{file}");
+        // The month's guests stay within the beds.
+        for h in &world.houses {
+            assert!((0..=tables.hausdata(h.building(), 3)).contains(&h.guests()), "{file}");
+            assert!((0..=100).contains(&h.stars()) && h.rent_rating() <= 100, "{file}");
+        }
+        for p in &world.plots {
+            assert!(p.longint(0xee) <= p.longint(0x22).max(0), "{file}");
+            assert!(p.quality() <= 100, "{file}");
+        }
+        let guests: i32 = world.houses.iter().map(|h| i32::from(h.guests())).sum();
+        assert!(guests > 0, "{file}");
+        if world.houses.iter().any(|h| world.island.owners.at(h.pos()) == 1) {
+            // The human's guests are in the books' history, and their rent
+            // in last year's books.
+            assert!(world.guests_last_months(1) > 0, "{file}");
+            assert!(world.book_value(0x52) + world.book_value(0x53) > 0, "{file}");
+        }
+    }
+}
