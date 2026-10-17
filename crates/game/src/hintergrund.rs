@@ -147,6 +147,9 @@ pub struct GameData {
     pub names: data::Strings,
     /// `BAUMENU.DAT`: the build menu's lists and layouts. // 1018:080f
     pub baumenu: data::BaumenuData,
+    /// `MONATE.TXT`, which the news archive's dates are written with
+    /// (`crate::news::DateFormat`). // 1030:000d
+    pub months: data::Strings,
 }
 
 /// A file [`GameData::load`] couldn't read or parse.
@@ -183,6 +186,7 @@ impl GameData {
             animdat4: parsed("ANIMDAT4.DAT", data::animdat4(&dat("ANIMDAT4.DAT")?))?,
             form_korrektur: parsed("DARSTELL.DAT", data::darstell(&dat("DARSTELL.DAT")?))?.form_korrektur,
             road_cost: modatyp.strassenbaukosten,
+            sabotage: crate::sabotage::kinds(&parsed("SABOTAGE.TXT", data::sabotage(&file("TEXTE/SABOTAGE.TXT")?))?.1),
         };
         let maperste = parsed("MAPERSTE.DAT", data::maperste(&dat("MAPERSTE.DAT")?))?;
         let (nobody, _player, names) = parsed("NAMEN.TXT", data::namen(&file("TEXTE/NAMEN.TXT")?))?;
@@ -202,6 +206,7 @@ impl GameData {
             nobody,
             names,
             baumenu: parsed("BAUMENU.DAT", data::baumenu_dat(&dat("BAUMENU.DAT")?))?,
+            months: parsed("MONATE.TXT", data::monate(&file("TEXTE/MONATE.TXT")?))?,
         })
     }
 }
@@ -238,6 +243,10 @@ fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool) -> Wo
     // State 100: 1010:064a.
     apply_modatyp(&mut w, &data.modatyp); // 1010:000e
     pick_names(&mut w, &data.nobody, &data.names); // 1010:0414
+    w.news.date_format = crate::news::DateFormat {
+        months: data.months.clone(),
+        land: data.modatyp.land as u8,
+    };
     // The start menu's globals; Start puts the name in for player 1
     // (1058:021a).
     w.player_colours = settings.colours;

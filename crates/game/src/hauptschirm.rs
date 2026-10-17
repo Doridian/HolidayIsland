@@ -417,6 +417,19 @@ impl Hauptschirm {
         scroll_origin(self.wo, self.ns, self.keep_origin)
     }
 
+    /// The view jumps to the square `(i, j)`: the view's origin goes to
+    /// `(i - 10, j)`, the scroll position and bars follow it and the island
+    /// is drawn again. From the TV (the news' square, `crate::fernseher`)
+    /// and the buildings' overview's "Springe hin" (`crate::umenuform`).
+    /// The original also redraws the overview map's frame
+    /// (`TUebersichtsmap2`, 10b8:1485, 10b8:1349), which is the caller's
+    /// (`Uebersichtsmap::set_main_view`), and the caller hands the world
+    /// the new viewpoint. // 1020:0787
+    pub fn jump_to(&mut self, (i, j): Pos, world: &World, tiles: &Tiles) {
+        self.set_origin((i.wrapping_sub(10), j)); // 1020:074d, 1020:05a7
+        self.paint_map(world, tiles); // 1050:2700
+    }
+
     /// The origin to the camera, and the scroll bars to the position, as
     /// the view sees it. // 1020:05a7
     fn update_bars(&mut self) {
@@ -635,6 +648,16 @@ impl Hauptschirm {
             return KeyResult::Ignored;
         }
         KeyResult::Redrawn
+    }
+
+    /// The overview map's click (10b8:37f5, `crate::uebersichtsmap`): the
+    /// scroll position set as it is, past the scroll bars' ends too, the
+    /// origin and bars from it (1020:05a7) and the island drawn.
+    pub fn set_scroll(&mut self, wo: i16, ns: i16, world: &World, tiles: &Tiles) {
+        self.wo = wo;
+        self.ns = ns;
+        self.update_bars();
+        self.paint_map(world, tiles);
     }
 
     /// The scroll position, `wo` and `ns`, as a map file saves it.

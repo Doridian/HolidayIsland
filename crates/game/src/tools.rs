@@ -14,10 +14,12 @@
 //! `1110:14e0` and `1110:14f2` that give a tool's button are the same
 //! numbers): 6 raises a corner of the land, 7 lowers one, 8 demolishes,
 //! 9 to 20 but 16 open a submenu of the build menu and build its type,
-//! 16 drags out a road, 21 sabotages (not ported, nor `TSabowin`) and 22
-//! is the pointer, whose click opens the info box (`TInfobox2`, not
-//! ported). Buttons 0 to 5 open forms: the file menu (0) is the caller's,
-//! the others aren't ported.
+//! 16 drags out a road, 21 sabotages with the kind picked on
+//! `TSabowin` ([`crate::sabowin`], which its button shows) and 22 is the
+//! pointer, whose click opens the info box (`TInfobox2`,
+//! [`crate::infobox`], through [`Tools::info_box`]). Buttons 0 to 5 open
+//! forms, which are the caller's: the file menu (0), the pause (1), the
+//! options (2), the TV (3), the money menu (4) and the overview map (5).
 
 use formats::data::Strings;
 
@@ -25,7 +27,9 @@ use crate::baumenue::{Baumenue, Response};
 use crate::command::Action;
 use crate::darstellung::{self, Camera, Tiles, ToolSprite};
 use crate::hauptschirm::InfoTexts;
+use crate::infobox;
 use crate::roads::CROSSABLE;
+use crate::sabowin::{self, Close, Sabowin};
 use crate::savegame::Fields;
 use crate::simulation::{Status, Tick};
 use crate::text::Font;
@@ -65,8 +69,10 @@ const SQUARE_DOESNT: i16 = 0x17c;
 const RAISE_POINTER: (i16, (i16, i16)) = (0x10, (0x19, 6));
 const LOWER_POINTER: (i16, (i16, i16)) = (8, (0x19, 6));
 const DEMOLISH_POINTER: (i16, (i16, i16)) = (0x3c, (0x10, 0));
+const SABOTAGE_POINTER: (i16, (i16, i16)) = (0x44, (0x16, 0));
 
 /// The main screen's tool state and the build menu.
+#[allow(clippy::struct_excessive_bools)] // The original's flags.
 #[derive(Debug, Clone)]
 pub struct Tools {
     /// The tool. // 1110:6056
@@ -103,6 +109,20 @@ pub struct Tools {
     pub buttons_changed: bool,
     /// Sounds to play, in order (`play_sound`).
     pub sounds: Vec<u8>,
+    /// The sabotage window, once the caller has given it its data; until
+    /// then the tool sabotages with kind 0. // 1110:65c0
+    pub sabowin: Option<Sabowin>,
+    /// The sabotage window has the keyboard's focus: it takes it when it's
+    /// shown and gives it back when it's hidden; a click on another form
+    /// takes it too (the caller's).
+    pub sabowin_focused: bool,
+    /// The last press of the pointer was a double click's: its info box
+    /// stays open when the button comes up. The main screen's
+    /// `1110:64b8`.
+    pub pointer_double: bool,
+    /// What the pointer asks of the info box (`TInfobox2`), for the
+    /// caller to take.
+    pub info_box: Option<infobox::Request>,
 }
 
 /// One step towards `stop` along a line of squares (the road planner's
@@ -135,6 +155,10 @@ impl Tools {
             status: None,
             buttons_changed: true,
             sounds: Vec::new(),
+            sabowin: None,
+            sabowin_focused: false,
+            pointer_double: false,
+            info_box: None,
         }
     }
 
@@ -217,7 +241,9 @@ impl Tools {
     /// (`+0x29`) is set, which it is from its creation on, so always.
     fn leave_tool(&mut self, old: u8) {
         self.button_up(old); // 1110:14f2[old]
-        // TSabowin isn't ported: nothing to hide for the sabotage tool.
+        if old == SABOTAGE {
+            self.hide_sabowin();
+        }
         // BUG(original): the build menu's `Visible` is always set, so it's closed (with its sound) even when it is.
         self.close_menu();
     }
@@ -271,10 +297,12 @@ impl Tools {
     }
 
     /// `button_bar_click` for button `b` (`1110:5fbe`): a button that's up
-    /// goes down and its tool is picked (a submenu's opens the build menu),
-    /// one that's down comes up and the pointer takes over. Buttons 0 to 5
-    /// and 21 open forms that aren't ported here (the caller has the file
-    /// menu's); they do nothing. // 1010:2c8b
+    /// goes down and its tool is picked (a submenu's opens the build menu,
+    /// the sabotage tool's shows `TSabowin`), one that's down comes up and
+    /// the pointer takes over. Buttons 0 to 5 open forms, which are the
+    /// caller's (`crate::pauseform`, `crate::optionen`, `crate::fernseher`,
+    /// `crate::geldmenu`, `crate::uebersichtsmap`); here they do nothing.
+    /// // 1010:2c8b
     #[allow(clippy::too_many_arguments)]
     pub fn click(
         &mut self,
@@ -286,7 +314,7 @@ impl Tools {
         view: u8,
         screen: (i32, i32),
     ) -> Vec<Action> {
-        if !(RAISE..NO_BUTTON).contains(&b) || b == SABOTAGE {
+        if !(RAISE..NO_BUTTON).contains(&b) {
             return Vec::new();
         }
         self.button = b;
@@ -298,6 +326,9 @@ impl Tools {
                 self.button_down(POINTER);
                 self.tool = POINTER;
             } else {
+                if b == SABOTAGE {
+                    self.hide_sabowin();
+                }
                 actions = self.release_tool(world, font, tiles, info, view, screen);
                 if b == 0x11 {
                     actions.extend(drag_cancel(world));
@@ -310,6 +341,8 @@ impl Tools {
             self.tool = b;
             if is_menu(b) {
                 self.open_menu(b, world, font, tiles, info, view, screen);
+            } else if b == SABOTAGE {
+                self.show_sabowin();
             } else if b == ROAD {
                 // BUG(original): the road's button selects building type 1, which no tool reads before a submenu selects another.
                 self.drag_start = self.square;
@@ -333,10 +366,23 @@ impl Tools {
         tiles: &Tiles,
         cam: &Camera,
     ) -> Vec<Action> {
+        let double = ShiftState::LEFT | ShiftState::DOUBLE;
+        if self.tool == POINTER && (shift == ShiftState::LEFT || shift == double) {
+            // The pointer's info box (1020:04bc): with [ssLeft] until the
+            // button comes up, with [ssLeft, ssDouble] with its buttons
+            // and open. The square under the mouse (`cursor_square`), and
+            // the mouse in the main screen's form.
+            self.pointer_double = shift == double; // 1110:64b8
+            let main = crate::hauptschirm::LAYOUT[3].1; // Hauptbild
+            self.info_box = Some(infobox::Request::Show {
+                square: darstellung::square_at(world, tiles, cam, x, y), // 1018:3d8d
+                mouse: (x + main.left, y + main.top),
+                modal: self.pointer_double,
+            });
+            return Vec::new();
+        }
         // BUG(original): only exactly [ssLeft]: with Shift or Ctrl held, or on a double click's second press, the tools do nothing.
         if shift != ShiftState::LEFT {
-            // [ssLeft, ssDouble] keeps the pointer's info box open: not
-            // ported.
             return Vec::new();
         }
         let at = darstellung::square_at(world, tiles, cam, x, y); // 1018:3d8d
@@ -375,16 +421,26 @@ impl Tools {
                 // BUG(original): an empty submenu's type -1 is built as 255, past the tables; the port builds nothing.
                 Err(_) => Vec::new(),
             },
-            // The sabotage tool (1028:3d93) and the pointer's info box
-            // (1020:04bc) aren't ported.
+            // 1028:3d93: the square under the mouse and the form's kind.
+            SABOTAGE => vec![Action::Sabotage {
+                kind: self.sabotage_kind(),
+                at,
+            }],
+            // The pointer's `tool_click` does nothing; its info box is
+            // above (1020:04bc).
             _ => Vec::new(),
         }
     }
 
-    /// The left button came up on `Hauptbild`: the road tool builds its
-    /// road, if the drag is still on. // 1020:1b31, 1080:31ed
+    /// A button came up on `Hauptbild`: the road tool builds its road
+    /// with the left one, if the drag is still on; the pointer's info box
+    /// closes unless a double click opened it (any button).
+    /// // 1020:1b31, 1080:31ed, 1020:050b
     #[must_use]
-    pub fn release(&self, left: bool) -> Vec<Action> {
+    pub fn release(&mut self, left: bool) -> Vec<Action> {
+        if self.tool == POINTER && !self.pointer_double {
+            self.info_box = Some(infobox::Request::Hide);
+        }
         if self.tool == ROAD && left {
             vec![Action::RoadDragEnd {
                 from: self.drag_start,
@@ -433,8 +489,12 @@ impl Tools {
             t if (DEMOLISH..POINTER).contains(&t) => {
                 self.square = darstellung::square_at(world, tiles, cam, mouse.0, mouse.1); // 1018:3d8d
                 self.preview_squares(world, tiles, cam); // 1090:0014
-                if t == DEMOLISH {
-                    let (first, offset) = DEMOLISH_POINTER;
+                if t == DEMOLISH || t == SABOTAGE {
+                    let (first, offset) = if t == DEMOLISH {
+                        DEMOLISH_POINTER
+                    } else {
+                        SABOTAGE_POINTER
+                    };
                     let frame = next_frame(&mut self.frame);
                     self.sprites.push(ToolSprite {
                         pos: self.square,
@@ -496,12 +556,14 @@ impl Tools {
         let mut at = (self.square.0.clamp(0, 0xfa), self.square.1.clamp(0, 0xfa)); // 1110:6ff6
         let building_here = world.building_or_none(self.square);
         // BUG(original): without a building here the demolish tool shows the area of the one last found, which the people code (`1110:6ff2`) also sets; the port remembers only its own.
-        if self.tool == DEMOLISH && building_here < NO_BUILDING && building_here != PALM {
+        let picks_building = self.tool == DEMOLISH || self.tool == SABOTAGE;
+        if picks_building && building_here < NO_BUILDING && building_here != PALM {
             at = world.building_origin(self.square); // 1030:154c
             self.last_building = world.building_or_none(at);
         }
         let fits = match self.tool {
             DEMOLISH => true,
+            SABOTAGE => world.sabotage_fits(self.sabotage_kind(), at),
             ROAD => {
                 self.last_building = 0;
                 let ground = world.island.ground.at(at);
@@ -522,7 +584,7 @@ impl Tools {
         let (w, d) = (world.tables.hausnr(b, 3), world.tables.hausnr(b, 4));
         for a in 0..w {
             for c in 0..d {
-                if self.tool == DEMOLISH && FREE_SQUARES.contains(&b) {
+                if picks_building && FREE_SQUARES.contains(&b) {
                     return;
                 }
                 self.square_sprite(world, tiles, cam, (at.0 + a, at.1 + c), fits);
@@ -637,5 +699,79 @@ fn drag_cancel(world: &World) -> Vec<Action> {
         vec![Action::RoadDragCancel]
     } else {
         Vec::new()
+    }
+}
+
+/// The sabotage tool's form (`TSabowin`, [`crate::sabowin`]): shown and
+/// hidden with the tool, and its buttons and keys change the tool.
+impl Tools {
+    /// The kind of sabotage the form has picked, 0 without the form.
+    /// // 1110:65ba
+    #[must_use]
+    pub fn sabotage_kind(&self) -> u8 {
+        self.sabowin.as_ref().map_or(0, |f| f.kind)
+    }
+
+    /// `TCustomForm.Show(sabowin)`, which takes the keyboard. // 1010:2c8b
+    fn show_sabowin(&mut self) {
+        if let Some(f) = &mut self.sabowin {
+            let r = f.show(); // 1028:34a2
+            self.sounds.extend(r.sounds);
+            self.sabowin_focused = true;
+        }
+    }
+
+    /// `TCustomForm.Hide(sabowin)`. // 1010:2be1, 1010:2c8b, 1028:35ee
+    fn hide_sabowin(&mut self) {
+        if let Some(f) = &mut self.sabowin {
+            let r = f.hide();
+            self.sounds.extend(r.sounds);
+        }
+        self.sabowin_focused = false;
+    }
+
+    /// What the form's event means for the tools: its sounds, the tool,
+    /// and the form hidden, for the pointer (button 21 up, the pointer's
+    /// down) or keeping the sabotage tool. The response goes back for the
+    /// caller's refresh and move.
+    fn sabowin_response(&mut self, r: sabowin::Response) -> sabowin::Response {
+        self.sounds.extend(r.sounds.iter().copied());
+        if r.sabotage_tool {
+            self.tool = SABOTAGE; // 1028:2f4e, 1028:394c
+        }
+        match r.close {
+            Some(Close::Hide) => self.hide_sabowin(),
+            Some(Close::Pointer) => {
+                self.hide_sabowin();
+                self.pointer_instead_of(SABOTAGE); // 1010:2ade, 1010:2ac7
+            }
+            None => {}
+        }
+        r
+    }
+
+    /// `SaboimageMouseDown` at `x`, `y` in the form. // 1028:2d67
+    pub fn sabowin_mouse_down(&mut self, x: i32, y: i32, left_button: bool) -> sabowin::Response {
+        let r = self.sabowin.as_mut().map(|f| f.mouse_down(x, y, left_button));
+        self.sabowin_response(r.unwrap_or_default())
+    }
+
+    /// `SaboimageMouseMove` at `x`, `y` in the form, on a `screen` of that
+    /// size. // 1028:2ecc
+    pub fn sabowin_mouse_move(&mut self, x: i32, y: i32, shift: ShiftState, screen: (i32, i32)) -> sabowin::Response {
+        let r = self.sabowin.as_mut().map(|f| f.mouse_move(x, y, shift, screen));
+        self.sabowin_response(r.unwrap_or_default())
+    }
+
+    /// `SaboimageMouseUp` at `x`, `y` in the form. // 1028:2f4e
+    pub fn sabowin_mouse_up(&mut self, x: i32, y: i32, left_button: bool) -> sabowin::Response {
+        let r = self.sabowin.as_mut().map(|f| f.mouse_up(x, y, left_button));
+        self.sabowin_response(r.unwrap_or_default())
+    }
+
+    /// The form's `FormKeyDown`, while it has the keyboard. // 1028:394c
+    pub fn sabowin_key_down(&mut self, key: u16, shift: ShiftState) -> sabowin::Response {
+        let r = self.sabowin.as_mut().map(|f| f.key_down(key, shift));
+        self.sabowin_response(r.unwrap_or_default())
     }
 }

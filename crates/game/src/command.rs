@@ -2,9 +2,11 @@
 //! world itself; it hands the world a [`Command`], which
 //! [`World::apply`] carries out between two ticks
 //! (`docs/port-architecture.md`). So far the auction form's buttons and
-//! keys, loading a game from the file menu, and the main screen's tools:
-//! building, raising and lowering the land, demolishing and the road
-//! (`docs/player-tools.md`).
+//! keys, loading a game from the file menu, the main screen's tools
+//! (building, raising and lowering the land, demolishing, the road and
+//! sabotage, `docs/player-tools.md`), the options form's world options
+//! and speed, the money menu, the info box's and the buildings'
+//! overview's buttons, the overview map's new people and the TV's pause.
 
 use std::sync::Arc;
 
@@ -12,6 +14,7 @@ use formats::savegame::SaveGame;
 
 use crate::accounts::BOOK_OTHER;
 use crate::auction;
+use crate::optionen;
 use crate::roads::RoadError;
 use crate::simulation::{Status, Tick};
 use crate::world::{Pos, World, on_map};
@@ -50,6 +53,38 @@ pub enum Action {
     RoadDragEnd { from: Pos, to: Pos },
     /// A button of the button bar ends the drag (1010:2b60, 1010:2c8b).
     RoadDragCancel,
+    /// The options' speed slider: the game's speed in ticks per hour
+    /// ([`World::set_speed`]). // 1060:0619
+    Speed(i32),
+    /// An option of the world's on the options form, or the overview
+    /// map's new people ([`World::set_option`]).
+    /// // 1060:05a7, 1060:05cb, 1060:0637, 10b8:21c7
+    SetOption(optionen::WorldOption, bool),
+    /// On the money menu ([`World::money_menu_command`]).
+    MoneyMenu(crate::geldmenu::Action),
+    /// The sabotage tool's (21) click: sabotage of `kind` (`SABOTAGE.TXT`'s
+    /// order, the form's choice) on the square `at`
+    /// ([`World::sabotage_command`]). // 1028:3d93, 10a0:1f65
+    Sabotage { kind: u8, at: Pos },
+    /// The info box's or the overview's "Renovieren" for the building on
+    /// the square ([`World::renovate_building`]). // 1010:1931
+    Renovate(Pos),
+    /// Their minus and plus buttons: the building's rent or price a step
+    /// down or up ([`World::step_price`]). // 1038:24d6, 1080:01b2, 1080:0235
+    Price { at: Pos, raise: bool },
+    /// The info box's "Bestechen" for the building site on the square
+    /// ([`World::bribe_builders`]). // 1010:19f1
+    Bribe(Pos),
+    /// The info box's "Verkaufen" ([`World::sell_building`]). // 1038:24d6
+    Sell(Pos),
+    /// The TV opens on the archive's entry `n` from the button bar's button
+    /// 3 (1010:2c8b, 1048:12e9): the game pauses ([`World::tv_shown`]).
+    /// Waits on a dialog. Single human.
+    ShowTv(i16),
+    /// The TV a message opened pauses the game (`true`, 1048:12e9 from
+    /// 1048:0a54), and closing it lets it go on (`false`, 1048:077a)
+    /// ([`World::tv_pause`]). Waits on a dialog. Single human.
+    TvPause(bool),
 }
 
 /// The sound of a tool that did its work. // 1028:3b7c, 1028:3cb1
@@ -83,7 +118,18 @@ impl World {
             Action::RoadDragStart(at) => self.road_drag_start(at),
             Action::RoadDragEnd { from, to } => self.road_drag_end(player, from, to, &mut tick),
             Action::RoadDragCancel => self.road_dragging = false,
+            Action::Speed(speed) => self.set_speed(speed),
+            Action::SetOption(option, on) => self.set_option(option, on, &mut tick),
+            Action::MoneyMenu(a) => self.money_menu_command(player, a),
+            Action::Sabotage { kind, at } => self.sabotage_command(player, kind, at, &mut tick),
+            Action::Renovate(at) => self.renovate_building(player, at, &mut tick),
+            Action::Price { at, raise } => self.step_price(player, at, raise),
+            Action::Bribe(at) => self.bribe_builders(player, at, &mut tick),
+            Action::Sell(at) => self.sell_building(player, at),
+            Action::ShowTv(n) => self.tv_shown(n, &mut tick),
+            Action::TvPause(on) => self.tv_pause(on),
         }
+        self.geldmenu_refresh(&tick); // 1070:2617
         tick
     }
 

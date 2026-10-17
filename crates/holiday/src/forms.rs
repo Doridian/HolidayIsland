@@ -1,0 +1,1409 @@
+//! The game's forms besides the main screen, the build menu, the auction
+//! form and the file menu: the pause (button 1), the options (2), the TV
+//! (3), the money menu (4), the overview map and the compass (5), the
+//! sabotage window (21), the pointer's info box and the buildings'
+//! overview (22), the quit question, the end of the game, the high scores
+//! and the tooltips. Each is a `game` view type and its VCL form from the
+//! DFM; this module loads them, routes the mouse and the keys to them,
+//! hands their commands to the world as the human's (player 1's) and
+//! paints them.
+
+// Short names for the forms and the mouse, as in the forms' own modules.
+#![allow(clippy::many_single_char_names)]
+
+use std::path::{Path, PathBuf};
+
+use formats::bmp::Bitmap;
+use formats::data::{
+    geldmenu_dat, geldmenu_txt, hausname, infobox_dat, infobox_txt, message_media_names, modatyp, modatyp_txt,
+    nachrich, sabotage, sabotext, sonstige, text_lines, uebermap_dat, uebermap_txt,
+};
+use formats::highscore::HighScores;
+use game::auktionsform;
+use game::command::{self, Command};
+use game::endeform::{self, Endeform};
+use game::fernseher::{self, Fernseher};
+use game::geldmenu::{self, Geldmenuform};
+use game::hauptschirm::{self, Hauptschirm};
+use game::helpform::{self, Helpform};
+use game::highscoreform::{self, Highscoreform};
+use game::infobox::{self, Infobox};
+use game::kompassform::{self, Kompassform};
+use game::optionen::{self, Optionenform, Settings};
+use game::pauseform::{self, Pauseform};
+use game::sabowin::{self, Sabowin};
+use game::savegame::Fields;
+use game::schlussform::{self, Results, Schlussform};
+use game::simulation::Tick;
+use game::text::Font;
+use game::uebersichtsmap::{self, Image, Uebersichtsmap};
+use game::umenuform::{self, Redraw, Umenuform};
+use game::widgets::ShiftState;
+use platform::{Button, Input};
+use vcl::form::{Form, Kind};
+use vcl::surface::Surface;
+use vcl::{Palette, Rect};
+
+use super::{Game, load_form, read, screen_size};
+
+/// The button bar's buttons whose forms this module opens. // 1010:2c8b
+const PAUSE_BUTTON: u8 = 1;
+const OPTIONS_BUTTON: u8 = 2;
+const TV_BUTTON: u8 = 3;
+const MONEY_BUTTON: u8 = 4;
+const OVERVIEW_BUTTON: u8 = 5;
+/// How often the overview map's scroll timers fire while an arrow is
+/// held (`Interval` 25 ms).
+const SCROLL_TIMER_MS: u32 = 25;
+
+/// The form that has the keyboard, besides the modal ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Focus {
+    Main,
+    Tv,
+    Money,
+    Overview,
+    Infobox,
+    Umenu,
+}
+
+/// The form a press went down on, which keeps the mouse until every
+/// button is up again (the VCL's capture).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Grab {
+    Pause,
+    Options,
+    Tv,
+    Money,
+    Overview(Image),
+    Compass,
+    Sabowin,
+    Infobox,
+    Umenu,
+    Ende,
+    Schluss,
+    High,
+}
+
+/// What the caller (`Holiday`) does after an event, because it needs more
+/// than the game: the saves, the start menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Request {
+    /// Open the file menu (button 0).
+    FileMenu,
+    /// The quit question's "OK": save `Last.map`, then the end film
+    /// (1020:3a1b, 1068:0f52).
+    Quit,
+    /// The game exits (1068:17ad).
+    Exit,
+    /// "Neues Spiel" on the end form: back to the start menu (1010:25dc).
+    NewGame,
+    /// Write the high scores (`HIGHSCOR.WAV`).
+    SaveHighScores,
+}
+
+/// The forms and their VCL forms.
+pub(crate) struct Forms {
+    pub settings: Settings,
+    pub pause: Pauseform,
+    pause_form: Form,
+    pub options: Optionenform,
+    options_form: Form,
+    pub tv: Fernseher,
+    tv_form: Form,
+    pub money: Geldmenuform,
+    money_form: Form,
+    pub overview: Uebersichtsmap,
+    overview_form: Form,
+    pub compass: Kompassform,
+    compass_form: Form,
+    sabowin_form: Form,
+    pub infobox: Infobox,
+    infobox_form: Form,
+    pub umenu: Umenuform,
+    umenu_form: Form,
+    pub ende: Endeform,
+    ende_form: Form,
+    pub schluss: Schlussform,
+    schluss_form: Form,
+    pub high: Highscoreform,
+    high_form: Form,
+    help: Helpform,
+    help_form: Form,
+    pub focus: Focus,
+    pub grab: Option<Grab>,
+    /// The caller's clock in ms, for the TV (`GetTickCount`).
+    pub now: u32,
+    /// Time since the overview map's scroll timers last fired.
+    since_scroll: u32,
+    /// The money menu's page needs the world again once the commands
+    /// are applied ([`geldmenu::Response::update`]).
+    money_update: bool,
+    /// The info box draws itself again once its command is applied.
+    infobox_redraw: bool,
+    /// The buildings' overview draws this again once its command is
+    /// applied.
+    umenu_redraw: Option<Redraw>,
+    /// The settings of a file the file menu is loading, for when it's
+    /// loaded.
+    pub loading_settings: Option<Settings>,
+    /// The last mouse x on `ButtonImage` or `Hauptbild`, for the tooltips
+    /// (`1110:7044`).
+    bar_x: i32,
+    pub requests: Vec<Request>,
+}
+
+/// `name` under `dir`, whatever the case of its letters.
+pub(crate) fn find(dir: &Path, name: &str) -> Option<PathBuf> {
+    let mut path = dir.to_path_buf();
+    for part in name.split('/') {
+        let found = std::fs::read_dir(&path)
+            .ok()?
+            .filter_map(Result::ok)
+            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(part))?;
+        path = found.path();
+    }
+    Some(path)
+}
+
+/// The bitmap `GRAFIK/name`, if it's there.
+fn picture(dir: &Path, name: &str) -> Option<Surface> {
+    let path = find(dir, &format!("GRAFIK/{name}"))?;
+    let bitmap = Bitmap::parse(&std::fs::read(path).ok()?).ok()?;
+    Some(Surface::from_bitmap(&bitmap))
+}
+
+fn bitmaps(dir: &Path, files: &[&str]) -> Vec<Surface> {
+    files
+        .iter()
+        .map(|f| picture(dir, f).unwrap_or_else(|| panic!("GRAFIK/{f} not found")))
+        .collect()
+}
+
+/// A data or text file the forms read, whatever the case of its name.
+fn text(dir: &Path, name: &str) -> Vec<u8> {
+    find(dir, name).map_or_else(|| read(dir, name), |p| std::fs::read(&p).unwrap_or_default())
+}
+
+/// The high scores: the player's file, else the CD's. // 1040:1ae0
+pub(crate) fn high_scores(dir: &Path, own: &Path) -> HighScores {
+    std::fs::read(own)
+        .ok()
+        .and_then(|d| HighScores::parse(&d))
+        .or_else(|| {
+            ["SOUND/HIGHSCOR.WAV", "SOUNDLO/HIGHSCOR.WAV"]
+                .iter()
+                .find_map(|n| HighScores::parse(&std::fs::read(find(dir, n)?).ok()?))
+        })
+        .expect("HIGHSCOR.WAV")
+}
+
+/// Puts `images` into `form` at `bounds` and paints it, if `visible`.
+fn paint_form(
+    form: &mut Form,
+    bounds: Rect,
+    visible: bool,
+    images: &[(&str, Rect, Option<&Surface>)],
+    screen: &mut Surface,
+    palette: &Palette,
+) {
+    form.components[0].bounds = bounds;
+    form.components[0].visible = visible;
+    if !visible {
+        return;
+    }
+    for &(name, rect, picture) in images {
+        if let Some(c) = form.component_mut(name) {
+            c.bounds = rect;
+            c.visible = picture.is_some();
+            if let Kind::Image { picture: p } = &mut c.kind {
+                *p = picture.cloned();
+            }
+        }
+    }
+    form.paint(screen, palette);
+}
+
+/// The mouse event's position and whether the left button changed.
+fn position(input: Input) -> Option<(i32, i32)> {
+    match input {
+        Input::MouseMove { x, y } | Input::MouseDown { x, y, .. } | Input::MouseUp { x, y, .. } => Some((x, y)),
+        _ => None,
+    }
+}
+
+fn left(input: Input) -> bool {
+    matches!(
+        input,
+        Input::MouseDown {
+            button: Button::Left,
+            ..
+        } | Input::MouseUp {
+            button: Button::Left,
+            ..
+        }
+    )
+}
+
+/// Today's date (the system's, as the original's `GetDate`), for the
+/// high scores: day, month, year.
+fn today() -> (u32, u32, i32) {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() / 86_400);
+    // Howard Hinnant's `civil_from_days`.
+    let z = i64::try_from(days).unwrap_or(0) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    (
+        u32::try_from(day).unwrap_or(1),
+        u32::try_from(month).unwrap_or(1),
+        i32::try_from(year).unwrap_or(1996),
+    )
+}
+
+impl Forms {
+    /// The forms of a game, as the game's set-up creates them, on the
+    /// main screen `screen` (for the overview's scroll position and view),
+    /// with the view's fields of the map `fields`.
+    #[allow(clippy::too_many_lines)] // One form after the other.
+    pub fn load(
+        dir: &Path,
+        exe: &[u8],
+        font: &Font,
+        info: &hauptschirm::InfoTexts,
+        settings: Settings,
+        high_scores: HighScores,
+        screen: &Hauptschirm,
+    ) -> Forms {
+        let size = screen_size();
+        let texts = sonstige(&text(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+        let modatyp = modatyp(&text(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT");
+        let (short_names, long_names) = hausname(&text(dir, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
+
+        // 1040:3a45, 1060:0789
+        let pause = Pauseform::new(bitmaps(dir, &pauseform::BITMAP_FILES));
+        let options = Optionenform::new(
+            font.clone(),
+            bitmaps(dir, &optionen::BITMAP_FILES),
+            text_lines(&text(dir, "TEXTE/OPTIONEN.TXT")),
+        );
+        // 1048:1ffd: the messages' pictures, by `FILENAME.DAT`.
+        let pictures = message_media_names(&text(dir, "DATA/FILENAME.DAT"))
+            .iter()
+            .map(|name| picture(dir, &auktionsform::picture_file(name)))
+            .collect();
+        let tv = Fernseher::new(
+            font.clone(),
+            bitmaps(dir, &fernseher::BITMAP_FILES),
+            pictures,
+            nachrich(&text(dir, "TEXTE/NACHRICH.TXT")),
+            message_media_names(&text(dir, "DATA/FILMNAME.DAT")),
+            size,
+        );
+        // 1070:2e6c
+        let (geldmenu_texts, close) = geldmenu_txt(&text(dir, "TEXTE/GELDMENU.TXT")).expect("GELDMENU.TXT");
+        let (advertising, renovation) = modatyp_txt(&text(dir, "TEXTE/MODATYP.TXT"));
+        let money = Geldmenuform::new(
+            font.clone(),
+            bitmaps(dir, &geldmenu::BITMAP_FILES),
+            geldmenu_dat(&text(dir, "DATA/GELDMENU.DAT")).expect("GELDMENU.DAT"),
+            geldmenu::Texts {
+                geldmenu: geldmenu_texts,
+                close,
+                sonstige: texts.texts.clone(),
+                short: texts.short_texts.clone(),
+                advertising,
+                renovation,
+                info: info.clone(),
+            },
+            size.0,
+        );
+        // 10b8:4e9e, 1038:3557
+        let (wo, ns) = screen.scroll_position();
+        let overview = Uebersichtsmap::new(
+            font.clone(),
+            bitmaps(dir, &uebersichtsmap::BITMAP_FILES),
+            &uebermap_dat(&text(dir, "DATA/UEBERMAP.DAT")).expect("UEBERMAP.DAT"),
+            &uebermap_txt(&text(dir, "TEXTE/UEBERMAP.TXT")).expect("UEBERMAP.TXT"),
+            texts.texts.get(13).map_or(&[][..], |t| &t[..]),
+            modatyp.max_grueneinfluss,
+            (wo, ns, screen.camera().view),
+        );
+        let compass = Kompassform::new(font.clone(), bitmaps(dir, &kompassform::BITMAP_FILES), size.0);
+        // 1038:3c2b, 1080:0ea8
+        let ib_texts = infobox_txt(&text(dir, "TEXTE/INFOBOX.TXT")).expect("INFOBOX.TXT");
+        let short_texts = ib_texts.short_texts.clone();
+        let infobox = Infobox::new(
+            infobox_dat(&text(dir, "DATA/INFOBOX.DAT")).expect("INFOBOX.DAT"),
+            ib_texts,
+            long_names,
+            texts.texts.clone(),
+            bitmaps(dir, &infobox::BITMAP_FILES),
+        );
+        let umenu = Umenuform::new(
+            bitmaps(dir, &umenuform::BITMAP_FILES),
+            text_lines(&text(dir, "TEXTE/UMENU.TXT")),
+            short_texts,
+            short_names,
+        );
+        let ende = Endeform::new(font.clone(), bitmaps(dir, &endeform::BITMAP_FILES), texts.texts.clone());
+        let schluss = Schlussform::new(
+            font.clone(),
+            bitmaps(dir, &schlussform::BITMAP_FILES),
+            schlussform::schluss_lines(&text(dir, "TEXTE/SCHLUSS.TXT")),
+        );
+        let high = Highscoreform::new(
+            font.clone(),
+            bitmaps(dir, &highscoreform::BITMAP_FILES),
+            highscoreform::highscor_lines(&text(dir, "TEXTE/HIGHSCOR.TXT")),
+            high_scores,
+        );
+        let help = Helpform::new(
+            font.clone(),
+            picture(dir, helpform::BITMAP_FILE).expect("Help.bmp"),
+            texts.short_texts.clone(),
+        );
+        Forms {
+            settings,
+            pause,
+            pause_form: load_form(exe, "TPAUSEFORM"),
+            options,
+            options_form: load_form(exe, "TOPTIONENFORM"),
+            tv,
+            tv_form: load_form(exe, "TFERNSEHER"),
+            money,
+            money_form: load_form(exe, "TGELDMENUFORM"),
+            overview,
+            overview_form: load_form(exe, "TUEBERSICHTSMAP2"),
+            compass,
+            compass_form: load_form(exe, "TKOMPASSFORM"),
+            sabowin_form: load_form(exe, "TSABOWIN"),
+            infobox,
+            infobox_form: load_form(exe, "TINFOBOX2"),
+            umenu,
+            umenu_form: load_form(exe, "TUMENUFORM"),
+            ende,
+            ende_form: load_form(exe, "TENDEFORM"),
+            schluss,
+            schluss_form: load_form(exe, "TSCHLUSSFORM"),
+            high,
+            high_form: load_form(exe, "THIGHSCOREFORM"),
+            help,
+            help_form: load_form(exe, "THELPFORM"),
+            focus: Focus::Main,
+            grab: None,
+            now: 0,
+            since_scroll: 0,
+            money_update: false,
+            infobox_redraw: false,
+            umenu_redraw: None,
+            loading_settings: None,
+            bar_x: 0,
+            requests: Vec::new(),
+        }
+    }
+
+    /// The sabotage window (`TSabowin`, 1028:361f), which the tools keep.
+    pub fn sabowin(dir: &Path, font: &Font, info: &hauptschirm::InfoTexts) -> Sabowin {
+        let (labels, kinds) = sabotage(&text(dir, "TEXTE/SABOTAGE.TXT")).expect("SABOTAGE.TXT");
+        let pictures = sabowin::picture_files(&kinds)
+            .iter()
+            .map(|f| picture(dir, f).unwrap_or_else(|| panic!("GRAFIK/{f} not found")))
+            .collect();
+        let texts = sabowin::Texts {
+            sabotext: sabotext(&text(dir, "TEXTE/SABOTEXT.TXT")),
+            labels,
+            kinds,
+            info: info.clone(),
+        };
+        Sabowin::new(font.clone(), bitmaps(dir, &sabowin::BITMAP_FILES), pictures, texts)
+    }
+
+    /// A form is up that stops the clock (1020:24a0): the pause, the
+    /// options, the quit question, the end form and the high scores. Single
+    /// human: in the original this stops the game for everyone; the view
+    /// just doesn't tick meanwhile.
+    pub fn clock_stopped(&self) -> bool {
+        self.pause.visible || self.options.visible || self.ende.visible || self.schluss.visible() || self.high.visible
+    }
+
+    /// A form is up that disables the others (`disable_forms`, 1010:2970):
+    /// those that stop the clock, and the info box with buttons.
+    pub fn modal(&self) -> bool {
+        self.clock_stopped() || (self.infobox.visible && self.infobox.modal)
+    }
+
+    /// Paints the forms over the main screen, in the order they lie.
+    pub fn paint(&mut self, tools_sabowin: Option<&Sabowin>, screen: &mut Surface, palette: &Palette) {
+        let m = &self.money;
+        let layout = m.layout();
+        let images: Vec<_> = m
+            .images()
+            .iter()
+            .zip(layout)
+            .map(|(&(name, s), (_, r))| (name, r, Some(s)))
+            .collect();
+        paint_form(&mut self.money_form, m.bounds(), m.shown(), &images, screen, palette);
+        let o = &self.overview;
+        let images: Vec<_> = o.images().iter().map(|&(i, r, s)| (i.name(), r, Some(s))).collect();
+        paint_form(
+            &mut self.overview_form,
+            o.bounds(),
+            o.visible(),
+            &images,
+            screen,
+            palette,
+        );
+        if let Some(s) = tools_sabowin {
+            let images = [(
+                "Saboimage",
+                Rect::new(0, 0, sabowin::WIDTH, sabowin::HEIGHT),
+                Some(s.image()),
+            )];
+            paint_form(&mut self.sabowin_form, s.bounds(), s.visible, &images, screen, palette);
+        }
+        let u = &self.umenu;
+        let images: Vec<_> = u.images().iter().map(|&(n, r, s)| (n, r, Some(s))).collect();
+        paint_form(&mut self.umenu_form, u.bounds(), u.visible, &images, screen, palette);
+        let b = &self.infobox;
+        let images: Vec<_> = b.images().iter().map(|&(n, r, s)| (n, r, Some(s))).collect();
+        paint_form(&mut self.infobox_form, b.bounds(), b.visible, &images, screen, palette);
+        let t = &self.tv;
+        let images: Vec<_> = t
+            .images()
+            .iter()
+            .zip(fernseher::LAYOUT)
+            .map(|(&(n, s), (_, r))| (n, r, Some(s)))
+            .collect();
+        paint_form(&mut self.tv_form, t.bounds(), t.visible, &images, screen, palette);
+        let k = &self.compass;
+        let images = [(
+            "Bild",
+            Rect::new(0, 0, kompassform::WIDTH, kompassform::HEIGHT),
+            Some(&k.image),
+        )];
+        paint_form(
+            &mut self.compass_form,
+            k.bounds(),
+            k.visible(),
+            &images,
+            screen,
+            palette,
+        );
+        let p = &self.pause;
+        let images = [(pauseform::LAYOUT[0].0, pauseform::LAYOUT[0].1, Some(p.image()))];
+        paint_form(&mut self.pause_form, p.bounds(), p.visible, &images, screen, palette);
+        let o = &self.options;
+        let images = [(optionen::LAYOUT[0].0, optionen::LAYOUT[0].1, Some(o.image()))];
+        paint_form(&mut self.options_form, o.bounds(), o.visible, &images, screen, palette);
+        let e = &self.ende;
+        let images = [(
+            endeform::IMAGE,
+            Rect::new(0, 0, endeform::WIDTH, endeform::HEIGHT),
+            Some(e.image()),
+        )];
+        paint_form(&mut self.ende_form, e.bounds(), e.visible, &images, screen, palette);
+        let s = &self.schluss;
+        let images = s.components();
+        paint_form(
+            &mut self.schluss_form,
+            s.bounds(),
+            s.visible(),
+            &images,
+            screen,
+            palette,
+        );
+        let h = &self.high;
+        let images = [(
+            highscoreform::IMAGE,
+            Rect::new(0, 0, highscoreform::WIDTH, highscoreform::HEIGHT),
+            Some(h.image()),
+        )];
+        paint_form(&mut self.high_form, h.bounds(), h.visible, &images, screen, palette);
+        let h = &self.help;
+        let images = [(
+            helpform::IMAGE,
+            Rect::new(0, 0, helpform::WIDTH, helpform::HEIGHT),
+            Some(h.image()),
+        )];
+        paint_form(&mut self.help_form, h.bounds(), h.visible(), &images, screen, palette);
+    }
+
+    /// The form's bounds on the screen while the grab's form is shown.
+    fn grab_bounds(&self, g: Grab, sabowin: Option<&Sabowin>) -> Option<Rect> {
+        let shown = |v: bool, r: Rect| v.then_some(r);
+        match g {
+            Grab::Pause => shown(self.pause.visible, self.pause.bounds()),
+            Grab::Options => shown(self.options.visible, self.options.bounds()),
+            Grab::Tv => shown(self.tv.visible, self.tv.bounds()),
+            Grab::Money => shown(self.money.shown(), self.money.bounds()),
+            Grab::Overview(_) => shown(self.overview.visible(), self.overview.bounds()),
+            Grab::Compass => shown(self.compass.visible(), self.compass.bounds()),
+            Grab::Sabowin => sabowin.and_then(|s| shown(s.visible, s.bounds())),
+            Grab::Infobox => shown(self.infobox.visible, self.infobox.bounds()),
+            Grab::Umenu => shown(self.umenu.visible, self.umenu.bounds()),
+            Grab::Ende => shown(self.ende.visible, self.ende.bounds()),
+            Grab::Schluss => shown(self.schluss.visible(), self.schluss.bounds()),
+            Grab::High => shown(self.high.visible, self.high.bounds()),
+        }
+    }
+}
+
+fn inside(r: Rect, x: i32, y: i32) -> bool {
+    (r.left..r.right).contains(&x) && (r.top..r.bottom).contains(&y)
+}
+
+impl Game {
+    /// Hands `actions` to the world as the human's commands.
+    fn commands(&mut self, actions: impl IntoIterator<Item = command::Action>) {
+        // Single human: the original's player 1.
+        self.commands
+            .extend(actions.into_iter().map(|action| Command { player: 1, action }));
+    }
+
+    /// The form that has the keyboard: the build menu's and the sabotage
+    /// window's flags are the tools'.
+    pub(crate) fn set_focus(&mut self, focus: Focus) {
+        self.forms.focus = focus;
+        self.tools.menu_focused = false;
+        self.tools.sabowin_focused = false;
+    }
+
+    /// After the main screen's view moved or turned: the overview map's
+    /// frame (10b8:1485) and the compass's buttons follow.
+    pub(crate) fn main_view_changed(&mut self) {
+        let (wo, ns) = self.screen.scroll_position();
+        let view = self.screen.camera().view;
+        self.forms.overview.set_main_view(wo, ns, view);
+        if self.forms.compass.visible() {
+            self.forms.compass.update(view);
+        }
+    }
+
+    /// Button `b` of the button bar, 1 to 5 (1010:2c8b): its form opens,
+    /// or closes if it's open.
+    pub(crate) fn form_button(&mut self, b: u8) {
+        let size = screen_size();
+        self.tools.button = b; // 1110:5fbe
+        match b {
+            PAUSE_BUTTON => {
+                // 1040:3a45: the clock stops, the button help hides.
+                self.tools.down[usize::from(b)] = true;
+                self.screen.draw_buttons(&self.tools.down);
+                self.forms.help.hide();
+                self.forms.pause.show(size);
+            }
+            OPTIONS_BUTTON => {
+                if !self.forms.options.visible {
+                    self.tools.down[usize::from(b)] = true;
+                    self.screen.draw_buttons(&self.tools.down);
+                    self.forms.help.hide();
+                    // The port always has sound (`1110:0062`).
+                    let settings = self.forms.settings;
+                    self.forms.options.show(&settings, &self.world, true, size);
+                }
+            }
+            TV_BUTTON => {
+                let r = if self.forms.tv.visible {
+                    self.forms.tv.close()
+                } else {
+                    self.forms.tv.show(&self.world, &self.info, self.forms.now)
+                };
+                self.tv_response(r);
+            }
+            MONEY_BUTTON => {
+                let r = if self.forms.money.shown() {
+                    self.forms.money.close()
+                } else {
+                    self.tools.down[usize::from(b)] = true;
+                    self.screen.draw_buttons(&self.tools.down);
+                    self.forms.money.show(0, b)
+                };
+                self.money_response(r);
+            }
+            OVERVIEW_BUTTON => {
+                let down = !self.tools.down[usize::from(b)];
+                self.tools.down[usize::from(b)] = down;
+                self.screen.draw_buttons(&self.tools.down);
+                let r = if down {
+                    let r = self.forms.overview.open(&self.world);
+                    self.set_focus(Focus::Overview);
+                    r
+                } else {
+                    self.forms.overview.close()
+                };
+                self.overview_response(r);
+            }
+            _ => {}
+        }
+    }
+
+    /// The pointer's press or release asked for the info box
+    /// ([`game::tools::Tools::info_box`]). // 1020:04bc, 1020:050b
+    pub(crate) fn take_info_box(&mut self) {
+        let Some(request) = self.tools.info_box.take() else {
+            return;
+        };
+        match request {
+            infobox::Request::Show { square, mouse, modal } => {
+                let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
+                let main = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT - 1);
+                self.forms
+                    .infobox
+                    .show(&self.world, &self.font, &self.info, square, mouse, main, modal);
+                self.set_focus(Focus::Infobox);
+            }
+            infobox::Request::Hide => {
+                let r = self.forms.infobox.hide();
+                self.infobox_response(r);
+            }
+        }
+    }
+
+    /// What the forms make of a tick or command: the overview map, the TV,
+    /// the info box, the buildings' overview, the money menu, the year's
+    /// balance and the end of the game. Whether anything changed.
+    pub(crate) fn forms_tick(&mut self, t: &Tick) -> bool {
+        let mut changed = false;
+        if t.loaded {
+            // A game loaded from the file menu: the view's fields of its
+            // file (1048:2a19).
+            if let Some(s) = self.forms.loading_settings.take() {
+                self.forms.settings = s;
+            }
+            let rest = self.view_rest.clone();
+            self.forms.overview.load(&rest);
+            self.forms.tv.load_fields(&rest);
+            let r = self.forms.tv.close();
+            self.tv_response(r);
+            self.forms.umenu.hide();
+            let r = self.forms.money.loaded(&self.world);
+            self.money_response(r);
+            self.main_view_changed();
+            changed = true;
+        } else if self.forms.money.shown() && t.books {
+            self.forms.money.update(&self.world);
+            changed = true;
+        }
+        changed |= self.forms.overview.show_tick(&self.world, t);
+        let r = self.forms.tv.news(
+            &t.news,
+            self.forms.settings.news,
+            &self.world,
+            &self.info,
+            self.forms.now,
+        );
+        changed |= self.tv_response(r);
+        if let Some(r) = self.forms.infobox.world_changed(&self.world, t) {
+            self.infobox_response(r);
+            changed = true;
+        }
+        if t.umenu && self.forms.umenu.visible {
+            changed |= self.forms.umenu.refresh(&self.world, &self.font, &self.info);
+        }
+        if t.new_year && self.forms.settings.year_balance {
+            // 1008:4f87: the balance sheet.
+            let r = self.forms.money.show(1, self.tools.button);
+            self.money_response(r);
+            changed = true;
+        }
+        if let Some(over) = t.game_over {
+            self.game_over(&over);
+            changed = true;
+        }
+        changed
+    }
+
+    /// The end of the game (1068:1058): the high score for a fair win,
+    /// the TV off, the end form with its film and results. The clock
+    /// stands while it's up.
+    fn game_over(&mut self, over: &game::simulation::GameOver) {
+        let results = Results::of(&self.world, over, self.info.currency_factor, self.info.land);
+        if let Some(score) = over.score {
+            let (d, m, y) = today();
+            let name = self.world.player_names.get(1).cloned().unwrap_or_default();
+            let date = highscoreform::date_text(d, m, y);
+            let r = self
+                .forms
+                .high
+                .add(self.world.scenario, &name, &date, &results.net_worth, score);
+            if r.save {
+                self.forms.requests.push(Request::SaveHighScores);
+            }
+        }
+        let r = self.forms.tv.close();
+        self.tv_response(r);
+        self.forms.help.hide();
+        let music = self.forms.settings.music;
+        let r = self.forms.schluss.open_end(results, music, screen_size());
+        self.schluss_response(r);
+    }
+
+    /// The overview map's scroll timers (10b8:21c7) and the tooltips,
+    /// for `ms` of time.
+    pub(crate) fn forms_timers(&mut self, ms: u32) -> bool {
+        self.forms.now = self.forms.now.wrapping_add(ms);
+        let mut changed = false;
+        if self.forms.overview.scrolling() {
+            self.forms.since_scroll += ms;
+            while self.forms.since_scroll >= SCROLL_TIMER_MS {
+                self.forms.since_scroll -= SCROLL_TIMER_MS;
+                changed |= self.forms.overview.scroll_timers(&self.world);
+            }
+        } else {
+            self.forms.since_scroll = 0;
+        }
+        changed
+    }
+
+    /// The clock's step for the TV (8, 1048:1b3e) and the tooltips (3,
+    /// 1020:1e9b). Whether anything changed.
+    pub(crate) fn forms_clock_tick(&mut self) -> bool {
+        let mut changed = false;
+        if self.forms.tv.visible {
+            let r = self.forms.tv.timer(&self.world, self.forms.now);
+            changed |= self.tv_response(r);
+        }
+        changed | self.tooltips()
+    }
+
+    /// The tooltips (`1110:0060`, 1020:1e9b): the button bar's under the
+    /// mouse, else the money menu's tabs, else the overview map's buttons.
+    fn tooltips(&mut self) -> bool {
+        if !self.forms.settings.button_help {
+            return self.forms.help.hide();
+        }
+        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
+        let main = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT);
+        let ready = !self.forms.modal();
+        // The build menu and the sabotage window take the focus from the
+        // main screen.
+        let focus = if self.tools.menu_focused || self.tools.sabowin_focused {
+            None
+        } else {
+            Some(self.forms.focus)
+        };
+        // In the original's order, the last one found wins: the money
+        // menu's tabs (1020:1e9b), the overview map's buttons (1020:1fe2)
+        // and the button bar (1020:2115).
+        let mut tip = None;
+        if ready {
+            tip = self
+                .forms
+                .money
+                .tooltip(self.mouse.0, self.mouse.1, focus == Some(Focus::Money))
+                .and_then(|(t, l, tp)| Some((u8::try_from(t).ok()?, tp, l)));
+        }
+        if ready && focus == Some(Focus::Overview) && self.forms.overview.visible() {
+            let o = &self.forms.overview;
+            let (x, y) = (self.mouse.0 - o.left, self.mouse.1 - o.top);
+            let menu = o
+                .images()
+                .iter()
+                .find(|(i, _, _)| *i == Image::Menu)
+                .map(|&(_, r, _)| r);
+            if let Some(menu) = menu
+                && let Some((t, l, bottom)) = o.help_text_at(x - menu.left, y - menu.top)
+            {
+                tip = Some((t, bottom + menu.top + o.top, l + menu.left + o.left));
+            }
+        }
+        let bar = helpform::button_bar_tooltip(main, self.mouse, self.forms.bar_x, ready && focus == Some(Focus::Main));
+        tip = bar.or(tip);
+        match tip {
+            Some((t, tp, l)) => self.forms.help.show(t, tp, l, screen_size()),
+            None => self.forms.help.hide(),
+        }
+    }
+
+    /// Remembers the mouse's x on `ButtonImage` or `Hauptbild`, for the
+    /// tooltips. // 1018:3e46
+    pub(crate) fn bar_mouse(&mut self, fx: i32) {
+        self.forms.bar_x = fx;
+    }
+
+    /// After the commands were applied: what the forms draw again from the
+    /// world.
+    pub(crate) fn forms_after_commands(&mut self) -> bool {
+        let mut changed = false;
+        if std::mem::take(&mut self.forms.money_update) {
+            self.forms.money.update(&self.world);
+            changed = true;
+        }
+        if std::mem::take(&mut self.forms.infobox_redraw) && self.forms.infobox.visible {
+            self.forms.infobox.redraw(&self.world, &self.font, &self.info);
+            changed = true;
+        }
+        if let Some(r) = self.forms.umenu_redraw.take() {
+            self.forms.umenu.redraw(r, &self.world, &self.font, &self.info);
+            changed = true;
+        }
+        changed
+    }
+
+    fn tv_response(&mut self, r: fernseher::Response) -> bool {
+        self.commands(r.actions);
+        if r.shown {
+            self.tools.down[usize::from(TV_BUTTON)] = true;
+            self.screen.draw_buttons(&self.tools.down);
+            self.set_focus(Focus::Tv);
+            let h = self.forms.infobox.hide();
+            self.infobox_response(h);
+        }
+        if r.hidden {
+            self.tools.down[usize::from(TV_BUTTON)] = false;
+            self.screen.draw_buttons(&self.tools.down);
+            if self.forms.focus == Focus::Tv {
+                self.set_focus(Focus::Main);
+            }
+        }
+        if let Some(p) = r.scroll {
+            self.screen.jump_to(p, &self.world, &self.tiles); // 1020:0787
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            self.main_view_changed();
+        }
+        r.refresh || r.shown || r.hidden || r.scroll.is_some()
+    }
+
+    fn money_response(&mut self, r: geldmenu::Response) {
+        self.commands(r.commands);
+        self.forms.money_update |= r.update;
+        if r.opened {
+            self.set_focus(Focus::Money);
+            let h = self.forms.infobox.hide();
+            self.infobox_response(h);
+        }
+        if r.closed {
+            self.tools.down[usize::from(MONEY_BUTTON)] = false; // 1010:2ade
+            self.screen.draw_buttons(&self.tools.down);
+            self.set_focus(Focus::Main);
+        }
+        if r.overview {
+            self.open_umenu();
+        }
+        if r.focus_main {
+            self.set_focus(Focus::Main);
+        }
+        if let Some((key, shift)) = r.main_screen_key {
+            self.main_screen_key(key, shift);
+        }
+    }
+
+    fn overview_response(&mut self, r: uebersichtsmap::Response) {
+        if let Some((wo, ns)) = r.scroll {
+            self.screen.set_scroll(wo, ns, &self.world, &self.tiles);
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            self.main_view_changed();
+        }
+        if r.draw_main {
+            self.screen.paint_map(&self.world, &self.tiles);
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+        }
+        if r.closed {
+            self.tools.down[usize::from(OVERVIEW_BUTTON)] = false; // 1010:2b37
+            self.screen.draw_buttons(&self.tools.down);
+            self.set_focus(Focus::Main);
+        }
+        if r.focus_main {
+            self.set_focus(Focus::Main);
+        }
+        self.commands(r.action);
+        if let Some((key, shift)) = r.key {
+            self.main_screen_key(key, shift);
+        }
+    }
+
+    fn compass_response(&mut self, r: &kompassform::Response) {
+        if r.knob {
+            self.forms.compass.draw_knob(&mut self.screen.corner);
+        }
+        if let Some(view) = r.view {
+            self.set_view(view);
+        }
+    }
+
+    /// The view turns to `view` (1010:254d): the island, the build menu's
+    /// picture, the overview map and the compass.
+    pub(crate) fn set_view(&mut self, view: u8) {
+        self.screen.set_view(view, &self.world, &self.tiles);
+        self.screen
+            .show_people(&self.world, &self.tiles, &self.font, &self.info);
+        let view = self.screen.camera().view;
+        self.tools
+            .menu
+            .view_turned(&self.world, &self.font, &self.tiles, &self.info, view);
+        self.main_view_changed();
+    }
+
+    fn infobox_response(&mut self, r: infobox::Response) {
+        if let Some(a) = r.action {
+            self.commands([a]);
+            self.forms.infobox_redraw = true;
+        }
+        if r.closed && self.forms.focus == Focus::Infobox {
+            self.set_focus(Focus::Main);
+        }
+        if r.open_overview {
+            self.open_umenu();
+        }
+    }
+
+    /// The buildings' overview opens (1080:0ea8), with the focus.
+    fn open_umenu(&mut self) {
+        self.forms
+            .umenu
+            .open(&self.world, &self.font, &self.info, screen_size());
+        self.set_focus(Focus::Umenu);
+    }
+
+    fn umenu_response(&mut self, r: umenuform::Response) {
+        if let Some(a) = r.action {
+            self.commands([a]);
+            self.forms.umenu_redraw = r.redraw;
+        } else if let Some(redraw) = r.redraw {
+            self.forms.umenu.redraw(redraw, &self.world, &self.font, &self.info);
+        }
+        if let Some(pos) = r.jump {
+            self.screen.jump_to(pos, &self.world, &self.tiles); // 1020:0787
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            self.main_view_changed();
+        }
+        if r.closed {
+            self.set_focus(Focus::Main);
+        }
+    }
+
+    fn options_response(&mut self, r: optionen::Response) {
+        self.commands(r.commands);
+        self.forms.settings = *self.forms.options.settings();
+        for change in r.changes {
+            if change == optionen::Change::Pointers {
+                // 1060:0656
+                self.screen.camera.owner_pointers = self.forms.settings.owner_pointers;
+                self.screen.camera.occupancy_pointers = self.forms.settings.occupancy_pointers;
+                self.screen.paint_map(&self.world, &self.tiles);
+                self.screen
+                    .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            }
+            // The music and the volumes aren't played yet.
+        }
+        match r.action {
+            Some(optionen::Action::Close) => {
+                self.forms.options.visible = false;
+                self.tools.down[usize::from(OPTIONS_BUTTON)] = false;
+                self.screen.draw_buttons(&self.tools.down);
+                self.set_focus(Focus::Main);
+            }
+            Some(optionen::Action::Highscores) => {
+                // 1040:2579: over the options, which wait for it.
+                let r = self.forms.high.show(self.world.scenario, true, screen_size());
+                if r.save {
+                    self.forms.requests.push(Request::SaveHighScores);
+                }
+            }
+            // `TCreditform` isn't ported.
+            Some(optionen::Action::Credits) | None => {}
+        }
+    }
+
+    fn ende_response(&mut self, r: &endeform::Response) {
+        match r.action {
+            // The form hid itself; the clock runs again (1020:24b7).
+            Some(endeform::Action::Close) => self.set_focus(Focus::Main),
+            Some(endeform::Action::Quit) => self.forms.requests.push(Request::Quit),
+            None => {}
+        }
+    }
+
+    pub(crate) fn schluss_response(&mut self, r: schlussform::Response) {
+        // The films aren't played: each ends as it starts (1068:17ad).
+        let r = if r.film.is_some() {
+            let first = r.action;
+            let ended = self.forms.schluss.film_ended(screen_size());
+            schlussform::Response {
+                action: ended.action.or(first),
+                ..ended
+            }
+        } else {
+            r
+        };
+        match r.action {
+            Some(schlussform::Action::Continue { .. }) => self.set_focus(Focus::Main),
+            Some(schlussform::Action::HighScores) => {
+                let r = self.forms.high.show(self.world.scenario, false, screen_size());
+                if r.save {
+                    self.forms.requests.push(Request::SaveHighScores);
+                }
+            }
+            Some(schlussform::Action::NewGame) => self.forms.requests.push(Request::NewGame),
+            Some(schlussform::Action::Exit) => self.forms.requests.push(Request::Exit),
+            None => {}
+        }
+    }
+
+    fn high_response(&mut self, r: &highscoreform::Response) {
+        if r.save {
+            self.forms.requests.push(Request::SaveHighScores);
+        }
+    }
+
+    fn sabowin_response(&mut self, r: &sabowin::Response) {
+        if r.close.is_some() {
+            self.set_focus(Focus::Main);
+        }
+        self.show_tools();
+    }
+
+    /// Opens the quit question, unless the game is quitting.
+    /// // 1020:0480, 1020:0577
+    pub(crate) fn open_ende(&mut self) {
+        if self.forms.ende.open(screen_size()) {
+            self.forms.help.hide();
+        }
+    }
+
+    /// The form under the screen's `x`, `y` that takes a press, top first,
+    /// among those the modal forms leave.
+    fn form_at(&self, x: i32, y: i32) -> Option<Grab> {
+        let f = &self.forms;
+        let order: &[Grab] = if f.high.visible {
+            &[Grab::High]
+        } else if f.schluss.visible() {
+            &[Grab::Schluss]
+        } else if f.ende.visible {
+            &[Grab::Ende]
+        } else if f.options.visible {
+            &[Grab::Options]
+        } else if f.pause.visible {
+            &[Grab::Pause]
+        } else if f.infobox.visible && f.infobox.modal {
+            &[Grab::Tv, Grab::Infobox]
+        } else {
+            &[
+                Grab::Compass,
+                Grab::Tv,
+                Grab::Infobox,
+                Grab::Umenu,
+                Grab::Sabowin,
+                Grab::Money,
+                Grab::Overview(Image::Map),
+            ]
+        };
+        let sabowin = self.tools.sabowin.as_ref();
+        order.iter().copied().find_map(|g| {
+            let r = f.grab_bounds(g, sabowin)?;
+            if !inside(r, x, y) {
+                return None;
+            }
+            match g {
+                Grab::Overview(_) => {
+                    let (image, _, _) = f.overview.image_at(x - r.left, y - r.top)?;
+                    Some(Grab::Overview(image))
+                }
+                Grab::Sabowin => sabowin?.contains(x - r.left, y - r.top).then_some(g),
+                _ => Some(g),
+            }
+        })
+    }
+
+    /// A mouse event for the forms of this module: whether one of them
+    /// took it (and the screen needs painting), or the event goes on to
+    /// the auction form, the build menu and the main screen. A modal form
+    /// takes every press, wherever it is.
+    #[allow(clippy::too_many_lines)] // One form after the other.
+    pub(crate) fn forms_mouse(&mut self, input: Input, shift: ShiftState, buttons_up: bool) -> bool {
+        let Some((sx, sy)) = position(input) else { return false };
+        let grab = match (self.forms.grab, input) {
+            (Some(g), _) => Some(g),
+            (None, Input::MouseDown { .. }) => self.form_at(sx, sy),
+            _ => None,
+        };
+        let Some(grab) = grab else {
+            // Over a modal form's back, nothing else takes the mouse.
+            return self.forms.modal() && !matches!(input, Input::MouseMove { .. });
+        };
+        let Some(bounds) = self.forms.grab_bounds(grab, self.tools.sabowin.as_ref()) else {
+            self.forms.grab = None;
+            return false;
+        };
+        match input {
+            Input::MouseDown { .. } => self.forms.grab = Some(grab),
+            Input::MouseUp { .. } if buttons_up => self.forms.grab = None,
+            _ => {}
+        }
+        let (x, y) = (sx - bounds.left, sy - bounds.top);
+        let size = screen_size();
+        let down = matches!(input, Input::MouseDown { .. });
+        let up = matches!(input, Input::MouseUp { .. });
+        let l = left(input);
+        match grab {
+            Grab::Pause => {
+                // `PausebildClick`: a release over the picture.
+                if up && inside(Rect::new(0, 0, pauseform::WIDTH, pauseform::HEIGHT), x, y) {
+                    let pauseform::Action::Close = self.forms.pause.click();
+                    self.close_pause();
+                }
+            }
+            Grab::Options => {
+                let r = if down {
+                    self.forms.options.mouse_down(x, y, shift)
+                } else if up {
+                    self.forms.options.mouse_up(x, y)
+                } else {
+                    self.forms.options.mouse_move(x, y, shift, size)
+                };
+                self.options_response(r);
+            }
+            Grab::Tv => {
+                self.set_focus(Focus::Tv);
+                if down {
+                    let r = self.forms.tv.mouse_down(x, y, shift);
+                    self.tv_response(r);
+                } else if up {
+                    let r = self.forms.tv.mouse_up(x, y, &self.world, &self.info);
+                    self.tv_response(r);
+                } else {
+                    self.forms.tv.mouse_move(x, y, shift, size);
+                }
+            }
+            Grab::Money => {
+                self.set_focus(Focus::Money);
+                let r = if down {
+                    self.forms.money.mouse_down(x, y, l, shift)
+                } else if up {
+                    self.forms.money.mouse_up(x, y, l)
+                } else {
+                    self.forms.money.mouse_move(x, y, shift, size)
+                };
+                self.money_response(r);
+            }
+            Grab::Overview(image) => {
+                self.set_focus(Focus::Overview);
+                let r = self.overview_mouse(image, input, (x, y), (sx, sy), shift);
+                self.overview_response(r);
+            }
+            Grab::Compass => {
+                let r = if down {
+                    self.forms.compass.mouse_down(x, y, shift, (sx, sy))
+                } else if up {
+                    self.forms.compass.mouse_up(x, y)
+                } else {
+                    self.forms.compass.mouse_move(shift, (sx, sy), size)
+                };
+                self.compass_response(&r);
+            }
+            Grab::Sabowin => {
+                self.tools.sabowin_focused = true;
+                self.tools.menu_focused = false;
+                let r = if down {
+                    self.tools.sabowin_mouse_down(x, y, l)
+                } else if up {
+                    self.tools.sabowin_mouse_up(x, y, l)
+                } else {
+                    self.tools.sabowin_mouse_move(x, y, shift, size)
+                };
+                self.sabowin_response(&r);
+            }
+            Grab::Infobox => {
+                self.set_focus(Focus::Infobox);
+                if down {
+                    let r = self.forms.infobox.mouse_down(x, y, &self.font);
+                    self.infobox_response(r);
+                } else if up {
+                    let (left, top) = Hauptschirm::position(size.0, size.1);
+                    let main = Rect::new(left, top, hauptschirm::WIDTH, hauptschirm::HEIGHT - 1);
+                    let r = self
+                        .forms
+                        .infobox
+                        .mouse_up(x, y, &self.world, &self.font, &self.info, main);
+                    self.infobox_response(r);
+                }
+            }
+            Grab::Umenu => {
+                self.set_focus(Focus::Umenu);
+                let (w, f, i) = (&self.world, &self.font, &self.info);
+                let r = if down {
+                    self.forms.umenu.mouse_down(x, y, shift, w, f, i)
+                } else if up {
+                    self.forms.umenu.mouse_up(x, y, w, f, i)
+                } else {
+                    self.forms.umenu.mouse_move(x, y, shift, w, f, i, size)
+                };
+                self.umenu_response(r);
+            }
+            Grab::Ende => {
+                let r = if down {
+                    self.forms.ende.mouse_down(x, y, l)
+                } else if up {
+                    self.forms.ende.mouse_up(x, y, l)
+                } else {
+                    self.forms.ende.mouse_move(x, y, shift, size)
+                };
+                self.ende_response(&r);
+            }
+            Grab::Schluss => {
+                let r = if down {
+                    self.forms.schluss.mouse_down(x, y)
+                } else if up {
+                    self.forms.schluss.mouse_up(x, y)
+                } else {
+                    schlussform::Response::default()
+                };
+                self.schluss_response(r);
+            }
+            Grab::High => {
+                let r = if down {
+                    self.forms.high.mouse_down(x, y, shift)
+                } else if up {
+                    self.forms.high.mouse_up(x, y)
+                } else {
+                    highscoreform::Response::default()
+                };
+                self.high_response(&r);
+            }
+        }
+        true
+    }
+
+    /// A mouse event on one of the overview map's images, at `local` in
+    /// it (`cursor` on the screen).
+    fn overview_mouse(
+        &mut self,
+        image: Image,
+        input: Input,
+        (fx, fy): (i32, i32),
+        cursor: (i32, i32),
+        shift: ShiftState,
+    ) -> uebersichtsmap::Response {
+        let o = &mut self.forms.overview;
+        let r = o.images().iter().find(|(i, _, _)| *i == image).map(|&(_, r, _)| r);
+        let r = r.unwrap_or_default();
+        let (x, y) = (fx - r.left, fy - r.top);
+        let w = &self.world;
+        let l = left(input);
+        match (image, input) {
+            (Image::Title, Input::MouseDown { .. }) => o.title_mouse_down(x, shift, cursor),
+            (Image::Title, Input::MouseUp { .. }) => o.title_mouse_up(x, y, w),
+            (Image::Title, _) => o.title_mouse_move(shift, cursor, screen_size()),
+            (Image::Toggle, Input::MouseDown { .. }) => o.toggle_mouse_down(l),
+            (Image::Toggle, Input::MouseUp { .. }) => o.toggle_mouse_up(x, y, l, w),
+            (Image::Scroll, Input::MouseDown { .. }) => o.scroll_mouse_down(y, w),
+            (Image::Scroll, Input::MouseUp { .. }) => o.scroll_mouse_up(),
+            (Image::Scroll, _) => o.scroll_mouse_move(y, shift, w),
+            (Image::Menu, Input::MouseDown { .. }) => o.menu_mouse_down(x, y, l, w),
+            (Image::Menu, Input::MouseUp { .. }) => o.menu_mouse_up(x, y, w),
+            (Image::Menu, _) => o.menu_mouse_move(x, shift, w),
+            (Image::Map, Input::MouseDown { .. }) => o.map_mouse_down(x, y, shift, w),
+            (Image::Map, Input::MouseUp { .. }) => o.map_mouse_up(l),
+            (Image::Map, _) => o.map_mouse_move(x, y, shift),
+            _ => uebersichtsmap::Response::default(),
+        }
+    }
+
+    /// The pause ends (1040:3bac): the form hides, the button comes up,
+    /// the clock runs again.
+    fn close_pause(&mut self) {
+        self.forms.pause.visible = false;
+        self.tools.down[usize::from(PAUSE_BUTTON)] = false;
+        self.screen.draw_buttons(&self.tools.down);
+        self.set_focus(Focus::Main);
+    }
+
+    /// A key for the forms of this module: the modal ones take every key,
+    /// the others the keys while they have the focus. Whether one took it;
+    /// if not it goes to the build menu or the main screen.
+    pub(crate) fn forms_key(&mut self, key: u16, shift: ShiftState) -> bool {
+        let size = screen_size();
+        if self.forms.high.visible {
+            // `Thighscoreform` has no keys.
+            return true;
+        }
+        if self.forms.schluss.visible() {
+            let r = self.forms.schluss.key_down(size);
+            self.schluss_response(r);
+            return true;
+        }
+        if self.forms.ende.visible {
+            let r = self.forms.ende.key_down(key);
+            self.ende_response(&r);
+            return true;
+        }
+        if self.forms.options.visible {
+            let r = self.forms.options.key_down(key, shift);
+            self.options_response(r);
+            return true;
+        }
+        if self.forms.pause.visible {
+            let pauseform::Action::Close = self.forms.pause.key_down(key);
+            self.close_pause();
+            return true;
+        }
+        if self.forms.infobox.visible && self.forms.infobox.modal {
+            if let Some(r) = self.forms.infobox.key_down(key, shift) {
+                self.infobox_response(r);
+            }
+            return true;
+        }
+        if self.tools.sabowin_focused {
+            let r = self.tools.sabowin_key_down(key, shift);
+            self.sabowin_response(&r);
+            return true;
+        }
+        if self.tools.menu_focused {
+            return false;
+        }
+        match self.forms.focus {
+            Focus::Main => false,
+            Focus::Tv => {
+                let r = self.forms.tv.key_down(key, shift, &self.world, &self.info);
+                self.tv_response(r);
+                true
+            }
+            Focus::Money => {
+                let r = self.forms.money.key_down(key, shift);
+                self.money_response(r);
+                true
+            }
+            Focus::Overview => {
+                let r = self.forms.overview.key_down(key, shift, &self.world);
+                self.overview_response(r);
+                true
+            }
+            Focus::Infobox => {
+                if let Some(r) = self.forms.infobox.key_down(key, shift) {
+                    self.infobox_response(r);
+                }
+                true
+            }
+            Focus::Umenu => {
+                let r = self
+                    .forms
+                    .umenu
+                    .key_down(key, shift, &self.world, &self.font, &self.info);
+                self.umenu_response(r);
+                true
+            }
+        }
+    }
+
+    /// What the forms add to the view's fields of the map file.
+    pub(crate) fn forms_save(&self, rest: &mut Fields) {
+        self.forms.overview.save(rest);
+        self.forms.tv.store_fields(rest);
+    }
+
+    pub(crate) fn paint_forms(&mut self, screen: &mut Surface, palette: &Palette) {
+        self.forms.paint(self.tools.sabowin.as_ref(), screen, palette);
+    }
+}

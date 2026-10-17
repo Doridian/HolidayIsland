@@ -89,7 +89,8 @@ restaurants, other buildings), 0x63–0x66 their costs, 0x67 new
 buildings, 0x68 advertising, 0x69 interest, 0x6a everything else
 (`Sonstiges`), 0x6b the year's total; last year's 13 kinds below.
 Every booking step also refreshes the money menu (1070:2617), which
-works out the total (1070:1452) if the menu is shown: `Tick::books`.
+works out the total (1070:1452) if the menu is shown: `Tick::books`
+([geldmenu.md](geldmenu.md)).
 
 Step 0x8b ends the month in the books' history (1070:210a): four rings
 of 120 months of a `Longint` per player (`*[1110:6f04]+0x24b`, `0xf0a`

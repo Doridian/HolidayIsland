@@ -236,8 +236,8 @@ impl World {
             self.auction_sold(tick);
         }
         if opening {
-            // The original waits while the TV shows a message
-            // (`1110:662d`); the TV isn't ported.
+            // The original waits while the TV's speaker reads a message
+            // (`1110:662d`); the speaker isn't ported (`crate::fernseher`).
             self.auction.opening = None;
             self.open_auction(tick);
             return;

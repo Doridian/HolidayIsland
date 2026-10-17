@@ -252,12 +252,12 @@ impl World {
                     match e.start {
                         0x2b => {
                             self.flood = false;
-                            self.disaster_end(); // 10a0:0cce
+                            self.disaster_end(tick); // 10a0:0cce
                             tick.redraw_all = true; // 1020:0d48
                         }
                         6 => {
                             self.earthquake = false;
-                            self.disaster_end(); // 10a0:0ddc
+                            self.disaster_end(tick); // 10a0:0ddc
                             // The original puts the main screen and the TV
                             // back where they were before the shaking.
                         }
@@ -334,12 +334,13 @@ impl World {
     }
 
     /// A flood or an earthquake ends: an insured player gets the damage
-    /// back. // 10a0:0cce, 10a0:0ddc
-    fn disaster_end(&mut self) {
+    /// back, in the books' "other". Single human: the insurance is player
+    /// 1's. // 10a0:0cce, 10a0:0ddc
+    fn disaster_end(&mut self, tick: &mut Tick) {
         if self.damage.insured {
             self.add_money(1, self.damage.amount);
-            // TODO: the money menu's books (1070:1419 with kind 0x6a,
-            // 1070:2617), once they're ported.
+            self.book(crate::accounts::BOOK_OTHER, self.damage.amount); // 1070:1419
+            tick.books = true; // 1070:2617
         }
     }
 }

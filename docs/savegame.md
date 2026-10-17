@@ -39,7 +39,7 @@ behind the far pointer the global holds. A file is 765–805 KB.
 | 1070:3bf8, 1070:3b27 | The money menu's fields and books |
 | 1030:2bc5, 1030:2bae | The date |
 | 1018:3e46, 1018:3dd6 | `7044`..`704c`: the mouse on the main screen, the one before, its buttons |
-| 1048:25ea, 1048:2524 | The news archive and the TV |
+| 1048:25ea, 1048:2524 | The news archive and the TV ([fernseher.md](fernseher.md#saved)) |
 | 1020:2b1d, 1020:2909 | The main screen's fields: the scroll position (`+0x408`), the scroll bars, the clock's counters (`+0x1d6`, `+0x1d8`) |
 | 1078:34ad, 1078:33e5 | The sums over the island, the players' block, the money, loans, interest and guests, the economy's periods |
 | 1080:3c6d, 1080:3c3c | The ground and form where the last road drag started |
@@ -56,10 +56,11 @@ which gives the same file.
 A map file holds the world and one player's screen. `game::savegame`
 splits it: `World::from_map` and `World::to_map` for the world's fields,
 `MapView` for the view's (the scroll position, the owner and occupancy
-pointers). The view's fields are the forms' (but the clock's counters,
-the date and the books), the windows, the main screen's tool and mouse,
-the news and the TV, the drawing's tables, the view's size, the road
-drag's ends, the button bar and the auction form's state. Fields neither
+pointers, the news options). The view's fields are the forms' (but the
+clock's counters, the date and the books), the windows, the main screen's
+tool and mouse, the TV (but the news archive, which is the world's), the
+player's options (`optionen::Settings`: `005b`..`0061`, `0064`,
+`0066`), the drawing's tables, the view's size, the road drag's ends, the button bar and the auction form's state. Fields neither
 side uses yet are kept as they were read (`Fields`, about 20 of the
 world's and 150 of the view's in the CD's files) and written back, so a
 loaded game saves as it came. A new game has none of them, and writes
@@ -199,7 +200,7 @@ an Enter handler (`EditierfensterKeyDown`, 1040:0cd3) nothing calls.
 - A file the parser can't read loads nothing (the original, with I/O
   checks off, stops reading at the error and keeps the rest of the old
   game, [original-bugs.md](original-bugs.md)).
-- Not ported: the message box, `TEndeform` (the port quits), the button
+- Not ported: the message box, the button
   bar's mouse handling (a click on its first button opens the menu), the
   hourglass cursor, the music and data reload of `back_to_start_menu`, and
   the video and progress window of states 1000–1500.

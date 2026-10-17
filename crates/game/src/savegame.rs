@@ -5,7 +5,7 @@
 //!
 //! A map file holds both what the port's [`World`] is and what one
 //! player's screen shows: the scroll position, the forms' windows, the
-//! tool, the news archive. The world's fields go into the [`World`], the
+//! tool, the TV's position and page. The world's fields go into the [`World`], the
 //! view's into a [`MapView`]. Fields the port doesn't use yet are kept as
 //! read ([`Fields`]), on whichever side they belong to, so a loaded game
 //! is saved again as it came.
@@ -85,10 +85,15 @@ pub struct MapView {
     pub owner_pointers: bool,
     /// Or one for how full they are. // 1110:0059
     pub occupancy_pointers: bool,
+    /// Which kinds of news (0 to 3: events, new buildings, sabotage,
+    /// congratulations, `crate::news::KINDS`) open the TV: the player's
+    /// options (`crate::optionen::Settings::news`), which the original
+    /// saves with the game (unit 1000:0c6a). // 1110:005c..1110:005f
+    pub news: [bool; 4],
     /// The view's fields the port doesn't use yet: the forms' windows
     /// (1010:08d7), the main screen's and the other forms' fields, the
-    /// tool and the mouse (`1110:5fb2`..), the news archive and the TV
-    /// (1048:25ea), the drawing's tables (1050:313a), the pressed buttons
+    /// tool and the mouse (`1110:5fb2`..), the TV (1048:25ea, but the news
+    /// archive, which is the world's), the drawing's tables (1050:313a), the pressed buttons
     /// (`1110:651a`).
     pub unported: Fields,
 }
@@ -115,6 +120,7 @@ impl MapView {
             scroll,
             owner_pointers: byte("1110:0058") != 0,
             occupancy_pointers: byte("1110:0059") != 0,
+            news: NEWS_OPTIONS.map(|dest| byte(dest) != 0),
             unported,
         }
     }
@@ -134,16 +140,19 @@ impl MapView {
         }
     }
 
-    /// What `save_map` writes of the main screen `screen`, with the view's
-    /// other fields `unported` (those of the file the game came from, or
-    /// none). // 1048:2bae
+    /// What `save_map` writes of the main screen `screen` and the
+    /// player's options `settings`, with the view's other fields
+    /// `unported` (those of the file the game came from, or none).
+    /// // 1048:2bae
     #[must_use]
-    pub fn of(screen: &Hauptschirm, unported: Fields) -> Self {
+    pub fn of(screen: &Hauptschirm, settings: &crate::optionen::Settings, mut unported: Fields) -> Self {
         let camera = screen.camera();
+        settings.store(&mut unported);
         MapView {
             scroll: screen.scroll_position(),
             owner_pointers: camera.owner_pointers,
             occupancy_pointers: camera.occupancy_pointers,
+            news: settings.news,
             unported,
         }
     }
@@ -172,17 +181,31 @@ fn global(dest: &str) -> Option<u16> {
 /// The view's globals, besides those of the ranges in [`is_view`]: the
 /// view's size (`1110:12bc`, `12be`), the road tool's drag (`6344`,
 /// `6348`), the forms' `Enabled` flags (`645a`), the button bar's pressed
-/// buttons (`651a`) and the auction form's state (`6598`, `659a`).
-const VIEW_GLOBALS: [u16; 8] = [0x12bc, 0x12be, 0x6344, 0x6348, 0x645a, 0x651a, 0x6598, 0x659a];
+/// buttons (`651a`), the auction form's state (`6598`, `659a`), the TV's
+/// first button (`662e`, `crate::fernseher`) and the player's options
+/// that [`crate::optionen::Settings`] keeps besides the news and the
+/// pointers: the music (`005b`), the tooltips (`0060`), the sounds
+/// (`0061`), the year's balance (`0064`) and the speech (`0066`).
+const VIEW_GLOBALS: [u16; 14] = [
+    0x12bc, 0x12be, 0x6344, 0x6348, 0x645a, 0x651a, 0x6598, 0x659a, 0x662e, 0x005b, 0x0060, 0x0061, 0x0064, 0x0066,
+];
+
+/// The news options, `MapView::news`. // 1110:005c..1110:005f
+const NEWS_OPTIONS: [&str; 4] = ["1110:005c", "1110:005d", "1110:005e", "1110:005f"];
+
+/// The world's globals of unit 1048:25ea, among the TV's: the news
+/// archive (`*1110:663a`), its last entry (`6664`) and whether anything
+/// was posted yet (`667c`) (`crate::news`).
+const NEWS_GLOBALS: [u16; 3] = [0x663a, 0x6664, 0x667c];
 
 /// Whether the field at `dest` is the view's. The forms' fields are,
 /// except the clock's counters in the main screen's (`+0x1d6`, `+0x1d8`),
 /// the date in `TMonate` (`1110:65d6`), the books in the money menu's
 /// (`+0x191`, `+0x24b`) and the build menu's lists (`*[1110:6516]+0x180`,
 /// `+0x184`, `+0x1c6`), which the world keeps. So are the globals of the
-/// main screen's tools and mouse (`1110:5fb2` to `1110:6090`), the news
-/// and the TV (`1110:6638` to `667c`, unit 1048:25ea) and the drawing
-/// (`1110:667e` to `66c6`, unit 1050:313a).
+/// main screen's tools and mouse (`1110:5fb2` to `1110:6090`), the TV
+/// (`1110:6638` to `667c`, unit 1048:25ea, but [`NEWS_GLOBALS`]) and the
+/// drawing (`1110:667e` to `66c6`, unit 1050:313a).
 fn is_view(dest: &str) -> bool {
     const WORLD_FORM_FIELDS: [&str; 10] = [
         "[1110:6532]+0x1d6",
@@ -202,8 +225,11 @@ fn is_view(dest: &str) -> bool {
         // the world's.
         return !WORLD_FORM_FIELDS.contains(&dest) && !dest.starts_with("*[1110:70e");
     }
-    global(dest)
-        .is_some_and(|a| (0x5fb2..=0x6090).contains(&a) || (0x6638..=0x66c6).contains(&a) || VIEW_GLOBALS.contains(&a))
+    global(dest).is_some_and(|a| {
+        (0x5fb2..=0x6090).contains(&a)
+            || ((0x6638..=0x66c6).contains(&a) && !NEWS_GLOBALS.contains(&a))
+            || VIEW_GLOBALS.contains(&a)
+    })
 }
 
 fn word(v: i16) -> Vec<u8> {
@@ -276,6 +302,10 @@ fn world_field(w: &World, dest: &str, n: usize) -> Option<Vec<u8>> {
         "1110:0056" => flag(w.options.people_spawn),
         "1110:0057" => flag(w.computers_play),
         "1110:0063" => flag(w.options.auction_waits),
+        // Unit 1048:25ea: the news archive (`crate::news`).
+        "1110:6664" => word(w.news.last),
+        "1110:667c" => flag(w.news.nothing_yet),
+        "*1110:663a" => w.news.archive_bytes(),
         "1110:0065" => flag(w.disasters),
         "1110:0074" => w.player_colours.to_vec(),
         "1110:007c" => vec![w.viewpoint.rotation],
@@ -471,6 +501,10 @@ fn view_field(v: &MapView, dest: &str) -> Option<Vec<u8>> {
     Some(match dest {
         "1110:0058" => flag(v.owner_pointers),
         "1110:0059" => flag(v.occupancy_pointers),
+        "1110:005c" => flag(v.news[0]),
+        "1110:005d" => flag(v.news[1]),
+        "1110:005e" => flag(v.news[2]),
+        "1110:005f" => flag(v.news[3]),
         "[1110:6532]+0x408" => [v.scroll.0.to_le_bytes(), v.scroll.1.to_le_bytes()].concat(),
         _ => return None,
     })
@@ -516,9 +550,12 @@ impl World {
         // BUG(original): RandSeed isn't saved; a loaded game goes on with the numbers of the game in memory.
         self.random = before.random;
         self.tables = std::sync::Arc::clone(&before.tables);
+        self.news.date_format.clone_from(&before.news.date_format);
         // BUG(original): an oil slick going on (1110:0088) isn't saved; the loaded game takes the flag of the one in memory.
         self.oil_slick = before.oil_slick;
         self.finances.frozen = before.finances.frozen;
+        // The money menu stays as it is.
+        self.money_menu_shown = before.money_menu_shown;
         // BUG(original): the people's lane, 1110:6fce, last building, beach and 1110:3c42 aren't saved.
         let (p, q) = (&mut self.people, &before.people);
         p.lane = q.lane;
@@ -635,6 +672,8 @@ pub fn differences(a: &World, b: &World) -> Vec<&'static str> {
     same!(tables);
     same!(random);
     same!(unported);
+    same!(money_menu_shown);
+    same!(news);
     out
 }
 
@@ -653,7 +692,9 @@ mod tests {
         assert!(!is_view("*[1110:6516]+0x184"));
         assert!(is_view("[1110:6516]+0x1ae") && is_view("*[1110:6516]+0x1ed"));
         assert!(!is_view("*[1110:70e2[i]]"));
-        assert!(is_view("1110:6056") && is_view("*1110:663a") && is_view("1110:651a"));
+        assert!(is_view("1110:6056") && is_view("1110:6638") && is_view("1110:651a"));
+        assert!(!is_view("*1110:663a") && !is_view("1110:6664"));
+        assert!(view_field(&MapView::default(), "1110:005c").is_some() && is_view("1110:0064"));
         assert!(!is_view("1110:0058") && !is_view("1110:6f30") && !is_view("(a local in 10a0:23c9)"));
     }
 
@@ -695,6 +736,7 @@ mod tests {
         let view = MapView {
             scroll: (240, 237),
             owner_pointers: true,
+            news: [true, false, true, false],
             ..MapView::default()
         };
         let save = w.to_map(&view);

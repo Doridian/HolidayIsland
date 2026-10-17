@@ -58,7 +58,8 @@ impl World {
     /// stay within 2..=255. A `value` of 100 does nothing. // 1030:1ae9
     ///
     /// 1030:185d is the same and then redraws the area of the overview map
-    /// (10b8:15c4), which the port's view doesn't have yet.
+    /// (10b8:15c4); the port's overview map finds the changed cells itself
+    /// (`crate::uebersichtsmap`).
     pub fn change_location(&mut self, (i, j): Pos, value: i32, radius: i32, remove: bool) {
         if value == 100 {
             return;

@@ -24,13 +24,17 @@ the same numbers.
 | Button | Tool | A left click on the island | Port |
 |---|---|---|---|
 | 0 | | The file menu (`TDateimenue`) | [savegame.md](savegame.md) |
-| 1–5 | | The options, ?, the TV, the money menu, the overview map | not ported |
+| 1 | | The pause (`TPauseform`), which stops the clock | [options.md](options.md) |
+| 2 | | The options (`TOptionenform`), which stop the clock | [options.md](options.md), `Action::Speed`, `SetOption` |
+| 3 | | The TV (`TFernseher`) on the archive's page it was last on (1048:12e9); down again, it closes (1048:077a) | `Action::ShowTv`, `TvPause` ([fernseher.md](fernseher.md)) |
+| 4 | | The money menu (`TGeldmenuform`) at its first page (1070:2b11); down again, it closes (1070:2bb4) | `Action::MoneyMenu` ([geldmenu.md](geldmenu.md)) |
+| 5 | | The overview map (`TUebersichtsmap2`): down opens it (10b8:4079), up closes it (10b8:3f7f) | [overview-map.md](overview-map.md) |
 | 6, 7 | Raise, lower | One step of the corner the mouse points at (1028:3b7c, 1028:3a68) | `Action::Level` |
 | 8 | Demolish | `demolish` at the square (1028:3c90) | `Action::Demolish` |
 | 9–15, 17–20 | Build | The build menu's submenu opens; a click builds its selected type there (1028:3cb1) | `Action::Build` |
 | 16 | Road | Press and drag: the road from where the drag started (1080:3195, 1080:31ed) | `Action::RoadDragStart`, `RoadDragEnd` |
-| 21 | Sabotage | `TSabowin` and 10a0:1f65 (1028:3d93) | not ported |
-| 22 | Pointer | The info box (`TInfobox2`, 1020:04bc) | not ported |
+| 21 | Sabotage | `TSabowin` shows; a click orders sabotage of its kind there (1028:3d93, 10a0:1f65) | `Action::Sabotage`, [sabotage.md](sabotage.md) |
+| 22 | Pointer | The info box (`TInfobox2`, 1020:04bc), [infobox.md](infobox.md) | `tools::Tools::info_box`, `game::infobox` |
 
 Palms are a building type (12) in the parks' submenu (15):
 `start_building` plants them (`plant_palm`, 1010:1129).
@@ -72,7 +76,8 @@ view: `(i, j)`, `(i - 1, j)`, `(i - 1, j - 1)`, `(i, j - 1)` for views 0
 to 3.
 
 `HauptbildMouseUp` with the left button ends the road drag; with the
-pointer it closes the info box.
+pointer (any button) it closes the info box, unless a double click
+opened it ([infobox.md](infobox.md)).
 
 ### What the tools do (1028:3a68 to 1028:3cb1)
 
@@ -101,7 +106,8 @@ With a tool from 6 to 21, the clock's tick (only with the animations and
 new people on) works out the square under the mouse (`1110:605a`) and
 puts the tool's pictures into the people's records: record 0 is the
 pointer (the raise and lower tools' arrows, `ANIMDAT1.DAT` rows 0x10 and
-8, the demolish tool's 0x3c, eight frames each by `1110:6fd4`), records
+8, the demolish tool's 0x3c, the sabotage tool's 0x44, eight frames each
+by `1110:6fd4`), records
 1 on the squares the tool would take (`ANIMDAT1.DAT` row 76 plus the
 square's form where it can, 0x17c plus it where it can't):
 
@@ -113,7 +119,9 @@ square's form where it can, 0x17c plus it where it can't):
 - a build tool: the type's area at the mouse square, red where
   `can_build` says no;
 - the demolish tool: the building under the mouse (from its first
-  square), none on palms and beach life.
+  square), none on palms and beach life;
+- the sabotage tool: the same squares, red where the picked kind can't
+  be used ([sabotage.md](sabotage.md#the-tools-picture-10900014)).
 
 They're drawn after the people (1088:3a19 with source 4), without what's
 in front of them. As only this tick moves the drag's end, with the
@@ -189,9 +197,6 @@ the build menu is no modal dialog.
 
 ## Open questions
 
-- The info box (`TInfobox2`) and the sabotage tool and form
-  (`TSabowin`, 1028:2f4e, 10a0:1f65) aren't ported, nor the forms of
-  buttons 1 to 5.
 - The status bar's sounds and the tools' sounds aren't played yet.
 - `1110:7044`..`704c` (saved) are the mouse on `Hauptbild` and the button
   bar and the one before, which the tooltips (1018:394e) use.

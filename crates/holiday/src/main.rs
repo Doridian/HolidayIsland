@@ -16,13 +16,21 @@
 //! (`TLadenForm`) with the saved games; in a game, the button bar's first
 //! button (or `1`, `D`) opens the file menu (`TDateimenue`), which saves,
 //! loads (a command to the world), goes back to the start menu (saving
-//! `Last.map`) and quits.
+//! `Last.map`) and quits. The button bar's buttons 1 to 5 open the pause,
+//! the options, the TV, the money menu and the overview map (with the
+//! compass in the main screen's corner), the sabotage tool its window and
+//! the pointer the info box and from there the buildings' overview
+//! (`forms`); Escape, `Q`, Alt+F4 and the main screen's close button ask
+//! whether to quit (`TEndeform`), and the end of a game shows its results
+//! and the high scores.
 //!
 //! `holiday [--save-dir=DIR] [GAME_DIR]`, where `GAME_DIR` holds
 //! `HOLIDAY.EXE`, `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved
 //! games go to `DIR` (default `MAPS` in the platform's data directory,
 //! `platform::storage::save_dir`); the lists show those and the game's own
 //! `MAPS` (the tutorial), which is only read.
+
+mod forms;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,6 +43,7 @@ use formats::data::{
     start_txt, straspos, szenario_txt,
 };
 use formats::dfm::Object;
+use formats::highscore::HighScores;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
 use game::auction::{self, Change};
@@ -43,9 +52,11 @@ use game::baumenue::{self, Baumenue};
 use game::command::{self, Command};
 use game::darstellung::{self, Camera, Tiles};
 use game::dateimenue::{self, Dateimenue};
+use game::endeform;
 use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult};
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
+use game::optionen::Settings as Options;
 use game::savegame::{Fields, MapView};
 use game::simulation::{TICK_MS, Tick};
 use game::startform::{self, Action, Settings, StartForm};
@@ -58,6 +69,8 @@ use vcl::form::{Form, Kind};
 use vcl::random::Random;
 use vcl::surface::Surface;
 use vcl::{Palette, Rect};
+
+use crate::forms::{Focus, Forms, Request};
 
 /// The layout `hintergrund_timer` picks for an 800×600 screen.
 const SCREEN: (usize, usize) = (800, 600);
@@ -129,6 +142,12 @@ impl Saves {
 
     /// Writes `map` as `name` into the player's directory, replacing a file
     /// of that name in any case.
+    /// Where the high scores go: `HIGHSCOR.WAV` next to the saves'
+    /// directory (the original writes the game's `SOUND\HIGHSCOR.WAV`).
+    fn high_scores(&self) -> PathBuf {
+        self.dir.with_file_name("HIGHSCOR.WAV")
+    }
+
     fn write(&self, name: &[u8], map: &SaveGame) -> std::io::Result<PathBuf> {
         std::fs::create_dir_all(&self.dir)?;
         let path = match self.find(name) {
@@ -245,6 +264,8 @@ struct Game {
     captured: Option<&'static str>,
     /// The mouse on the screen, which `GetCursorPos` gives the original.
     mouse: (i32, i32),
+    /// The other forms (`forms`).
+    forms: Forms,
 }
 
 impl Game {
@@ -255,33 +276,35 @@ impl Game {
         let tick = Duration::from_millis(u64::from(TICK_MS));
         self.since_tick += elapsed;
         let mut ticked = false;
-        let mut changed = false;
-        for command in std::mem::take(&mut self.commands) {
-            let t = self.world.apply(command);
-            changed |= self.show(&t);
-        }
-        if self.file_menu.visible {
-            // The file menu stops the clock (1020:24a0) until it closes.
-            // Single human: in the original this stops the game for
-            // everyone; the view just doesn't tick meanwhile.
-            self.since_tick = Duration::ZERO;
-            return changed;
-        }
+        let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
+        let mut changed = self.forms_timers(ms);
+        changed |= self.apply_commands();
         while self.since_tick >= tick {
+            if self.clock_stopped() {
+                // The file menu, the pause, the options, the quit question
+                // and the end form stop the clock (1020:24a0) until they
+                // close. Single human: in the original this stops the game
+                // for everyone; the view just doesn't tick meanwhile.
+                self.since_tick = Duration::ZERO;
+                break;
+            }
             self.since_tick -= tick;
-            // Step 2: the status bar's message times out.
+            // Step 2: the status bar's message times out; step 3 the
+            // tooltips; step 8 the TV.
             changed |= self.screen.status_tick(&self.font);
+            changed |= self.forms_clock_tick();
             // The original's people code reads the player's view.
             self.world.set_viewpoint(self.screen.viewpoint());
             let t = self.world.tick();
             changed |= self.show(&t);
+            // What the tick's forms asked of the world, before the next.
+            changed |= self.apply_commands();
             if self.auction.visible && self.world.auction.open {
                 self.auction.draw_auctioneer(&self.world); // 1028:0221
                 changed = true;
             }
             ticked = true;
         }
-        let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         changed |= self.auction.advance(ms, &self.world, &self.font, &self.info);
         if ticked {
             // 1088:385d, 1088:38c4: the people where they moved to.
@@ -301,6 +324,22 @@ impl Game {
         changed || info
     }
 
+    /// Applies the player's commands, and draws again what the forms show
+    /// of the world after them.
+    fn apply_commands(&mut self) -> bool {
+        let mut changed = false;
+        for command in std::mem::take(&mut self.commands) {
+            let t = self.world.apply(command);
+            changed |= self.show(&t);
+        }
+        changed | self.forms_after_commands()
+    }
+
+    /// A form is up that stops the clock.
+    fn clock_stopped(&self) -> bool {
+        self.file_menu.visible || self.forms.clock_stopped()
+    }
+
     /// The mouse in `Hauptbild`'s coordinates.
     fn hauptbild_mouse(&self) -> (i32, i32) {
         let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
@@ -316,8 +355,13 @@ impl Game {
     }
 
     /// Button `b` of the button bar is clicked (1010:2c8b): the file menu
-    /// is the caller's, the rest the tools'.
+    /// is the caller's, buttons 1 to 5 open forms (`forms`), the rest are
+    /// the tools'.
     fn click_button(&mut self, b: u8) {
+        if (1..=5).contains(&b) {
+            self.form_button(b);
+            return;
+        }
         let view = self.screen.camera().view;
         let actions = self
             .tools
@@ -346,6 +390,9 @@ impl Game {
 
     /// The button bar and the status bar after the tools changed.
     fn show_tools(&mut self) {
+        if self.tools.menu_focused || self.tools.sabowin_focused {
+            self.forms.focus = Focus::Main;
+        }
         if self.tools.buttons_changed {
             self.screen.draw_buttons(&self.tools.down);
             self.tools.buttons_changed = false;
@@ -374,9 +421,12 @@ impl Game {
         self.show_tools();
         if t.loaded {
             // `game_show_state` (1010:26fa): the view from the file.
+            if let Some(s) = self.forms.loading_settings.take() {
+                self.forms.settings = s;
+            }
             let camera = MapView {
-                owner_pointers: self.screen.camera().owner_pointers,
-                occupancy_pointers: self.screen.camera().occupancy_pointers,
+                owner_pointers: self.forms.settings.owner_pointers,
+                occupancy_pointers: self.forms.settings.occupancy_pointers,
                 ..MapView::default()
             }
             .camera(&self.world);
@@ -390,6 +440,7 @@ impl Game {
             self.screen
                 .show_people(&self.world, &self.tiles, &self.font, &self.info);
             self.screen.show_info(&self.world, &self.font, &self.info);
+            self.forms_tick(t);
             return true;
         }
         if t.load_failed {
@@ -404,13 +455,15 @@ impl Game {
         };
         if t.auction_changes.contains(&Change::Opened) {
             self.open_auction();
+            let r = self.forms.infobox.hide();
+            changed |= r.refresh;
         }
         if !t.auction_changes.is_empty() {
             self.auction
                 .update(&self.world, &t.auction_changes, &self.font, &self.info);
             changed = true;
         }
-        changed
+        changed | self.forms_tick(t)
     }
 
     /// The auction form opens with the item's picture. // 1028:0dde
@@ -558,11 +611,15 @@ impl Game {
             .find(|(n, _)| *n == target)
             .map_or(Rect::default(), |(_, r)| *r);
         let (x, y) = (fx - bounds.left, fy - bounds.top);
+        if target == "ButtonImage" || target == "Hauptbild" {
+            self.bar_mouse(x); // 1018:3e46
+        }
         match input {
             Input::MouseDown { .. } => {
                 self.captured = Some(target);
-                // The main screen takes the focus from the build menu.
-                self.tools.menu_focused = false;
+                // The main screen takes the focus from the build menu,
+                // the sabotage window and the other forms.
+                self.set_focus(Focus::Main);
             }
             Input::MouseUp { .. } if buttons_up => self.captured = None,
             _ => {}
@@ -587,17 +644,40 @@ impl Game {
                     self.screen.right_click(x, y, &self.world, &self.tiles); // 1020:1984
                     self.screen
                         .show_people(&self.world, &self.tiles, &self.font, &self.info);
+                    self.main_view_changed();
                 } else {
                     let cam = self.screen.camera();
                     let actions = self.tools.press(x, y, shift, &self.world, &self.tiles, &cam);
                     self.tool_actions(actions);
+                    self.take_info_box();
                 }
                 (true, false)
             }
             ("Hauptbild", Input::MouseUp { button, .. }) => {
                 let actions = self.tools.release(button == Button::Left);
                 self.tool_actions(actions);
-                (false, false)
+                let shown = self.forms.infobox.visible;
+                self.take_info_box();
+                (shown != self.forms.infobox.visible, false)
+            }
+            // The compass's knob (1038:3557).
+            ("eckimage", Input::MouseDown { .. }) => {
+                let view = self.screen.camera().view;
+                let r = self.forms.compass.knob_mouse_down(x, y, view);
+                if r.knob {
+                    self.forms.compass.draw_knob(&mut self.screen.corner);
+                }
+                (true, false)
+            }
+            // The close button asks whether to quit (1020:0577).
+            (
+                "CloseBild",
+                Input::MouseUp {
+                    button: Button::Left, ..
+                },
+            ) if (0..bounds.width()).contains(&x) && (0..bounds.height()).contains(&y) => {
+                self.open_ende();
+                (true, false)
             }
             _ => (false, false),
         }
@@ -607,7 +687,51 @@ impl Game {
     fn map(&self) -> SaveGame {
         let mut rest = self.view_rest.clone();
         self.tools.save(&mut rest);
-        self.world.to_map(&MapView::of(&self.screen, rest))
+        self.forms_save(&mut rest);
+        self.world
+            .to_map(&MapView::of(&self.screen, &self.forms.settings, rest))
+    }
+
+    /// A key in the game: the forms first (`forms`), then the build menu
+    /// while it has the focus, then the main screen.
+    fn game_key(&mut self, key: u16, shift: ShiftState) {
+        if self.forms_key(key, shift) {
+            return;
+        }
+        let mut key = Some(key);
+        if self.tools.menu_focused {
+            // `TBaumenue` has the focus. // 1018:3290
+            let response = self.tools.menu.key_down(key.unwrap_or(0));
+            key = self.menu_response(response);
+        }
+        if let Some(key) = key {
+            self.main_screen_key(key, shift);
+        }
+    }
+
+    /// The main screen's `FormKeyDown` (1020:2e09): the quit question,
+    /// the view's keys and the button bar's.
+    fn main_screen_key(&mut self, key: u16, shift: ShiftState) {
+        if endeform::main_screen_opens(key, shift) {
+            self.open_ende();
+            return;
+        }
+        match self.screen.key_down(key, shift, &self.world, &self.tiles) {
+            KeyResult::Redrawn => {
+                self.screen
+                    .show_people(&self.world, &self.tiles, &self.font, &self.info);
+                // `set_view` (1010:254d) turns the build menu's picture
+                // too.
+                let view = self.screen.camera().view;
+                self.tools
+                    .menu
+                    .view_turned(&self.world, &self.font, &self.tiles, &self.info, view);
+                self.main_view_changed();
+            }
+            KeyResult::Button(hauptschirm::FILE_MENU_BUTTON) => self.forms.requests.push(Request::FileMenu),
+            KeyResult::Button(b) => self.click_button(b),
+            KeyResult::Ignored => {}
+        }
     }
 
     /// `FormShow` of the file menu, from the button bar's first button
@@ -649,6 +773,7 @@ impl Game {
             }
         }
         self.auction_form.paint(screen, palette);
+        self.paint_forms(screen, palette);
         let m = &mut self.file_menu;
         m.form.components[0].bounds = Rect::new(m.menu.left, m.menu.top, dateimenue::WIDTH, dateimenue::HEIGHT);
         m.form.components[0].visible = m.visible;
@@ -682,6 +807,8 @@ struct Holiday {
     saves: Saves,
     /// The last left press, for double clicks.
     last_press: Option<(Instant, i32, i32)>,
+    /// The player's options, from game to game (`TOptionenform`).
+    options: Options,
 }
 
 impl Holiday {
@@ -819,6 +946,11 @@ impl Holiday {
             self.file_menu_mouse(input, shift, up);
             return;
         }
+        if game.forms_mouse(input, shift, up) {
+            self.process_requests();
+            self.repaint();
+            return;
+        }
         if game.auction_mouse(input, shift, up) {
             self.repaint();
             return;
@@ -829,13 +961,50 @@ impl Holiday {
         }
         let (changed, file_menu) = game.main_mouse(input, shift, up);
         if file_menu {
-            let games = self.saves.games();
-            if let Some(game) = &mut self.game {
-                game.open_file_menu(games);
-            }
+            game.forms.requests.push(Request::FileMenu);
         }
+        self.process_requests();
         if changed || file_menu {
             self.repaint();
+        }
+    }
+
+    /// Does what the game asks that needs more than the game.
+    fn process_requests(&mut self) {
+        loop {
+            let Some(game) = &mut self.game else { return };
+            if game.forms.requests.is_empty() {
+                return;
+            }
+            let request = game.forms.requests.remove(0);
+            match request {
+                Request::FileMenu => {
+                    let games = self.saves.games();
+                    game.open_file_menu(games);
+                }
+                Request::Quit => {
+                    // 1020:3a1b: `Last.map`, then the end film (1068:0f52).
+                    if let Err(e) = self.saves.write(hintergrund::LAST_MAP.as_bytes(), &game.map()) {
+                        eprintln!("can't save {}: {e}", hintergrund::LAST_MAP);
+                    }
+                    let r = game.forms.schluss.open_quit(screen_size());
+                    game.schluss_response(r);
+                }
+                Request::Exit => {
+                    self.quit = true;
+                    return;
+                }
+                Request::NewGame => {
+                    self.back_to_start_menu();
+                    return;
+                }
+                Request::SaveHighScores => {
+                    let path = self.saves.high_scores();
+                    if let Err(e) = std::fs::write(&path, game.forms.high.table.to_bytes()) {
+                        eprintln!("can't save {}: {e}", path.display());
+                    }
+                }
+            }
         }
     }
 
@@ -890,7 +1059,9 @@ impl Holiday {
                     Ok(map) => {
                         self.start.hide();
                         let settings = self.start.menu.settings().clone();
-                        self.game = Some(load_game(&self.dir, &self.exe, &map, &settings));
+                        let options = self.options.with_map(&map);
+                        let high = forms::high_scores(&self.dir, &self.saves.high_scores());
+                        self.game = Some(load_game(&self.dir, &self.exe, &map, &settings, options, high));
                     }
                     Err(e) => eprintln!("{e}"),
                 }
@@ -943,6 +1114,7 @@ impl Holiday {
                 Ok(map) => {
                     if World::from_map(&map).is_ok() {
                         game.view_rest = MapView::from_map(&map).unported;
+                        game.forms.loading_settings = Some(game.forms.settings.with_map(&map));
                     }
                     game.commands.push(Command {
                         player: 1,
@@ -966,8 +1138,9 @@ impl Holiday {
             Some(dateimenue::Action::InvalidName) => eprintln!("Dateiname ungültig"),
             Some(dateimenue::Action::NewGame) => self.back_to_start_menu(),
             Some(dateimenue::Action::Quit) => {
-                // TEndeform, which asks first, isn't ported.
-                self.quit = true;
+                // 1040:0a4c: the menu hides and `TEndeform` asks.
+                game.file_menu.visible = false;
+                game.open_ende();
             }
             None => {}
         }
@@ -984,6 +1157,7 @@ impl Holiday {
         if let Err(e) = self.saves.write(hintergrund::LAST_MAP.as_bytes(), &game.map()) {
             eprintln!("can't save {}: {e}", hintergrund::LAST_MAP);
         }
+        self.options = game.forms.settings;
         self.start = start_menu(&self.dir, &self.exe, Settings::from_world(&game.world));
         self.start.show();
         self.repaint();
@@ -995,7 +1169,15 @@ impl Holiday {
                 // `startform_start_click` hides the form, and hintergrund's
                 // states 1000-1500 start the game.
                 self.start.hide();
-                self.game = Some(start_game(&self.dir, &self.exe, self.start.menu.settings(), scenario));
+                let high = forms::high_scores(&self.dir, &self.saves.high_scores());
+                self.game = Some(start_game(
+                    &self.dir,
+                    &self.exe,
+                    self.start.menu.settings(),
+                    scenario,
+                    self.options,
+                    high,
+                ));
             }
             Some(Action::Load) => {
                 // 1058:0c7d: the start menu is disabled and TLadenForm
@@ -1017,6 +1199,7 @@ impl App for Holiday {
         if let Some(game) = &mut self.game
             && game.update(elapsed)
         {
+            self.process_requests();
             self.repaint();
         }
         if self.showing_title && self.elapsed >= TITLE_TIME {
@@ -1031,13 +1214,8 @@ impl App for Holiday {
     fn input(&mut self, input: Input) {
         match input {
             Input::Close => self.quit = true,
-            Input::KeyDown(VK_ESCAPE)
-                if self.load.is_none()
-                    && !self
-                        .game
-                        .as_ref()
-                        .is_some_and(|g| g.auction.visible || g.file_menu.visible || g.tools.menu_focused) =>
-            {
+            // In a game, Escape asks first (`TEndeform`).
+            Input::KeyDown(VK_ESCAPE) if self.load.is_none() && self.game.is_none() => {
                 self.quit = true;
             }
             Input::KeyDown(key) | Input::KeyUp(key) => {
@@ -1064,6 +1242,7 @@ impl App for Holiday {
                         self.respond(response);
                     } else if let Some(game) = &mut self.game
                         && game.auction.visible
+                        && !game.forms.modal()
                     {
                         // `TAuktionsform` is on top and has the keys.
                         let shift = self.buttons | self.keys;
@@ -1072,42 +1251,9 @@ impl App for Holiday {
                         }
                     } else if let Some(game) = &mut self.game {
                         let shift = self.buttons | self.keys;
-                        let mut key = Some(key);
-                        if game.tools.menu_focused {
-                            // `TBaumenue` has the focus. // 1018:3290
-                            let response = game.tools.menu.key_down(key.unwrap_or(0));
-                            key = game.menu_response(response);
-                            self.repaint();
-                        }
-                        let Some(game) = &mut self.game else { return };
-                        let result = key.map_or(KeyResult::Ignored, |key| {
-                            game.screen.key_down(key, shift, &game.world, &game.tiles)
-                        });
-                        match result {
-                            KeyResult::Redrawn => {
-                                game.screen
-                                    .show_people(&game.world, &game.tiles, &game.font, &game.info);
-                                // `set_view` (1010:254d) turns the build
-                                // menu's picture too.
-                                let view = game.screen.camera().view;
-                                game.tools
-                                    .menu
-                                    .view_turned(&game.world, &game.font, &game.tiles, &game.info, view);
-                                self.repaint();
-                            }
-                            KeyResult::Button(hauptschirm::FILE_MENU_BUTTON) => {
-                                let games = self.saves.games();
-                                if let Some(game) = &mut self.game {
-                                    game.open_file_menu(games);
-                                }
-                                self.repaint();
-                            }
-                            KeyResult::Button(b) => {
-                                game.click_button(b);
-                                self.repaint();
-                            }
-                            KeyResult::Ignored => {}
-                        }
+                        game.game_key(key, shift);
+                        self.process_requests();
+                        self.repaint();
                     }
                 } else {
                     self.keys = ShiftState(self.keys.0 & !bit.0);
@@ -1266,6 +1412,11 @@ fn world_tables(dir: &Path) -> Arc<Tables> {
         road_cost: modatyp(&read(dir, "DATA/MODATYP.DAT"))
             .expect("MODATYP.DAT")
             .strassenbaukosten,
+        sabotage: game::sabotage::kinds(
+            &formats::data::sabotage(&read(dir, "TEXTE/SABOTAGE.TXT"))
+                .expect("SABOTAGE.TXT")
+                .1,
+        ),
     })
 }
 
@@ -1285,7 +1436,7 @@ type Start = (World, Camera, Option<(i16, i16)>, Fields);
 
 /// The world a game starts with and the main screen's camera: a
 /// scenario's map (and its view origin) or a generated island. // 1000:2466
-fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> Start {
+fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &mut Options) -> Start {
     let seed = seed();
     match hintergrund::new_island(settings, scenario_page) {
         Island::Scenario(file) => {
@@ -1295,6 +1446,11 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> Start {
                 hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
             world.random = Random::new(seed);
             world.tables = world_tables(dir);
+            world.news.date_format = game::news::DateFormat {
+                months: monate(&read(dir, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
+                land: modatyp(&read(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT").land as u8,
+            };
+            *options = options.with_map(&map);
             let view = MapView::from_map(&map);
             let camera = Camera {
                 parity: 0,
@@ -1312,8 +1468,8 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> Start {
                 view: 0,
                 origin: world.viewpoint.origin,
                 parity: world.viewpoint.parity,
-                owner_pointers: false,
-                occupancy_pointers: true,
+                owner_pointers: options.owner_pointers,
+                occupancy_pointers: options.occupancy_pointers,
             };
             (world, camera, None, Fields::default())
         }
@@ -1323,26 +1479,46 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> Start {
 /// States 1000 to 1500 with `hintergrund+0x190`: the saved game `map`
 /// over a newly set up game, and the main screen at the file's view.
 /// // 1000:2466
-fn load_game(dir: &Path, exe: &[u8], map: &SaveGame, settings: &Settings) -> Game {
+fn load_game(dir: &Path, exe: &[u8], map: &SaveGame, settings: &Settings, options: Options, high: HighScores) -> Game {
     let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok()).unwrap_or_else(|e| panic!("{e}"));
     let world =
         hintergrund::load_saved_game(map, settings, &data, seed()).unwrap_or_else(|e| panic!("the saved game: {e}"));
     let view = MapView::from_map(map);
     let camera = view.camera(&world);
-    make_game(dir, exe, (world, camera, Some(camera.origin), view.unported))
+    make_game(
+        dir,
+        exe,
+        (world, camera, Some(camera.origin), view.unported),
+        options,
+        high,
+    )
 }
 
 /// What hintergrund's timer does from state 1000 to 1500 once Start is
 /// clicked, without the video (`titel.avi`), the progress window
 /// (`TWasNunForm`) and what isn't ported yet: load the scenario's map or
 /// generate an island, set up the main screen and show it. // 1000:2466
-fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) -> Game {
-    make_game(dir, exe, start_world(dir, settings, scenario_page))
+fn start_game(
+    dir: &Path,
+    exe: &[u8],
+    settings: &Settings,
+    scenario_page: bool,
+    mut options: Options,
+    high: HighScores,
+) -> Game {
+    let start = start_world(dir, settings, scenario_page, &mut options);
+    make_game(dir, exe, start, options, high)
 }
 
 /// The main screen and the forms of a game that starts from `start`.
 /// // 1020:2501, 1010:2820
-fn make_game(dir: &Path, exe: &[u8], (world, camera, origin, view_rest): Start) -> Game {
+fn make_game(
+    dir: &Path,
+    exe: &[u8],
+    (world, camera, origin, view_rest): Start,
+    options: Options,
+    high: HighScores,
+) -> Game {
     let font = font(dir);
     let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
     let frame = bitmaps(dir, &hauptschirm::BITMAP_FILES);
@@ -1397,12 +1573,29 @@ fn make_game(dir: &Path, exe: &[u8], (world, camera, origin, view_rest): Start) 
         screen_size(),
     );
     let mut tools = Tools::new(menu, fehler(&read(dir, "TEXTE/FEHLER.TXT")).expect("FEHLER.TXT"));
+    tools.sabowin = Some(Forms::sabowin(dir, &font, &info));
     tools.start(&view_rest, &world, &font, &tiles, &info, screen.camera().view);
     screen.draw_buttons(&tools.down);
     tools.buttons_changed = false;
     let mut menu_form = load_form(exe, "TBAUMENUE");
     menu_form.components[0].visible = false;
+    // The other forms, and what the map holds of them.
+    let mut forms = Forms::load(dir, exe, &font, &info, options, high, &screen);
+    forms.overview.load(&view_rest); // 10b8:4f1c
+    forms.overview.game_start(&world);
+    forms.tv.load_fields(&view_rest);
+    // 1010:0ac1: the TV closes, which lets the game go on.
+    let commands = forms
+        .tv
+        .close()
+        .actions
+        .into_iter()
+        .map(|action| Command { player: 1, action })
+        .collect();
+    forms.compass.draw_knob(&mut screen.corner);
+    let _ = forms.money.loaded(&world);
     Game {
+        forms,
         tools,
         menu_form,
         menu_captured: false,
@@ -1420,7 +1613,7 @@ fn make_game(dir: &Path, exe: &[u8], (world, camera, origin, view_rest): Start) 
         pictures: message_media_names(&read(dir, "DATA/FILENAME.DAT")),
         dir: dir.to_path_buf(),
         auction_captured: false,
-        commands: Vec::new(),
+        commands,
         file_menu: file_menu(dir, exe),
         view_rest,
     }
@@ -1474,10 +1667,101 @@ fn main() {
         load: None,
         saves,
         last_press: None,
+        options: Options::default(),
     };
     holiday.set_picture(&title);
     if let Err(e) = platform::run("Holiday Island", holiday) {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A scenario's main screen with the TV (opened by a message), the
+    /// money menu, the overview map, the compass and the sabotage window
+    /// open, through the game's own wiring. With `HOLIDAY_PPM` set, the
+    /// screen goes there as `integrated.ppm`. Skipped without the game's
+    /// files in `orig/`.
+    #[test]
+    fn forms_on_the_main_screen() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orig");
+        if !dir.join("GRAFIK").exists() {
+            eprintln!("skipping: {} not found", dir.display());
+            return;
+        }
+        let exe = read(&dir, "HOLIDAY.EXE");
+        let settings = Settings {
+            scenario: 1,
+            ..Settings::default()
+        };
+        let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high);
+        game.world.clock.paused = false;
+        let _ = game.update(Duration::from_millis(u64::from(TICK_MS) * 5));
+        // A message of kind 0 opens the TV, which asks for the pause.
+        let mut tick = Tick::default();
+        let pos = game.world.viewpoint.origin;
+        game.world.post_message(
+            game::news::Message {
+                number: 0,
+                a: 1,
+                pos: Some((pos.0 + 12, pos.1 + 8)),
+                ..game::news::Message::default()
+            },
+            &mut tick,
+        );
+        assert!(game.show(&tick) || game.forms.tv.visible);
+        assert!(game.forms.tv.visible && game.tools.down[3]);
+        let _ = game.update(Duration::ZERO);
+        assert!(game.world.clock.paused, "the TV pauses the game");
+        // Buttons 4 and 5, the compass's knob and the sabotage tool.
+        game.click_button(4);
+        assert!(game.forms.money.shown() && game.tools.down[4]);
+        game.click_button(5);
+        assert!(game.forms.overview.visible() && game.tools.down[5]);
+        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
+        let corner = hauptschirm::LAYOUT[7].1;
+        let at = (left + corner.left + 8, top + corner.top + 8);
+        let press = Input::MouseDown {
+            x: at.0,
+            y: at.1,
+            button: Button::Left,
+        };
+        let release = Input::MouseUp {
+            x: at.0,
+            y: at.1,
+            button: Button::Left,
+        };
+        let _ = game.main_mouse(press, ShiftState::LEFT, false);
+        let _ = game.main_mouse(release, ShiftState::default(), true);
+        assert!(game.forms.compass.visible());
+        game.click_button(21);
+        assert!(game.tools.sabowin.as_ref().is_some_and(|s| s.visible));
+        let _ = game.update(Duration::from_millis(u64::from(TICK_MS)));
+        // The pause button stops the clock until a key ends it.
+        game.click_button(1);
+        assert!(game.clock_stopped());
+        game.game_key(0x41, ShiftState::default());
+        assert!(!game.clock_stopped() && !game.tools.down[1]);
+        // The money menu's button closes it again; the save keeps the
+        // news options.
+        game.forms.settings.news = [true, false, true, false];
+        let map = game.map();
+        assert_eq!(MapView::from_map(&map).news, [true, false, true, false]);
+
+        let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
+        let mut screen = Surface::new(SCREEN.0, SCREEN.1, 0);
+        game.paint(&mut screen, &background.palette);
+        if let Some(out) = std::env::var_os("HOLIDAY_PPM") {
+            let mut ppm = format!("P6\n{} {}\n255\n", screen.width, screen.height).into_bytes();
+            for &i in &screen.pixels {
+                let c = background.palette[usize::from(i)];
+                ppm.extend_from_slice(&[c.r, c.g, c.b]);
+            }
+            std::fs::write(PathBuf::from(out).join("integrated.ppm"), ppm).unwrap();
+        }
     }
 }

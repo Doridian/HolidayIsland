@@ -75,6 +75,8 @@
 1010:1820 func ui_scrollbar_paged  # VMT+0x24 of scroll bars: play_sound(9)
 1010:1838 func ui_listbox_draw  # (image): VMT+0x14 of list boxes: listbox_draw, then the visible rows centred
 1010:1919 func ui_listbox_selected  # VMT+0x1c of list boxes: play_sound(9)
+1010:1931 func renovate_building
+1010:19f1 func bribe_builders
 1010:1ae2 func raise_facility_price  # (building; price: Longint): a step up, capped by HAUSPREI column 2 (transport, full championships) or 3 times it
 1010:1c86 func lower_facility_price  # (price: Longint): a step down
 1010:1d62 func raise_rent  # (rent: Longint): +4/8/20/40 below 80/200/400/1561, else 1600
@@ -151,7 +153,11 @@
 1018:3290 func baumenue_formkeydown  # build menu FormKeyDown: Left/Right the previous/next submenu (1110:14c5, 1110:14d1), Esc cancel, Enter close, Space focus; F1-F12, 1-9, Pause to the main screen
 1018:3350 func baumenue_save
 1018:34a0 func baumenue_load
+1018:35f0 func set_music_volume
 1018:367e func music_next_track  # after each day: the next MIDI track from the list at 1110:31d6 when the current one has ended
+1018:37de func music_init_playlist
+1018:3850 func music_start
+1018:38c5 func music_stop
 1018:3904 func button_under_mouse
 1018:394e func button_at_mouse
 1018:399a func mouse_moved
@@ -161,14 +167,18 @@
 1018:3dad func cursor_corner_square  # (var square): square_at 16 pixels above the cursor (the raise/lower tools' corner)
 1018:3dd6 func save_mouse
 1018:3e46 func load_mouse
+1020:0456 func hauptschirm_knob_click
+1020:0480 func endeform_open
 1020:04b0 func hauptschirm_draw_view
 1020:04bc func show_info_box
 1020:050b func hide_info_box
+1020:0577 func endeform_open2
 1020:05a7 func hauptschirm_update_scroll
 1020:067c func hauptschirm_erase_thumbs
 1020:0697 func hauptschirm_origin_from_scroll  # view_origin_i/j/parity from +0x408 (wo) and +0x40a (ns)
 1020:06f1 func hauptschirm_origin_from_scroll_exact
 1020:074d func hauptschirm_scroll_from_origin
+1020:0787 func hauptschirm_jump_to
 1020:07dc func hauptschirm_scroll  # (dns, dwo): turned by the view, clamped to the scroll bars
 1020:0a55 func hauptschirm_place_ns_bar
 1020:0b0f func hauptschirm_set_ns_bar
@@ -216,6 +226,19 @@
 1020:3286 func hauptschirm_closebild_mouseup
 1020:32c0 func hauptschirm_kleinbild_mousedown
 1020:32fa func hauptschirm_kleinbild_mouseup
+1020:347d func endeform_hit
+1020:34ca func endeform_restore_part
+1020:3588 func endeform_draw_text_pressed
+1020:3603 func endeform_draw_text
+1020:367c func endeform_draw_up
+1020:36ce func endeform_draw_pressed
+1020:37dd func endeform_endeimagemousedown
+1020:38d4 func endeform_endeimagemousemove
+1020:395f func endeform_endeimagemouseup
+1020:3aad func endeform_draw_texts
+1020:3b5f func endeform_formshow
+1020:3d05 func endeform_formhide
+1020:3d30 func endeform_formkeydown
 1020:3dc4 func load_sonstige
 1028:01d4 func auktion_hit  # (button, x, y): the point in the form's button rectangle 1110:1654 + 8*button (1030:1517)
 1028:0221 func auktion_animate  # the auctioneer's mouth (Random(7) within 800 ms of a call), eyes and brows (Random(20), Random(4)), hammer and hand frames; game::auction (frames), game::auktionsform
@@ -238,7 +261,20 @@
 1028:2506 func auktion_load  # unit: the auction's state from the map
 1028:25f4 func auktion_save
 1028:26e4 func auktionsform_formkeydown  # Escape, Space, Alt+F4: 1028:0476 and 1028:0c82; Enter: bid without the money check, or start
+1028:2ad7 func sabowin_hit
+1028:2b24 func sabowin_button_text_pressed
+1028:2b9f func sabowin_button_text
+1028:2c18 func sabowin_draw_up
+1028:2c62 func sabowin_draw_pressed
+1028:2d67 func sabowin_saboimagemousedown
+1028:2ecc func sabowin_saboimagemousemove
+1028:2f4e func sabowin_saboimagemouseup
+1028:3079 func sabowin_draw
+1028:33d0 func sabowin_erase_part
+1028:35ee func sabowin_formhide
 1028:361f func load_sabotage
+1028:38f8 func free_sabotage
+1028:394c func sabowin_formkeydown
 1028:3a68 func lower_tool  # (player): lower_corner at the cursor's corner by the view; pays, books 0x6a, float_money, sound 0x1f, or the error; game::command Level
 1028:3b7c func raise_tool  # (player): raise_corner at the cursor's corner by the view; as 1028:3a68; game::command Level
 1028:3c90 func demolish_tool  # (player): demolish at the cursor; game::command Demolish
@@ -261,6 +297,7 @@
 1030:0148 func date_text  # (Self, var s): '1. Januar 1996', suffix by land
 1030:0382 func date_day
 1030:0397 func date_month
+1030:0465 func facility_price_heading
 1030:04e3 func can_build  # (i, j, building, player; var cost): 0 or the error (FEHLER.TXT): 0x16 off the map, 0xe money (player 1 only), 2 road, 0xf river crossing, 0x10 river, 1 building (square at 1110:64ba), 0xc heights, 0x11/0x12/0x13/0xb ground by HAUSDATA col 7, 0x14/10/0x15/0x1b form by col 8; cost := price + Fundamentbaukosten per sloping square; game::construction
 1030:0ad2 func byte_list_create  # (var list: pointer): getmem(0x100), count 0
 1030:0af2 func byte_list_push  # (list, value): the new count, 255 when full (254 entries)
@@ -279,11 +316,14 @@
 1030:0e42 func candidates_free
 1030:0e6f func candidates_save
 1030:0eab func candidates_load
+1030:0ee7 func longint_at_least_0
 1030:0f19 func max_longint
 1030:0f53 func min_longint  # (a, b: Longint): the smaller
 1030:0fb2 func abs_difference  # (a, b: Longint): |b - a|
 1030:0fdd func group_digits
+1030:108b func insert_decimal_marks
 1030:11a0 func format_money  # (n: Longint; var s): n * waehrungsfaktor with digit groups; game::money
+1030:13da func format_decimal_money
 1030:1418 func get_tile_dcs
 1030:1517 func point_in_rect
 1030:154c func building_origin  # (var pos; i, j): the building's first square from the part: r := part mod HAUSNR col 5, (i - r mod width, j - r div width)
@@ -318,7 +358,43 @@
 1030:38da func game_done  # calls the units' done routines (text_done, ...) before Application.Terminate
 1030:390e func generate_island_busy
 1030:3932 func load_game_data
+1038:014b func infobox_draw_line
+1038:098d func infobox_draw_button
+1038:0a44 func infobox_draw_button_pressed
+1038:0afe func infobox_show_button
+1038:0b40 func infobox_button_row_text
+1038:0c00 func infobox_button_row_value
+1038:0d3a func infobox_draw_button_row
 1038:0e13 func infobox_load_data
+1038:17f3 func infobox_button_looks
+1038:1899 func infobox_gather
+1038:1a75 func infobox_draw_rows
+1038:1b92 func infobox_draw
+1038:1ccf func infobox_layout
+1038:1e83 func infobox_island_info
+1038:1eac func infobox_show
+1038:1ee0 func infobox_hide
+1038:1f69 func infobox_init
+1038:2302 func infobox_free
+1038:2478 func infobox_button_hit
+1038:24d6 func infobox_click
+1038:2742 func infobox_infoimage_mousedown
+1038:27b4 func infobox_infoimage_mouseup
+1038:284b func infobox_formkeydown
+1038:29e3 func kompass_south_click
+1038:2a41 func kompass_east_click
+1038:2a9f func kompass_north_click
+1038:2afd func kompass_west_click
+1038:2b5b func kompass_close_click
+1038:2c04 func kompass_init
+1038:30b7 func kompass_free
+1038:314f func kompass_show
+1038:3243 func kompass_hide
+1038:3256 func kompass_update
+1038:3329 func kompass_bild_mousedown
+1038:346f func kompass_bild_mousemove
+1038:34fc func kompass_bild_mouseup
+1038:3557 func kompass_formkeydown
 1038:3682 func ladenform_list_click
 1038:36a2 func ladenform_list_mouse_down
 1038:36d5 func ladenform_up_click
@@ -367,18 +443,66 @@
 1040:1564 func dateimenue_map_load
 1040:156b func dateimenue_map_save
 1040:1572 func dateimenue_formkeydown
+1040:1853 func sort_highscores
+1040:1b5c func highscoreform_close
+1040:1ba5 func highscoreform_closebutton_click
+1040:1bc2 func highscoreform_schliessen_click
 1040:1bdf func add_highscore
 1040:1ca7 func reset_highscores
 1040:1d49 func highscoreform_draw_table
+1040:1f38 func highscoreform_box_game1_click
+1040:1ffd func highscoreform_box_game2_click
+1040:20c2 func highscoreform_box_game3_click
+1040:2187 func highscoreform_box_game4_click
+1040:224c func highscoreform_box_game5_click
+1040:2311 func highscoreform_box_game6_click
+1040:23d6 func highscoreform_box_game0_click
 1040:24a8 func load_highscores
 1040:2517 func save_highscores
+1040:2579 func highscoreform_formshow
 1040:284c func load_highscor_txt
+1040:2bf0 func highscoreform_init
+1040:310a func highscoreform_free_bitmaps
+1040:315c func highscoreform_free
+1040:3183 func highscoreform_create
+1040:31bc func highscoreform_bildmousedown
+1040:3347 func highscoreform_bildmouseup
 1040:34af func wasnun_load_texts  # form method (Self); WASNUN.TXT; Ghidra missed this function
 1040:3748 func wasnun_set_page
+1040:3a45 func pauseform_show
+1040:3bac func pauseform_close
+1040:3bf4 func pauseform_pausebild_click
+1040:3c05 func pauseform_form_key_down
+1040:3c16 func pauseform_form_close
+1040:3d02 func helpform_formcreate
+1040:3db1 func helpform_free
+1040:3dc7 func helpform_show
+1040:3ead func helpform_hide
+1048:01bd func fernseher_play_film
+1048:034f func fernseher_stop_film
+1048:03c5 func fernseher_message_text
+1048:077a func fernseher_hide
+1048:087f func fernseher_draw_entry
 1048:0a54 func post_message  # (number, a, b, x: Longint, y: Longint, j, i, centre): news archive entry (text number*3 + Random(3)), the TV if the options say so; game::news
 1048:12e9 func fernseher_show  # guess: (entry): opens the TV for a news entry and pauses the game (1110:0067)
-1048:1b3e func fernseher_tick  # the TV news: plays its film, closes after 3 s of GetTickCount
+1048:1599 func fernseher_hit
+1048:15e6 func fernseher_tvimage_mouse_down
+1048:1794 func fernseher_tvimage_mouse_up
+1048:1939 func fernseher_tvleiimage_press
+1048:1a4b func fernseher_tvleiimage_release
+1048:1b3e func fernseher_tick  # the TV news: plays its film, starts the speaker after 3 s, closes after 6 s of GetTickCount
 1048:1ffd func init_messages
+1048:249d func done_messages
+1048:2524 func save_news
+1048:25ea func load_news
+1048:26b7 func fernseher_stop_media
+1048:26f6 func fernseher_form_key_down
+1048:286b func fernseher_tvimagemousedown
+1048:287d func fernseher_tvimagemouseup
+1048:288f func fernseher_tvleiimagemousedown
+1048:2922 func fernseher_tvleiimagemouseup
+1048:2955 func fernseher_tvleiimagemousemove
+1048:29e2 func fernseher_form_hide
 1048:2a19 func load_map
 1048:2bae func save_map
 1048:2dff func load_hauspos
@@ -447,10 +571,54 @@
 1058:412f func startform_bildmousemove
 1058:41fb func startform_bildmouseup
 1058:4381 func startform_formkeydown
+1060:0163 func optionenform_ok_click
+1060:0175 func optionenform_top_click
+1060:01ab func optionenform_info_click
+1060:01dc func optionenform_music_click
+1060:01fa func optionenform_track_check
+1060:02b7 func optionenform_track_select
+1060:04e2 func optionenform_music_volume_click
+1060:04f9 func optionenform_sounds_click
+1060:050b func optionenform_sound_volume_click
+1060:0522 func optionenform_speech_click
+1060:0534 func optionenform_speech_volume_click
+1060:05a7 func optionenform_auction_waits_click
+1060:05cb func optionenform_animations_click
 1060:0619 func optionen_set_speed  # game_speed := 100 - slider position
+1060:0637 func optionenform_disasters_click
+1060:0656 func optionenform_owner_pointers_click
+1060:06ba func optionenform_occupancy_pointers_click
+1060:071e func optionenform_no_pointers_click
+1060:0789 func optionenform_show
+1060:0e80 func optionenform_close
 1060:0ed0 func optionen_load_texts
+1060:14f1 func optionenform_create_widgets
+1060:231c func optionenform_free_bitmaps
+1060:2404 func optionenform_bild_mouse_down
+1060:29f0 func optionenform_bild_mouse_move
+1060:2b17 func optionenform_bild_mouse_up
+1060:2c72 func optionenform_form_key_down
+1060:33cb func optionenform_form_close
+1068:0180 func schlussform_weiterspielen_click
+1068:01b3 func schlussform_highscore_click
+1068:01df func schlussform_beenden_click
+1068:0201 func schlussform_neuesspiel_click
+1068:0218 func schlussform_closebutton_click
 1068:023a func schluss_skip_lines
 1068:0288 func schluss_load_texts
+1068:09a5 func schlussform_init
+1068:0e1a func schlussform_free_bitmaps
+1068:0e68 func schlussform_play_quit_film
+1068:0f52 func schlussform_show_quit
+1068:1016 func schlussform_show_end
+1068:1340 func schlussform_show_results
+1068:1593 func schlussform_close
+1068:1613 func schlussform_bildmousedown
+1068:16e0 func schlussform_bildmouseup
+1068:17ad func schlussform_film_ended
+1068:187f func schlussform_timer1timer
+1068:198a func schlussform_formkeydown
+1068:199b func schlussform_panel1click
 1068:1a08 func new_house  # (i, j, building): a 0x2c-byte record in front of *1110:6f10 and of its plot's +0x358 list; condition 127, price HAUSPREI col 2, +0x16 0x50, +1 HAUSDATA col 4, +2 1110:6509[road_distance]
 1068:1b3e func new_facility  # (i, j, building): the same, 0x1b bytes, in front of *1110:6f14 and the plot's +0x35c list; price at +0x16
 1068:1c7d func add_building_site  # (i, j, building, budget): a 13-byte record in front of *1110:6f08, HAUSDATA col 0 days (1 while frozen)
@@ -480,14 +648,55 @@
 1068:3244 func save_plots
 1068:32b5 func load_lists
 1068:32df func save_lists
+1070:01e8 func geldmenuform_overview_click
+1070:01fc func geldmenuform_insurance_click
+1070:0294 func geldmenu_hit
+1070:0300 func geldmenuform_bild_mouse_down
+1070:04d3 func geldmenuform_bild_mouse_up
+1070:0820 func geldmenuform_ueberschrift_mouse_down
+1070:08e0 func geldmenuform_ueberschrift_mouse_move
+1070:096d func geldmenuform_ueberschrift_mouse_up
+1070:09f7 func geldmenuform_menu_mouse_down
+1070:0ad5 func geldmenuform_menu_mouse_move
+1070:0add func geldmenuform_menu_mouse_up
+1070:0b76 func geldmenu_image_of
+1070:0be5 func geldmenu_background_of
+1070:0c8b func geldmenu_image_dc
+1070:0cbd func geldmenu_background_dc
+1070:0cef func geldmenu_erase
+1070:0dea func geldmenu_put_text
+1070:1100 func geldmenu_draw_up
+1070:1178 func geldmenu_draw_down
 1070:1345 func guests_last_months
+1070:13f1 func books_value
 1070:1419 func books_add
 1070:1452 func geldmenu_year_total  # (Self): kind 0x6b := sum of 0x5f..0x6a, then redraws
+1070:14b4 func geldmenu_chart_dot
+1070:151b func geldmenu_chart_line
+1070:16b7 func geldmenu_draw_chart
+1070:1ba5 func geldmenu_hide_widgets
+1070:1d1f func geldmenu_draw_widgets
+1070:1eeb func geldmenu_draw_page
+1070:1f3f func geldmenu_draw_title
+1070:1f79 func geldmenu_draw_menu_bar
+1070:20e7 func geldmenu_set_page
 1070:210a func geldmenu_month_end  # (Self): the four history rings (cash, net worth, guests, reputation) get a month; game::accounts
 1070:2617 func geldmenu_refresh  # (Self): geldmenu_year_total if the form's height (+0x24) is above 0
+1070:2630 func geldmenu_loaded
+1070:2653 func books_clear_years
 1070:269d func books_close_year
+1070:270f func geldmenu_draw_values
+1070:28d3 func geldmenu_draw_labels
+1070:2ab8 func geldmenu_balance
+1070:2b11 func geldmenu_show_page
+1070:2b3a func geldmenu_show
+1070:2bb4 func geldmenu_close
 1070:2bfa func geldmenu_load_data  # form method (Self); GELDMENU.TXT + GELDMENU.DAT
 1070:2e6c func geldmenu_init  # form method (Self): the books' history rings and this year's kinds; game::world::Books::new_game
+1070:38d2 func geldmenu_destroy
+1070:39bf func geldmenuform_formkeydown
+1070:3b27 func geldmenu_save
+1070:3bf8 func geldmenu_load
 1078:0002 func building_slice  # (n): houses with (i + j) mod 30 = n: Random(100) < guests*100 div capacity (HAUSDATA col 3); facilities with (i * j) mod 30 = n: Random(100) < +0x15; then 1090:1a25; game::construction
 1078:014c func guests_of  # (player): 1110:6f8c + 4p (player 0 reads player 8's interest)
 1078:0172 func set_guests_of  # (player, guests: Longint)
@@ -511,6 +720,7 @@
 1078:15d9 func add_site_budget  # (i, j, building, budget): add_building_site; a computer's square: HAUSDATA col 3 onto its budget; game::construction
 1078:1684 func unregister_building_call  # near: calls 1078:124e
 1078:169a func find_record  # (i, j): the house or facility record of the building there, by its first square (1030:154c)
+1078:17a0 func building_figures
 1078:1995 func find_building_site  # (i, j): the record in *1110:6f08 whose area holds (i, j), if building 31 is there; else nil
 1078:1a66 func set_connection_at  # (i, j, value): the house or facility record of the building there gets +2 := value; game::roads
 1078:1b5e func place_site  # (building, j, i, player, budget): the area becomes building site 31 (palms off their plot's count and the location map, Random(looks) each), owned by player; then 1078:15d9; game::construction
@@ -525,7 +735,23 @@
 1078:280b func demolish  # (j, i, player): player 0 for disasters; building site (refund price*days div time), building (price div 20), road (1110:64ea), sea bridge (free); error messages 0xe, 0x17, 0x18, 0x1d for player 1; game::construction
 1078:3271 func init_players  # start money and loans, the difficulty's debt limit, lists, plots (1068:2bba), totals, player block; game::money
 1080:0123 func umenu_refresh  # refreshes TUmenuform if shown
+1080:014c func umenu_renovate_click
+1080:017f func umenu_jump_click
+1080:01b2 func umenu_minus_click
+1080:0235 func umenu_plus_click
+1080:02bc func umenu_close_click
+1080:02d9 func umenu_draw_list
+1080:0be9 func umenu_scroll_click
+1080:0bfb func umenu_select_kind
+1080:0e92 func umenu_hide
+1080:0ea8 func umenu_open
 1080:1141 func load_umenu
+1080:145f func umenu_init
+1080:1b24 func umenu_free
+1080:1c3b func umenu_bild_mousedown
+1080:1e54 func umenu_bild_mousemove
+1080:1f18 func umenu_bild_mouseup
+1080:202b func umenu_formkeydown
 1080:22be func road_set  # (i, j): where the ground's road pieces start: sand 0, grass 0xf, water 0x5f, sand to grass 0x1e; game::roads
 1080:232a func road_piece  # (i, j): the road piece for the neighbours (jump table 1080:230a), or a river piece 0x3b..0x3e becomes a crossing 0x37..0x3a with building 11
 1080:261a func bridge_piece  # (i, j): building 0x34 and the sea bridge piece: ramps 0x5f..0x62 (part = form), flat 99 (part 4) next to an i-bridge or ramp, else 100 (part 5); game::roads
@@ -623,8 +849,17 @@
 10a0:0ddc func quake_end  # same as flood_end
 10a0:0e17 func end_soft_soap  # (i, j): the soft soap (kind 5) there ends: its countdown := 1
 10a0:0ec8 func sabotage_at  # (kind, i, j): sabotage of kind on the building there (its first square unless in 1110:1358), any slot
+10a0:0f6c func init_sabotage_slots
+10a0:0fec func free_sabotage_slots
+10a0:1000 func sabotage_blow_up
 10a0:10c6 func send_surfers  # (i, j): five tries, Random(2): a surfer (people kind 0x20 or 0x21) from there, counted in *1110:551c
 10a0:117e func effects_tick  # once a day: the five sabotage slots *1110:705a and three championships *1110:705e count down and act; game::sabotage
+10a0:19d2 func sabotage_starts
+10a0:1b31 func sabotage_caught
+10a0:1d5e func order_sabotage
+10a0:1f65 func sabotage_command
+10a0:232f func save_sabotage
+10a0:2453 func set_sound_volume
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
 10a8:0167 func computer_bid  # nested in 10a8:0221: price + (min(money - loan + MaxSchulden, 3 price) - price) * Random(1000) div 999, 0 below the price; game::computer
 10a8:0221 func computer_bid_for  # (player, price: Longint): the human's money; a computer's bid unless out, the owner of event 9's square, or (for other items) waiting for its first roads; game::computer
@@ -730,8 +965,108 @@
 10b0:56ce func load_maperste
 10b0:5788 func create_maperste  # the 11 tables of 5x5 Integers at 1110:71f2..721a, load_maperste
 10b0:582a func free_maperste
+10b8:02e9 func uebersichtsmap_hit
+10b8:038d func uebersichtsmap_square_at
+10b8:0422 func uebersichtsmap_square_x
+10b8:0443 func uebersichtsmap_square_y
+10b8:045f func uemap_owners_heights_x
+10b8:04b1 func uemap_owners_heights_y
+10b8:05f8 func uemap_owners_slopes_x
+10b8:0684 func uemap_owners_slopes_y
+10b8:0786 func uemap_terrain_heights_x
+10b8:07df func uemap_terrain_heights_y
+10b8:08a8 func uemap_terrain_slopes_x
+10b8:0934 func uemap_terrain_slopes_y
+10b8:098c func uemap_buildings_heights_x
+10b8:0a0a func uemap_buildings_heights_y
+10b8:0b57 func uemap_buildings_slopes_x
+10b8:0c10 func uemap_buildings_slopes_y
+10b8:0d18 func uemap_location_x
+10b8:0d28 func uemap_location_y
+10b8:0d53 func uemap_occupancy_x
+10b8:0d63 func uemap_occupancy_y
+10b8:0dc2 func uemap_green_x
+10b8:0dd2 func uemap_green_y
+10b8:0eeb func uebersichtsmap_draw_area
+10b8:11b4 func uemap_draw_owners_heights
+10b8:11e1 func uemap_draw_buildings_heights
+10b8:120e func uemap_draw_location
+10b8:123b func uemap_draw_green
+10b8:1268 func uemap_draw_occupancy
+10b8:1295 func uemap_draw_terrain_heights
+10b8:12c2 func uemap_draw_buildings_slopes
+10b8:12ef func uemap_draw_owners_slopes
+10b8:131c func uemap_draw_terrain_slopes
+10b8:1349 func uebersichtsmap_draw_frame
+10b8:1485 func uebersichtsmap_erase_frame
+10b8:1504 func uebersichtsmap_redraw_land
+10b8:1534 func uebersichtsmap_redraw_occupancy
+10b8:1564 func uebersichtsmap_redraw_cleared
+10b8:1594 func uebersichtsmap_redraw_demolished
+10b8:15c4 func uebersichtsmap_redraw_location
+10b8:15f4 func uebersichtsmap_redraw_road
 10b8:1624 func uebersichtsmap_redraw_area  # guess: (self, i, j, w, h): redraws an area of the overview map
+10b8:1654 func uebersichtsmap_redraw_building
+10b8:1684 func uebersichtsmap_redraw_squares
+10b8:16fa func uebersichtsmap_draw_area_all
+10b8:171b func uebersichtsmap_draw_strip
+10b8:173e func uebersichtsmap_redraw_framed
+10b8:1765 func uebersichtsmap_draw_area_framed
+10b8:17cf func uebersichtsmap_draw_mode_area
+10b8:1a49 func uebersichtsmap_redraw_all
+10b8:1a6e func uebersichtsmap_scroll_by
+10b8:1c74 func uebersichtsmap_umschaltbild_mousedown
+10b8:1d21 func uebersichtsmap_umschaltbild_mouseup
+10b8:1e25 func uebersichtsmap_update_bars
+10b8:1e4a func uebersichtsmap_set_ns_bar
+10b8:1e73 func uebersichtsmap_ns_position
+10b8:1e96 func uebersichtsmap_ns_thumb
+10b8:1f52 func uebersichtsmap_ns_position_at
+10b8:200e func uebersichtsmap_draw_ns_thumb
+10b8:20a5 func uebersichtsmap_erase_ns_thumb
+10b8:20f2 func uebersichtsmap_scroll_ns
+10b8:216e func uebersichtsmap_nsscrolltimer_timer
+10b8:21c7 func uebersichtsmap_start_ns_timer
+10b8:21fa func uebersichtsmap_stop_ns_timer
+10b8:222b func uebersichtsmap_nsscrollbild_mousedown
+10b8:2421 func uebersichtsmap_nsscrollbild_mousemove
+10b8:24a1 func uebersichtsmap_nsscrollbild_mouseup
+10b8:257f func uebersichtsmap_set_wo_bar
+10b8:25a8 func uebersichtsmap_wo_position
+10b8:25cb func uebersichtsmap_wo_thumb
+10b8:26a8 func uebersichtsmap_wo_position_at
+10b8:2785 func uebersichtsmap_draw_wo_thumb
+10b8:281c func uebersichtsmap_erase_wo_thumb
+10b8:2869 func uebersichtsmap_scroll_wo
+10b8:28e5 func uebersichtsmap_woscrolltimer_timer
+10b8:293e func uebersichtsmap_start_wo_timer
+10b8:2971 func uebersichtsmap_stop_wo_timer
+10b8:29a2 func uebersichtsmap_menubild_mousedown
+10b8:2e01 func uebersichtsmap_menubild_mousemove
+10b8:2e99 func uebersichtsmap_menubild_mouseup
+10b8:303e func uebersichtsmap_select
+10b8:31f8 func uebersichtsmap_restore_part
+10b8:3363 func uebersichtsmap_place_image
+10b8:346a func uebersichtsmap_fill_image
+10b8:3553 func uebersichtsmap_layout
+10b8:37f5 func uebersichtsmap_mapbild_mousedown
+10b8:39b1 func uebersichtsmap_mapbild_mousemove
+10b8:3aab func uebersichtsmap_mapbild_mouseup
+10b8:3ac3 func uebersichtsmap_ueberschriftbild_mousedown
+10b8:3c9b func uebersichtsmap_ueberschriftbild_mousemove
+10b8:3d2b func uebersichtsmap_ueberschriftbild_mouseup
+10b8:3e73 func uebersichtsmap_resize
+10b8:3eee func uebersichtsmap_draw_close_text
+10b8:3f7f func uebersichtsmap_close
+10b8:3fab func uebersichtsmap_game_start
+10b8:4079 func uebersichtsmap_open
 10b8:41ad func uebermap_load_data  # form method (Self); UEBERMAP.TXT + UEBERMAP.DAT
+10b8:4538 func uebersichtsmap_init
+10b8:4b29 func uebersichtsmap_free
+10b8:4c59 func uebersichtsmap_key_scroll
+10b8:4c95 func uebersichtsmap_formkeydown
+10b8:4e34 func uebersichtsmap_save
+10b8:50de func uebersichtsmap_load
 10c0:0002 func widget_init  # constructor of the widget object (Turbo Pascal object, VMT word at +9): (left, top, width, height, visible); fields +0 top, +2 left, +4 width, +6 height, +8 visible. Segment 10c0 is the widget toolkit, docs/widgets.md
 10c0:003e func widget_done
 10c0:004d func widget_set_visible
@@ -833,10 +1168,18 @@
 1110:0057 data computers_play  # 1 by init_game_defaults
 1110:0058 data view_owner_pointers
 1110:0059 data view_occupancy_pointers
+1110:005b data option_music
+1110:005c data option_news_events
+1110:005d data option_news_buildings
+1110:005e data option_news_sabotage
+1110:005f data option_news_congratulations
+1110:0060 data option_button_help
 1110:0061 data option_sounds  # Boolean: the options' "Geraeusche"; play_sound checks it, 10a0:09ea clears it meanwhile
 1110:0062 data sound_enabled  # SETUP.DAT line 5 is not N
 1110:0063 data auction_waits  # Boolean: the options' "Auktion wartet": an auction stands until the player starts it
+1110:0064 data option_show_books_at_new_year
 1110:0065 data disasters_enabled
+1110:0066 data option_speech
 1110:0067 data paused  # Boolean: the clock stands while the TV shows a message
 1110:006e data scenario  # Byte: 1..6, 0 for a normal game
 1110:0070 data money_frozen
@@ -854,6 +1197,7 @@
 1110:0094 data palm_chance  # Integer, 20: percent of a new island's sand and grass squares with a palm (10b0:4dae)
 1110:0096 data game_speed  # Longint: ticks per hour of game time (a day is six), 4 by default
 1110:009a data status_message_timeout
+1110:009c data help_timeout
 1110:009e data building_slice_tick  # Integer 0..29: building_slice argument
 1110:00a2 data height_limit  # Word, 20 at first; level_site starts its lowest corner there
 1110:00ea data kind_menus  # array[0..11] of Integer: the build submenu of each HAUSDATA kind (9..0x14, -1 for kind 7)
@@ -886,8 +1230,15 @@
 1110:14e0 data tool_buttons  # array[6..22] of Byte (from 14e6): a tool's button, the same numbers; 1110:14f2 another copy
 1110:14f2 data tool_buttons2
 1110:1572 data hauptschirm_layout_table  # 11 x (hidden, left, top, width, height)
+1110:163c data button_tooltip_texts
+1110:16b8 data sabowin_rects
 1110:174b data month_lengths  # month lengths, array[0..3, 1..12] of Byte read at 174b + 12 * (year mod 4) + month
+1110:177c data ib_kinds
 1110:1812 data dateimenue_rects  # array[0..20] of (left, top, right, bottom: Integer), inclusive: the file menu parts; game::dateimenue::RECTS
+1110:18ba data endeform_rects
+1110:199e data news_kinds
+1110:1a52 data fernseher_rects
+1110:337c data umenu_row_colours
 1110:33c0 data taxiing_sprites  # array[0..3, 0..5] of Integer: the taxiing planes' (0x35..0x3a) first sprite by rotation
 1110:33f0 data people_looks  # array[0..3, 0..7] of Integer: a facing as seen from each rotation
 1110:3430 data plane_tracks  # array[0..3, 0..15] of Integer: the ANIMDAT3 track of a plane route by rotation
@@ -945,6 +1296,7 @@
 1110:54ee data flusspos | pointer32  # far pointer to the table loaded from the file of that name
 1110:54f2 data hausnr | pointer32  # far pointer to the table loaded from the file of that name
 1110:54f6 data hauspos | pointer32  # far pointer to the table loaded from the file of that name
+1110:54fa data sabotage_armed
 1110:54fc data screen_width  # the layout size picked from the form size, see docs/startup.md
 1110:54fe data screen_height
 1110:5500 data map_heights | pointer32  # 251x251 layers, [i*251+j]; game::world
@@ -966,12 +1318,16 @@
 1110:6056 data tool  # Integer: the tool, 6 raise, 7 lower, 8 demolish, 9..20 build (but 16 road), 21 sabotage, 22 pointer; saved
 1110:6058 data tool_building  # Integer: the building type the build tools build; saved
 1110:605a data mouse_square  # (i, j: Integer): the square under the mouse, each tick (1090:124f); saved
+1110:6330 data music_volume
+1110:6334 data sound_volume
+1110:6338 data speech_volume
 1110:6344 data road_drag_from  # (i, j: Integer): the road tool's start square; plan_road sets it to the road's start; 1110:6348 the current square
 1110:6348 data road_drag_to  # (i, j: Integer): the road drag's end, each tick while dragging (1090:0014); saved
 1110:634c data road_dragging  # Byte: the road tool is being dragged; the computers don't build roads meanwhile; saved
 1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
 1110:64b0 data werbung_to_text
 1110:64b4 data renovierung_to_text
+1110:64b8 data pointer_double_click
 1110:64be data land
 1110:64bf data max_lageeinfluss  # MODATYP.DAT MaxLageeinfluss
 1110:64c6 data werbungskosten
@@ -1012,8 +1368,12 @@
 1110:65aa data auction_call_time  # Longint: GetTickCount at the last call, for the auctioneer's mouth
 1110:65ae data auction_started  # Boolean: the player has started the auction (or it doesn't wait)
 1110:65b0 data auktion_texts
+1110:65ba data sabotage_kind
 1110:65bc data sabotage_kinds
 1110:65c0 data sabowin
+1110:65c4 data sabowin_background
+1110:65cc data sabowin_button_pressed
+1110:65d0 data sabowin_pressed
 1110:65d2 data sabotage_labels
 1110:65d6 data monate  # TMonate: +0 month names, +4 day, +5 month, +6 year (Word)
 1110:65da data fontdat1 | pointer32  # far pointer to the table loaded from the file of that name
@@ -1034,14 +1394,28 @@
 1110:660e data dateimenue_name_count
 1110:6610 data dateimenue_listed
 1110:6612 data endeform
+1110:661e data endeform_pressed
 1110:6620 data kompassform
 1110:6624 data dummyform
 1110:6628 data fernseher
+1110:662c data fernseher_film_playing
 1110:662d data tv_busy  # Boolean: the TV shows a message; the auction form waits for it
+1110:662e data fernseher_centred
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
+1110:6638 data news_cursor
 1110:663a data news_archive | pointer32  # 26 records of 0x11c: +0 day, +4/+6/+8/+0xc values, +0x10 text, +0x12 message, +0x14 date text, +0x114 square, +0x118 view origin
 1110:663e data nachrich_lines  # 3 far pointers to 90 x string
+1110:664a data fernseher_left
+1110:664c data fernseher_top
+1110:664e data fernseher_pressed
+1110:6662 data fernseher_closing
+1110:6663 data fernseher_mouse_up
+1110:6664 data news_last
+1110:6672 data fernseher_film_state
+1110:6676 data fernseher_opened_at
+1110:667c data news_nothing_yet
+1110:667d data fernseher_auto
 1110:667e data ansicht_formkorrektur
 1110:6682 data ansicht_flusskorrektur
 1110:6686 data ansicht_strassenkorrektur
@@ -1062,10 +1436,14 @@
 1110:6ed4 data ladenform_names
 1110:6ed8 data ladenform_name_count
 1110:6eda data ladenform_listed
+1110:6edc data optionenform
 1110:6ee0 data highscoreform
 1110:6ee4 data highscores
+1110:6ee8 data highscore_game
 1110:6eea data highscor_texts
 1110:6eee data schlussform
+1110:6ef2 data music_playlist
+1110:6efa data music_track
 1110:6f04 data geldmenuform
 1110:6f08 data building_sites | pointer32  # list of 13-byte records: +1 i, +3 j, +5 days left, +7 type, +9 next
 1110:6f0c data plots | pointer32  # list of 0x364-byte plot records: +0 number, +2 airports and harbours, +0x22 houses' capacity, +0x354 palms planted and park squares, +0x356 other building squares, +0x358 house list, +0x35c facility list, +0x360 next
@@ -1080,7 +1458,11 @@
 1110:6f90 data player_guests  # array[1..8] of Longint
 1110:6fb0 data economy_periods  # 2 Integers, see 1078:075f
 1110:6fb4 data umenuform
+1110:6fb8 data umenu_kind
 1110:6fba data umenu_texts
+1110:6fbe data umenu_selected
+1110:6fc0 data umenu_list
+1110:6fc4 data umenu_last
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fcc data people_runway  # the runway of the next taxiing plane (kinds 0x35..0x3a)
 1110:6fd4 data tool_pointer_frame  # Integer: the tools' pointers' frame, 0..7
@@ -1138,6 +1520,8 @@
 1110:7226 data hill_mask  # pointer32: array[-50..50, -50..50] of Integer, the hill's outline (10b0:3904)
 1110:722a data hill_heights  # pointer32: the heights under the hill
 1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
+1110:7232 data creditform
+1110:7236 data pauseform
 1110:723a data uebersichtsmap2
 1110:723c data sound_busy  # array[1..42] of Integer from 1110:723e: ticks each sound still plays; play_sound (10a0:30b6) only plays at 0 and sets it from 1110:3dce, people_tick counts it down; not saved, the view's
 1110:7342 data helpform

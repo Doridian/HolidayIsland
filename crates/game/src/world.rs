@@ -818,6 +818,10 @@ pub struct Tables {
     /// map file doesn't save it (unit 1010:0d4c skips it), so it stays
     /// what the game's data gave it. // 1110:64ee
     pub road_cost: i32,
+    /// `SABOTAGE.TXT`'s nine kinds of sabotage, as far as the world needs
+    /// them: the price and the building types piranhas go into. The rest
+    /// is the form's ([`crate::sabowin`]). // *1110:65bc, 1028:361f
+    pub sabotage: Vec<crate::sabotage::SabotageKind>,
 }
 
 impl Tables {
@@ -1150,6 +1154,17 @@ pub struct World {
     /// aren't kept; one that's missing is written as zeros
     /// (`crate::savegame`).
     pub unported: Fields,
+    /// The human's money menu is shown (its height above 0, 1070:2617):
+    /// while it is, every booking works out this year's total
+    /// ([`World::geldmenu_refresh`]). The view's state, which the books
+    /// follow, so it's the world's and changes by command
+    /// (`crate::geldmenu::Action::Shown`). Not in the map file. Single
+    /// human: player 1's form.
+    pub money_menu_shown: bool,
+    /// The news archive (`crate::news`). Which news open the TV is the
+    /// player's view's (`crate::optionen::Settings::news`).
+    /// // *1110:663a, unit 1048:25ea
+    pub news: crate::news::News,
 }
 
 impl Default for World {
@@ -1212,6 +1227,8 @@ impl Default for World {
             tables: Arc::default(),
             random: Random::default(),
             unported: Fields::default(),
+            money_menu_shown: false,
+            news: crate::news::News::default(),
         }
     }
 }
@@ -1347,6 +1364,18 @@ fn people(save: &SaveGame) -> Result<People, Error> {
         ships: signed("1110:6fee")?,
         boats: signed("1110:6ff0")?,
         ..People::default()
+    })
+}
+
+/// The news archive (unit 1048:25ea).
+fn news(save: &SaveGame) -> Result<crate::news::News, Error> {
+    let entries =
+        crate::news::News::from_archive_bytes(field(save, "*1110:663a")?).ok_or(Error::Field("*1110:663a"))?;
+    Ok(crate::news::News {
+        entries,
+        last: word(save, "1110:6664")?.cast_signed(),
+        nothing_yet: byte(save, "1110:667c")? != 0,
+        date_format: crate::news::DateFormat::default(),
     })
 }
 
@@ -1551,6 +1580,8 @@ impl World {
             tables: Arc::default(),
             random: Random::default(),
             unported: Fields::default(),
+            money_menu_shown: false,
+            news: news(save)?,
         };
         world.unported = crate::savegame::unported_world_fields(save);
         world.link_plots();

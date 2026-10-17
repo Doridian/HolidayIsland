@@ -140,6 +140,17 @@ pub struct Tick {
     /// The human built a type there's only one of: the original presses
     /// the pointer's button (1078:1d21, 1010:2c8b).
     pub pointer_tool: bool,
+    /// The year ended ([`World::year_end`]): with the player's option
+    /// `1110:0064` (the view's `crate::optionen::Settings::year_balance`)
+    /// the original then shows the money menu's balance sheet (1070:2b11
+    /// with page 1), before the renovations.
+    pub new_year: bool,
+    /// The building sites finished, as they were: the original closes the
+    /// info box if it shows a square of one (1008:525b, 1038:1ee0).
+    pub finished_sites: Vec<crate::world::BuildingSite>,
+    /// The news as it went into the archive, one for each of
+    /// [`Tick::messages`] (`crate::news`): the TV's part.
+    pub news: Vec<crate::news::Posted>,
 }
 
 /// A message on the status bar.
@@ -180,10 +191,10 @@ impl World {
     pub fn tick(&mut self) -> Tick {
         let mut tick = Tick::default();
         self.auction_tick(&mut tick);
-        if self.auction.open {
-            return tick;
+        if !self.auction.open {
+            self.animations_timer(&mut tick);
         }
-        self.animations_timer(&mut tick);
+        self.geldmenu_refresh(&tick); // 1070:2617
         tick
     }
 
@@ -241,6 +252,7 @@ impl World {
             a.step = 0;
             if self.date.month == 1 {
                 self.year_end();
+                tick.new_year = true;
             }
         }
         if self.date.month == 1 && self.accounting.step == 5 {

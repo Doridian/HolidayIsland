@@ -130,6 +130,17 @@ fn cd_maps_save_as_they_were_read() {
             match x.dest {
                 // The players' names and the computers' status text.
                 "1110:0902" | "1110:70f2" => assert!(same_strings(&x.data, &y.data), "{name}: {}", x.dest),
+                // The news archive's dates, the same way.
+                "*1110:663a" => assert!(
+                    x.data.len() == y.data.len()
+                        && x.data
+                            .chunks(0x11c)
+                            .zip(y.data.chunks(0x11c))
+                            .all(|(a, b)| a[..0x14] == b[..0x14]
+                                && same_strings(&a[0x14..0x114], &b[0x14..0x114])
+                                && a[0x114..] == b[0x114..]),
+                    "{name}: the news"
+                ),
                 // `save_map` writes zeros there; the CD's files have
                 // something else (an older version's data?).
                 "(a local in 10a0:23c9)" => assert!(y.data.iter().all(|&b| b == 0)),

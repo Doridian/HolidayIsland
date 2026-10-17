@@ -1557,7 +1557,7 @@ impl World {
     /// A facility's price a step up, at most `HAUSPREI.DAT`'s column 2
     /// for transport (kinds 9–11) and full championships, else three
     /// times it. // 1010:1ae2
-    fn raise_price(&self, building: u8, price: i32) -> i32 {
+    pub(crate) fn raise_price(&self, building: u8, price: i32) -> i32 {
         let p = match price {
             i32::MIN..0x280 => price.wrapping_add(40),
             0x280..0xa00 => price.wrapping_add(160),

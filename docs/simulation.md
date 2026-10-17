@@ -28,7 +28,7 @@ whole simulation stands then ([auction.md](auction.md)).
 | 5 | `1110:009e := (1110:009e + 1) mod 30`, then `building_slice(1110:009e)`, [below](#the-buildings-tick-10780002) | 1078:0002 | 330 | world |
 | 6 | Scrolls the view by the timer's `Tag`: 1–4 `scroll_ns` by −1, −16, 16, 1; 5–8 `scroll_wo` by −1, −18, 18, 1 | 1020:0cf7, 1020:147f | | view |
 | 7 | During an earthquake (`1110:0087` = 1): moves the form by `Random(7) - 3` in x and y; on the first tick of each hour also `quake_damage` | inline; 10a0:0d1c | 192 | view; world |
-| 8 | With the TV (`fernseher`) visible: its tick, which plays the news film and closes it after 3 s (`GetTickCount`) | 1048:1b3e | 1107 | view |
+| 8 | With the TV (`fernseher`) visible: its tick, which starts the speaker after 3 s, then plays the news film or closes the TV after 6 s (`GetTickCount`, [fernseher.md](fernseher.md#the-timer-fernseher_tick-10481b3e)) | 1048:1b3e | 1107 | view |
 | 9 | Without animations (`1110:0054` = 0) just refreshes `Hauptbild`. With them: `people_tick`, and with `1110:0056` the rest of the animation group (new people, drawing them), [below](#animations-step-9) | 1090:5293 | ~3850 | world and view |
 
 ### The clock (step 4)
@@ -236,8 +236,10 @@ Ported in [`game::accounts`](../crates/game/src/accounts.rs).
    through `add_money` and the books' kind 0x6a (1070:1419).
 3. `MaxSchulden` goes up by 100 000, 50 000 or 10 000 by the difficulty.
 
-With the option `1110:0064` the original then shows the money menu
-(1070:2b11).
+With the option `1110:0064` the original shows the money menu's balance
+sheet right after step 1 (1070:2b11 with page 1, which also works out
+the year's total again): `Tick::new_year`
+([geldmenu.md](geldmenu.md#opening-and-closing)).
 
 ### The scenario's end (1008:0512)
 
@@ -548,10 +550,12 @@ news archive (`*1110:663a`, 26 records of 0x11c bytes, saved by unit
 the number, the date's text, the square and the view's origin. Then, by
 the message's kind of news (`1110:199e[number]`, 0–4) and the player's
 options for it (`1110:005c`..`005f`), it scrolls the view to the square
-(with `centre`) and opens the TV (1048:12e9), which pauses the game. In
-the port the world draws the `Random(3)` and hands the message to the
-view in `Tick::messages` (`game::news`); the archive and the TV aren't
-ported.
+(with `centre`) and opens the TV (1048:12e9), which pauses the game.
+Ported in `game::news` (the archive and the TV's part in the world) and
+`game::fernseher` (the TV); the world hands the view each message in
+`Tick::messages` and `Tick::news`, and the view decides by the player's
+options (`optionen::Settings::news`, saved with the view) whether its TV
+opens, and then asks for the pause with a command. [fernseher.md](fernseher.md) has the details.
 
 ## Events (1010:3084)
 
@@ -696,8 +700,10 @@ call them through commands. `make_available` gives the type to the
 human's build menu (the world's lists, `game::build_menu`) and the
 computers. 1088:7fb1,
 which runs `spawn_people` again after the player scrolls or turns the
-view, isn't ported. Demolishing refreshes the money menu (1070:2617) in the original,
-which the port leaves to the view. Where a stub
+view, isn't ported. The money menu's refresh (1070:2617) after a
+booking is `Tick::books`, and the year's total it works out while the
+menu is shown runs at the end of the tick or command
+([geldmenu.md](geldmenu.md#world-and-view)). Where a stub
 stands for code that draws random numbers, the port's numbers part from
 the original's once it runs.
 
@@ -725,7 +731,8 @@ the original's once it runs.
   ([people.md](people.md)).
 - The news (1048:0a54) pauses the game through the TV for the human
   player, depending on their options per kind of news; the archive also
-  stores that player's view origin. Both need a multiplayer answer.
+  stores that player's view origin. Both need a multiplayer answer
+  ([fernseher.md](fernseher.md#multiplayer)).
 - The houses' `+0x10` is their guests ([settlement.md](settlement.md));
   `1110:0072` is the insurance (a 120th of the buildings' value a month).
 - `demolish` reports the error messages for player 1 as a `Result`,
@@ -748,10 +755,14 @@ the original's once it runs.
 - The books' totals (kinds 0x5e, 0x6b) are worked out by 1070:1452, which
   the original runs at the year's end and whenever the money menu is
   shown (1070:2617, only with the form's height above 0): a view
-  condition in world state. The port only works it out at the year's end.
-- What the books' 0x6c–0x6e are (a new game starts them as the human's
-  money, `-loan` and their difference), and what `1110:133c` and
-  `1110:006f` mean. The plots' `+0x352` is their area in land corners
+  condition in world state. The port keeps it as
+  `World::money_menu_shown`, set by the money menu's command, and works
+  the total out at the end of each tick or command that booked
+  ([geldmenu.md](geldmenu.md#world-and-view)).
+- The books' 0x6c–0x6e are the money menu's balance: the human's money,
+  `-loan` and their difference whenever the total is worked out
+  (1070:2ab8), and after the loan buttons. What `1110:133c` and
+  `1110:006f` mean is open. The plots' `+0x352` is their area in land corners
   (1068:25fd).
 - The high score entry also stores a floating-point value made by
   1100:1142/1100:1808 from `1110:0a02` (the date?); that's left to the

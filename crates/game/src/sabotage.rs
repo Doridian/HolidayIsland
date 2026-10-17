@@ -1,10 +1,251 @@
-//! Sabotage and the championships: the timed effects `effects_tick`
-//! counts down once a day (segment `10a0`).
+//! Sabotage and the championships (segment `10a0`): ordering sabotage
+//! with the sabotage tool (10a0:1f65, from 1028:3d93; the form is
+//! [`crate::sabowin`]), and the timed effects `effects_tick` counts down
+//! once a day. `docs/sabotage.md` has the whole of it.
 
+use formats::data;
+
+use crate::accounts::BOOK_OTHER;
 use crate::construction::{BUILDING_SITE, EMPTY_CHAMPIONSHIPS, FULL_CHAMPIONSHIPS, Record};
+use crate::events::UNSHAKEN;
 use crate::news::Message;
-use crate::simulation::Tick;
-use crate::world::{Pos, World};
+use crate::simulation::{Status, Tick};
+use crate::world::{Pos, World, on_map};
+
+/// What the world needs of one of `SABOTAGE.TXT`'s kinds of sabotage.
+/// // *1110:65bc, 0x232 bytes each
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct SabotageKind {
+    /// What it costs. // +0x222
+    pub cost: i32,
+    /// The building types it can be used on, 255 for none; only the
+    /// piranhas' are read (pools). // +0x226
+    pub targets: [i16; 6],
+}
+
+/// The world's part of `SABOTAGE.TXT`'s kinds. // 1028:361f
+#[must_use]
+pub fn kinds(kinds: &[data::Sabotage]) -> Vec<SabotageKind> {
+    kinds
+        .iter()
+        .map(|k| SabotageKind {
+            cost: k.cost,
+            targets: k.targets,
+        })
+        .collect()
+}
+
+/// The sabotage kinds, `SABOTAGE.TXT`'s order.
+pub const PIRANHAS: u8 = 0;
+pub const BOMB: u8 = 1;
+pub const STINK_BOMB: u8 = 2;
+pub const SHARK_DIVER: u8 = 3;
+pub const RATS: u8 = 4;
+pub const SOFT_SOAP: u8 = 5;
+pub const GO_SLOW: u8 = 6;
+pub const CHARACTER_ASSASSINATION: u8 = 7;
+pub const ROAD: u8 = 8;
+
+/// The message for sabotage that's found out, by kind. // 10a0:1b31
+const CAUGHT_MESSAGES: [i16; 9] = [0x1b, 0x1d, 0x3e, 0x20, 0x3f, 0x40, 0x1e, 0x1f, 0x41];
+/// The message for sabotage that failed or found no free slot.
+/// // 10a0:1d5e
+const FAILED_MESSAGE: i16 = 0x1c;
+/// The people kind 10a0:1000 puts on every square of a blown-up building.
+const EXPLOSION: u8 = 0xdb;
+/// The people kind of the shark diver. // 10a0:19d2
+const DIVER: u8 = 3;
+/// `HAUSDATA.DAT`'s column 5 for an airport, where soft soap goes.
+const AIRPORT: i16 = 9;
+/// The sea square a shark diver goes on: form 16 (flat) and ground 2.
+const SEA_FORM: u8 = 0x10;
+const SEA_GROUND: u8 = 2;
+/// The ground of the road pieces the road sabotage takes.
+const ROAD_PIECES: std::ops::RangeInclusive<u8> = 10..=0x3a;
+
+impl crate::world::Tables {
+    /// Sabotage kind `kind`; past the table a free kind with no targets.
+    #[must_use]
+    pub fn sabotage_kind(&self, kind: u8) -> SabotageKind {
+        // BUG(original): a kind past the nine reads past the table (only a command can ask for one); the port takes a free kind with no targets.
+        self.sabotage.get(usize::from(kind)).copied().unwrap_or_default()
+    }
+}
+
+impl World {
+    /// The sabotage tool's click: `player` orders sabotage of `kind` on
+    /// the square `at` (the building there, for most kinds) if it's on
+    /// the map, not the player's own and, for player 1, paid for, and if
+    /// `kind` can be used there ([`World::order_sabotage`]). Else the
+    /// error on the status bar (`FEHLER.TXT` 0x16, 0x19, 0xe, 0x1a).
+    /// // 10a0:1f65
+    pub(crate) fn sabotage_command(&mut self, player: u8, kind: u8, at: Pos, tick: &mut Tick) {
+        let mut error = |n| tick.status.push((player, Status::Error(n))); // 1030:232d
+        if !on_map(at) {
+            return error(0x16);
+        }
+        if self.island.owners.at(at) == player {
+            return error(0x19);
+        }
+        let cost = self.tables.sabotage_kind(kind).cost;
+        // Single human: only player 1's money is checked (the computers never sabotage).
+        if player == 1 && self.money_of(1) < cost {
+            return error(0xe);
+        }
+        let building = self.island.buildings.at(at);
+        let free = UNSHAKEN.contains(&building); // 1110:1358
+        let origin = || self.building_origin(at); // 1030:154c
+        let order = match kind {
+            PIRANHAS if free => None,
+            PIRANHAS => {
+                if !self.tables.sabotage_kind(kind).targets.contains(&i16::from(building)) {
+                    // BUG(original): the loop over the pools always ends at 6, so its check for 5 never shows error 0x1a for a building that isn't a pool: nothing happens.
+                    return;
+                }
+                Some((120, origin()))
+            }
+            BOMB if !free => Some((10, origin())),
+            STINK_BOMB | RATS if !free => Some((90, origin())),
+            SHARK_DIVER if self.island.forms.at(at) == SEA_FORM && self.island.ground.at(at) == SEA_GROUND => {
+                Some((120, at))
+            }
+            SOFT_SOAP if !free && self.tables.hausdata(building, 5) == AIRPORT => Some((90, origin())),
+            GO_SLOW if building == BUILDING_SITE => Some((10, at)),
+            CHARACTER_ASSASSINATION if !free => Some((10, at)),
+            ROAD if ROAD_PIECES.contains(&self.island.ground.at(at)) => Some((10, at)),
+            k if k > ROAD => return,
+            _ => None,
+        };
+        match order {
+            Some((days, pos)) => self.order_sabotage(days, pos, kind, player, tick), // 10a0:1d5e
+            None => error(0x1a),
+        }
+    }
+
+    /// Whether the sabotage tool's picture shows `kind` as one that can be
+    /// used on `at` (the building's first square, or the square): on the
+    /// map, not player 1's, with player 1's money, and the kind fits
+    /// there, as the click checks it (here the piranhas' check works).
+    /// Single human: player 1's. // 1090:0014
+    #[must_use]
+    pub fn sabotage_fits(&self, kind: u8, at: Pos) -> bool {
+        let k = self.tables.sabotage_kind(kind);
+        if !on_map(at) || self.island.owners.at(at) == 1 || k.cost > self.money_of(1) {
+            return false;
+        }
+        let building = self.island.buildings.at(at);
+        let free = UNSHAKEN.contains(&building);
+        match kind {
+            PIRANHAS => !free && k.targets.contains(&i16::from(building)),
+            BOMB | STINK_BOMB | RATS | CHARACTER_ASSASSINATION => !free,
+            SHARK_DIVER => self.island.forms.at(at) == SEA_FORM && self.island.ground.at(at) == SEA_GROUND,
+            SOFT_SOAP => !free && self.tables.hausdata(building, 5) == AIRPORT,
+            GO_SLOW => building == BUILDING_SITE,
+            ROAD => ROAD_PIECES.contains(&self.island.ground.at(at)),
+            _ => false,
+        }
+    }
+
+    /// `player` pays for sabotage of `kind` on `pos` (player 1 into the
+    /// books' "other", the money rising from `pos`). Then 30 % of the time
+    /// it fails (`Random(100) < 30`): half of those quietly (message
+    /// 0x1c), the other half found out ([`World::sabotage_caught`]; the
+    /// second `Random(100) < 50`). Else it takes the first free slot, with
+    /// the owner of `pos` as the victim and `days` to run, and has its
+    /// first effect ([`World::sabotage_starts`]); with no free slot it
+    /// fails (0x1c). // 10a0:1d5e
+    fn order_sabotage(&mut self, days: u16, pos: Pos, kind: u8, player: u8, tick: &mut Tick) {
+        let cost = self.tables.sabotage_kind(kind).cost;
+        self.add_money(player, cost.wrapping_neg()); // 1078:01e7
+        // Single human: only player 1 has books and sees the money rise.
+        if player == 1 {
+            self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+            tick.books = true; // 1070:2617
+            self.float_money(cost, pos); // 1088:0153
+        }
+        let victim = self.island.owners.at(pos);
+        if self.random.random(100) < 30 {
+            if self.random.random(100) < 50 {
+                self.post_message(self.sabotage_message(FAILED_MESSAGE, pos, player), tick);
+            } else {
+                self.sabotage_caught(pos, kind, player, tick); // 10a0:1b31
+            }
+            return;
+        }
+        match self.sabotage.iter_mut().find(|s| !s.active) {
+            Some(slot) => {
+                *slot = Sabotage {
+                    attacker: player,
+                    victim,
+                    kind,
+                    pos,
+                    countdown: days,
+                    active: true,
+                };
+                self.sabotage_starts(pos, kind, player, tick); // 10a0:19d2
+            }
+            None => self.post_message(self.sabotage_message(FAILED_MESSAGE, pos, player), tick),
+        }
+    }
+
+    /// The sabotage was found out: `player`'s reputation goes down by 50
+    /// (to 0 at the least) and the news says so. // 10a0:1b31
+    fn sabotage_caught(&mut self, pos: Pos, kind: u8, player: u8, tick: &mut Tick) {
+        let r = self.reputation(player);
+        self.set_reputation(player, r.saturating_sub(50));
+        let number = CAUGHT_MESSAGES[usize::from(kind)];
+        self.post_message(self.sabotage_message(number, pos, player), tick);
+    }
+
+    /// The news about sabotage on `pos` by `player`, against its owner.
+    fn sabotage_message(&self, number: i16, pos: Pos, player: u8) -> Message {
+        Message {
+            number,
+            a: i16::from(player),
+            b: i16::from(self.island.owners.at(pos)),
+            pos: Some(pos),
+            ..Message::default()
+        }
+    }
+
+    /// The sabotage's first effect, the day it's ordered: most kinds are
+    /// in the news, the bomb and the road blow up what's on `pos`, the
+    /// shark diver goes into the water, soft soap waits for a plane.
+    /// // 10a0:19d2
+    fn sabotage_starts(&mut self, pos: Pos, kind: u8, player: u8, tick: &mut Tick) {
+        let number = match kind {
+            PIRANHAS => 0x21,
+            STINK_BOMB => 0x2f,
+            RATS => 0x30,
+            GO_SLOW => 0x18,
+            CHARACTER_ASSASSINATION => 0x19,
+            BOMB | ROAD => return self.blow_up(pos, tick), // 10a0:1000
+            SHARK_DIVER => return self.add_person(DIVER, pos, tick), // 1088:0324
+            _ => return,
+        };
+        self.post_message(self.sabotage_message(number, pos, player), tick);
+    }
+
+    /// The bomb (or the road sabotage) goes off on `pos`: the people there
+    /// leave, what's there is demolished for no one, and every square of
+    /// the building that was there gets an explosion (people kind 0xdb).
+    /// // 10a0:1000
+    fn blow_up(&mut self, pos: Pos, tick: &mut Tick) {
+        let building = self.island.buildings.at(pos);
+        self.remove_people_from(pos, tick); // 1088:6975
+        // For no one, so it never refuses.
+        let _ = self.demolish(0, pos, tick); // 1078:280b
+        self.people_map_changed(); // 1088:6c5a
+        if !UNSHAKEN.contains(&building) {
+            let (w, d) = (self.tables.hausnr(building, 3), self.tables.hausnr(building, 4));
+            for a in 0..w {
+                for c in 0..d {
+                    self.add_person(EXPLOSION, (pos.0 + a, pos.1 + c), tick); // 1088:0324
+                }
+            }
+        }
+    }
+}
 
 /// One of the five sabotage slots. // *1110:705a, 10 bytes each
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]

@@ -34,7 +34,7 @@ const REPUTATION_BUILDINGS: [u8; 9] = [29, 30, 35, 37, 60, 108, 110, 125, 126];
 /// the bridges (11 over a river, 52 over the sea), palms, beach life and
 /// empty squares. Their squares are demolished as roads or bridges, or
 /// not at all. // 1110:1378 (`set of Byte`)
-const NOT_BUILDINGS: [u8; 5] = [11, 12, 36, 52, NO_BUILDING];
+pub(crate) const NOT_BUILDINGS: [u8; 5] = [11, 12, 36, 52, NO_BUILDING];
 
 /// The championships' buildings while a championship is on: they can't be
 /// demolished, and replacing an empty one by one of these fills it.
@@ -52,7 +52,7 @@ const RECORD_KINDS: [u8; 13] = [3, 0, 0, 1, 1, 2, 2, 2, 3, 1, 2, 2, 2];
 
 /// The capacity class of the facilities of kinds 2 to 10.
 /// // 1110:134e (`1110:134c[kind]`)
-const CLASSES: [u8; 9] = [0, 1, 3, 4, 5, 10, 2, 6, 6];
+pub(crate) const CLASSES: [u8; 9] = [0, 1, 3, 4, 5, 10, 2, 6, 6];
 
 /// The `HAUSDATA.DAT` kind of parks, whose squares count with the palms.
 /// // 1078:0eda
@@ -87,13 +87,14 @@ impl World {
     /// ones at 0 or less are finished, in the list's order. // 1008:5212
     ///
     /// The original also closes the info box (`infobox2`, 1038:1ee0) if it
-    /// shows a square of a finished site.
+    /// shows a square of a finished site: [`Tick::finished_sites`].
     pub(crate) fn construction_tick(&mut self, tick: &mut Tick) {
         let mut n = 0;
         while n < self.building_sites.len() {
             let site = &mut self.building_sites[n];
             site.days = site.days.wrapping_sub(1);
             if site.days < 1 {
+                tick.finished_sites.push(*site); // 1008:525b
                 self.finish_building(n, tick);
             } else {
                 n += 1;
@@ -134,9 +135,10 @@ impl World {
     /// site, whose effect comes off the location map square by square,
     /// and registers the building. // 1078:1de9
     ///
-    /// The original then redraws the area and the overview map, and the
-    /// menu of the square under the mouse (1080:0123).
+    /// The original then redraws the area and the overview map, and
+    /// refreshes the buildings' overview (1080:0123, [`Tick::umenu`]).
     fn place_building(&mut self, site: &crate::world::BuildingSite, tick: &mut Tick) {
+        tick.umenu = true; // 1080:0123
         let b = site.building;
         let t = std::sync::Arc::clone(&self.tables);
         let looks = t.hausnr(b, 0);
@@ -509,8 +511,8 @@ impl World {
     /// shows player 1 (marked; [`NOT_POSSIBLE`] and the others); other
     /// players get none. // 1078:280b
     ///
-    /// The original also redraws the area on the overview map and
-    /// refreshes the money menu (1070:2617).
+    /// The original also redraws the area on the overview map; the money
+    /// menu's refresh (1070:2617) is [`Tick::books`].
     ///
     /// # Errors
     /// When nothing there can be demolished, or not by `player`.
@@ -586,6 +588,7 @@ impl World {
         self.add_money(player, refund.wrapping_neg());
         if player == 1 {
             self.book(BOOK_OTHER, refund.wrapping_neg()); // 1070:1419
+            tick.books = true; // 1070:2617
             self.float_money(refund, site.pos); // 1088:0153
         }
         self.building_sites.remove(n); // 1068:2153
@@ -602,6 +605,7 @@ impl World {
         self.add_money(player, cost.wrapping_neg());
         if player == 1 {
             self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+            tick.books = true; // 1070:2617
         }
         let origin = self.building_origin(pos); // 1030:154c
         if player == 1 {
@@ -667,6 +671,7 @@ impl World {
         self.remove_people_from(pos, tick); // 1088:6975
         if player == 1 {
             self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+            tick.books = true; // 1070:2617
             self.float_money(cost, pos); // 1088:0153
         }
         self.island.owners.set(pos, 0);

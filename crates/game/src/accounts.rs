@@ -29,8 +29,6 @@ pub const BOOK_OTHER: u8 = 0x6a;
 const BOOK_LAST_YEAR: u8 = 0x5e;
 /// The books' first kind of this year. // 1070:269d
 const BOOK_THIS_YEAR: u8 = 0x5f;
-/// The books' total of this year. // 1070:1452
-const BOOK_THIS_YEAR_TOTAL: u8 = 0x6b;
 
 /// The books' monthly history (`*[1110:6f04]+0x24b`) is four rings of
 /// this size, one after the other: 120 months of a `Longint` for each of
@@ -74,7 +72,8 @@ impl World {
     /// // 1008:4f64
     ///
     /// The original then shows the money menu's new year if the player's
-    /// option `1110:0064` says so (1070:2b11).
+    /// option `1110:0064` says so (1070:2b11), the view's part
+    /// (`crate::optionen::Settings::year_balance`, `Tick::new_year`).
     pub(crate) fn year_end(&mut self) {
         self.close_books_year();
         let year = self.date.year.cast_signed();
@@ -370,15 +369,15 @@ impl World {
             .unwrap_or(0)
     }
 
-    /// The books' year ends: this year's total (1070:1452) and sums
-    /// become last year's, and this year's start at 0. // 1070:269d
+    /// The books' year ends: this year's total and the balance (1070:1452)
+    /// and sums become last year's, and this year's start at 0. // 1070:269d
     ///
-    /// The original also redraws the money menu (1070:2ab8, 1070:1eeb).
+    /// The original also redraws the money menu (1070:1eeb), and works
+    /// the total out again if it's shown (1070:2617), which gives 0.
     fn close_books_year(&mut self) {
+        self.geldmenu_year_total(); // 1070:1452
         let y = &mut self.books.year;
         let this = usize::from(BOOK_THIS_YEAR - FIRST_BOOK);
-        let total = usize::from(BOOK_THIS_YEAR_TOTAL - FIRST_BOOK);
-        y[total] = y[this..total].iter().fold(0i32, |s, &v| s.wrapping_add(v));
         for k in 0..13 {
             y[k] = y[this + k];
             y[this + k] = 0;

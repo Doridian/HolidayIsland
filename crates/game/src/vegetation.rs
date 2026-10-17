@@ -69,7 +69,8 @@ impl World {
     /// the part. // 1010:1129
     ///
     /// The original also redraws the square on the overview map
-    /// (10b8:1624), which the port's view doesn't have yet.
+    /// (10b8:1624); the port's redraws [`Tick::redraw`]'s squares
+    /// (`crate::uebersichtsmap`).
     pub fn plant_palm(&mut self, pos: Pos, tick: &mut Tick) {
         let plot = self.island.plot_at(pos); // 1030:1e62
         // 1068:2591 finds the plot by its number. The original writes
