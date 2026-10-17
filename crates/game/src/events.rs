@@ -81,7 +81,7 @@ impl Event {
 
 /// The low word of a `Longint`, where the original reads a `Longint`
 /// field as an `Integer`.
-fn low_word(v: i32) -> i16 {
+pub(crate) fn low_word(v: i32) -> i16 {
     let b = v.to_le_bytes();
     i16::from_le_bytes([b[0], b[1]])
 }
@@ -98,19 +98,6 @@ pub fn parse_events(data: &[u8]) -> Option<Vec<Event>> {
 pub fn event_chance(random: &mut vcl::random::Random, chance: i32) -> bool {
     let r = i32::from(random.random(65000)) + 1;
     chance > 0xffff || (chance >= 0 && r < chance)
-}
-
-/// What an auction is for. The auction itself (`TAuktionsform`) runs on
-/// its own timer, which 1028:08ac starts. // unit 1028:2506
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Auction {
-    /// The price. // 1110:654a
-    pub price: i32,
-    /// The price it started at. // 1110:659c
-    pub start_price: i32,
-    /// What's on sale: the message number of the event that started it.
-    /// // 1110:656e
-    pub item: i16,
 }
 
 /// A disaster's damage, which the player gets back at its end if they're
@@ -288,15 +275,6 @@ impl World {
             }
             _ => {}
         }
-    }
-
-    /// Puts `item` up for auction at `price`, and starts the auction's
-    /// timer, which [`Tick::auction`] tells the view. // 1028:08ac
-    fn start_auction(&mut self, item: i32, price: i32, tick: &mut Tick) {
-        self.auction.price = price;
-        self.auction.start_price = price;
-        self.auction.item = low_word(item);
-        tick.auction = true;
     }
 
     /// An earthquake begins: no damage yet, and whether the player is
@@ -492,14 +470,9 @@ mod tests {
         assert_eq!(tick.messages.len(), 1);
         assert_eq!((tick.messages[0].number, tick.messages[0].x), (10, 0));
         assert!(tick.auction);
-        assert_eq!(
-            w.auction,
-            Auction {
-                price: 5000,
-                start_price: 5000,
-                item: 10
-            }
-        );
+        let a = &w.auction;
+        assert_eq!((a.price, a.start_price, a.item), (5000, 5000, 10));
+        assert_eq!(a.opening, Some(crate::auction::OPEN_TICKS));
         // It keeps counting, and never ends or starts again.
         day(&mut w);
         assert_eq!(w.events[0].running, 5);

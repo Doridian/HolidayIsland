@@ -195,7 +195,9 @@ in the design points above:
 - No world-side blocking on one player's UI. Interactions that are modal for
   the one human today need a multiplayer behaviour, decided per case when
   they're decompiled: auctions (`TAuktionsform`, which already runs on
-  timers), the "what now?" dialog (`TWasNunForm`), events, the end-of-game forms.
+  timers; ported with its timers as world ticks and the bids as
+  commands, the open question in [auction.md](auction.md#open-questions)),
+  the "what now?" dialog (`TWasNunForm`), events, the end-of-game forms.
   Typical answers: the dialog becomes per-player and non-blocking, a decision
   gets a timeout with a default, or the game pauses for everyone.
 - Save games store seats and keep the original format readable. Single-player

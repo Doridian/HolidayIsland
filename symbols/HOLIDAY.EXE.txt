@@ -88,6 +88,8 @@
 1010:25dc func back_to_start_menu  # guess: saves Maps\Last.map, hides the forms, restarts holiday.mid, shows a new TStartform
 1010:26fa func game_show_state
 1010:2820 func game_start_setup  # after load_map: scroll position from the map, scroll bars, button bar, draws the island
+1010:2970 func disable_forms  # (except): the 17 forms of 1110:646c but 10 and 11 disabled, their Enabled kept at 1110:645a
+1010:29cc func enable_forms  # the forms' Enabled back from 1110:645a
 1010:2a0c func enable_forms  # re-enables the forms in 1110:646c except 10 and 11
 1010:2af5 func draw_button_bar
 1010:3006 func schedule_event  # (i, j, ?, value, ?, arg: Longint; n): event n certain (chance 0x3fffc) with value (+0x14), arg (+0x2c) and square (+0x30)
@@ -133,6 +135,8 @@
 1020:1df3 func hauptschirm_load_title
 1020:1e4f func hauptschirm_draw_title
 1020:1e9b func hauptschirm_animationstimer_timer
+1020:24a0 func hauptschirm_stop_clock  # AnimationsTimer off (the auction form)
+1020:24b7 func hauptschirm_start_clock  # AnimationsTimer on
 1020:2501 func hauptschirm_init  # THauptschirm setup in hintergrund state 1500: layout, title, scroll bars, close/minimize/compass widgets
 1020:283b func hauptschirm_show
 1020:2866 func hauptschirm_formshow
@@ -146,8 +150,27 @@
 1020:32c0 func hauptschirm_kleinbild_mousedown
 1020:32fa func hauptschirm_kleinbild_mouseup
 1020:3dc4 func load_sonstige
-1028:08ac func start_auction  # (item: Longint, price: Longint): 1110:654a, 659c := price, 656e := item, starts auktionsform's timer
+1028:01d4 func auktion_hit  # (button, x, y): the point in the form's button rectangle 1110:1654 + 8*button (1030:1517)
+1028:0221 func auktion_animate  # the auctioneer's mouth (Random(7) within 800 ms of a call), eyes and brows (Random(20), Random(4)), hammer and hand frames; game::auction (frames), game::auktionsform
+1028:0476 func auktion_close  # Timer1.Tag := 1, Timer3 off, hides the form, shows hauptschirm, frees the bitmaps, the clock and forms back (1020:24b7, 1010:29cc); game::auction
+1028:05a3 func auktion_draw_price  # (bidder): unless Timer1 runs, redraws knopfimage: the price, the next bid, the bidder's name, the call; game::auktionsform
+1028:08ac func start_auction  # (item: Longint, price: Longint): 1110:654a, 659c := price, 656e := item, Timer2 on; game::auction
+1028:08e7 func auktion_award  # the winner (1110:6548) pays the price and gets the item by auction_item: a building (0x15), a property (0x16), or a message and make_available; game::auction
+1028:0c82 func auktion_sell_to_computers  # pass, close, and the human's own sale: up to 101 tries of price + Random(20) * price div 20 and Random(7) + 2 until a computer's limit is above it; else 10a0:09ea for 0x16; game::auction
+1028:0dde func auktion_open  # (price, item): computer_bids; the human's own sale goes to 1028:0c82; else draws and opens the form, the clock off (1020:24a0), Timer3 on; game::auction, game::auktionsform
+1028:15ef func auktion_bid  # (bidder): price += price div 20 (start price too), calls back to 0, the bidder's paddle slides up and down (35 frames of 25 ms by GetTickCount, Timer3 off); game::auction
+1028:190d func auktionsform_timer1timer  # 3 s after the third call: Timer1 off; Tag 0 closes the form; then auktion_award; game::auction
+1028:1940 func auktionsform_timer2timer  # unless the TV shows a message (1110:662d): Timer2 off, auktion_open; game::auction
+1028:1973 func auktionsform_timer3timer  # a step: the calls (Random(20), Random(15)), a computer's bid (Random(7) + 2, Random(30)), 1028:0221; game::auction
+1028:1b77 func auktionsform_leistemousedown  # close button (1028:0c82), drag bar (shrinks the form, a double click keeps it so); game::auktionsform
+1028:1c4d func auktionsform_leistemousemove  # drags the form, kept on screen
+1028:1ce0 func auktionsform_leistemouseup  # the form's height back, close (1028:0476), the title redrawn
+1028:1e23 func auktionsform_knopfimagemousedown  # unless Timer1 runs: bid (with the money: error 0xe), pass (1028:0c82); game::auktionsform
+1028:2208 func auktionsform_knopfimagemouseup  # bid (1028:15ef) or start the auction (1110:65ae), close (1028:0476)
 1028:2449 func load_auktion
+1028:2506 func auktion_load  # unit: the auction's state from the map
+1028:25f4 func auktion_save
+1028:26e4 func auktionsform_formkeydown  # Escape, Space, Alt+F4: 1028:0476 and 1028:0c82; Enter: bid without the money check, or start
 1028:361f func load_sabotage
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:00eb func date_advance  # (Self): the next day, month lengths at 1110:174c; game::monate
@@ -432,9 +455,12 @@
 10a0:0002 func same_square  # (i1, j1, i2, j2): the same square
 10a0:0026 func replace_building  # (building, i, j): the area gets the type, its record (1078:169a) too; full championship (1110:1418): +0xc := min(plot+0xee, capacity), +0x15 its percent; empty (1110:1438): both 0; for 0x6f/0x79/0x7a the spectators leave; game::sabotage
 10a0:02ad func start_championship
+10a0:0346 func transfer_property  # (to, from): every square of from's becomes to's (an auction of event 10); game::auction
+10a0:03ca func transfer_building  # (owner, i, j): the building (a site: its type) from i, j becomes owner's, byte loops; game::auction
 10a0:0691 func make_available  # (building, kind): kind 0: the build menu (1018:23f8) and the computer players (10a8:0523) get the type, some with the next ones of its group; 1: the menu only; 2..7: 10a8:2cc1
 10a0:074d func oil_slick_start  # (var pos): a random sea square next to land (Random(250) twice, up to 1000 tries), 51 steps of oil (Random(3)), location map * 50 % radius 30; damage from 1008:0b0b
 10a0:0915 func oil_slick_end  # location map back, insurance payout, the oil (people kinds 0x2b..0x2d) gone
+10a0:09ea func clear_property  # (player): demolishes the player's squares but palms, beach life and empty ones off the roads, people leave; sounds off meanwhile; game::auction
 10a0:0b49 func flood_start  # damage 0, insured := 1110:0072; demolishes everything at sea level (lowest corner < 2) whose building is not in the set at 1110:1358 (palms, beach life, none), counting player 1's (HAUSPREI.DAT) as damage
 10a0:0cce func flood_end  # insured: add_money(1, damage) and the money menu's books (1070:1419 kind 0x6a)
 10a0:0d09 func quake_start  # damage 0, insured := 1110:0072
@@ -445,9 +471,9 @@
 10a0:10c6 func send_surfers  # (i, j): five tries, Random(2): a surfer (people kind 0x20 or 0x21) from there, counted in *1110:551c
 10a0:117e func effects_tick  # once a day: the five sabotage slots *1110:705a and three championships *1110:705e count down and act; game::sabotage
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
-10a8:0167 func computer_bid  # nested in 10a8:0221: what a computer bids, from its money, loan and MaxSchulden with Random(1000); not ported
-10a8:0221 func computer_bid_for  # (player): the bid of player for the auction (*1110:6536 +0x204 the square); not ported
-10a8:0373 func computer_bids  # every player's bid into 1110:654e+4p (1028:0dde); not ported
+10a8:0167 func computer_bid  # nested in 10a8:0221: price + (min(money - loan + MaxSchulden, 3 price) - price) * Random(1000) div 999, 0 below the price; game::computer
+10a8:0221 func computer_bid_for  # (player, price: Longint): the human's money; a computer's bid unless out, the owner of event 9's square, or (for other items) waiting for its first roads; game::computer
+10a8:0373 func computer_bids  # (price: Longint): every player's limit into 1110:654e+4(p-1) when the auction form opens (1028:0dde); game::computer
 10a8:03a6 func compbau_matches  # (building, category): COMPBAU.DAT row: HAUSDATA col 4, one of two kinds (col 5), one of four types, 255 for any; game::computer
 10a8:0523 func offer_type  # (building): onto each matching category's list, not checking one-of-a-kind or the row's end; game::computer
 10a8:0582 func step_square  # (var pos, n, direction): 0 j+n, 1 i+n, 2 j-n, 3 i-n, if it stays within 0..250
@@ -603,7 +629,9 @@
 1110:0057 data computers_play  # 1 by init_game_defaults
 1110:0058 data view_owner_pointers
 1110:0059 data view_occupancy_pointers
+1110:0061 data option_sounds  # Boolean: the options' "Geraeusche"; play_sound checks it, 10a0:09ea clears it meanwhile
 1110:0062 data sound_enabled  # SETUP.DAT line 5 is not N
+1110:0063 data auction_waits  # Boolean: the options' "Auktion wartet": an auction stands until the player starts it
 1110:0065 data disasters_enabled
 1110:0067 data paused  # Boolean: the clock stands while the TV shows a message
 1110:006e data scenario  # Byte: 1..6, 0 for a normal game
@@ -624,6 +652,7 @@
 1110:009e data building_slice_tick  # Integer 0..29: building_slice argument
 1110:00a2 data height_limit  # Word, 20 at first; level_site starts its lowest corner there
 1110:0102 data player_names  # guess: array of string[255], player 1 first ("Holiday", "Moritz", ..., "Lisa", then "keiner")
+1110:0902 data player_names_by_number  # array[0..8] of string: keiner, then players 1..8 (the auction's bidder)
 1110:0a02 data last_player_name  # string: the name the start menu offers
 1110:1224 data form_table  # array[0..18, 0..3] of Integer: per form the corners (i, j), (i, j-1), (i-1, j-1), (i-1, j) above (i, j); 10b0:33bc; game::terrain::FORMS
 1110:12bc data view_width
@@ -748,9 +777,19 @@
 1110:6536 data ereignis | pointer32  # 41 records of 0x34 bytes: 12 Longints from EREIGNIS.DAT + 1 more
 1110:653a data event_days
 1110:6544 data auktionsform
+1110:6548 data auction_bidder  # Integer: the last bidder, 0 for nobody
 1110:654a data auction_price  # Longint
+1110:654e data auction_limits  # array[1..8] of Longint: each player's limit (10a8:0373); not saved
 1110:656e data auction_item
+1110:6596 data auction_colour  # Word: the last bidder's colour, the paddle
+1110:6599 data auction_pressed  # Byte: the button held down: 3 bid, 4 pass, 5 drag, 6 close
+1110:659a data auction_rolled_up  # Boolean: the form stays rolled up to its title (a double click)
 1110:659c data auction_start_price  # Longint
+1110:65a0 data auction_calls  # Word: 0xff before a bid, 0 after one, then 1..3 going once, twice, sold
+1110:65a2 data auction_steps  # Longint: Timer3 steps since the last call
+1110:65a6 data auction_wait  # Longint: added to the 10 steps before a call; always 0
+1110:65aa data auction_call_time  # Longint: GetTickCount at the last call, for the auctioneer's mouth
+1110:65ae data auction_started  # Boolean: the player has started the auction (or it doesn't wait)
 1110:65b0 data auktion_texts
 1110:65bc data sabotage_kinds
 1110:65c0 data sabowin
@@ -771,6 +810,7 @@
 1110:6620 data kompassform
 1110:6624 data dummyform
 1110:6628 data fernseher
+1110:662d data tv_busy  # Boolean: the TV shows a message; the auction form waits for it
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
 1110:663a data news_archive | pointer32  # 26 records of 0x11c: +0 day, +4/+6/+8/+0xc values, +0x10 text, +0x12 message, +0x14 date text, +0x114 square, +0x118 view origin

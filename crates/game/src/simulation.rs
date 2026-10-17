@@ -8,6 +8,7 @@
 //! original must draw them from [`World::random`] in the same order once
 //! it's ported.
 
+use crate::auction::Change;
 use crate::news::Message;
 use crate::world::{Pos, World};
 
@@ -46,8 +47,11 @@ impl Default for Clock {
     }
 }
 
-/// The animation options. They change the world (people only move with
-/// them on), although they're the player's settings in the original.
+/// The animation options, and whether auctions wait for the player. They
+/// change the world (people only move with them on, an auction stands
+/// until the player starts it), although they're the player's settings in
+/// the original.
+#[allow(clippy::struct_excessive_bools)] // One flag for each of the original's options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Options {
     /// People and cars are animated at all. // 1110:0054
@@ -56,6 +60,9 @@ pub struct Options {
     pub people_move: bool,
     /// New ones come. // 1110:0056
     pub people_spawn: bool,
+    /// "Auktion wartet": an auction stands until the player starts it.
+    /// // 1110:0063
+    pub auction_waits: bool,
 }
 
 impl Default for Options {
@@ -65,6 +72,7 @@ impl Default for Options {
             animations: true,
             people_move: true,
             people_spawn: true,
+            auction_waits: true,
         }
     }
 }
@@ -97,8 +105,10 @@ pub struct Tick {
     /// An auction of [`World::auction`]'s item begins: the original starts
     /// `TAuktionsform`'s timer (1028:08ac).
     pub auction: bool,
+    /// What happened on the auction form, in order (`crate::auction`).
+    pub auction_changes: Vec<Change>,
     /// Sounds to play, in order (`play_sound`, 10a0:30b6): the people's,
-    /// where the player sees them.
+    /// where the player sees them, and the auction's.
     pub sounds: Vec<u8>,
     /// The scenario was won or lost ([`World::january_second`]): the
     /// original shows the end of the game (`schlussform`, 1068:1016).
@@ -137,17 +147,31 @@ impl World {
     /// message's timeout and the tooltips (before the clock), scrolling
     /// while a scroll arrow is held, shaking the screen in an earthquake,
     /// the TV (1048:1b3e) and drawing the people.
+    ///
+    /// The auction form's timers run first, every tick
+    /// ([`World::auction_tick`]); while the form is open the timer stands
+    /// (1020:24a0) and nothing else runs.
     pub fn tick(&mut self) -> Tick {
         let mut tick = Tick::default();
+        self.auction_tick(&mut tick);
+        if self.auction.open {
+            return tick;
+        }
+        self.animations_timer(&mut tick);
+        tick
+    }
+
+    /// `AnimationsTimer`'s world steps. // 1020:1e9b
+    fn animations_timer(&mut self, tick: &mut Tick) {
         if !self.clock.paused {
             let c = &mut self.clock;
             c.hour_ticks = c.hour_ticks.wrapping_add(1);
             c.day_ticks = c.day_ticks.wrapping_add(1);
             match c.day_ticks {
-                1 => self.events_tick(&mut tick),
-                2 => self.effects_tick(&mut tick),
-                3 | 5 => self.vegetation_tick(&mut tick),
-                4 => self.beach_life_tick(&mut tick),
+                1 => self.events_tick(tick),
+                2 => self.effects_tick(tick),
+                3 | 5 => self.vegetation_tick(tick),
+                4 => self.beach_life_tick(tick),
                 _ => {}
             }
             // Compared as Longints: a speed of 0 or less ends every tick.
@@ -158,24 +182,23 @@ impl World {
             }
             if i32::from(self.clock.hour_ticks) >= self.clock.speed {
                 self.clock.hour_ticks = 0;
-                self.accounting_tick(&mut tick);
+                self.accounting_tick(tick);
             }
         }
         self.clock.slice = (self.clock.slice.wrapping_add(1)) % 30;
-        self.building_slice(self.clock.slice, &mut tick);
+        self.building_slice(self.clock.slice, tick);
         // The original shakes the screen here during an earthquake, with
         // two `Random(7)`s; the port leaves that to the view, so its random
         // numbers part from the original's while the earth shakes.
         if self.earthquake && self.clock.hour_ticks == 1 {
-            self.quake_damage(&mut tick);
+            self.quake_damage(tick);
         }
         if self.options.animations {
-            self.people_tick(&mut tick); // 1090:5293
+            self.people_tick(tick); // 1090:5293
             if self.options.people_spawn {
-                self.spawn_people(&mut tick); // 1090:2373
+                self.spawn_people(tick); // 1090:2373
             }
         }
-        tick
     }
 
     /// The monthly settlement's scheduler. // 1008:5307

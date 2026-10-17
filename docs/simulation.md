@@ -15,7 +15,9 @@ There is one simulation clock: `THauptschirm`'s `AnimationsTimer`
 100 ms while the main screen is up, and does everything below in this
 order. `THintergrund`'s timer only runs the intro and the game start
 ([startup.md](startup.md)). The timer's `Tag` is reused as the direction
-to scroll while the mouse is held on a scroll bar arrow (step 6).
+to scroll while the mouse is held on a scroll bar arrow (step 6). The
+auction form turns it off while it's open (1020:24a0, 1020:24b7), so the
+whole simulation stands then ([auction.md](auction.md)).
 
 | # | Does | Address | Size | Side |
 |---|---|---|---|---|
@@ -338,7 +340,8 @@ What the driver and the ported parts use, all saved in the map file:
 | `*1110:6536` | The events | same (unit 1010:3e8a) |
 | `1110:0086`, `0087`, `0088` | Flood, earthquake, oil slick going on (`0088` isn't saved) | `0086`, `0087` |
 | `1110:0072`, `7050`, `7054`, `7056` | Insured, the disaster's damage, insured for it, the oil slick's square | same |
-| `1110:654a`, `659c`, `656e` | The auction's price, start price, item | same (unit 1028:2506) |
+| `1110:6548`..`65a6`, `1110:0063` | The auction: bidder, price, item, calls, ... ([auction.md](auction.md#state-unit-10282506)); "Auktion wartet" | same (unit 1028:2506) |
+| `1110:0902` | The players' names, `array[0..8] of string` (0 `keiner`) | same |
 | `1110:0054`, `0055`, `0056`, `6056` | Animation options, the selected tool | same |
 | `1110:008c`, `1110:1479` | Difficulty, number of players | same |
 | `*1110:5524`, `*1110:5528` | The location map and the plot map, [below](#the-location-map-and-plots) | same |
@@ -576,7 +579,7 @@ the chance becomes 0 and, by kind:
 
 - 0: the start message, and `start_auction(start, price)` (1028:08ac:
   `1110:654a` and `659c` the price, `656e` the item, and
-  `TAuktionsform`'s timer starts the auction).
+  `TAuktionsform`'s timer starts the auction, [auction.md](auction.md)).
 - 1: the start message; it runs.
 - 2: only if disasters are on (`1110:0065`), and the event is used up
   either way: it runs, and by `start` a flood (`1110:0086` := 1,
@@ -656,16 +659,20 @@ before each tick (marked).
 What the view shows comes out of `World::tick` in `Tick`: the squares
 that changed (`redraw`; the view redraws the whole island for them rather
 than the columns 1050:21f9 picks, and has no overview map yet), a flood
-(`redraw_all`), the news (`messages`), a started auction (`auction`), the
-people's sounds (`sounds`, not played yet), the end of the game
+(`redraw_all`), the news (`messages`), a started auction (`auction`) and
+what the auction form did (`auction_changes`), the people's and the
+auction's sounds (`sounds`, not played yet), the end of the game
 (`game_over`), the money menu's and `TUmenuform`'s refreshes (`books`,
 `umenu`) and the buildings whose occupancy changed (`occupancy`);
 finished buildings are in `redraw`. The people's pictures
 are in their records, which the view draws over the island after each
 tick (`Hauptschirm::show_people`, 1088:385d, 1088:38c4).
-The view draws the date and money on the info bar when they change; the
-news, the TV, auctions, the status bar timeout, tooltips, scrolling by
-the timer, music and the shaking aren't ported.
+The view draws the date and money on the info bar when they change, and
+the auction form ([auction.md](auction.md)), whose timers
+(`World::auction_tick`) run before the clock's steps each tick; the
+news, the TV, the status bar timeout, tooltips, scrolling by the timer,
+music and the shaking aren't ported. The auction's buttons are the only
+commands so far (`World::apply`).
 
 Stubs (named after the table above, each with its address and a TODO):
 inside the ported routines `oil_slick_start`, `oil_slick_end`.
@@ -681,6 +688,9 @@ the original's once it runs.
 
 ## Open questions
 
+- The auction form stops the simulation for everyone while the human
+  bids, and with "Auktion wartet" until they start the auction
+  ([auction.md](auction.md#open-questions)).
 - Several things that change the world wait on the player's UI: the TV
   pauses the game (`1110:0067`) until its film ends, and the animation
   options (`1110:0054`..`0056`) decide whether people move at all. For

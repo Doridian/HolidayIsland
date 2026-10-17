@@ -14,8 +14,9 @@ use std::sync::Arc;
 use formats::savegame::{MAP_SIZE, SaveGame};
 use vcl::random::Random;
 
+use crate::auction::Auction;
 use crate::computer::Computers;
-use crate::events::{Auction, Damage, Event, parse_events};
+use crate::events::{Damage, Event, parse_events};
 use crate::monate::Date;
 use crate::money::Finances;
 use crate::people::{DIRECTIONS_SIZE, ENTRIES_SIZE, PATHS_SIZE, People, TRACKS_SIZE, Viewpoint};
@@ -919,6 +920,9 @@ pub struct World {
     pub player_colours: [u8; 8],
     /// The number of players, the human included. // 1110:1479
     pub player_count: u8,
+    /// Each player's name, `array[0..8] of string`: `keiner` (nobody)
+    /// for player 0, then players 1 to 8. // 1110:0902
+    pub player_names: Vec<Vec<u8>>,
     /// 0 (easy) to 2 (hard). // 1110:008c
     pub difficulty: i16,
     /// The simulation's tick counters and speed.
@@ -1050,6 +1054,7 @@ impl Default for World {
             island: Island::empty(),
             player_colours: [1, 2, 3, 4, 5, 6, 7, 8],
             player_count: 8,
+            player_names: vec![Vec::new(); 9],
             difficulty: 0,
             clock: Clock::default(),
             date: Date::default(),
@@ -1293,6 +1298,10 @@ impl World {
             },
             player_colours: bytes(save, "1110:0074")?,
             player_count: byte(save, "1110:1479")?,
+            player_names: field(save, "1110:0902")?
+                .chunks(256)
+                .map(|s| s[1..=usize::from(s[0]).min(s.len() - 1)].to_vec())
+                .collect(),
             difficulty: word(save, "1110:008c")?.cast_signed(),
             // Unit 1020:2b1d saves the form's counters.
             clock: Clock {
@@ -1342,16 +1351,25 @@ impl World {
             },
             // Unit 1010:3e8a.
             events: parse_events(field(save, "*1110:6536")?).ok_or(Error::Field("*1110:6536"))?,
-            // Unit 1028:2506.
+            // Unit 1028:2506. The form's state (`1110:6598`, and `659a`, the
+            // form rolled up) is the view's.
             auction: Auction {
                 price: longint(save, "1110:654a")?,
                 start_price: longint(save, "1110:659c")?,
                 item: word(save, "1110:656e")?.cast_signed(),
+                bidder: word(save, "1110:6548")?.cast_signed(),
+                colour: word(save, "1110:6596")?,
+                going: word(save, "1110:65a0")?,
+                ticks: longint(save, "1110:65a2")?,
+                wait: longint(save, "1110:65a6")?,
+                held: byte(save, "1110:6599")? != 0,
+                ..Auction::default()
             },
             options: Options {
                 animations: byte(save, "1110:0054")? != 0,
                 people_move: byte(save, "1110:0055")? != 0,
                 people_spawn: byte(save, "1110:0056")? == 1,
+                auction_waits: byte(save, "1110:0063")? != 0,
             },
             // Unit 1068:313e.
             plots: save

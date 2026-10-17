@@ -243,11 +243,17 @@ None of this draws random numbers, but the markers are people
 (1088:0324). The bugs kept are in
 [original-bugs.md](original-bugs.md).
 
+## Auction bids (10a8:0373)
+
+When the auction form opens (1028:0dde) every player's limit is worked
+out once, at the start price (10a8:0221, 10a8:0167 with `Random(1000)`):
+see [auction.md](auction.md#the-computers-bids-10a80373). A computer
+bids only for a building or a bankrupt player's property, or while its
+area isn't waiting for its first roads, and up to three times the price
+or what it can pay (money less loan plus `MaxSchulden`).
+
 ## Not ported yet
 
-- The auction bids (10a8:0373 with 10a8:0221 and 10a8:0167, `Random(1000)`),
-  which the auction form (1028:0dde, 2 KB, with its timers) calls; the
-  auctions aren't ported.
 - The human's levelling and road tools, which would call the routines
   above through commands.
 

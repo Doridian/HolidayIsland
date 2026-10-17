@@ -11,17 +11,38 @@ use formats::data::{
     animdat1, animdat4, darstell, fontdat, groundnr, hausdata, hausnr, hausprei, modatyp, monate, sonstige,
 };
 use formats::savegame::SaveGame;
+use game::auction;
+use game::command::{self, Command};
 use game::darstellung::Camera;
 use game::events::Event;
 use game::hauptschirm::{BITMAP_FILES, Hauptschirm, InfoTexts};
 use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::monate::Date;
 use game::people::{BOAT, SHIP, view_square};
+use game::simulation::Tick;
 use game::startform::Settings;
 use game::text::Font;
 use game::world::{Facility, House, Tables, World};
 use vcl::random::Random;
 use vcl::surface::Surface;
+
+/// A tick with a player who leaves every auction as soon as its form
+/// opens: the form stops the clock until the player does something.
+fn step(world: &mut World) -> Tick {
+    let mut tick = world.tick();
+    if world.auction.open {
+        let leave = Command {
+            player: 1,
+            action: command::Action::Auction(auction::Action::Leave),
+        };
+        let left = world.apply(leave);
+        tick.messages.extend(left.messages);
+        tick.redraw.extend(left.redraw);
+        tick.redraw_all |= left.redraw_all;
+        tick.auction_changes.extend(left.auction_changes);
+    }
+    tick
+}
 
 fn orig() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orig")
@@ -68,7 +89,7 @@ fn hash(world: &World) -> u64 {
 fn run(mut world: World, n: usize) -> (World, Vec<u64>) {
     let mut hashes = Vec::new();
     for i in 1..=n {
-        world.tick();
+        step(&mut world);
         if i % 100 == 0 {
             hashes.push(hash(&world));
         }
@@ -224,7 +245,7 @@ fn events_happen() {
     let end = world.days + 3 * 365;
     let (mut messages, mut auctions) = (Vec::new(), 0);
     while world.days < end {
-        let tick = world.tick();
+        let tick = step(&mut world);
         messages.extend(tick.messages.iter().map(|m| m.number));
         auctions += usize::from(tick.auction);
     }
@@ -256,7 +277,7 @@ fn new_year() {
         let (year, debt) = (world.date.year, world.finances.max_debt);
         let mut game_over = None;
         while world.date.year == year || world.date.day < 3 {
-            game_over = game_over.or(world.tick().game_over);
+            game_over = game_over.or(step(&mut world).game_over);
         }
         // A year's end on normal difficulty, and nobody's won or lost yet.
         assert_eq!(world.finances.max_debt, debt + 50_000, "{file}");
@@ -307,7 +328,7 @@ fn disasters_demolish() {
         world.earthquake = true;
         let before = world.houses.len() + world.facilities.len();
         for _ in 0..2000 {
-            world.tick();
+            step(&mut world);
         }
         assert!(world.flood, "{file}");
         let after = world.houses.len() + world.facilities.len();
@@ -361,7 +382,7 @@ fn people_from_the_map() {
         }
         let before = world.people.records.clone();
         for _ in 0..TICKS {
-            world.tick();
+            step(&mut world);
         }
         // People came, moved and left (people_tick, 1090:5293).
         changed += before
@@ -399,7 +420,7 @@ fn settlement_moves_money() {
         let (mut months, mut books) = (0, 0);
         // Three years and a bit.
         while world.date.year < year + 3 || world.date.month < 2 {
-            let tick = world.tick();
+            let tick = step(&mut world);
             books += usize::from(tick.books);
             if tick.new_day && world.date.day == 1 {
                 months += 1;
@@ -475,7 +496,7 @@ fn computers_build() {
     let mut started = Vec::new();
     while world.date.year < year + 3 {
         let sites = world.building_sites.len();
-        world.tick();
+        step(&mut world);
         if world.building_sites.len() > sites {
             let s = world.building_sites[0];
             started.push((world.island.owners.at(s.pos), s.building, s.budget));

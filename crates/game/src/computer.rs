@@ -495,6 +495,63 @@ impl World {
         self.computer_turns = 0;
     }
 
+    /// What each player would pay at most in the auction of
+    /// [`World::auction`]'s item at `price`, into
+    /// [`Auction::limits`](crate::auction::Auction::limits), players 1 to 8
+    /// in turn. // 10a8:0373
+    pub(crate) fn computer_bids(&mut self, price: i32) {
+        for p in 1..=8 {
+            let limit = self.bid_limit(p, price); // 10a8:0221
+            self.auction.limits[usize::from(p - 1)] = limit;
+        }
+    }
+
+    /// Player `p`'s limit at `price`: the human's money (the original's
+    /// player 1); a computer that's in the game and not the building's
+    /// owner bids for a building or a bankrupt player's property, and for
+    /// anything else unless its area still waits for its first roads;
+    /// nobody else bids. No one bids for their own building (the square
+    /// of event 9). // 10a8:0221
+    fn bid_limit(&mut self, p: u8, price: i32) -> i32 {
+        let item = self.auction.item;
+        let square = self.events.get(9).map(|e| e.pos);
+        let owns = |w: &World| square.is_some_and(|pos| on_map(pos) && w.island.owners.at(pos) == p);
+        if p < 2 || p > self.player_count {
+            if p != 1 || (item == crate::auction::BUILDING_SALE && owns(self)) {
+                0
+            } else {
+                self.money_of(1) // 1078:0191
+            }
+        } else if self.player_out(p) != 0 {
+            0
+        } else if item == crate::auction::BUILDING_SALE {
+            if owns(self) { 0 } else { self.computer_bid(p, price) }
+        } else if item == crate::auction::PROPERTY_SALE || self.computers.first_road[slot(p)] == 0 {
+            self.computer_bid(p, price)
+        } else {
+            0
+        }
+    }
+
+    /// What computer `p` bids at most at `price`: nothing if `price` is
+    /// above what it can pay (its money less its loan plus `MaxSchulden`),
+    /// else `price` and a random part (`Random(1000)` of 999) of the way to
+    /// what it can pay or three times `price`, whichever is less.
+    /// // 10a8:0167
+    fn computer_bid(&mut self, p: u8, price: i32) -> i32 {
+        let can = self
+            .money_of(p)
+            .wrapping_sub(self.loan_of(p))
+            .wrapping_add(self.finances.max_debt);
+        if price > can {
+            return 0;
+        }
+        let top = can.min(price.wrapping_mul(3)); // 1030:0f53
+        let r = i32::from(self.random.random(1000));
+        // BUG(original): the product overflows for a range past about 2 150 000, and the bid wraps.
+        price.wrapping_add(top.wrapping_sub(price).wrapping_mul(r) / 999)
+    }
+
     /// An event makes `building` available: the build menu gets it
     /// (`kind` 0 and 1, the view's, 1018:23f8) and with `kind` 0 the
     /// computers' lists too, the hotels 0x60, 0x64 and 0x68 with the

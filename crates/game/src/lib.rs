@@ -2,7 +2,10 @@
 //! Each routine notes its original address. No platform dependencies.
 
 pub mod accounts;
+pub mod auction;
+pub mod auktionsform;
 pub mod beach_life;
+pub mod command;
 pub mod computer;
 pub mod construction;
 pub mod darstellung;

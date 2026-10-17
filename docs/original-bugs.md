@@ -48,6 +48,7 @@ explains a bug in detail, the row links there instead of repeating it.
 | 10b0:53fe | Leaves the reference height and corners unset for a direction past 3 (nothing passes one) | Returns false |
 | 1050:245b | Leaves its locals unset for a view rotation past 3 | Returns false |
 | 1008:0297, 10a8:173b | Return an unset byte for a scenario past 7, or a levelling state past the known ones | Return false |
+| 10a0:03ca | Handing over a sold building reads outside the layer for a square off the map, reads a nil record for a site no record holds, and writes owners outside the layer for a building past the map's edge ([auction.md](auction.md)) | Does nothing, or skips the squares off the map |
 | Data files: `HAUSNAME.TXT` (1048:358f), `ANIMDAT2.DAT`, `ANIMDAT3.DAT` (1088:80a7), `NAMEN.TXT` (1010:0414), the high scores | A missing `***` end marker loops for ever; a group or list longer than its room overruns the next memory; a high score file of another size isn't checked | The file fails to load |
 
 ## Simulation logic
@@ -77,6 +78,11 @@ explains a bug in detail, the row links there instead of repeating it.
 | 10b0:069f, 10b0:1907 | A palm cleared by moving the land only loses its building: its part, owner, plot count and location effect stay | yes |
 | 10b0:069f, 10b0:1907 | For player 1 the money check replaces any earlier error with 0xe | yes |
 | 1078:2178 | After a road is built only buildings whose square shows part 0 get their connection again, so houses with another look never do | yes |
+| 1028:1973 | A computer bids when its limit is above the price, though its bid (5 % more) may be above its limit ([auction.md](auction.md#a-step-10281973)) | yes |
+| 1028:0c82 | Passing (or the close button) hands the item to a computer at a random raise, or to nobody, even when someone (the player too) leads; after the third call the close button gives the item away again before `Timer1` does | yes |
+| 1028:26e4 | Enter bids without checking the player's money, and even after the third call, when the mouse can't | yes |
+| 1028:08e7 | Player 8 gets nothing for an item (`make_available` has no case for 8); item 6 gives nothing but its message, and an unknown item nothing at all, for the price | yes |
+| 10a8:0167 | A computer's bid overflows when its range (what it can pay or three times the price, less the price) passes about 2 150 000, and wraps | yes |
 | 1048:358f | A line shorter than three characters keeps the previous line's bytes, so one after a `***` line also ends a list of `HAUSNAME.TXT` | yes |
 
 ## UI quirks
@@ -96,6 +102,9 @@ The widgets' are described in
 | 1030:23d3 | `draw_text` keeps the breaking space on the line and measures it again on the next, doesn't measure a line's last character for alignment, and before the first space puts the whole rest of the string on an overlong line | yes |
 | 1058:02cf | Switching pages on the start menu can leave a different scenario ticked than the one that starts | yes |
 | 1058:41fb | Letting go of the right mouse button also clicks a button held down with the left | yes |
+| 1028:0dde | The auction form is centred by its picture's height, not its own, so it sits 40 pixels low | yes |
+| 1028:15ef | A paddle's animation puts the bare background back under it, wiping the bottom rows of the item's picture | yes |
+| 1028:1ce0 | After a click on the title bar the title is drawn one row higher than the form opened with | yes |
 
 ## Design issues for multiplayer
 
@@ -105,4 +114,7 @@ state into the simulation. See the open questions in
 - the TV pause;
 - the animation options;
 - the human's view, used when people are placed;
-- the road drag state.
+- the road drag state;
+- the auction form, which stops the simulation while one human bids and
+  waits for them to start it ([auction.md](auction.md#open-questions)), and
+  whose held buttons stop the computers' bids.

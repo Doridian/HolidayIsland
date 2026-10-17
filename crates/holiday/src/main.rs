@@ -5,7 +5,9 @@
 //! island) and shows the main screen with the island, which the arrow keys
 //! scroll and Insert and Delete turn, and runs the simulation's clock
 //! (`World::tick`, every 100 ms), with the date and money on the info bar.
-//! Loading a game is only logged.
+//! When an event starts an auction the auction form opens over it; its
+//! buttons and keys become commands to the world. Loading a game is only
+//! logged.
 //!
 //! `holiday [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`, `GRAFIK`,
 //! `DATA` and `TEXTE` (default `orig`).
@@ -16,16 +18,19 @@ use std::time::Duration;
 
 use formats::bmp::Bitmap;
 use formats::data::{
-    animdat1, animdat4, darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, hausprei,
-    modatyp, monate, sonstige, start_txt, straspos, szenario_txt,
+    animdat1, animdat4, auktion, darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos,
+    hausprei, message_media_names, modatyp, monate, sonstige, start_txt, straspos, szenario_txt,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
+use game::auction::{self, Change};
+use game::auktionsform::{self, Auktionsform};
+use game::command::{self, Command};
 use game::darstellung::{self, Camera, Tiles};
 use game::hauptschirm::{self, Hauptschirm, InfoTexts};
 use game::hintergrund::{self, Island};
-use game::simulation::TICK_MS;
+use game::simulation::{TICK_MS, Tick};
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
 use game::widgets::ShiftState;
@@ -109,29 +114,45 @@ struct Game {
     since_tick: Duration,
     /// `THauptschirm`'s VCL form, whose images show `screen`'s.
     form: Form,
+    /// `TAuktionsform`, and its VCL form.
+    auction: Auktionsform,
+    auction_form: Form,
+    /// `FILENAME.DAT`: each message's picture, the auction's item's too.
+    pictures: Vec<Vec<u8>>,
+    dir: PathBuf,
+    /// The auction form has the mouse captured.
+    auction_captured: bool,
+    /// The player's commands, applied before the next tick.
+    commands: Vec<Command>,
 }
 
 impl Game {
-    /// Runs the clock's ticks that are due (`AnimationsTimer`, 1020:1e9b)
-    /// and says whether the screen changed.
+    /// Runs the player's commands and the clock's ticks that are due
+    /// (`AnimationsTimer`, 1020:1e9b, and the auction form's timers) and
+    /// says whether the screen changed.
     fn update(&mut self, elapsed: Duration) -> bool {
         let tick = Duration::from_millis(u64::from(TICK_MS));
         self.since_tick += elapsed;
         let mut ticked = false;
         let mut changed = false;
+        for command in std::mem::take(&mut self.commands) {
+            let t = self.world.apply(command);
+            changed |= self.show(&t);
+        }
         while self.since_tick >= tick {
             self.since_tick -= tick;
             // The original's people code reads the player's view.
             self.world.set_viewpoint(self.screen.viewpoint());
             let t = self.world.tick();
-            if t.redraw_all {
-                self.screen.paint_map(&self.world, &self.tiles);
+            changed |= self.show(&t);
+            if self.auction.visible && self.world.auction.open {
+                self.auction.draw_auctioneer(&self.world); // 1028:0221
                 changed = true;
-            } else {
-                changed |= self.screen.redraw_squares(&t.redraw, &self.world, &self.tiles);
             }
             ticked = true;
         }
+        let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
+        changed |= self.auction.advance(ms, &self.world, &self.font, &self.info);
         if ticked {
             // 1088:385d, 1088:38c4: the people where they moved to.
             self.screen
@@ -140,6 +161,87 @@ impl Game {
         }
         let info = ticked && self.screen.show_info(&self.world, &self.font, &self.info);
         changed || info
+    }
+
+    /// Shows what a tick or command did, and says whether anything changed.
+    fn show(&mut self, t: &Tick) -> bool {
+        let mut changed = if t.redraw_all {
+            self.screen.paint_map(&self.world, &self.tiles);
+            true
+        } else {
+            self.screen.redraw_squares(&t.redraw, &self.world, &self.tiles)
+        };
+        if t.auction_changes.contains(&Change::Opened) {
+            self.open_auction();
+        }
+        if !t.auction_changes.is_empty() {
+            self.auction
+                .update(&self.world, &t.auction_changes, &self.font, &self.info);
+            changed = true;
+        }
+        changed
+    }
+
+    /// The auction form opens with the item's picture. // 1028:0dde
+    fn open_auction(&mut self) {
+        let item = usize::try_from(self.world.auction.item).ok();
+        let picture = item.and_then(|n| self.pictures.get(n)).and_then(|name| {
+            let path = self.dir.join("GRAFIK").join(auktionsform::picture_file(name));
+            let bitmap = Bitmap::parse(&std::fs::read(path).ok()?).ok()?;
+            Some(Surface::from_bitmap(&bitmap))
+        });
+        let screen = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
+        self.auction
+            .open(&self.world, &self.font, &self.info, picture.as_ref(), screen);
+        self.auction_captured = false;
+    }
+
+    /// The auction form's buttons as the human's commands (the original's
+    /// player 1).
+    fn auction_actions(&mut self, actions: Vec<auction::Action>) {
+        self.commands.extend(actions.into_iter().map(|a| Command {
+            player: 1,
+            action: command::Action::Auction(a),
+        }));
+    }
+
+    /// A mouse event on the auction form while it's shown, and whether it
+    /// took it.
+    fn auction_mouse(&mut self, input: Input, shift: ShiftState, buttons_up: bool) -> bool {
+        if !self.auction.visible {
+            return false;
+        }
+        let (x, y) = match input {
+            Input::MouseMove { x, y } | Input::MouseDown { x, y, .. } | Input::MouseUp { x, y, .. } => {
+                (x - self.auction.left, y - self.auction.top)
+            }
+            _ => return false,
+        };
+        let over = self.auction_captured || self.auction.contains(x, y);
+        if !over {
+            return false;
+        }
+        let screen = (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap());
+        match input {
+            Input::MouseDown { .. } => {
+                self.auction_captured = true;
+                let actions = self
+                    .auction
+                    .mouse_down(x, y, shift, &self.world, &self.font, &self.info);
+                self.auction_actions(actions);
+            }
+            Input::MouseUp { .. } => {
+                if buttons_up {
+                    self.auction_captured = false;
+                }
+                let actions = self.auction.mouse_up(x, y, &self.world, &self.font);
+                self.auction_actions(actions);
+            }
+            _ => {
+                self.auction.mouse_move(x, y, shift, screen);
+            }
+        }
+        true
     }
 
     fn paint(&mut self, screen: &mut Surface, palette: &Palette) {
@@ -151,6 +253,16 @@ impl Game {
             }
         }
         self.form.paint(screen, palette);
+        self.auction_form.components[0].bounds = self.auction.bounds();
+        self.auction_form.components[0].visible = self.auction.visible;
+        for (name, image) in self.auction.images() {
+            if let Some(c) = self.auction_form.component_mut(name)
+                && let Kind::Image { picture } = &mut c.kind
+            {
+                *picture = Some(image.clone());
+            }
+        }
+        self.auction_form.paint(screen, palette);
     }
 }
 
@@ -201,6 +313,7 @@ impl Holiday {
     /// captured.
     fn mouse(&mut self, input: Input) {
         if !self.start.visible() {
+            self.game_mouse(input);
             return;
         }
         let (x, y, button) = match input {
@@ -241,6 +354,28 @@ impl Holiday {
         self.respond(response);
     }
 
+    /// A mouse event in the game: so far only the auction form takes them.
+    fn game_mouse(&mut self, input: Input) {
+        let bit = |b: Button| match b {
+            Button::Left => ShiftState::LEFT,
+            Button::Right => ShiftState::RIGHT,
+            Button::Middle => ShiftState::MIDDLE,
+        };
+        match input {
+            Input::MouseDown { button, .. } => self.buttons = self.buttons | bit(button),
+            Input::MouseUp { button, .. } => self.buttons = ShiftState(self.buttons.0 & !bit(button).0),
+            _ => {}
+        }
+        let shift = self.shift();
+        let mouse = ShiftState::LEFT | ShiftState::RIGHT | ShiftState::MIDDLE;
+        let up = self.buttons.0 & mouse.0 == 0;
+        if let Some(game) = &mut self.game
+            && game.auction_mouse(input, shift, up)
+        {
+            self.repaint();
+        }
+    }
+
     fn respond(&mut self, response: startform::Response) {
         match response.action {
             Some(Action::Start { scenario }) => {
@@ -278,7 +413,8 @@ impl App for Holiday {
 
     fn input(&mut self, input: Input) {
         match input {
-            Input::Close | Input::KeyDown(VK_ESCAPE) => self.quit = true,
+            Input::Close => self.quit = true,
+            Input::KeyDown(VK_ESCAPE) if !self.game.as_ref().is_some_and(|g| g.auction.visible) => self.quit = true,
             Input::KeyDown(key) | Input::KeyUp(key) => {
                 let down = matches!(input, Input::KeyDown(_));
                 let bit = match key {
@@ -292,6 +428,14 @@ impl App for Holiday {
                     if self.start.visible() {
                         let response = self.start.menu.key_down(key, self.keys);
                         self.respond(response);
+                    } else if let Some(game) = &mut self.game
+                        && game.auction.visible
+                    {
+                        // `TAuktionsform` is on top and has the keys.
+                        let shift = self.buttons | self.keys;
+                        if let Some(action) = game.auction.key_down(key, shift) {
+                            game.auction_actions(vec![action]);
+                        }
                     } else if let Some(game) = &mut self.game {
                         let shift = self.buttons | self.keys;
                         if game.screen.key_down(key, shift, &game.world, &game.tiles) == hauptschirm::KeyResult::Redrawn
@@ -466,6 +610,18 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
             c.visible = true;
         }
     }
+    let auction_bitmaps = auktionsform::BITMAP_FILES
+        .iter()
+        .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
+        .collect();
+    let auction = Auktionsform::new(auction_bitmaps, auktion(&read(dir, "TEXTE/AUKTION.TXT")));
+    let mut auction_form = load_form(exe, "TAUKTIONSFORM");
+    for (name, bounds) in auktionsform::LAYOUT {
+        if let Some(c) = auction_form.component_mut(name) {
+            c.bounds = bounds;
+            c.visible = true;
+        }
+    }
     Game {
         world,
         tiles,
@@ -474,6 +630,12 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         info,
         since_tick: Duration::ZERO,
         form,
+        auction,
+        auction_form,
+        pictures: message_media_names(&read(dir, "DATA/FILENAME.DAT")),
+        dir: dir.to_path_buf(),
+        auction_captured: false,
+        commands: Vec::new(),
     }
 }
 

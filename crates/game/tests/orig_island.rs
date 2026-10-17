@@ -16,9 +16,12 @@ use formats::data::{
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
+use game::auction;
+use game::command::{self, Command};
 use game::darstellung::{BITMAP_FILES, Camera, Tiles};
 use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult, LAYOUT};
 use game::hintergrund::{Island, SCENARIO_FILES, load_world, new_island};
+use game::simulation::Tick;
 use game::startform::Settings;
 use game::text::Font;
 use game::widgets::ShiftState;
@@ -27,6 +30,24 @@ use vcl::form::{Form, Kind};
 use vcl::random::Random;
 use vcl::surface::Surface;
 use vcl::{Palette, Rect};
+
+/// A tick with a player who leaves every auction as soon as its form
+/// opens: the form stops the clock until the player does something.
+fn step(world: &mut World) -> Tick {
+    let mut tick = world.tick();
+    if world.auction.open {
+        let leave = Command {
+            player: 1,
+            action: command::Action::Auction(auction::Action::Leave),
+        };
+        let left = world.apply(leave);
+        tick.messages.extend(left.messages);
+        tick.redraw.extend(left.redraw);
+        tick.redraw_all |= left.redraw_all;
+        tick.auction_changes.extend(left.auction_changes);
+    }
+    tick
+}
 
 fn orig() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orig")
@@ -255,7 +276,7 @@ fn palms_grow() {
     let days = world.days + 730;
     let mut redrawn = 0;
     while world.days < days {
-        let tick = world.tick();
+        let tick = step(&mut world);
         redrawn += tick.redraw.len();
         if h.redraw_squares(&tick.redraw, &world, &tiles) {
             assert_ne!(tick.redraw, []);
@@ -338,7 +359,7 @@ fn people_on_the_island() {
     let mut sounds = 0;
     for _ in 0..1500 {
         world.set_viewpoint(h.viewpoint());
-        let tick = world.tick();
+        let tick = step(&mut world);
         sounds += tick.sounds.len();
         h.redraw_squares(&tick.redraw, &world, &tiles);
     }
@@ -360,7 +381,7 @@ fn people_on_the_island() {
         // Turned once: the people turn with the island.
         h.key_down(0x2d, ShiftState::default(), &world, &tiles);
         world.set_viewpoint(h.viewpoint());
-        world.tick();
+        step(&mut world);
         h.paint_map(&world, &tiles);
         h.show_people(&world, &tiles, &font, &texts);
         write_ppm(&with_suffix(&out, "people-view1"), &compose(&h, &palette), &palette);
@@ -390,7 +411,7 @@ fn computers_shape_the_island() {
     let before = world.clone();
     let year = world.date.year;
     while world.date.year < year + 3 {
-        world.tick();
+        step(&mut world);
     }
     // Where the computers built the most roads.
     let squares = || (0..251).flat_map(|i| (0..251).map(move |j| (i, j)));
