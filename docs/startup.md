@@ -134,8 +134,9 @@ Spiel". It saves the game to `Maps\Last.map`, hides the forms in
 `1110:646c` except 10 and 11, frees the game (1030:3974), reloads the data
 (1030:38a3), restarts `holiday.mid`, and shows a new `TStartform`, which
 `startform_init` sets from the globals the game left (`Settings::from_world`).
-The `holiday` binary saves `Last.map` and shows a new start menu; the
-reload and the music aren't ported.
+The `holiday` binary saves `Last.map`, opens the sounds again, plays
+`holiday.mid` and shows a new start menu; the rest of the reload isn't
+ported. The intro's music is in [sound.md](sound.md#the-music).
 
 ## The start menu: `TStartform`
 
@@ -208,5 +209,5 @@ Quirks:
   state 700) and `SprachButtonClick` (empty) have no component in the DFM.
 
 "Altes Spiel fortsetzen" opens `TLadenForm`
-([savegame.md](savegame.md#loading-from-the-start-menu-tladenform)). Not
-ported yet: the sounds. Start leads to [states 1000–1500](#starting-a-game-states-10001500).
+([savegame.md](savegame.md#loading-from-the-start-menu-tladenform)). The
+widgets' sounds play ([sound.md](sound.md)). Start leads to [states 1000–1500](#starting-a-game-states-10001500).

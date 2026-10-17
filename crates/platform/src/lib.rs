@@ -1,7 +1,9 @@
 //! The window, input and display. The game hands over an 8-bit framebuffer
 //! and a palette each frame; the GPU does the palette lookup and scales the
 //! picture to the window by a whole factor where it fits, letterboxed.
+//! [`audio`] plays the sound.
 
+pub mod audio;
 mod display;
 mod keys;
 pub mod storage;

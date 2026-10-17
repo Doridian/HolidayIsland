@@ -14,10 +14,15 @@
 //! picture, date and text and four buttons: scroll the view to the news'
 //! square and back, the page before, the page after, and off.
 //!
-//! Not ported: the news' film (`FILMNAME.DAT`, `MediaPlayer1` on `Panel1`)
-//! and the speaker (`SOUNNAME.DAT` from `SPRADEUn\`, `MediaPlayer2`). The
-//! film is taken to end as soon as it starts, and the speaker as switched
-//! off (the option `1110:0066`); `docs/fernseher.md` has what they do.
+//! The speaker (`SOUNNAME.DAT` from `SPRADEUn\`, `MediaPlayer2`) is the
+//! caller's: the TV asks for it in [`Response::media`], with the `WaveMix`
+//! session given up while it reads, and takes `Position = Length` from it
+//! in [`Fernseher::timer`]; the world hears of it through
+//! [`Action::Speaker`] (`docs/sound.md`).
+//!
+//! Not ported: the news' film (`FILMNAME.DAT`, `MediaPlayer1` on `Panel1`).
+//! It's taken to end as soon as it starts; `docs/fernseher.md` has what it
+//! does.
 
 // The original's names: `x`, `y`, sizes `w`, `h`.
 #![allow(clippy::many_single_char_names)]
@@ -28,7 +33,7 @@ use vcl::surface::{Rop, Surface};
 use crate::command::Action;
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
-use crate::news::Entry;
+use crate::news::{Entry, Speaker};
 use crate::text::{Align, Font};
 use crate::widgets::ShiftState;
 use crate::world::{Pos, World};
@@ -137,6 +142,28 @@ enum Film {
     Browsed,
 }
 
+/// What the TV asks of the sound, in order. // 1048:0a54, 1048:1b3e, 1048:034f, 1048:077a
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Media {
+    /// The `WaveMix` session gives up the wave device (10a0:2518).
+    EffectsOff,
+    /// It takes it back (10a0:254f).
+    EffectsOn,
+    /// `fernseher_hide`'s end: with the options' "Geräusche" on
+    /// (`1110:0061`), [`Media::EffectsOn`] and [`Media::SoundVolume`].
+    EffectsOnWithSounds,
+    /// The wave device's volume at the speech volume (10a0:24bc).
+    SpeechVolume,
+    /// At the sound volume again (10a0:2453).
+    SoundVolume,
+    /// `MediaPlayer2.FileName := SPRADEU<dir>\<file>; Open`.
+    OpenSpeaker { dir: u8, file: Vec<u8> },
+    /// `MediaPlayer2.Play`.
+    PlaySpeaker,
+    /// `MediaPlayer2.Close`.
+    CloseSpeaker,
+}
+
 /// What an event did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[must_use]
@@ -155,8 +182,10 @@ pub struct Response {
     /// button comes up (1010:2b60) and the main screen gets the focus back.
     pub hidden: bool,
     /// The commands the caller applies for player 1, in order: the pause
-    /// while the TV is open. Single human.
+    /// while the TV is open, and what its speaker does. Single human.
     pub actions: Vec<Action>,
+    /// What the sound does, in order, before [`Response::sounds`].
+    pub media: Vec<Media>,
 }
 
 /// Which image took the mouse down: it keeps the mouse until it's up.
@@ -182,6 +211,23 @@ pub struct Fernseher {
     texts: Vec<[Vec<u8>; 3]>,
     /// `FILMNAME.DAT`, by message. // *1110:6630 + 0xd
     films: Vec<Vec<u8>>,
+    /// `SOUNNAME.DAT`, by message: the speaker's file. // *1110:6630 + 0x1a
+    speech: Vec<Vec<u8>>,
+    /// The options' "Sprachausgabe" (`1110:0066`), the caller's.
+    pub speech_option: bool,
+    /// A message's speech is open (`tv_busy`). // 1110:662d
+    speaker_open: bool,
+    /// The speaker was started. // 1110:667a
+    speaker_started: bool,
+    /// The speaker has played to its end (`Position = Length`), as the
+    /// caller last said.
+    speaker_done: bool,
+    /// What the world was last told of the speaker.
+    reported: Speaker,
+    /// The film gave up the `WaveMix` session and nothing took it back.
+    effects_off: bool,
+    /// [`Response::media`] so far.
+    media: Vec<Media>,
     /// The form is shown. // +0x29
     pub visible: bool,
     /// The form's top left on the screen, kept while it's hidden.
@@ -326,6 +372,14 @@ impl Fernseher {
             title: nachrich.0,
             texts: nachrich.1,
             films,
+            speech: Vec::new(),
+            speech_option: true,
+            speaker_open: false,
+            speaker_started: false,
+            speaker_done: false,
+            reported: Speaker::Off,
+            effects_off: false,
+            media: Vec::new(),
             visible: false,
             left: 0,
             top: 0,
@@ -349,6 +403,71 @@ impl Fernseher {
         };
         f.new_game(screen);
         f
+    }
+
+    /// `SOUNNAME.DAT` (`formats::data::message_media_names`): the speaker's
+    /// file of each message. Without it the TV has no speaker.
+    pub fn set_speech(&mut self, speech: Vec<Vec<u8>>) {
+        self.speech = speech;
+    }
+
+    /// The speaker's file of the message on archive entry `n`, unless it
+    /// has none (`kein`).
+    fn speech_of(&self, world: &World, n: i16) -> Option<&[u8]> {
+        let number = world.news.entry(n).map_or(0, |e| e.number);
+        usize::try_from(number)
+            .ok()
+            .and_then(|n| self.speech.get(n))
+            .filter(|f| !f.eq_ignore_ascii_case(NONE))
+            .map(Vec::as_slice)
+    }
+
+    /// The speaker's file didn't open: as if it had none. The original
+    /// raises an exception in `post_message` before `1110:662d` is set,
+    /// and the TV closes 6 s after it opened. Whether the world must hear
+    /// of it ([`Action::Speaker`]).
+    pub fn speaker_missing(&mut self) -> Option<Action> {
+        // BUG(original): `TMediaPlayer.Open` raises an exception in the middle of `post_message`; the port goes on without the speaker.
+        self.speaker_open = false;
+        let state = self.speaker_state();
+        (state != self.reported).then(|| {
+            self.reported = state;
+            Action::Speaker(state)
+        })
+    }
+
+    /// The speaker's state as the world sees it.
+    fn speaker_state(&self) -> Speaker {
+        match (self.speaker_open, self.speaker_started && !self.speaker_done) {
+            (false, _) => Speaker::Off,
+            (true, false) => Speaker::Open,
+            (true, true) => Speaker::Reading,
+        }
+    }
+
+    /// Closes the speaker if it's open (1048:034f, 1048:077a, 1048:15e6,
+    /// 1048:1939, 1048:26b7): the `WaveMix` session back, at the sound
+    /// volume.
+    fn close_speaker(&mut self) {
+        if self.speaker_open {
+            self.media.push(Media::CloseSpeaker);
+            self.media.push(Media::EffectsOn);
+            self.media.push(Media::SoundVolume);
+            self.effects_off = false;
+            self.speaker_open = false;
+        }
+    }
+
+    /// Hands `r` the sound's requests so far, and tells the world if the
+    /// speaker changed.
+    fn finish(&mut self, mut r: Response) -> Response {
+        r.media.append(&mut self.media);
+        let state = self.speaker_state();
+        if state != self.reported {
+            self.reported = state;
+            r.actions.push(Action::Speaker(state));
+        }
+        r
     }
 
     /// A new game's TV (1048:1ffd, which each game's set-up runs): hidden,
@@ -453,6 +572,7 @@ impl Fernseher {
         }
         self.film = Film::Waiting;
         self.auto = false;
+        self.speaker_started = false;
         self.cursor = n;
         r.actions.push(Action::ShowTv(n));
         if entry.number == crate::news::BUILDING_SALE_NEWS {
@@ -477,7 +597,8 @@ impl Fernseher {
         self.centred = false;
         let n = self.cursor;
         let entry = world.news.entry(n).cloned().unwrap_or_default();
-        self.show_entry(n, &entry, world, info, now)
+        let r = self.show_entry(n, &entry, world, info, now);
+        self.finish(r)
     }
 
     /// The news of a tick ([`crate::simulation::Tick::news`]), in order:
@@ -513,11 +634,22 @@ impl Fernseher {
             r.sounds.extend(shown.sounds);
             r.actions.extend(shown.actions);
             self.auto = true;
-            // TODO: the speaker (`SOUNNAME.DAT` from `SPRADEUn\`, with the option 1110:0066) isn't ported; it would be opened here.
+            match self.speech_of(world, p.index).map(<[u8]>::to_vec) {
+                Some(file) if self.speech_option => {
+                    // The speech of the text read: `SPRADEU1` to `3` for
+                    // the message's three texts.
+                    let dir = u8::try_from(p.entry.text.rem_euclid(3)).unwrap_or(0) + 1;
+                    self.media.push(Media::OpenSpeaker { dir, file });
+                    self.speaker_open = true;
+                }
+                // BUG(original): a message without speech leaves a speech still open playing (and the effects off) until the TV closes, only forgetting it.
+                _ => self.speaker_open = false,
+            }
+            self.speaker_done = false;
             r.sounds.push(SOUND_NEWS);
             self.opened_at = now;
         }
-        r
+        self.finish(r)
     }
 
     /// The film of the entry on the TV, if it has one.
@@ -530,44 +662,91 @@ impl Fernseher {
     }
 
     /// `fernseher_tick`, the clock's step 8 while the TV is shown, at
-    /// `now` ms (`GetTickCount`). Only for a TV a message opened: the two
-    /// lights, and 6 s after it opened, it closes, unless the page on it
-    /// has a film, which plays first, and not at all once the player
-    /// browsed (while a page without a film still closes it).
-    /// // 1048:1b3e
-    pub fn timer(&mut self, world: &World, now: u32) -> Response {
+    /// `now` ms (`GetTickCount`), with `speaker_done` whether the speaker
+    /// has played to its end (`Position = Length`). Only for a TV a
+    /// message opened: 3 s after it opened, a message's speech starts,
+    /// with the `WaveMix` session given up meanwhile; the two lights, which
+    /// flicker while it reads (the world draws them,
+    /// [`Fernseher::draw_lights`]); and when the speech ended, or without
+    /// one 6 s after the TV opened, it closes, unless the page on it has a
+    /// film, which plays first, and not at all once the player browsed
+    /// (while a page without a film still closes it). // 1048:1b3e
+    pub fn timer(&mut self, world: &World, now: u32, speaker_done: bool) -> Response {
         let mut r = Response::default();
         if !self.auto {
             return r;
         }
-        // TODO: the speaker would start after `SPEAKER_MS` here, with the lights flickering by `Random(5)`, `Random(20)` and `Random(3)` from the world's RandSeed while it speaks (not ported).
-        let clip = self.image.bounds();
-        for (x, y, from) in LIGHTS {
-            self.image.blit(x, y, &self.bitmaps[ANIM], from, Rop::Copy, clip);
+        self.speaker_done = speaker_done;
+        let since = now.wrapping_sub(self.opened_at);
+        // BUG(original): the page's speech decides, though the speaker has the posted message's: browsing by key to a page without one keeps it from starting, and the TV open.
+        if since >= SPEAKER_MS && !self.speaker_started && self.speech_of(world, self.cursor).is_some() {
+            if self.speaker_open {
+                self.media.push(Media::EffectsOff);
+                self.media.push(Media::SpeechVolume);
+                self.media.push(Media::PlaySpeaker);
+                self.effects_off = true;
+            }
+            self.speaker_started = true;
         }
-        r.refresh = true;
-        if now.wrapping_sub(self.opened_at) >= AUTO_CLOSE_MS {
+        if self.speaker_state() != Speaker::Reading {
+            let clip = self.image.bounds();
+            for (x, y, from) in LIGHTS {
+                self.image.blit(x, y, &self.bitmaps[ANIM], from, Rop::Copy, clip);
+            }
+            r.refresh = true;
+        }
+        let ended = if self.speaker_open {
+            self.speaker_done
+        } else {
+            since >= AUTO_CLOSE_MS
+        };
+        if ended {
             // BUG(original): a page without a film closes the TV 6 s after it opened even while the player browses.
             if !self.has_film(world) {
-                return self.close();
+                let c = self.close_inner();
+                return self.finish(c);
             }
             if self.film == Film::Waiting {
                 // TODO: the film (`FILMNAME.DAT` from `FILMHI\`/`FILMLO\` on `Panel1`, 1048:01bd) isn't ported: it ends as it starts.
+                // BUG(original): the film takes WaveMix's device, and only closing the TV with the sounds on gives it back.
+                self.media.push(Media::EffectsOff); // 10a0:2518
+                self.effects_off = true;
                 self.film = Film::Started;
                 self.film_playing = true;
             }
             if !matches!(self.film, Film::Stopped | Film::Browsed) && self.film_playing {
                 self.stop_film(); // 1048:034f
-                return self.close();
+                let c = self.close_inner();
+                return self.finish(c);
             }
         }
-        r
+        self.finish(r)
     }
 
-    /// Stops the film. // 1048:034f
+    /// The lights while the speaker reads, as the world drew them
+    /// ([`crate::simulation::Tick::tv_lights`]): the lower one's frame,
+    /// and the upper one's if it changes, else its frame 0. // 1048:1b3e
+    pub fn draw_lights(&mut self, lower: u16, upper: Option<u16>) {
+        let clip = self.image.bounds();
+        let [(lx, ly, l), (ux, uy, u)] = LIGHTS;
+        let frame = |r: Rect, n: u16| Rect::new(r.left + l.width() * i32::from(n), r.top, r.width(), r.height());
+        self.image
+            .blit(lx, ly, &self.bitmaps[ANIM], frame(l, lower), Rop::Copy, clip);
+        self.image.blit(
+            ux,
+            uy,
+            &self.bitmaps[ANIM],
+            frame(u, upper.unwrap_or(0)),
+            Rop::Copy,
+            clip,
+        );
+    }
+
+    /// Stops the film, and the speaker. // 1048:034f
     fn stop_film(&mut self) {
         self.film = Film::Stopped;
         self.film_playing = false;
+        self.close_speaker();
     }
 
     /// Hides the TV (1048:077a): the form keeps its position for the next
@@ -575,6 +754,12 @@ impl Fernseher {
     /// (`Action::TvPause(false)`), which the original does even when the
     /// TV wasn't shown (from 1010:0ac1 and 1068:1058).
     pub fn close(&mut self) -> Response {
+        let r = self.close_inner();
+        self.finish(r)
+    }
+
+    /// [`Fernseher::close`] without handing over the sound's requests.
+    fn close_inner(&mut self) -> Response {
         let mut r = Response {
             hidden: true,
             actions: vec![Action::TvPause(false)],
@@ -587,9 +772,16 @@ impl Fernseher {
             if self.film_playing {
                 self.stop_film();
             }
-            r.sounds.push(SOUND_HIDE);
+            self.close_speaker();
+            // Played while a film has the `WaveMix` session: not heard.
+            if !self.effects_off {
+                r.sounds.push(SOUND_HIDE);
+            }
             r.refresh = true;
         }
+        // The pause ends, and with the sounds on the session is back.
+        self.media.push(Media::EffectsOnWithSounds);
+        self.effects_off = false;
         r
     }
 
@@ -626,6 +818,7 @@ impl Fernseher {
         if self.film_playing {
             self.stop_film();
         }
+        self.close_speaker();
         self.closing = false;
         let clip = self.image.bounds();
         for n in [BACK, ON, CENTRE, OFF] {
@@ -670,7 +863,7 @@ impl Fernseher {
         }
         self.ready = true;
         if self.closing {
-            let c = self.close();
+            let c = self.close_inner();
             r.hidden = c.hidden;
             r.sounds.extend(c.sounds);
             r.actions = c.actions;
@@ -692,6 +885,7 @@ impl Fernseher {
             if self.film_playing {
                 self.stop_film();
             }
+            self.close_speaker(); // 1048:1939
             if hit(CLOSE, x, y) && self.ready {
                 self.pressed = CLOSE;
                 let all = self.leiste.bounds();
@@ -747,7 +941,7 @@ impl Fernseher {
             self.height = HEIGHT;
         }
         if self.closing {
-            let c = self.close();
+            let c = self.close_inner();
             r.hidden = c.hidden;
             r.sounds.extend(c.sounds);
             r.actions = c.actions;
@@ -763,13 +957,14 @@ impl Fernseher {
     /// The mouse goes down at `x`, `y` in the form, with the buttons and
     /// keys `shift`: the image under it takes it.
     pub fn mouse_down(&mut self, x: i32, y: i32, shift: ShiftState) -> Response {
-        if y < TITLE_HEIGHT {
+        let r = if y < TITLE_HEIGHT {
             self.capture = Capture::Title;
             self.title_mouse_down(x, y, shift)
         } else {
             self.capture = Capture::Tv;
             self.tv_mouse_down(x, y - TITLE_HEIGHT)
-        }
+        };
+        self.finish(r)
     }
 
     /// The mouse moves to `x`, `y` in the form on a `screen` of that size:
@@ -788,11 +983,12 @@ impl Fernseher {
     /// The mouse comes up at `x`, `y` in the form: the image that took it
     /// down handles it.
     pub fn mouse_up(&mut self, x: i32, y: i32, world: &World, info: &InfoTexts) -> Response {
-        match std::mem::replace(&mut self.capture, Capture::None) {
+        let r = match std::mem::replace(&mut self.capture, Capture::None) {
             Capture::Title => self.title_mouse_up(x, y, world, info),
             Capture::Tv => self.tv_mouse_up(x, y - TITLE_HEIGHT, world, info),
             Capture::None => Response::default(),
-        }
+        };
+        self.finish(r)
     }
 
     /// `FormKeyDown`: without Ctrl and Alt, Escape and Space switch the TV
@@ -825,7 +1021,7 @@ impl Fernseher {
         } else if mods == ShiftState::ALT.0 && key == VK_F4 {
             return self.close();
         }
-        r
+        self.finish(r)
     }
 
     /// The form's bounds on the screen.
@@ -944,11 +1140,75 @@ mod tests {
         assert_eq!(r.sounds, [SOUND_SHOW, SOUND_NEWS]);
         assert!(f.centred);
         assert_eq!(f.bounds(), Rect::new(224, 133, WIDTH, HEIGHT));
-        assert!(!f.timer(&w, 6999).hidden);
-        let r = f.timer(&w, 7000);
+        assert!(!f.timer(&w, 6999, false).hidden);
+        let r = f.timer(&w, 7000, false);
         assert!(r.hidden && !f.visible);
         assert_eq!(r.sounds, [SOUND_HIDE]);
         assert_eq!(r.actions, [Action::TvPause(false)]);
+    }
+
+    #[test]
+    fn the_speaker_reads_the_news() {
+        let mut w = World::default();
+        let mut f = tv();
+        let mut speech = vec![NONE.to_vec(); 90];
+        speech[0] = b"oster.wav".to_vec();
+        f.set_speech(speech);
+        let tick = post(&mut w, 0, false);
+        let text = tick.news[0].entry.text;
+        let r = f.news(&tick.news, [true; 4], &w, &info(), 1000);
+        let dir = u8::try_from(text.rem_euclid(3)).unwrap() + 1;
+        assert_eq!(
+            r.media,
+            [Media::OpenSpeaker {
+                dir,
+                file: b"oster.wav".to_vec()
+            }]
+        );
+        assert_eq!(r.actions, [Action::ShowTv(0), Action::Speaker(Speaker::Open)]);
+        // 3 s later it reads, with the effects off.
+        let r = f.timer(&w, 3999, false);
+        assert!(r.media.is_empty() && r.actions.is_empty());
+        let r = f.timer(&w, 4000, false);
+        assert_eq!(r.media, [Media::EffectsOff, Media::SpeechVolume, Media::PlaySpeaker]);
+        assert_eq!(r.actions, [Action::Speaker(Speaker::Reading)]);
+        // It reads on past 6 s; the world draws the lights.
+        assert!(!f.timer(&w, 20_000, false).hidden);
+        f.draw_lights(4, Some(2));
+        // At its end the TV closes and the effects come back.
+        let r = f.timer(&w, 20_100, true);
+        assert!(r.hidden);
+        assert_eq!(
+            r.media,
+            [
+                Media::CloseSpeaker,
+                Media::EffectsOn,
+                Media::SoundVolume,
+                Media::EffectsOnWithSounds
+            ]
+        );
+        assert_eq!(r.actions, [Action::TvPause(false), Action::Speaker(Speaker::Off)]);
+        assert_eq!(r.sounds, [SOUND_HIDE]);
+        // Without the option there's no speaker.
+        f.speech_option = false;
+        let tick = post(&mut w, 0, false);
+        let r = f.news(&tick.news, [true; 4], &w, &info(), 0);
+        assert_eq!(r.media, []);
+        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
+    }
+
+    #[test]
+    fn a_press_stops_the_speaker() {
+        let mut w = World::default();
+        let mut f = tv();
+        f.set_speech(vec![b"oster.wav".to_vec(); 90]);
+        let _ = f.news(&post(&mut w, 0, false).news, [true; 4], &w, &info(), 0);
+        let r = f.mouse_down(0, TITLE_HEIGHT, ShiftState::LEFT);
+        assert_eq!(r.media, [Media::CloseSpeaker, Media::EffectsOn, Media::SoundVolume]);
+        assert_eq!(r.actions, [Action::Speaker(Speaker::Off)]);
+        // Then the TV closes 6 s after it opened, as without one.
+        let _ = f.mouse_up(0, TITLE_HEIGHT, &w, &info());
+        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
     }
 
     #[test]
@@ -998,17 +1258,17 @@ mod tests {
         // Message 4 has a film: the TV closes after it (at once here),
         // unless the player browsed.
         let _ = f.news(&post(&mut w, 4, false).news, [true; 4], &w, &info(), 0);
-        assert!(f.timer(&w, AUTO_CLOSE_MS).hidden);
+        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
         let _ = f.news(&post(&mut w, 4, false).news, [true; 4], &w, &info(), 0);
         let _ = f.key_down(VK_RIGHT, ShiftState::default(), &w, &info());
-        assert!(!f.timer(&w, AUTO_CLOSE_MS).hidden);
+        assert!(!f.timer(&w, AUTO_CLOSE_MS, false).hidden);
         assert!(f.visible);
         // Browsing to a page without a film closes it after all.
         let _ = f.key_down(VK_RIGHT, ShiftState::default(), &w, &info());
         let _ = f.news(&post(&mut w, 0, false).news, [true; 4], &w, &info(), 0);
         let _ = f.key_down(VK_RIGHT, ShiftState::default(), &w, &info());
         assert_eq!(f.cursor, 2);
-        assert!(f.timer(&w, AUTO_CLOSE_MS).hidden);
+        assert!(f.timer(&w, AUTO_CLOSE_MS, false).hidden);
     }
 
     #[test]

@@ -210,7 +210,9 @@ Not in scope: matchmaking, accounts, or play with the original Windows version.
 - What the port uses in place of `SETUP.DAT`. It only picks directories
   and the sound/video quality ([startup.md](startup.md)), so a default
   `Setup` value should do.
-- Which General MIDI SoundFont to use, and how it reaches the player.
+- Which General MIDI SoundFont to ship, if any. For now the player
+  supplies one (`--soundfont`, `HOLIDAY_SOUNDFONT` or a system one;
+  [sound.md](sound.md#the-music)), and without it the music is silent.
 - How much the game relies on Windows' palette manager (palette animation,
   `RealizePalette` timing), which decides how faithful the palette path must be.
 - Differential testing against the original: the `unicorn-engine` crate can run

@@ -299,7 +299,7 @@ impl Forms {
             .iter()
             .map(|name| picture(dir, &auktionsform::picture_file(name)))
             .collect();
-        let tv = Fernseher::new(
+        let mut tv = Fernseher::new(
             font.clone(),
             bitmaps(dir, &fernseher::BITMAP_FILES),
             pictures,
@@ -307,6 +307,7 @@ impl Forms {
             message_media_names(&text(dir, "DATA/FILMNAME.DAT")),
             size,
         );
+        tv.set_speech(message_media_names(&text(dir, "DATA/SOUNNAME.DAT")));
         // 1070:2e6c
         let (geldmenu_texts, close) = geldmenu_txt(&text(dir, "TEXTE/GELDMENU.TXT")).expect("GELDMENU.TXT");
         let (advertising, renovation) = modatyp_txt(&text(dir, "TEXTE/MODATYP.TXT"));
@@ -561,6 +562,11 @@ fn inside(r: Rect, x: i32, y: i32) -> bool {
 }
 
 impl Game {
+    /// Plays `sounds` (`play_sound`, 10a0:30b6), in order.
+    pub(crate) fn play<N: Into<i16>>(&self, sounds: impl IntoIterator<Item = N>) {
+        self.sound.borrow_mut().play_all(sounds, &self.forms.settings);
+    }
+
     /// Hands `actions` to the world as the human's commands.
     fn commands(&mut self, actions: impl IntoIterator<Item = command::Action>) {
         // Single human: the original's player 1.
@@ -605,9 +611,9 @@ impl Game {
                     self.tools.down[usize::from(b)] = true;
                     self.screen.draw_buttons(&self.tools.down);
                     self.forms.help.hide();
-                    // The port always has sound (`1110:0062`).
                     let settings = self.forms.settings;
-                    self.forms.options.show(&settings, &self.world, true, size);
+                    let sound = self.sound.borrow().effects.enabled; // 1110:0062
+                    self.forms.options.show(&settings, &self.world, sound, size);
                 }
             }
             TV_BUTTON => {
@@ -693,6 +699,7 @@ impl Game {
             changed = true;
         }
         changed |= self.forms.overview.show_tick(&self.world, t);
+        self.forms.tv.speech_option = self.forms.settings.speech; // 1110:0066
         let r = self.forms.tv.news(
             &t.news,
             self.forms.settings.news,
@@ -768,7 +775,8 @@ impl Game {
     pub(crate) fn forms_clock_tick(&mut self) -> bool {
         let mut changed = false;
         if self.forms.tv.visible {
-            let r = self.forms.tv.timer(&self.world, self.forms.now);
+            let done = self.sound.borrow().speaker_done();
+            let r = self.forms.tv.timer(&self.world, self.forms.now, done);
             changed |= self.tv_response(r);
         }
         changed | self.tooltips()
@@ -848,8 +856,22 @@ impl Game {
         changed
     }
 
-    fn tv_response(&mut self, r: fernseher::Response) -> bool {
-        self.commands(r.actions);
+    pub(crate) fn tv_response(&mut self, mut r: fernseher::Response) -> bool {
+        self.sound.borrow_mut().tv_media(&r.media, &self.forms.settings);
+        if self.sound.borrow_mut().take_speaker_failed() {
+            r.actions.extend(self.forms.tv.speaker_missing());
+        }
+        self.play(r.sounds.iter().copied());
+        // The speaker's state is the original's global `1110:662d`, set at
+        // once: the world has it before its next tick.
+        let (speaker, actions): (Vec<_>, Vec<_>) = r
+            .actions
+            .into_iter()
+            .partition(|a| matches!(a, command::Action::Speaker(_)));
+        for action in speaker {
+            let _ = self.world.apply(Command { player: 1, action });
+        }
+        self.commands(actions);
         if r.shown {
             self.tools.down[usize::from(TV_BUTTON)] = true;
             self.screen.draw_buttons(&self.tools.down);
@@ -874,6 +896,7 @@ impl Game {
     }
 
     fn money_response(&mut self, r: geldmenu::Response) {
+        self.play(r.sounds.iter().copied());
         self.commands(r.commands);
         self.forms.money_update |= r.update;
         if r.opened {
@@ -898,6 +921,7 @@ impl Game {
     }
 
     fn overview_response(&mut self, r: uebersichtsmap::Response) {
+        self.play(r.sounds.iter().copied());
         if let Some((wo, ns)) = r.scroll {
             self.screen.set_scroll(wo, ns, &self.world, &self.tiles);
             self.screen
@@ -924,6 +948,7 @@ impl Game {
     }
 
     fn compass_response(&mut self, r: &kompassform::Response) {
+        self.play(r.sounds.iter().copied());
         if r.knob {
             self.forms.compass.draw_knob(&mut self.screen.corner);
         }
@@ -946,6 +971,7 @@ impl Game {
     }
 
     fn infobox_response(&mut self, r: infobox::Response) {
+        self.play(r.sounds.iter().copied());
         if let Some(a) = r.action {
             self.commands([a]);
             self.forms.infobox_redraw = true;
@@ -967,6 +993,7 @@ impl Game {
     }
 
     fn umenu_response(&mut self, r: umenuform::Response) {
+        self.play(r.sounds.iter().copied());
         if let Some(a) = r.action {
             self.commands([a]);
             self.forms.umenu_redraw = r.redraw;
@@ -987,16 +1014,25 @@ impl Game {
     fn options_response(&mut self, r: optionen::Response) {
         self.commands(r.commands);
         self.forms.settings = *self.forms.options.settings();
+        // The widgets' sounds with "Geräusche" as it was before the click.
+        self.play(r.sounds.iter().map(|s| s.number()));
         for change in r.changes {
-            if change == optionen::Change::Pointers {
-                // 1060:0656
-                self.screen.camera.owner_pointers = self.forms.settings.owner_pointers;
-                self.screen.camera.occupancy_pointers = self.forms.settings.occupancy_pointers;
-                self.screen.paint_map(&self.world, &self.tiles);
-                self.screen
-                    .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            let mut sound = self.sound.borrow_mut();
+            match change {
+                optionen::Change::Pointers => {
+                    drop(sound);
+                    // 1060:0656
+                    self.screen.camera.owner_pointers = self.forms.settings.owner_pointers;
+                    self.screen.camera.occupancy_pointers = self.forms.settings.occupancy_pointers;
+                    self.screen.paint_map(&self.world, &self.tiles);
+                    self.screen
+                        .show_people(&self.world, &self.tiles, &self.font, &self.info);
+                }
+                optionen::Change::Music(on) => sound.music_on(on, &self.forms.settings),
+                optionen::Change::Track(n) => sound.select_track(n, &mut self.forms.settings),
+                optionen::Change::MusicVolume(v) => sound.set_music_volume(v),
+                optionen::Change::SoundVolume(v) => sound.set_wave_volume(v),
             }
-            // The music and the volumes aren't played yet.
         }
         match r.action {
             Some(optionen::Action::Close) => {
@@ -1008,9 +1044,7 @@ impl Game {
             Some(optionen::Action::Highscores) => {
                 // 1040:2579: over the options, which wait for it.
                 let r = self.forms.high.show(self.world.scenario, true, screen_size());
-                if r.save {
-                    self.forms.requests.push(Request::SaveHighScores);
-                }
+                self.high_response(&r);
             }
             // `TCreditform` isn't ported.
             Some(optionen::Action::Credits) | None => {}
@@ -1018,6 +1052,7 @@ impl Game {
     }
 
     fn ende_response(&mut self, r: &endeform::Response) {
+        self.play(r.sounds.iter().map(|s| s.number()));
         match r.action {
             // The form hid itself; the clock runs again (1020:24b7).
             Some(endeform::Action::Close) => self.set_focus(Focus::Main),
@@ -1027,10 +1062,16 @@ impl Game {
     }
 
     pub(crate) fn schluss_response(&mut self, r: schlussform::Response) {
+        self.schluss_sound(&r);
         // The films aren't played: each ends as it starts (1068:17ad).
         let r = if r.film.is_some() {
+            // The `WaveMix` session gives the film the wave device (1068:12b7,
+            // 1068:0ec9) and takes it back after (1068:1869).
+            self.sound.borrow_mut().effects_off();
             let first = r.action;
             let ended = self.forms.schluss.film_ended(screen_size());
+            self.sound.borrow_mut().effects_on();
+            self.schluss_sound(&ended);
             schlussform::Response {
                 action: ended.action.or(first),
                 ..ended
@@ -1039,12 +1080,17 @@ impl Game {
             r
         };
         match r.action {
-            Some(schlussform::Action::Continue { .. }) => self.set_focus(Focus::Main),
+            Some(schlussform::Action::Continue { restart_music }) => {
+                if restart_music {
+                    // 1068:0180: `music_start` (1018:3850).
+                    self.forms.settings.music = true;
+                    self.sound.borrow_mut().music_on(true, &self.forms.settings);
+                }
+                self.set_focus(Focus::Main);
+            }
             Some(schlussform::Action::HighScores) => {
                 let r = self.forms.high.show(self.world.scenario, false, screen_size());
-                if r.save {
-                    self.forms.requests.push(Request::SaveHighScores);
-                }
+                self.high_response(&r);
             }
             Some(schlussform::Action::NewGame) => self.forms.requests.push(Request::NewGame),
             Some(schlussform::Action::Exit) => self.forms.requests.push(Request::Exit),
@@ -1052,13 +1098,48 @@ impl Game {
         }
     }
 
+    /// The end form's music and sounds: the background music stops
+    /// (`music_stop`, 1018:38c5, which turns the option off), the end's
+    /// plays or stops.
+    fn schluss_sound(&mut self, r: &schlussform::Response) {
+        let mut sound = self.sound.borrow_mut();
+        if r.stop_background_music {
+            sound.music_on(false, &self.forms.settings);
+            self.forms.settings.music = false;
+        }
+        if r.stop_music {
+            sound.stop_end_music();
+        }
+        if let Some(file) = r.music {
+            sound.play_end_music(file);
+        }
+        sound.play_all(r.sounds.iter().map(|s| s.number()), &self.forms.settings);
+    }
+
+    /// `TSchlussform.Timer1`: when the end's music is over it plays the
+    /// loop. // 1068:1872
+    pub(crate) fn end_music_tick(&mut self) {
+        if !self.forms.schluss.visible() {
+            return;
+        }
+        let ended = {
+            let s = self.sound.borrow();
+            s.end_music.is_open() && s.end_music.at_end()
+        };
+        if ended && let Some(file) = self.forms.schluss.music_ended() {
+            self.sound.borrow_mut().play_end_music(file);
+        }
+    }
+
     fn high_response(&mut self, r: &highscoreform::Response) {
+        self.play(r.sounds.iter().map(|s| s.number()));
         if r.save {
             self.forms.requests.push(Request::SaveHighScores);
         }
     }
 
     fn sabowin_response(&mut self, r: &sabowin::Response) {
+        self.play(r.sounds.iter().copied());
         if r.close.is_some() {
             self.set_focus(Focus::Main);
         }

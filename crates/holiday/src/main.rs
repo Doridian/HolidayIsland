@@ -24,15 +24,25 @@
 //! whether to quit (`TEndeform`), and the end of a game shows its results
 //! and the high scores.
 //!
-//! `holiday [--save-dir=DIR] [GAME_DIR]`, where `GAME_DIR` holds
-//! `HOLIDAY.EXE`, `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved
-//! games go to `DIR` (default `MAPS` in the platform's data directory,
+//! `holiday [--save-dir=DIR] [--soundfont=FILE.sf2] [--sound=hi|lo|off]
+//! [--no-audio] [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`,
+//! `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved games go to `DIR`
+//! (default `MAPS` in the platform's data directory,
 //! `platform::storage::save_dir`); the lists show those and the game's own
-//! `MAPS` (the tutorial), which is only read.
+//! `MAPS` (the tutorial), which is only read. The sound plays the waves
+//! from `SOUND` (or `SOUNDLO`, or none: `--sound`, else `SETUP.DAT`'s
+//! choice if the game's directory has one) and the music from `MUSIK`
+//! with the `SoundFont` `--soundfont` or `HOLIDAY_SOUNDFONT` names, else the
+//! one `tools/get-soundfont.sh` installed or one in the usual places
+//! (`platform::audio::find_soundfont`); without
+//! one the music is silent, and without a sound device (or with
+//! `--no-audio`) everything is.
 
 mod forms;
+mod sound;
 
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -46,6 +56,7 @@ use formats::dfm::Object;
 use formats::highscore::HighScores;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
+use formats::setup;
 use game::auction::{self, Change};
 use game::auktionsform::{self, Auktionsform};
 use game::baumenue::{self, Baumenue};
@@ -71,6 +82,7 @@ use vcl::surface::Surface;
 use vcl::{Palette, Rect};
 
 use crate::forms::{Focus, Forms, Request};
+use crate::sound::Sound;
 
 /// The layout `hintergrund_timer` picks for an 800×600 screen.
 const SCREEN: (usize, usize) = (800, 600);
@@ -266,6 +278,8 @@ struct Game {
     mouse: (i32, i32),
     /// The other forms (`forms`).
     forms: Forms,
+    /// The sound, shared with the start menu.
+    sound: sound::Shared,
 }
 
 impl Game {
@@ -278,6 +292,7 @@ impl Game {
         let mut ticked = false;
         let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         let mut changed = self.forms_timers(ms);
+        self.end_music_tick();
         changed |= self.apply_commands();
         while self.since_tick >= tick {
             if self.clock_stopped() {
@@ -400,9 +415,10 @@ impl Game {
         if let Some(text) = self.tools.status.take() {
             self.screen.show_status(&text, &self.font);
         }
-        // The sounds aren't played yet.
-        self.tools.sounds.clear();
-        self.tools.menu.sounds.clear();
+        let settings = self.forms.settings;
+        let mut s = self.sound.borrow_mut();
+        s.play_all(std::mem::take(&mut self.tools.menu.sounds), &settings);
+        s.play_all(std::mem::take(&mut self.tools.sounds), &settings);
     }
 
     /// Shows what a tick or command did, and says whether anything changed.
@@ -424,6 +440,7 @@ impl Game {
             if let Some(s) = self.forms.loading_settings.take() {
                 self.forms.settings = s;
             }
+            self.sound.borrow_mut().game_loaded(&self.forms.settings);
             let camera = MapView {
                 owner_pointers: self.forms.settings.owner_pointers,
                 occupancy_pointers: self.forms.settings.occupancy_pointers,
@@ -446,6 +463,7 @@ impl Game {
         if t.load_failed {
             eprintln!("the saved game couldn't be loaded");
         }
+        self.tick_sounds(t);
         let mut changed = !t.status.is_empty() || t.pointer_tool;
         changed |= if t.redraw_all {
             self.screen.paint_map(&self.world, &self.tiles);
@@ -456,6 +474,7 @@ impl Game {
         if t.auction_changes.contains(&Change::Opened) {
             self.open_auction();
             let r = self.forms.infobox.hide();
+            self.play(r.sounds.iter().copied());
             changed |= r.refresh;
         }
         if !t.auction_changes.is_empty() {
@@ -464,6 +483,31 @@ impl Game {
             changed = true;
         }
         changed | self.forms_tick(t)
+    }
+
+    /// A tick's sounds (`play_sound`, 10a0:30b6), with the countdown at
+    /// the start of `people_tick` (1090:5293) where it came; the TV's
+    /// lights while its speaker reads; and after a day the music's next
+    /// track (1018:367e).
+    fn tick_sounds(&mut self, t: &Tick) {
+        let settings = self.forms.settings;
+        {
+            let mut s = self.sound.borrow_mut();
+            let split = t.sound_countdown.unwrap_or(t.sounds.len()).min(t.sounds.len());
+            s.play_all(t.sounds[..split].iter().copied(), &settings);
+            if t.sound_countdown.is_some() {
+                s.effects.count_down();
+            }
+            s.play_all(t.sounds[split..].iter().copied(), &settings);
+            if t.new_day {
+                s.next_day(&mut self.forms.settings);
+            }
+        }
+        if let Some((lower, upper)) = t.tv_lights
+            && self.forms.tv.visible
+        {
+            self.forms.tv.draw_lights(lower, upper);
+        }
     }
 
     /// The auction form opens with the item's picture. // 1028:0dde
@@ -478,6 +522,9 @@ impl Game {
         self.auction
             .open(&self.world, &self.font, &self.info, picture.as_ref(), screen);
         self.auction_captured = false;
+        // 1028:0dde hides the TV (1048:077a).
+        let r = self.forms.tv.close();
+        self.tv_response(r);
     }
 
     /// The auction form's buttons as the human's commands (the original's
@@ -664,6 +711,7 @@ impl Game {
             ("eckimage", Input::MouseDown { .. }) => {
                 let view = self.screen.camera().view;
                 let r = self.forms.compass.knob_mouse_down(x, y, view);
+                self.play(r.sounds.iter().copied());
                 if r.knob {
                     self.forms.compass.draw_knob(&mut self.screen.corner);
                 }
@@ -809,6 +857,7 @@ struct Holiday {
     last_press: Option<(Instant, i32, i32)>,
     /// The player's options, from game to game (`TOptionenform`).
     options: Options,
+    sound: sound::Shared,
 }
 
 impl Holiday {
@@ -1046,6 +1095,9 @@ impl Holiday {
             }
             _ => return,
         };
+        if let Some(n) = response.sound {
+            self.sound.borrow_mut().play(n.number(), &self.options);
+        }
         match response.action {
             Some(ladenform::Action::Close) => {
                 // 1038:3817: the start menu is enabled again.
@@ -1061,7 +1113,15 @@ impl Holiday {
                         let settings = self.start.menu.settings().clone();
                         let options = self.options.with_map(&map);
                         let high = forms::high_scores(&self.dir, &self.saves.high_scores());
-                        self.game = Some(load_game(&self.dir, &self.exe, &map, &settings, options, high));
+                        self.game = Some(load_game(
+                            &self.dir,
+                            &self.exe,
+                            &map,
+                            &settings,
+                            options,
+                            high,
+                            &self.sound,
+                        ));
                     }
                     Err(e) => eprintln!("{e}"),
                 }
@@ -1105,6 +1165,9 @@ impl Holiday {
     /// Does what the file menu asks.
     fn file_menu_response(&mut self, response: dateimenue::Response) {
         let Some(game) = &mut self.game else { return };
+        game.sound
+            .borrow_mut()
+            .play_all(response.sounds.iter().map(|s| s.number()), &game.forms.settings);
         let refresh = response.refresh || response.moved || response.action.is_some();
         match response.action {
             Some(dateimenue::Action::Close) => game.file_menu.visible = false,
@@ -1150,20 +1213,32 @@ impl Holiday {
     }
 
     /// "Neues Spiel": saves `Last.map`, ends the game and shows a new
-    /// start menu, set from the globals the game left. Reloading the
-    /// data (1030:38a3) and the music aren't ported. // 1010:25dc
+    /// start menu, set from the globals the game left, with `holiday.mid`
+    /// again. Reloading the data (1030:38a3) isn't ported but for the
+    /// sounds. // 1010:25dc
     fn back_to_start_menu(&mut self) {
         let Some(game) = self.game.take() else { return };
         if let Err(e) = self.saves.write(hintergrund::LAST_MAP.as_bytes(), &game.map()) {
             eprintln!("can't save {}: {e}", hintergrund::LAST_MAP);
         }
         self.options = game.forms.settings;
+        // 1030:38a3 opens the sounds again (10a0:2f5e), and `holiday.mid`
+        // plays from the start.
+        {
+            let mut s = self.sound.borrow_mut();
+            s.reset_effects();
+            s.speaker.close();
+            s.intro_music();
+        }
         self.start = start_menu(&self.dir, &self.exe, Settings::from_world(&game.world));
         self.start.show();
         self.repaint();
     }
 
     fn respond(&mut self, response: startform::Response) {
+        if let Some(n) = response.sound {
+            self.sound.borrow_mut().play(n.number(), &self.options);
+        }
         match response.action {
             Some(Action::Start { scenario }) => {
                 // `startform_start_click` hides the form, and hintergrund's
@@ -1177,6 +1252,7 @@ impl Holiday {
                     scenario,
                     self.options,
                     high,
+                    &self.sound,
                 ));
             }
             Some(Action::Load) => {
@@ -1196,6 +1272,8 @@ impl Holiday {
 impl App for Holiday {
     fn update(&mut self, elapsed: Duration) {
         self.elapsed += elapsed;
+        let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
+        self.sound.borrow_mut().advance(ms);
         if let Some(game) = &mut self.game
             && game.update(elapsed)
         {
@@ -1451,6 +1529,9 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
                 land: modatyp(&read(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT").land as u8,
             };
             *options = options.with_map(&map);
+            // State 1500 for a scenario: the music and the speech on.
+            options.music = true;
+            options.speech = true;
             let view = MapView::from_map(&map);
             let camera = Camera {
                 parity: 0,
@@ -1479,7 +1560,15 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
 /// States 1000 to 1500 with `hintergrund+0x190`: the saved game `map`
 /// over a newly set up game, and the main screen at the file's view.
 /// // 1000:2466
-fn load_game(dir: &Path, exe: &[u8], map: &SaveGame, settings: &Settings, options: Options, high: HighScores) -> Game {
+fn load_game(
+    dir: &Path,
+    exe: &[u8],
+    map: &SaveGame,
+    settings: &Settings,
+    options: Options,
+    high: HighScores,
+    sound: &sound::Shared,
+) -> Game {
     let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok()).unwrap_or_else(|e| panic!("{e}"));
     let world =
         hintergrund::load_saved_game(map, settings, &data, seed()).unwrap_or_else(|e| panic!("the saved game: {e}"));
@@ -1491,6 +1580,7 @@ fn load_game(dir: &Path, exe: &[u8], map: &SaveGame, settings: &Settings, option
         (world, camera, Some(camera.origin), view.unported),
         options,
         high,
+        sound,
     )
 }
 
@@ -1505,9 +1595,10 @@ fn start_game(
     scenario_page: bool,
     mut options: Options,
     high: HighScores,
+    sound: &sound::Shared,
 ) -> Game {
     let start = start_world(dir, settings, scenario_page, &mut options);
-    make_game(dir, exe, start, options, high)
+    make_game(dir, exe, start, options, high, sound)
 }
 
 /// The main screen and the forms of a game that starts from `start`.
@@ -1516,9 +1607,18 @@ fn make_game(
     dir: &Path,
     exe: &[u8],
     (world, camera, origin, view_rest): Start,
-    options: Options,
+    mut options: Options,
     high: HighScores,
+    sound: &sound::Shared,
 ) -> Game {
+    {
+        let mut s = sound.borrow_mut();
+        s.music.init_playlist(&mut options); // 1018:37de, from 1030:36e5
+        // A scenario's or a saved game's `game_start_setup` (1010:2820).
+        if origin.is_some() {
+            s.game_start(&options);
+        }
+    }
     let font = font(dir);
     let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
     let frame = bitmaps(dir, &hauptschirm::BITMAP_FILES);
@@ -1585,9 +1685,9 @@ fn make_game(
     forms.overview.game_start(&world);
     forms.tv.load_fields(&view_rest);
     // 1010:0ac1: the TV closes, which lets the game go on.
-    let commands = forms
-        .tv
-        .close()
+    let closed = forms.tv.close();
+    sound.borrow_mut().tv_media(&closed.media, &forms.settings);
+    let commands = closed
         .actions
         .into_iter()
         .map(|action| Command { player: 1, action })
@@ -1616,18 +1716,51 @@ fn make_game(
         commands,
         file_menu: file_menu(dir, exe),
         view_rest,
+        sound: Rc::clone(sound),
     }
 }
 
 fn main() {
     let mut dir = PathBuf::from("orig");
     let mut save_dir = None;
+    let mut soundfont = None;
+    let mut quality = None;
+    let mut no_audio = false;
     for arg in std::env::args_os().skip(1) {
-        match arg.to_str().and_then(|a| a.strip_prefix("--save-dir=")) {
-            Some(d) => save_dir = Some(PathBuf::from(d)),
-            None => dir = PathBuf::from(arg),
+        let a = arg.to_str().unwrap_or_default();
+        if let Some(d) = a.strip_prefix("--save-dir=") {
+            save_dir = Some(PathBuf::from(d));
+        } else if let Some(f) = a.strip_prefix("--soundfont=") {
+            soundfont = Some(PathBuf::from(f));
+        } else if let Some(q) = a.strip_prefix("--sound=") {
+            quality = match q {
+                "hi" => Some(setup::Sound::Hi),
+                "lo" => Some(setup::Sound::Lo),
+                "off" => Some(setup::Sound::Off),
+                _ => {
+                    eprintln!("--sound= takes hi, lo or off");
+                    std::process::exit(2);
+                }
+            };
+        } else if a == "--no-audio" {
+            no_audio = true;
+        } else {
+            dir = PathBuf::from(arg);
         }
     }
+    // The installer's choice (`SETUP.DAT`'s fifth line, 1000:17bc), if
+    // there is one; else the full quality.
+    let quality = quality.unwrap_or_else(|| {
+        std::fs::read(dir.join("SETUP.DAT")).map_or(setup::Sound::Hi, |d| setup::Setup::parse(&d).sound)
+    });
+    let audio = if no_audio {
+        platform::audio::Audio::silent()
+    } else {
+        platform::audio::Audio::open(platform::audio::find_soundfont(soundfont.as_deref()).as_deref())
+    };
+    let sound = Sound::new(&dir, quality, audio).shared();
+    // States 422 and 424: `holiday.mid`.
+    sound.borrow_mut().intro_music();
     let saves = Saves {
         dir: save_dir
             .or_else(platform::storage::save_dir)
@@ -1668,6 +1801,7 @@ fn main() {
         saves,
         last_press: None,
         options: Options::default(),
+        sound,
     };
     holiday.set_picture(&title);
     if let Err(e) = platform::run("Holiday Island", holiday) {
@@ -1698,7 +1832,8 @@ mod tests {
             ..Settings::default()
         };
         let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
-        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high);
+        let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let mut game = start_game(&dir, &exe, &settings, true, Options::default(), high, &sound);
         game.world.clock.paused = false;
         let _ = game.update(Duration::from_millis(u64::from(TICK_MS) * 5));
         // A message of kind 0 opens the TV, which asks for the pause.

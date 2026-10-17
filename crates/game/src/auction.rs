@@ -236,11 +236,14 @@ impl World {
             self.auction_sold(tick);
         }
         if opening {
-            // The original waits while the TV's speaker reads a message
-            // (`1110:662d`); the speaker isn't ported (`crate::fernseher`).
-            self.auction.opening = None;
-            self.open_auction(tick);
-            return;
+            // `Timer2` (1028:1940) does nothing while the TV's speaker is
+            // open (`1110:662d`), and fires again a second later.
+            if self.news.speaker == crate::news::Speaker::Off {
+                self.auction.opening = None;
+                self.open_auction(tick);
+                return;
+            }
+            self.auction.opening = Some(OPEN_TICKS);
         }
         if self.auction.open {
             self.auction_step(tick);
@@ -631,6 +634,30 @@ mod tests {
 
     fn run(w: &mut World, ticks: usize) -> Vec<Tick> {
         (0..ticks).map(|_| w.tick()).collect()
+    }
+
+    #[test]
+    fn waits_for_the_tvs_speaker() {
+        let mut w = world(false);
+        let speaker = |w: &mut World, s| {
+            let _ = w.apply(Command {
+                player: 1,
+                action: command::Action::Speaker(s),
+            });
+        };
+        speaker(&mut w, crate::news::Speaker::Reading);
+        // The lights take random numbers each tick while it reads.
+        let ticks = run(&mut w, usize::from(OPEN_TICKS) * 2);
+        assert!(!w.auction.open);
+        assert!(ticks.iter().all(|t| t.tv_lights.is_some()));
+        speaker(&mut w, crate::news::Speaker::Open);
+        let ticks = run(&mut w, usize::from(OPEN_TICKS));
+        assert!(!w.auction.open && ticks.iter().all(|t| t.tv_lights.is_none()));
+        // A second after the speaker closed at the latest.
+        speaker(&mut w, crate::news::Speaker::Off);
+        let ticks = run(&mut w, usize::from(OPEN_TICKS));
+        assert!(w.auction.open);
+        assert_eq!(ticks.last().unwrap().auction_changes, [Change::Opened]);
     }
 
     #[test]

@@ -79,6 +79,17 @@ a right click moves it. The button bar's tool buttons (or F1 to F12)
 pick the tools; a click on the island uses them.
 Loading a game is only logged. Escape quits.
 
+### Music
+
+The game's music is MIDI, and the port renders it with a SoundFont, which
+the game doesn't ship. `tools/get-soundfont.sh` downloads
+[GeneralUser GS](https://github.com/mrbumpy409/GeneralUser-GS) by
+S. Christian Collins (GS-compatible, like the Roland Sound Canvas the music
+was written on) into the port's data directory, where the game finds it.
+`--soundfont=FILE.sf2` or `HOLIDAY_SOUNDFONT` pick another; without one the
+music is silent. `--sound=hi|lo|off` picks the effects' quality and
+`--no-audio` turns all sound off. Details in [docs/sound.md](docs/sound.md).
+
 ## Decompiling
 
 Needs Ghidra 12 at `/opt/ghidra` (or `GHIDRA_INSTALL_DIR`) and Java 21+.

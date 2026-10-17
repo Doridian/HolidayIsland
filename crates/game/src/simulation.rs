@@ -151,6 +151,14 @@ pub struct Tick {
     /// The news as it went into the archive, one for each of
     /// [`Tick::messages`] (`crate::news`): the TV's part.
     pub news: Vec<crate::news::Posted>,
+    /// The people moved (`people_tick`, 1090:5293), which first counts
+    /// down how long each sound still blocks itself: the view's
+    /// (`crate::sound::Effects::count_down`), after the first this many
+    /// of [`Tick::sounds`].
+    pub sound_countdown: Option<usize>,
+    /// The TV's lights while its speaker reads ([`World::tv_lights`]): the
+    /// lower one's frame, and the upper one's if it changes.
+    pub tv_lights: Option<(u16, Option<u16>)>,
 }
 
 /// A message on the status bar.
@@ -230,7 +238,9 @@ impl World {
         if self.earthquake && self.clock.hour_ticks == 1 {
             self.quake_damage(tick);
         }
+        self.tv_lights(tick); // 1048:1b3e
         if self.options.animations {
+            tick.sound_countdown = Some(tick.sounds.len());
             self.people_tick(tick); // 1090:5293
             if self.options.people_spawn {
                 self.spawn_people(tick); // 1090:2373

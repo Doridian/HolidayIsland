@@ -107,31 +107,35 @@ same tick reads them.
 The clock's step 8, every 100 ms while the TV is shown; only for a TV a
 message opened (`667d`):
 
-- 3 s after it opened, with the speaker's sound open, the music pauses
-  and the speaker starts (`667a` := 1).
+- 3 s after it opened, if the page on it has speech: with the speaker's
+  sound open (`662d`) the WaveMix effects give up the wave device
+  (10a0:2518), the wave volume goes to the speech volume (10a0:24bc) and
+  the speaker starts; `667a` := 1. The MIDI music plays on.
 - The two lights (`tvanim`, 40 × 16 at (242, 117) and 40 × 20 at (243,
   91)): frame 0, or while the speaker speaks a `Random(5)` frame and, one
   time in `Random(20)`, a `Random(3)` + 1 one: drawn from the world's
   `RandSeed`, so the original's numbers part from a game without the
   speaker.
-- When the speaker is done, or 6 s after the TV opened without one: a
+- When the speaker is done (`Position = Length`), or 6 s after the TV
+  opened without one: a
   page without a film closes the TV (1048:077a). Else, if the player
   hasn't browsed (`6672` = 0), the film starts (1048:01bd: the main
   screen's info disabled, `Panel1` at (9, 25), 332 wide, `662c` := 1,
   `6672` := 1); when it ends the TV closes.
 
-The port has no speaker (as with the option off) and no film: a film ends
-as it starts, so the TV closes 6 s after it opened unless the player
+The port has no film: a film ends as it starts, so the TV closes when
+the speech ends (or 6 s after it opened without one) unless the player
 browsed and the page has a film. `Fernseher::timer` takes the caller's
-clock in ms.
+clock in ms and whether the speaker is done; the speaker itself and the
+lights' random numbers are in [sound.md](sound.md#the-tvs-speaker).
 
 ## Closing (1048:077a)
 
 If the form is shown: its position kept (`664a`, `664c`), its size 0, the
 button bar's third button up, the film and the speaker stopped, the form
 hidden, sound 0xe, the main screen shown. Then, shown or not, the pause
-off (`1110:0067` := 0) and the music on again. `Action::TvPause(false)` in
-the port.
+off (`1110:0067` := 0) and, with "Geräusche" on, the WaveMix effects
+back at the sound volume. `Action::TvPause(false)` in the port.
 
 ## The buttons and keys
 
@@ -182,4 +186,6 @@ The news options `005c`..`005f` (unit 1000:0c6a) are the view's too
   `TvPause`) for a message, only the world's part without it (the sale's
   people). The TV's button would need the same rule.
 - The archive's view origin (`+0x118`) is player 1's view.
-- The speaker's lights draw from the world's `RandSeed` (not ported).
+- The speaker's lights draw from the world's `RandSeed`, and the auction
+  waits for the speaker: `Action::Speaker` tells the world
+  ([sound.md](sound.md#the-tvs-speaker)).

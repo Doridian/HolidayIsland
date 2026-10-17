@@ -38,6 +38,7 @@ pub mod savegame;
 pub mod schlussform;
 pub mod settlement;
 pub mod simulation;
+pub mod sound;
 pub mod startform;
 pub mod terrain;
 pub mod text;

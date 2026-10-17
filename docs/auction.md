@@ -166,9 +166,12 @@ price) − price) × Random(1000) div 999`.
   meanwhile), so holding a button is a command (`Action::Hold`).
 - Commands during a paddle's animation act at once; the original handles
   the input after the animation.
-- Not ported: waiting for the TV's speaker (`1110:662d`, the speaker
-  isn't ported, [fernseher.md](fernseher.md), so it never waits);
-  the error message for a bid without the money; the sounds; the build
+- `Timer2` doesn't open the form while the TV's speaker is open
+  (`1110:662d`): the view's TV says so with `Action::Speaker`, and the
+  timer tries again 10 ticks later ([sound.md](sound.md#the-tvs-speaker)).
+  The sounds are the world's `Tick::sounds`; the three calls' files
+  aren't where the game looks for them, so they're silent.
+- Not ported: the error message for a bid without the money; the build
   menu's part of `make_available`.
 
 The bugs kept are in [original-bugs.md](original-bugs.md).

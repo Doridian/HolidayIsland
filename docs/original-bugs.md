@@ -38,6 +38,8 @@ explains a bug in detail, the row links there instead of repeating it.
 | Computer loans (10a8:2a60) | A `Kreditgroesse` of 0 or less loops forever | Skips the loans |
 | 1030:23d3 `draw_text` | A word longer than a line, after the first space, writes past the 10 entries for line ends | Stops at nine lines |
 | 10c0:13b0 | Dragging a scroll bar's thumb divides by its travel, which can be 0 | Leaves the position |
+| 1048:0a54 | A message's speech file that doesn't open (`TMediaPlayer.Open`) raises an exception in the middle of `post_message` | The TV has no speaker for it (`Fernseher::speaker_missing`) |
+| 10a0:30b6 | `play_sound` doesn't check its number: one outside 1..42 reads past its tables | Ignores it |
 | 10b8:1e96, 10b8:25cb | The overview map's scroll bars divide by their range, 0 for a map window as big as the map (no layout of `UEBERMAP.DAT` has one) | Puts the thumb at the start |
 | People (1088:0324, 1088:2df2, 1088/1090/1098) | Some tables are read past their end, and markers are written outside their layers for a home of -1 or a square off the map ([people.md](people.md#open-questions)) | Reads 0 (or "free"), or skips the write |
 | 1070:04d3, 1070:270f | A renovation interval past 5 (from a map) reads the money menu's arrows' tables and `RenovierungToText` past their end | Leaves the interval; shows no text |
@@ -123,7 +125,7 @@ explains a bug in detail, the row links there instead of repeating it.
 | 10a0:1f65 | Piranhas ordered for a building that isn't a pool do nothing, without the error 0x1a the other kinds give: the loop over the pools always ends at 6, and the check is for 5 ([sabotage.md](sabotage.md)) | yes |
 | 10a0:1f65, 1028:3079 | A sabotage kind past the nine (only a command can ask for one) reads past `SABOTAGE.TXT`'s table | no: a free kind with no targets; nothing happens |
 | 1048:0a54 | When the news archive first wraps, the empty 26th entry moves into the 25th, so the 27th message goes there and the 26th and 27th stay the wrong way round ([fernseher.md](fernseher.md#posting-a-message-10480a54)) | yes |
-| 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speaker option | no: the speaker isn't ported; the port's numbers are the original's with it off |
+| 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speech option and on how long the speech plays | yes: the view's TV tells the world (`Action::Speaker`), which draws them in its tick (`World::tv_lights`) ([sound.md](sound.md#the-tvs-speaker)) |
 
 ## UI quirks
 
@@ -188,11 +190,32 @@ The widgets' are described in
 | 1040:31bc | The high scores' check boxes are pressed as radio buttons: a ticked one ignores a click | yes |
 | 1040:3dc7 | The tooltip's timeout (`1110:009c`) is set to 10 and never read | yes |
 
+## Sound
+
+[sound.md](sound.md) has the details.
+
+| Where | Quirk | Kept |
+|---|---|---|
+| 10a0:2824 | The auctioneer's three calls (`zum1.wav`..`zum3.wav`, sounds 0x1a–0x1c) are looked for in `SOUND\`, but they're in `SPRADEUn\`: WaveMix gets null waves and they're never heard | yes |
+| 1090:5293, 10a0:30b6 | A sound's time (`1110:723c`) only counts down in `people_tick`, which runs with the "animations" option on: with it off, each sound with a time plays once and then never again (until "Neues Spiel") | yes |
+| 1018:37de, 1018:367e | The playlist starts at track 0 while the intro's `holiday.mid` plays, so the first track after it is the second (`dub.mid`), and `anotrian.mid` only comes after the whole list | yes |
+| 1018:367e | A track's end is only noticed when the next day begins and the position hasn't moved for a whole day: up to a day of silence between tracks, and none changes while the game is paused | yes |
+| 1010:26fa | Loading a game from the file menu with the music on opens its file again without playing it: silence until a day or two later the next track starts | yes |
+| 1048:0a54 | A message without speech only forgets a speech still open from the last one: it plays on, and the effects stay off, until the TV closes | yes |
+| 1048:1b3e | The speech starts by the page on the TV, not the message it belongs to: browsing with the keys to a page without speech in the first 3 s keeps it from starting, and the TV then never closes by itself | yes |
+| 1048:01bd, 1048:077a | A news film gives up WaveMix's wave device (10a0:2518) and only closing the TV takes it back, and only with "Geräusche" on: switching the sounds on later leaves the effects silent until something else takes it back | yes |
+
 ## Design issues for multiplayer
 
 These aren't bugs for a single player, but the original mixes the human's UI
 state into the simulation. See the open questions in
 [simulation.md](simulation.md#open-questions) and [people.md](people.md):
+- the TV's speaker: one player's machine and options decide how long it
+  reads (the WAV's length, "Sprachausgabe"), and meanwhile the auction
+  doesn't open and the TV's lights take numbers from the world's
+  `RandSeed` every tick (`Action::Speaker`, [sound.md](sound.md#the-tvs-speaker));
+  for one player the port does as the original. For multiplayer the lights
+  would draw from a view's numbers and the auction wouldn't wait;
 - the TV pause: a message the human's options pick, or the TV's button,
   stops the game for everyone until the TV closes, and the archive keeps
   the human's view origin. The news options are each player's view

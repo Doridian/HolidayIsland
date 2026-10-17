@@ -156,6 +156,7 @@
 1018:35f0 func set_music_volume
 1018:367e func music_next_track  # after each day: the next MIDI track from the list at 1110:31d6 when the current one has ended
 1018:37de func music_init_playlist
+1018:3814 func music_close  # with the music on: MusikMediaPlayer Stop, Eject, Close; game::sound
 1018:3850 func music_start
 1018:38c5 func music_stop
 1018:3904 func button_under_mouse
@@ -860,6 +861,12 @@
 10a0:1f65 func sabotage_command
 10a0:232f func save_sabotage
 10a0:2453 func set_sound_volume
+10a0:24bc func set_speech_volume  # waveOutSetVolume at speech_volume (1110:6338) * 655, both channels: the TV's speaker
+10a0:2518 func sound_deactivate  # with sound and 1110:733c: WaveMixFlushChannel(0, WMIX_ALL), WaveMixActivate(FALSE): the films and the TV's speaker get the wave device; game::sound::Effects::deactivate
+10a0:254f func sound_activate  # with sound and not 1110:733c: WaveMixActivate(TRUE); game::sound::Effects::activate
+10a0:2577 func sound_done  # the system's wave volume back (1110:6340), WaveMixCloseChannel(all), WaveMixFreeWave of each, WaveMixCloseSession
+10a0:2824 func sound_file_name  # (n, var name): sound_dir + the wave of play_sound's number n (1..42), literals at 10a0:25e9..27c6; game::sound::WAVE_FILES
+10a0:2f5e func init_sound  # with sound: the volumes from waveOutGetVolume / 655, WaveMixConfigureInit (mono, the INI's rate), WaveMixOpenWave of the 42 waves, WaveMixOpenChannel(0, WMIX_OPENALL), sound_activate; docs/sound.md
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
 10a8:0167 func computer_bid  # nested in 10a8:0221: price + (min(money - loan + MaxSchulden, 3 price) - price) * Random(1000) div 999, 0 below the price; game::computer
 10a8:0221 func computer_bid_for  # (player, price: Longint): the human's money; a computer's bid unless out, the owner of event 9's square, or (for other items) waiting for its first roads; game::computer
@@ -1116,6 +1123,13 @@
 10c0:19d7 func edit_key_down  # (key, shift, image, background): typing (German umlauts on OEM keys), cursor keys, Enter calls Click and unfocuses
 10c0:1c1b func edit_mouse_down  # (x, y, image, background): focuses on a hit, unfocuses on any click when focused
 10c0:1cc1 func edit_insert_char
+10c8:1810 func tmediaplayer_open  # VCL TMediaPlayer.Open: Close if open, MCI_OPEN of FileName; raises on an error
+10c8:1b18 func tmediaplayer_close  # VCL TMediaPlayer.Close (MCI_CLOSE)
+10c8:1c10 func tmediaplayer_play  # VCL TMediaPlayer.Play (MCI_PLAY)
+10c8:1ee2 func tmediaplayer_stop  # VCL TMediaPlayer.Stop (MCI_STOP)
+10c8:28b5 func tmediaplayer_eject  # VCL TMediaPlayer.Eject (MCI_SET with MCI_SET_DOOR_OPEN): nothing for a sequencer
+10c8:2ea9 func tmediaplayer_get_length  # VCL TMediaPlayer.Length (MCI_STATUS_LENGTH)
+10c8:2fd7 func tmediaplayer_get_position  # VCL TMediaPlayer.Position (MCI_STATUS_POSITION); sets Error (+0x1be)
 10d0:07bf func vcl_messagedlg
 10e8:177b func tcontrol_set_left  # probably; with set_top/width/height (+0x1e..+0x24)
 10e8:179d func tcontrol_set_top
@@ -1258,7 +1272,8 @@
 1110:3cd4 data ship_drift  # array[0..3] of (di, dj): a ship's drift by the view's rotation (up the screen)
 1110:3ce4 data map_corners  # array[0..3] of (i, j): (0, 0), (0, 250), (250, 0), (250, 250)
 1110:3cf4 data atoll_boxes  # array[0..12] of (i0, j0, i1, j1: Integer): the ring's boxes, the last the lagoon (10b0:3c5c)
-1110:3dce data sound_lengths  # array[1..42] of Integer: how long each sound plays, in ticks
+1110:3dce data sound_lengths  # array[1..42] of Integer from 1110:3dd0: how many people_tick ticks each wave blocks itself after play_sound started it; game::sound::PLAY_TICKS
+1110:3e24 data sound_opened  # array[1..42] of Boolean: the wave opened (never read)
 1110:4a06 data rand_seed  # RandSeed (Longint)
 1110:4a82 data module_handle  # entry quits when GetModuleUsage of it is above 1 (a second copy)
 1110:4a84 data accounting_step
@@ -1399,7 +1414,7 @@
 1110:6624 data dummyform
 1110:6628 data fernseher
 1110:662c data fernseher_film_playing
-1110:662d data tv_busy  # Boolean: the TV shows a message; the auction form waits for it
+1110:662d data tv_busy  # Boolean: the TV's speaker (MediaPlayer2) has a message's speech open; the auction form's Timer2 waits for it; game::news::Speaker
 1110:662e data fernseher_centred
 1110:6630 data message_media | pointer32  # 90 records of 3 x string[12]: FILENAME, FILMNAME, SOUNNAME
 1110:6634 data nachrich_title | pointer32  # string[30]
@@ -1414,6 +1429,7 @@
 1110:6664 data news_last
 1110:6672 data fernseher_film_state
 1110:6676 data fernseher_opened_at
+1110:667a data speaker_started  # Boolean: the TV's speaker was started (1048:1b3e), cleared by fernseher_show
 1110:667c data news_nothing_yet
 1110:667d data fernseher_auto
 1110:667e data ansicht_formkorrektur
@@ -1444,6 +1460,7 @@
 1110:6eee data schlussform
 1110:6ef2 data music_playlist
 1110:6efa data music_track
+1110:6efc data music_last_position  # Longint: MusikMediaPlayer's position at the end of the last day, 0x3039 before a track played; music_next_track
 1110:6f04 data geldmenuform
 1110:6f08 data building_sites | pointer32  # list of 13-byte records: +1 i, +3 j, +5 days left, +7 type, +9 next
 1110:6f0c data plots | pointer32  # list of 0x364-byte plot records: +0 number, +2 airports and harbours, +0x22 houses' capacity, +0x354 palms planted and park squares, +0x356 other building squares, +0x358 house list, +0x35c facility list, +0x360 next
@@ -1524,6 +1541,10 @@
 1110:7236 data pauseform
 1110:723a data uebersichtsmap2
 1110:723c data sound_busy  # array[1..42] of Integer from 1110:723e: ticks each sound still plays; play_sound (10a0:30b6) only plays at 0 and sets it from 1110:3dce, people_tick counts it down; not saved, the view's
+1110:728e data sound_waves  # array[1..42] of far pointer: WaveMixOpenWave's waves, nil where the file didn't open
+1110:733a data wavemix_session  # WaveMixConfigureInit's session handle
+1110:733c data wavemix_active  # Boolean: the WaveMix session has the wave device (sound_activate, sound_deactivate)
+1110:733e data wave_volume_level  # Longint: the last waveOutSetVolume level
 1110:7342 data helpform
 1110:7346 data waehrungsfaktor
 1110:734a data fehler_texts | pointer32  # far pointer to the table loaded from the file of that name

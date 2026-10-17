@@ -1376,6 +1376,7 @@ fn news(save: &SaveGame) -> Result<crate::news::News, Error> {
         last: word(save, "1110:6664")?.cast_signed(),
         nothing_yet: byte(save, "1110:667c")? != 0,
         date_format: crate::news::DateFormat::default(),
+        speaker: crate::news::Speaker::Off,
     })
 }
 

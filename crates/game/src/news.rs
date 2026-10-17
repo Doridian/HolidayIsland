@@ -204,6 +204,27 @@ pub struct News {
     pub nothing_yet: bool,
     /// What the entries' dates are written with. Not in the map file.
     pub date_format: DateFormat,
+    /// The TV's speaker, as the view's TV reports it
+    /// ([`crate::command::Action::Speaker`]). Not in the map file.
+    pub speaker: Speaker,
+}
+
+/// The TV's speaker (`MediaPlayer2`, `SPRADEUn\`), which the world waits
+/// on: the auction doesn't open while it's open (`1110:662d`,
+/// 1028:1940), and while it reads, the TV's lights take random numbers
+/// from the world's `RandSeed` each tick (1048:1b3e). The view's TV has
+/// the speaker and tells the world. Waits on a view; see
+/// `docs/original-bugs.md`'s multiplayer section.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Speaker {
+    /// No speaker (`1110:662d` = 0).
+    #[default]
+    Off,
+    /// A message's speech is open (`1110:662d` = 1), before it starts
+    /// (`1110:667a` = 0) or after it ended (`Position = Length`).
+    Open,
+    /// It reads: the lights flicker.
+    Reading,
 }
 
 impl Default for News {
@@ -215,6 +236,7 @@ impl Default for News {
             last: 0,
             nothing_yet: true,
             date_format: DateFormat::default(),
+            speaker: Speaker::Off,
         }
     }
 }
@@ -354,6 +376,26 @@ impl World {
         }
         self.clock.paused = true;
         self.tv_people(n, tick);
+    }
+
+    /// The view's TV says what its speaker does ([`Speaker`]).
+    pub(crate) fn set_speaker(&mut self, speaker: Speaker) {
+        self.news.speaker = speaker;
+    }
+
+    /// The TV's lights while its speaker reads, which the original draws
+    /// in `fernseher_tick` (1048:1b3e), between the earthquake's damage
+    /// and the people, from the game's `RandSeed`: the lower one's frame
+    /// `Random(5)`, and one time in `Random(20)` the upper one's
+    /// `Random(3) + 1`. The view draws them ([`Tick::tv_lights`]).
+    // BUG(original): the TV's lights draw from the game's random numbers, so how long the speaker reads (and the speech option) changes the game.
+    pub(crate) fn tv_lights(&mut self, tick: &mut Tick) {
+        if self.news.speaker != Speaker::Reading {
+            return;
+        }
+        let lower = self.random.random(5);
+        let upper = (self.random.random(20) == 1).then(|| self.random.random(3) + 1);
+        tick.tv_lights = Some((lower, upper));
     }
 
     /// The pause while the TV is open: set by 1048:12e9, cleared by

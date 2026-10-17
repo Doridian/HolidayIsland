@@ -6,7 +6,7 @@
 //! (building, raising and lowering the land, demolishing, the road and
 //! sabotage, `docs/player-tools.md`), the options form's world options
 //! and speed, the money menu, the info box's and the buildings'
-//! overview's buttons, the overview map's new people and the TV's pause.
+//! overview's buttons, the overview map's new people and the TV's pause and speaker.
 
 use std::sync::Arc;
 
@@ -85,6 +85,11 @@ pub enum Action {
     /// 1048:0a54), and closing it lets it go on (`false`, 1048:077a)
     /// ([`World::tv_pause`]). Waits on a dialog. Single human.
     TvPause(bool),
+    /// The TV's speaker opened, started or ended reading, or closed
+    /// ([`World::set_speaker`]): the auction waits for it, and its lights
+    /// draw random numbers. Waits on a view. Single human.
+    /// // 1110:662d, 1048:1b3e
+    Speaker(crate::news::Speaker),
 }
 
 /// The sound of a tool that did its work. // 1028:3b7c, 1028:3cb1
@@ -128,6 +133,7 @@ impl World {
             Action::Sell(at) => self.sell_building(player, at),
             Action::ShowTv(n) => self.tv_shown(n, &mut tick),
             Action::TvPause(on) => self.tv_pause(on),
+            Action::Speaker(s) => self.set_speaker(s),
         }
         self.geldmenu_refresh(&tick); // 1070:2617
         tick
