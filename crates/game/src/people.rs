@@ -437,7 +437,7 @@ pub fn sees(v: &Viewpoint, island: &crate::world::Island, (i, j): Pos) -> bool {
                 e.wrapping_sub(1),
             )
         }
-        // The original's locals are undefined then.
+        // BUG(original): a rotation past 3 leaves the locals unset; the port says false.
         _ => return false,
     };
     let h = i16::from(island.highest_corner((i, j)));
@@ -769,6 +769,7 @@ impl World {
     /// Sets `layer_551c` on `pos`. The original writes outside the layer
     /// for a square off the map; the port doesn't.
     pub(crate) fn set_marker(&mut self, pos: Pos, value: u8) {
+        // BUG(original): a square off the map is written outside the layer; the port writes nothing.
         if self.island.layer_551c.get(pos).is_some() {
             self.island.layer_551c.set(pos, value);
         }
@@ -784,6 +785,7 @@ impl World {
     /// Whether both marker layers are free on `pos`; off the map counts
     /// as free (the original reads outside the layers).
     fn markers_free(&self, pos: Pos) -> bool {
+        // BUG(original): off the map is read outside the layers; the port counts it free.
         self.island.layer_551c.get(pos).unwrap_or(FREE) == FREE
             && self.island.layer_5520.get(pos).unwrap_or(FREE) == FREE
     }
@@ -859,7 +861,7 @@ impl World {
             At::Square => pos,
             At::Door(n) => self.door(pos, n),
             At::Jetty | At::Stage => {
-                // The original reads past these tables for other types.
+                // BUG(original): other types read past the tables; the port says 0.
                 let (di, dj) = if let At::Jetty = at {
                     offset(&JETTY_OFFSETS, FIRST_JETTY, 4)
                 } else {
@@ -971,7 +973,7 @@ impl World {
             .checked_sub(FIRST_AIRPORT)
             .and_then(|k| APPROACHES.get(usize::from(k)))
             .copied();
-        // The original reads past the table for other types.
+        // BUG(original): other types read past the table; the port says 0.
         let park = park.unwrap_or([0; 9]);
         let heading = park[4];
         let height = i16::from(self.island.highest_corner((i, j)));
@@ -1220,7 +1222,7 @@ impl World {
             0x22..=0x24 => {
                 let corner = nearest_corner((i, j)); // 1098:00ef
                 let b = self.building_or_none((i, j));
-                // The original reads past the table for other types.
+                // BUG(original): other types read past the table; the port says 0.
                 let (di, dj) = b
                     .checked_sub(FIRST_HARBOUR)
                     .and_then(|k| HARBOUR_TARGETS.get(usize::from(k)))
@@ -1573,8 +1575,7 @@ impl World {
                 }
             }
             0x7b | 0x7c => {
-                // The original works out the stage's offset (1110:3a58)
-                // here and then looks on the square itself.
+                // BUG(original): works out the stage's offset (1110:3a58), then looks for spectators on the square itself.
                 if self.part_or_zero(pos) == 0 && !self.person_at(STAGE_SPECTATORS, pos) {
                     self.add_person(STAGE_SPECTATORS, pos, tick);
                 }
@@ -1693,6 +1694,7 @@ impl World {
     /// map (a walker's or surfer's whose beach was taken, -1); the port
     /// leaves that alone.
     pub(crate) fn remove_person(&mut self, n: i16) {
+        // BUG(original): a home of -1 is read and written outside the layer; the port leaves it alone.
         let Some(p) = self.people.get(n).cloned() else {
             return;
         };

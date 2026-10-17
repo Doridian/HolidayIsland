@@ -339,6 +339,7 @@ impl Button {
             self.pressed = false;
             out.handled = true;
             out.repaint = true;
+            // BUG(original): mouse up reports handled whenever the button was pressed, clicked or not.
             out.clicked = self.frame.hit(x, y);
             out.sound = Some(Sound::Release);
         }
@@ -701,6 +702,7 @@ impl ScrollBar {
     fn release(&mut self, part: Part, out: &mut Outcome) {
         if self.pressed == Some(part) {
             match part {
+                // BUG(original): the arrows step only when the mouse is released over them; nothing auto-repeats.
                 Part::BackArrow => self.back(self.small_step),
                 Part::ForwardArrow => self.forward(self.small_step),
                 _ => {}
@@ -721,6 +723,7 @@ impl ScrollBar {
         let mut out = Outcome::default();
         if self.frame.hit(x, y) && self.max != self.min {
             let along = self.along(x, y);
+            // BUG(original): a press calls `Click` whenever it repaints, even when the position didn't change.
             self.press(self.part_at(along), &mut out);
             // Measured after a page step has moved the thumb.
             self.grab = along - (self.thickness() + self.thumb_offset());
@@ -749,6 +752,7 @@ impl ScrollBar {
             }
             let range = self.max.wrapping_sub(self.min);
             let scaled = at.wrapping_mul(range).wrapping_add(travel / 2);
+            // BUG(original): a thumb travel of 0 divides by zero; the port leaves the position.
             if let Some(offset) = scaled.checked_div(travel) {
                 let old = self.position;
                 self.position = offset.wrapping_add(self.min);
@@ -771,6 +775,7 @@ impl ScrollBar {
     pub fn mouse_up(&mut self, x: i32, y: i32) -> Outcome {
         let mut out = Outcome::default();
         if self.frame.hit(x, y) && self.max != self.min {
+            // BUG(original): released off the pressed arrow, it's let go without a repaint and stays drawn pressed.
             let part = self.part_at(self.along(x, y));
             self.release(part, &mut out);
         } else if self.frame.visible && self.pressed.is_some() {
@@ -909,6 +914,7 @@ impl ListBox {
             return out;
         };
         let row = offset + self.top;
+        // BUG(original): only exactly [ssLeft] or [ssLeft, ssDouble] count, so a click with Shift held does nothing.
         if shift == ShiftState::LEFT | ShiftState::DOUBLE {
             if row == self.selected {
                 out.sound = Some(Sound::Select);
@@ -997,6 +1003,7 @@ impl Edit {
         if self.frame.hit(x, y) && !self.focused {
             self.focused = true;
         } else if self.focused && self.frame.visible {
+            // BUG(original): any click while focused unfocuses, even one on the field itself.
             self.focused = false;
         } else {
             return out;

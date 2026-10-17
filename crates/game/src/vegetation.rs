@@ -39,7 +39,7 @@ impl World {
             if building == PALM {
                 let part = self.island.parts.at(pos);
                 let stages = self.palm_stages();
-                // Without HAUSNR.DAT the original divides by zero.
+                // BUG(original): without HAUSNR.DAT this divides by zero; the port treats the palm as old.
                 let stage = i16::from(part).checked_rem(stages).unwrap_or(-1);
                 if stage == YOUNG {
                     self.island.parts.set(pos, part.wrapping_add(1));
@@ -50,6 +50,7 @@ impl World {
                 } else if self.random.random(100) < 60 {
                     let variant = i16::from(part).checked_div(stages).unwrap_or(0);
                     self.island.parts.set(pos, variant.to_le_bytes()[0]);
+                    // BUG(original): a palm that dies stays counted on its plot's +0x354.
                     self.island.buildings.set(pos, NO_BUILDING);
                     self.remove_location_effect(pos, PALM); // 1030:1dc6
                 }
@@ -74,6 +75,7 @@ impl World {
         // 1068:2591 finds the plot by its number. The original writes
         // through a nil pointer for a square without a plot, which the CD's
         // maps don't have on land.
+        // BUG(original): a square without a plot is counted through a nil pointer; skipped.
         if let Some(p) = self
             .plots
             .iter_mut()

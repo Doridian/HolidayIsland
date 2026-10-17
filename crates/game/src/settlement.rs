@@ -158,6 +158,7 @@ mod plot {
 /// `a div b` as the original's `Longint` division (towards zero), 0 for
 /// a division by zero (the original stops there).
 #[must_use]
+// BUG(original): the original stops with a division by zero; the port's division gives 0.
 pub fn div(a: i32, b: i32) -> i32 {
     if b == 0 { 0 } else { a.wrapping_div(b) }
 }
@@ -242,6 +243,7 @@ impl Settlement {
     /// `player`'s month's `sum` ([`HOUSE_RENT`] ...).
     #[must_use]
     pub fn sum(&self, sum: usize, player: u8) -> i32 {
+        // BUG(original): player 0 (buildings of nobody) is the slot of the sum before's player 8.
         self.sums.get(sum * 8 + usize::from(player)).copied().unwrap_or(0)
     }
 
@@ -354,6 +356,7 @@ impl Settlement {
     #[must_use]
     pub fn price_class(&self, price: i32, class: u8) -> u8 {
         let low = self.min_price(class);
+        // BUG(original): divides by `MaxPreis` where the range seems meant.
         let c = div(price.wrapping_sub(low).wrapping_mul(10), self.max_price(class)).wrapping_sub(low);
         u8::try_from(c.clamp(0, 9)).unwrap_or(0)
     }
@@ -537,6 +540,7 @@ impl World {
         s.set_sum(ADVERTISING, 1, advertising);
         s.set_sum(OTHER, 1, insurance.wrapping_neg());
         s.set_sum(INTEREST, 1, self.finances.interest[0]); // 1078:05a0
+        // BUG(original): only the human pays advertising, insurance and the cost of living; the computers pay a sixth of their interest.
         for p in 2..=self.player_count {
             let interest = self.finances.interest.get(usize::from(p) - 1).copied().unwrap_or(0);
             s.set_sum(INTEREST, p, interest / 6);
@@ -624,8 +628,7 @@ impl World {
         }
         let rules = &self.settlement;
         let mut prices = if places > 0 { byte(div(rated, places)) } else { 50 };
-        // The original writes each price class's into the same byte, so
-        // the last one's stays.
+        // BUG(original): every class's shop price level goes into `+0xf`, so the last wins; the copies of the shops' places by class (1078:0780) are dropped.
         for c in 0..10 {
             prices = if places_by_class[c] > 0 {
                 byte(div(by_class[c], places_by_class[c]))
@@ -740,6 +743,7 @@ impl World {
     /// reads the byte before the block in the original; the port says 0.
     /// // *1110:6f24 + player - 1
     fn advertising(&self, player: u8) -> u8 {
+        // BUG(original): player 0 reads the byte before the block; the port says 0.
         usize::from(player)
             .checked_sub(1)
             .and_then(|i| self.player_block.get(i))
@@ -889,6 +893,7 @@ impl World {
         for n in 0..self.houses.len() {
             let h = &self.houses[n];
             let beds = self.tables.hausdata(h.building(), 3);
+            // BUG(original): a house type without beds divides by zero; skipped.
             if beds == 0 {
                 continue;
             }
@@ -1309,7 +1314,7 @@ impl World {
                 continue;
             }
             let r = self.random.random(100);
-            // The original reads the byte after the table for kind 3.
+            // BUG(original): kind 3 reads the byte after the table; the port says 0.
             let kind = usize::from(self.record_kind(self.facilities[n].building()));
             let chance = u16::from(self.settlement.decay.get(kind).copied().unwrap_or(0));
             if chance > r {

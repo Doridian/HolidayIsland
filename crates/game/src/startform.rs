@@ -713,6 +713,7 @@ impl StartForm {
     /// one takes it. It doesn't look at which button came up, so letting go
     /// of the right button also releases (and clicks) a button held down
     /// with the left. // 1058:41fb
+    // BUG(original): doesn't look at which button came up, so letting go of the right one clicks a button held with the left.
     pub fn mouse_up(&mut self, x: i32, y: i32) -> Response {
         for which in SCROLL_DOWN_ORDER {
             if let Some(bar) = self.w.scroll_mut(which) {
@@ -877,6 +878,7 @@ impl StartForm {
         } = self;
         let clip = bild.bounds();
         if *scenario_mode {
+            // BUG(original): the boxes and description stay as they were, so a different scenario can be ticked than the one that starts.
             *scenario_mode = false;
             settings.scenario = 0;
             for widget in w.scenario_page() {

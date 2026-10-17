@@ -190,7 +190,7 @@ struct LineBuf([u8; 3]);
 impl LineBuf {
     fn read(&mut self, f: &mut TextReader) -> Result<Vec<u8>> {
         if f.eof() {
-            // The original would loop forever here.
+            // BUG(original): a missing `***` marker loops for ever; the port fails to load.
             return Err(Error::Missing("*** end marker"));
         }
         let line = f.read_line();
@@ -200,6 +200,7 @@ impl LineBuf {
     }
 
     fn is_end(&self) -> bool {
+        // BUG(original): a short line keeps the previous line's bytes, so one after a `***` line still ends the list.
         &self.0 == b"***"
     }
 }
@@ -303,7 +304,7 @@ pub fn animdat2(data: &[u8]) -> Result<Vec<Vec<[u8; 4]>>> {
         let mut group = Vec::new();
         loop {
             if group.len() == ANIMDAT2_ROWS {
-                // The original would run into the next group's memory.
+                // BUG(original): a group longer than its room runs into the next one's memory; the port fails to load.
                 return Err(Error::Missing("ANIMDAT2 group end"));
             }
             let row = c.row::<4>(5)?.map(byte);
@@ -347,6 +348,7 @@ pub fn animdat3(data: &[u8], last_row: &[i16; ANIMDAT3_GROUPS]) -> Result<Vec<Ve
     for &last in last_row {
         let rows = usize::try_from(i32::from(last) + 1).unwrap_or(0);
         if rows > ANIMDAT3_ROWS {
+            // BUG(original): a group longer than its room overruns it; the port fails to load.
             return Err(Error::Missing("room for ANIMDAT3 group"));
         }
         let group = (0..rows)
@@ -740,6 +742,7 @@ pub fn namen(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Strings)> {
             break;
         }
         if names.len() == NAMEN_MAX {
+            // BUG(original): more than 51 names overrun the stack array; the port fails to load.
             return Err(Error::Missing("empty line after the names"));
         }
         names.push(short_string(line, 12));

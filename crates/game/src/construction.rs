@@ -111,6 +111,7 @@ impl World {
             // with. The original doesn't check the budget's number.
             let index = i32::from(owner - 2) * 13 + i32::from(site.budget);
             let cost = i32::from(self.tables.hausdata(site.building, 3));
+            // BUG(original): the budget's number isn't checked, so a bad one reaches outside the budgets; the port leaves them.
             if let Some(b) = usize::try_from(index)
                 .ok()
                 .and_then(|i| self.computer_budgets.get_mut(i))
@@ -277,6 +278,7 @@ impl World {
         let t = Arc::clone(&self.tables);
         let kind = t.hausdata(building, 5);
         let squares = t.hausnr(building, 5).wrapping_mul(sign);
+        // BUG(original): a plot number with no record is written through a nil pointer; skipped.
         if let Some(p) = self.find_plot(plot) {
             if kind == PARKS {
                 p.set_palms(p.palms().wrapping_add(squares));
@@ -398,6 +400,7 @@ impl World {
         let building = self.island.buildings.get((i, j)).unwrap_or(NO_BUILDING);
         let part = i16::from(self.island.parts.get((i, j)).unwrap_or(0));
         let t = &self.tables;
+        // BUG(original): a type with no squares or width divides by zero; the port takes the square itself.
         let part = part.checked_rem(t.hausnr(building, 5)).unwrap_or(0);
         let width = t.hausnr(building, 3);
         (
@@ -556,9 +559,11 @@ impl World {
     /// `pos`, and divides by zero for a type with no building time; the
     /// port does nothing, and pays nothing back.
     fn demolish_site(&mut self, player: u8, pos: Pos, tick: &mut Tick) {
+        // BUG(original): a square no site's area holds is read through a nil pointer, and a type with no building time divides by zero; the port does nothing.
         let Some(n) = self.find_building_site(pos) else {
             return;
         };
+        // BUG(original): the site's effect stays on the location map.
         let site = self.building_sites[n];
         let t = Arc::clone(&self.tables);
         let (i0, j0) = site.pos;
@@ -687,6 +692,7 @@ impl World {
     /// The original adds up `Strassenabrisskosten` for each square
     /// (1078:276f), and never uses the sum.
     fn demolish_bridge(&mut self, pos: Pos, tick: &mut Tick) {
+        // BUG(original): the original adds up a cost for each square (1078:276f) and never charges it; the port doesn't add it up.
         let bridge = |w: &World, p: Pos| w.island.ground.get(p).is_some_and(|g| BRIDGES.contains(&g));
         let part = self.island.parts.at(pos);
         let mut start = pos;
@@ -756,6 +762,7 @@ impl World {
                 continue;
             }
             let capacity = i32::from(self.tables.hausdata(house.building(), 3));
+            // BUG(original): a house type with no capacity divides by zero; skipped.
             let Some(chance) = (i32::from(house.guests()) * 100).checked_div(capacity) else {
                 continue;
             };
@@ -953,8 +960,7 @@ impl World {
                     continue;
                 }
                 if self.island.buildings.at(pos) == crate::world::PALM {
-                    // The original writes through a nil pointer for a
-                    // square without a plot.
+                    // BUG(original): a square without a plot is written through a nil pointer; skipped.
                     if let Some(p) = self.find_plot(plot) {
                         p.set_palms(p.palms().wrapping_sub(1));
                     }
@@ -997,6 +1003,7 @@ impl World {
         if (2..=self.player_count).contains(&owner) {
             let index = i32::from(owner - 2) * 13 + i32::from(budget);
             let capacity = i32::from(self.tables.hausdata(building, 3));
+            // BUG(original): the budget's number isn't checked, so a bad one reaches outside the budgets; the port leaves them.
             if let Some(b) = usize::try_from(index)
                 .ok()
                 .and_then(|i| self.computer_budgets.get_mut(i))

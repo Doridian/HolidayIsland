@@ -442,6 +442,7 @@ impl World {
             for building in 0..=LAST_TYPE {
                 if c.matches(category, building, |col| t.hausdata(building, col)) && t.hausdata(building, 6) == 0 {
                     n = n.wrapping_add(1);
+                    // BUG(original): more than 40 types write on into the next row.
                     if let Some(cell) = c.types.get_mut(row + usize::from(n)) {
                         *cell = building;
                     }
@@ -655,6 +656,7 @@ impl World {
     /// the port does nothing then.
     pub fn manage_loans(&mut self, p: u8) {
         let size = self.finances.credit_size;
+        // BUG(original): a `Kreditgroesse` of 0 or less loops for ever; the port skips the loans.
         if size <= 0 || p == 0 {
             return;
         }
@@ -693,6 +695,7 @@ impl World {
             }
             let takings = i32::from(h.guests()).wrapping_mul(h.price());
             let beds = t.hausdata(b, 3);
+            // BUG(original): a house type without beds divides by zero; skipped.
             if t.hausprei(b, 1) > takings && beds != 0 {
                 let full = h.guests().wrapping_mul(100).wrapping_div(beds);
                 if full < best {
@@ -896,8 +899,8 @@ impl World {
             self.computers.category[k] = TRANSPORT;
             return true;
         }
-        // 1068:2591; the original reads through a nil pointer for a plot
-        // number without a record.
+        // 1068:2591.
+        // BUG(original): a plot number without a record is read through a nil pointer; the port reads 0.
         let plot = self
             .plots
             .iter()
@@ -1241,7 +1244,7 @@ impl World {
                     true
                 }
             }
-            // The original returns an unset byte.
+            // BUG(original): an unset result for another levelling state; the port says false.
             _ => false,
         }
     }
@@ -1388,6 +1391,7 @@ impl World {
         let k = slot(p);
         let mut pos = self.computers.site[k];
         let first = self.island.plot_at(pos);
+        // BUG(original): checks the area of the plot it leaves, not the one it moves to.
         let area = self.plot_area(first);
         let mut tries = 0;
         loop {
@@ -1427,6 +1431,7 @@ impl World {
     /// The plot's area (`+0x352`), 0 for a number without a record (the
     /// original reads through a nil pointer).
     fn plot_area(&self, plot: u16) -> u16 {
+        // BUG(original): a plot number without a record is read through a nil pointer; the port says 0.
         self.plots
             .iter()
             .find(|q| q.id() >= 0 && q.id().cast_unsigned() == plot)

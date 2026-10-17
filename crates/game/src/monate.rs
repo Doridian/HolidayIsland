@@ -58,6 +58,7 @@ impl Date {
     /// a month outside 1..12; the port says 31 there.
     #[must_use]
     pub fn month_length(&self) -> u8 {
+        // BUG(original): a month outside 1..12 reads past the table; the port says 31.
         let row = &MONTH_LENGTHS[usize::from(self.year % 4)];
         usize::from(self.month)
             .checked_sub(1)

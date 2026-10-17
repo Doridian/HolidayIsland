@@ -70,7 +70,7 @@ impl World {
                 let weight = (radius + 1 - distance).max(0);
                 let mut factor = (value - 100) * weight / (radius + 1) + 100;
                 if remove {
-                    // The original divides by zero for a factor of 0.
+                    // BUG(original): a factor of 0 divides by zero; the port skips the cell.
                     let Some(inverse) = (factor / 2 + 10000).checked_div(factor) else {
                         continue;
                     };

@@ -46,6 +46,7 @@ impl HighScores {
     /// (the original reads that many and doesn't check).
     #[must_use]
     pub fn parse(data: &[u8]) -> Option<Self> {
+        // BUG(original): a file of another size isn't checked; the port reads no table.
         if data.len() != SIZE {
             return None;
         }

@@ -218,8 +218,7 @@ impl World {
     /// building time (`HAUSDATA.DAT`'s first column) more.
     /// // 10a0:117e, sabotage kind 6
     fn delay_construction(&mut self, pos: Pos) {
-        // The original would read through a nil pointer if no site's area
-        // held the square.
+        // BUG(original): a square no site's area holds is read through a nil pointer; skipped.
         if let Some(n) = self.find_building_site(pos) {
             let site = &mut self.building_sites[n];
             site.days = site.days.wrapping_add(self.tables.hausdata(site.building, 0));
@@ -262,6 +261,7 @@ impl World {
     /// buildings are facilities, and the port leaves the records alone
     /// otherwise.
     pub(crate) fn replace_building(&mut self, building: u8, pos: Pos, tick: &mut Tick) {
+        // BUG(original): a building with no record is written through a nil pointer; the port leaves the records alone.
         self.send_spectators_away(building); // 10a0:0026
         let record = self.find_record(pos); // 1078:169a
         let t = std::sync::Arc::clone(&self.tables);

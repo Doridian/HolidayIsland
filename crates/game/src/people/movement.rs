@@ -299,6 +299,7 @@ fn row(p: &Person) -> i16 {
 /// A table entry, 0 or the default outside the table (the original reads
 /// past it).
 fn at<T: Copy + Default>(table: &[T], index: impl TryInto<usize>) -> T {
+    // BUG(original): an index outside the table reads past it; the port gives the default.
     index
         .try_into()
         .ok()
@@ -368,6 +369,7 @@ impl World {
     /// A marker layer on `pos`, 255 off the map (the original reads past
     /// the layer).
     fn marker(&self, pos: Pos) -> u8 {
+        // BUG(original): off the map is read past the layer; the port says 255.
         self.island.layer_551c.get(pos).unwrap_or(FREE)
     }
 
@@ -1013,7 +1015,7 @@ impl World {
                     if off_inner(next) {
                         self.remove_person(n);
                     } else {
-                        // It marks the square ahead, without going there.
+                        // BUG(original): a ship with `+0x26` left marks the square ahead without going there.
                         self.set_marker(p.pos(), FREE);
                         self.set_marker(next, p.kind());
                         self.edit(n, |p| p.set_word_26(p.word_26().wrapping_sub(1)));
@@ -1044,6 +1046,7 @@ impl World {
         if harbour(self, (i, j - 1)) || harbour(self, (i, j + 1)) {
             return Some(0);
         }
+        // BUG(original): the original returns an undefined value here; the port keeps the heading.
         self.remove_person(n); // 1088:2df2
         None
     }
@@ -1093,6 +1096,7 @@ impl World {
         if !found {
             for turn in turns {
                 let p = self.person(n);
+                // BUG(original): checks the ship's own square, five times, instead of the squares ahead.
                 if water(self, p.pos()) {
                     self.edit(n, |p| {
                         p.set_word_26(4);
@@ -1501,6 +1505,7 @@ impl World {
         };
         let (i, j) = self.building_origin(home); // 1030:154c
         (a[0].wrapping_add(i) == home.0 && a[1].wrapping_add(j) == home.1)
+            // BUG(original): the second approach counts when either coordinate matches, not both.
             || a[5].wrapping_add(i) == home.0
             || a[6].wrapping_add(j) == home.1
     }

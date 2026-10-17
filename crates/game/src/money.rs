@@ -42,6 +42,7 @@ impl Finances {
     /// `Longint` before the table, as the original does. // 1078:014c
     #[must_use]
     pub fn guests(&self, player: u8) -> i32 {
+        // BUG(original): player 0 reads player 8's interest, the `Longint` before the table.
         match usize::from(player).checked_sub(1) {
             None => self.interest[7],
             Some(i) => self.guest_count.get(i).copied().unwrap_or(0),
@@ -51,6 +52,7 @@ impl Finances {
     /// Sets `player`'s guests; player 0 writes player 8's interest.
     /// // 1078:0172
     pub fn set_guests(&mut self, player: u8, guests: i32) {
+        // BUG(original): player 0 writes player 8's interest, the `Longint` before the table.
         match usize::from(player).checked_sub(1) {
             None => self.interest[7] = guests,
             Some(i) => {
@@ -102,6 +104,7 @@ impl World {
     /// the money of player 8 for player 0). // 1078:057a
     #[must_use]
     pub fn loan_of(&self, player: u8) -> i32 {
+        // BUG(original): player 0 reads player 8's money; the port says 0.
         usize::from(player)
             .checked_sub(1)
             .and_then(|i| self.finances.loan.get(i))
@@ -156,6 +159,7 @@ impl World {
 pub fn format_money(amount: i32, factor: i32, land: Land) -> Vec<u8> {
     let sign: &[u8] = if amount < 0 { b"-" } else { b"" }; // 1030:119c
     let n = amount.wrapping_abs();
+    // BUG(original): a currency factor of 0 divides by zero; the port works the product out in halves.
     let digits = if factor != 0 && i32::MAX / factor > n {
         n.wrapping_mul(factor).to_string()
     } else {

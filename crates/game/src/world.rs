@@ -1259,6 +1259,7 @@ impl World {
     /// the block. // *1110:6f24 + 0x2f + player
     #[must_use]
     pub fn reputation(&self, player: u8) -> u8 {
+        // BUG(original): a player outside 1..8 reads past the reputations; the port says 0 past the block.
         self.player_block.get(0x2f + usize::from(player)).copied().unwrap_or(0)
     }
 
@@ -1427,6 +1428,7 @@ impl World {
     /// original writes through a nil pointer for a building on no plot.
     /// // 1068:2d49
     fn link_plots(&mut self) {
+        // BUG(original): a building on no plot is written through a nil pointer; skipped.
         for n in 0..self.houses.len() {
             let pos = self.houses[n].pos();
             if let Some(p) = self.plot_of(pos) {

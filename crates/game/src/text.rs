@@ -94,6 +94,7 @@ impl Font {
             Align::Center => center / 2,
             Align::Right => right,
         };
+        // BUG(original): the breaking space stays on the line and is measured again on the next; the last character isn't measured for alignment; before the first space an overlong line takes the rest of the string.
         let mut ends: Vec<(usize, i32)> = Vec::new();
         if n < 2 {
             ends.push((1, aligned(width - w(1), width - w(1))));
@@ -102,6 +103,7 @@ impl Font {
             let mut space = 1;
             let mut before_space = 0;
             let mut no_space = true;
+            // BUG(original): a word longer than a line, after the first space, writes past the 10 line ends; the port stops at nine lines.
             while i < n && ends.len() < MAX_LINES {
                 let mut used = 0;
                 while w(i) + used <= width && i < n {

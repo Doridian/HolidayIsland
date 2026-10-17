@@ -122,6 +122,7 @@ impl World {
     /// the original only charges player 1; the computer players' buildings
     /// are renovated for free). // 1008:4f64
     fn renovate(&mut self, pos: crate::world::Pos, building: u8, condition: u8) {
+        // BUG(original): only the human pays for renovations.
         if self.island.owners.get(pos) == Some(1) {
             let cost = self.renovation_price(building, condition);
             self.add_money(1, cost.wrapping_neg());
@@ -180,7 +181,7 @@ impl World {
             6 => self.guests_last_months(1) >= 12_000 && self.plot_average() > 0x46,
             // Not a scenario on the CD.
             7 => self.date.year >= 2001 || self.net_worth(1) >= 1_000_000,
-            // The original returns an uninitialised byte.
+            // BUG(original): an unset result for another scenario; the port says false.
             _ => false,
         }
     }
@@ -313,6 +314,7 @@ impl World {
     /// original divides by zero without plots; the port says 0.
     /// // 1008:01d2
     fn plot_average(&self) -> i32 {
+        // BUG(original): without plots this divides by zero; the port says 0.
         let (mut sum, mut weights) = (0i32, 0i32);
         for p in &self.plots {
             let w = i32::from(p.area());
@@ -350,6 +352,7 @@ impl World {
     /// human's). The original writes any field of the money menu for other
     /// kinds; the port only has 0x52–0x6e. // 1070:1419
     pub fn book(&mut self, kind: u8, amount: i32) {
+        // BUG(original): another kind writes some other field of the money menu; the port writes nothing.
         if let Some(v) = kind
             .checked_sub(FIRST_BOOK)
             .and_then(|k| self.books.year.get_mut(usize::from(k)))
