@@ -10,7 +10,7 @@ Windows-1252.
 | `DATA\` | 39 `*.DAT`, 364 KB | Game tables, all plain text, mostly numbers and names in fixed-width columns (`HAUSDATA.DAT`: buildings, `HAUSPREI.DAT`: prices, `FILENAME.DAT`: bitmap names, `*POS.DAT`: positions, `EREIGN*.DAT`: events, `ANIMDAT*.DAT`: animations, `FONTDAT*.DAT`: the cell and advance of each character in `GRAFIK\FONT.BMP`, the only font the game draws with; see `game::text`). |
 | `TEXTE\` | 23 `*.TXT` | UI texts, one string per line (`AUKTION.TXT`, `BAUMENU.TXT`, `NACHRICH.TXT`, ...). |
 | `GRAFIK\` | 322 `*.BMP`, 19 MB | Uncompressed 8-bit Windows 3.x BMPs (`formats::bmp`). Tiles are mostly 128×125, icons 16×16. 310 share one palette; the five title pictures (`TIT*.BMP`) have their own. `GFXGROU2.BMP` is a cut-off copy of `GFXGROUN.BMP` that the game never loads. The installer can copy it to the hard disk (`SETUP.LST`). |
-| `MAPS\` | `TUTORIAL.MAP` | The tutorial island. Same format as the scenarios and presumably the save games (`*.map`, `Last.map`). |
+| `MAPS\` | `TUTORIAL.MAP` | The tutorial island. Same format as the scenarios and the saved games (`*.map`, `Last.map`), which the original writes here ([savegame.md](savegame.md)). |
 | `SZENARIO\` | 6 `*.HIS`, ~770 KB each | Scenarios: `GELD`, `KOENIG`, `LUXUS`, `OEKO`, `SURFER`, `URLAUBER`. Start with a Pascal string `1.000` (a version) and map dimensions. |
 | `MUSIK\` | 10 `*.MID` | Type 1 Standard MIDI, played through MCI. |
 | `SOUND\`, `SOUNDLO\` | 40 `*.WAV` each | Effects, 8-bit mono PCM at 22 kHz (`SOUND`) or 11 kHz (`SOUNDLO`). Except `HIGHSCOR.WAV` and the installer-only `HH_HIGH.WAV`: those are the **high-score table** under a `.WAV` name (see below). |
@@ -72,4 +72,6 @@ and 0x600 bytes per computer player (10a8:32ec).
 The biggest blocks are nine 63001-byte map layers (251 × 251). A save also
 carries copies of tables from `DATA\` (`ABRECHNE`, `MODATYP`, `ANIMDAT2/3`,
 `NEINTRAG`, `COMPBAU`, `DARSTELL`, `EREIGNIS`), so a scenario can override
-them. What the fields mean comes with porting the code that uses them.
+them. What the fields mean comes with porting the code that uses them;
+[savegame.md](savegame.md) has each unit, saving, loading and what a
+saved game loses.

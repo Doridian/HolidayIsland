@@ -14,7 +14,9 @@ bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
 `game` crate has the first ported game code: text in the game's own bitmap
 font, its widget toolkit, the start menu, and starting a game: the island
 from a scenario, or one generated from the start menu's settings, is drawn
-on the main screen, which scrolls and turns. Also here:
+on the main screen, which scrolls and turns. Games are saved and loaded in
+the original's format, from the start menu's load form and the in-game
+file menu ([docs/savegame.md](docs/savegame.md)). Also here:
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
 - a headless Ghidra setup for the 16-bit executable
@@ -104,6 +106,7 @@ shared through [symbols/](symbols/README.md).
 - [docs/map.md](docs/map.md): the island's map layers, how the main screen draws them, and its layout
 - [docs/island-generator.md](docs/island-generator.md): how a normal game's island is made, and the rest of a new game
 - [docs/data-files.md](docs/data-files.md): survey of the game's data files
+- [docs/savegame.md](docs/savegame.md): the saved games' format, saving and loading, where saves go
 - [docs/formats/install-archive.md](docs/formats/install-archive.md): the installer archive format
 
 ## Legal

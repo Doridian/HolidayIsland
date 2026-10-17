@@ -127,6 +127,38 @@ const SCROLL_KEYS: [(u16, u16, i16, i16); 8] = [
 ];
 /// Insert and Delete turn the view. // 1020:2e09, 1110:007e, 1110:0082
 const VK_INSERT: [u16; 2] = [0x2d, 0x60];
+
+/// The keys that press a button of the button bar, without Ctrl or Alt,
+/// and the button: `1`/`D` the file menu, `2`/Pause/`P`, ... and F1 to
+/// F12 the buttons 9 to 0x14. // 1020:2e09, 1020:2daa
+const BUTTON_KEYS: [(&[u16], u8); 23] = [
+    (&[0x31, 0x44], 0),
+    (&[0x32, 0x13, 0x50], 1),
+    (&[0x33, 0x4f], 2),
+    (&[0x34, 0x4e], 3),
+    (&[0x35, 0x47], 4),
+    (&[0x36, 0x55, 0xba], 5),
+    (&[0x37, 0x48], 6),
+    (&[0x38, 0x53], 7),
+    (&[0x39, 0x41], 8),
+    (&[0x30, 0x59], 0x15),
+    (&[0xdb, 0x49], 0x16),
+    (&[0x70], 9),
+    (&[0x71], 10),
+    (&[0x72], 0xb),
+    (&[0x73], 0xc),
+    (&[0x74], 0xd),
+    (&[0x75], 0xe),
+    (&[0x76], 0xf),
+    (&[0x77], 0x10),
+    (&[0x78], 0x11),
+    (&[0x79], 0x12),
+    (&[0x7a], 0x13),
+    (&[0x7b], 0x14),
+];
+
+/// The button bar's file menu button. // 1010:2c8b
+pub const FILE_MENU_BUTTON: u8 = 0;
 const VK_DELETE: [u16; 2] = [0x2e, 0x6e];
 
 /// What a key did.
@@ -136,6 +168,9 @@ pub enum KeyResult {
     Redrawn,
     /// Not a key this port handles yet.
     Ignored,
+    /// The key presses button `n` of the button bar (1020:2daa, then
+    /// 1010:2c8b, which opens or closes what the button stands for).
+    Button(u8),
 }
 
 /// What the info bar's texts need besides the world.
@@ -408,6 +443,31 @@ impl Hauptschirm {
         img.blit(x, 0, scroll, Rect::new(20, 0, 20, 16), Rop::Invert, all);
     }
 
+    /// The view part of `game_show_state` after a game was loaded in
+    /// the middle of another: the loaded camera, the scroll position
+    /// worked out from its origin, the scroll bars, the island and the
+    /// info bar drawn again. // 1010:26fa, 1020:074d
+    pub fn show_loaded(&mut self, camera: Camera, world: &World, tiles: &Tiles) {
+        self.camera = camera;
+        self.keep_origin = false;
+        self.set_origin(camera.origin);
+        self.paint_map(world, tiles);
+        self.info_shown = None;
+    }
+
+    /// The button of the button bar at `x`, `y` in `ButtonImage`, if any.
+    /// // 1110:12c0
+    #[must_use]
+    pub fn button_at(x: i32, y: i32) -> Option<u8> {
+        if !(0..BUTTON_SIZE).contains(&y) {
+            return None;
+        }
+        let n = BUTTONS
+            .iter()
+            .position(|&left| (left..left + BUTTON_SIZE).contains(&x))?;
+        u8::try_from(n).ok()
+    }
+
     /// Redraws the island, without the people. // 1050:2700
     pub fn paint_map(&mut self, world: &World, tiles: &Tiles) {
         darstellung::draw_view(&mut self.island, world, tiles, &self.camera);
@@ -486,10 +546,15 @@ impl Hauptschirm {
         self.paint_map(world, tiles);
     }
 
-    /// `FormKeyDown`: so far the keys that move and turn the view.
-    /// // 1020:2e09
+    /// `FormKeyDown`: so far the keys that move and turn the view, and
+    /// those of the button bar's buttons. // 1020:2e09
     pub fn key_down(&mut self, key: u16, shift: ShiftState, world: &World, tiles: &Tiles) -> KeyResult {
         let mods = shift.0 & (ShiftState::SHIFT.0 | ShiftState::ALT.0 | ShiftState::CTRL.0);
+        if (mods == 0 || mods == ShiftState::SHIFT.0)
+            && let Some(&(_, n)) = BUTTON_KEYS.iter().find(|(keys, _)| keys.contains(&key))
+        {
+            return KeyResult::Button(n);
+        }
         let step = if mods == ShiftState::CTRL.0 {
             6
         } else if mods == 0 || mods == ShiftState::SHIFT.0 {
@@ -513,6 +578,19 @@ impl Hauptschirm {
             return KeyResult::Ignored;
         }
         KeyResult::Redrawn
+    }
+
+    /// The scroll position, `wo` and `ns`, as a map file saves it.
+    /// // +0x408, +0x40a
+    #[must_use]
+    pub fn scroll_position(&self) -> (i16, i16) {
+        (self.wo, self.ns)
+    }
+
+    /// The camera the island is drawn with.
+    #[must_use]
+    pub fn camera(&self) -> Camera {
+        self.camera
     }
 
     /// The form's top left on a `width` × `height` screen. // 1020:1ce9

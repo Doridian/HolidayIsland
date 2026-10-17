@@ -53,6 +53,8 @@ explains a bug in detail, the row links there instead of repeating it.
 | 10b0:48d7 | A river's ways on the flat that tie all the way round their row and column (its distance wraps) are looked along for ever | Stops after one round of the distance, the open ways' last winning |
 | 10b0:4cb1 | Taking a failed river out finds a river square `reset_ground` leaves alone (one with a building) again and again | Stops there; river squares have no buildings |
 | 1010:0414 | With no names in `NAMEN.TXT` the computers' names divide by zero | Their names stay empty |
+| 1048:2a19 `load_map` | I/O checks are off: a short or missing file stops the reads at the error, keeps the rest of the old game's globals (a half-loaded game) and leaves the error pending, so later file operations fail silently ([savegame.md](savegame.md#the-port)) | Parses the whole file first and loads nothing from one that doesn't parse |
+| 1038:3a13, 1040:1175 | More than 100 saved games are written past the list box's 100 entries | Lists 100 |
 | Data files: `HAUSNAME.TXT` (1048:358f), `ANIMDAT2.DAT`, `ANIMDAT3.DAT` (1088:80a7), `NAMEN.TXT` (1010:0414), the high scores | A missing `***` end marker loops for ever; a group or list longer than its room overruns the next memory; a high score file of another size isn't checked | The file fails to load |
 
 ## Simulation logic
@@ -93,6 +95,9 @@ explains a bug in detail, the row links there instead of repeating it.
 | 10b0:48d7 | A river's distance on the flat is an `Integer` that wraps: ways that tie to the map's edge look on round the other side | yes |
 | 10b0:424f | A river square of another ground (sand to grass on the flat, water at a bend) or on a slope that falls another way gets no piece: a gap in the river | yes |
 | 1088:868c, 1010:3ab4 | A new game leaves the people records' last bytes, record 0, the planes' unused track rows and the events' 13th value as the heap had them | no: 0 |
+| 1048:2a19 (`World::keep_unsaved`) | Not saved, so a loaded game takes them from the game in memory (from the file menu, the game that was running): `RandSeed`, the oil slick (`1110:0088`), the people's `6fcc`, `6fce`, `6ff2`, `7040` and `3c42`, the auction's limits, joined flag and timers, and the computers' road candidates past the file's player count ([savegame.md](savegame.md#what-a-saved-game-loses)) | yes |
+| 1068:30d0, 1068:304f | `save_map` writes the building sites from the list's head and `load_map` puts each in front: a reload turns them round | yes |
+| 1068:2d49 | Loading builds each plot's lists of houses and facilities backwards from the houses' list, not in the order the game had them | yes |
 | 1048:358f | A line shorter than three characters keeps the previous line's bytes, so one after a `***` line also ends a list of `HAUSNAME.TXT` | yes |
 
 ## UI quirks
@@ -114,6 +119,9 @@ The widgets' are described in
 | 1058:41fb | Letting go of the right mouse button also clicks a button held down with the left | yes |
 | 1028:0dde | The auction form is centred by its picture's height, not its own, so it sits 40 pixels low | yes |
 | 1028:15ef | A paddle's animation puts the bare background back under it, wiping the bottom rows of the item's picture | yes |
+| 1038:3983, 1040:10e5 | The lists of saved games come out in the reverse of the directory's order | yes (the port's stand-in for the order is the names sorted) |
+| 1040:073c | Any press while the file menu's name field is focused unfocuses it, so clicking "Speichern" focuses it again instead of saving; only Enter saves a typed name | yes |
+| 1040:0192 | A name picked from the file menu's list goes into the field without moving its cursor | yes |
 | 1028:1ce0 | After a click on the title bar the title is drawn one row higher than the form opened with | yes |
 
 ## Design issues for multiplayer

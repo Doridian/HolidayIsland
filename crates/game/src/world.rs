@@ -1,7 +1,8 @@
 //! The simulation's state: the island's map layers, the clock and date,
 //! the players' money and the random numbers. The rest of the globals a
-//! map file holds (`formats::savegame`) join as the code that uses them is
-//! ported.
+//! map file holds (`formats::savegame`) are kept as they were read, in
+//! [`World::unported`], and join as the code that uses them is ported;
+//! `crate::savegame` writes them all back.
 //!
 //! The original keeps each layer in a 63001-byte block on the heap, one far
 //! pointer each at `1110:5500` to `1110:5520`, indexed `[i * 251 + j]`.
@@ -21,6 +22,7 @@ use crate::monate::Date;
 use crate::money::Finances;
 use crate::people::{DIRECTIONS_SIZE, ENTRIES_SIZE, PATHS_SIZE, People, TRACKS_SIZE, Viewpoint};
 use crate::sabotage::{Championship, Sabotage, parse_championships, parse_sabotage};
+use crate::savegame::Fields;
 use crate::settlement::{FACTORS, SUMS, Settlement};
 use crate::simulation::{Accounting, Clock, Options};
 
@@ -47,6 +49,12 @@ impl Layer {
     #[must_use]
     pub fn filled(value: u8) -> Self {
         Layer(vec![value; MAP_SIZE * MAP_SIZE])
+    }
+
+    /// The layer as the map file stores it.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
     }
 
     /// The byte at `(i, j)`, which must be on the map.
@@ -111,6 +119,12 @@ impl LocationMap {
         LocationMap(vec![value; LOCATION_SIZE * LOCATION_SIZE])
     }
 
+    /// The map as the map file stores it.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+
     /// The cell `(a, b)`, or `None` off the map.
     #[must_use]
     pub fn get(&self, (a, b): Pos) -> Option<u8> {
@@ -145,6 +159,12 @@ impl PlotMap {
     #[must_use]
     pub fn empty() -> Self {
         PlotMap(vec![0; LOCATION_SIZE * MAP_SIZE])
+    }
+
+    /// The table as the map file stores it, `Word`s.
+    #[must_use]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.0.iter().flat_map(|w| w.to_le_bytes()).collect()
     }
 
     /// The entry for the squares `(i, j)` and `(i ± 1, j)`, or `None` off
@@ -201,6 +221,11 @@ impl Plot {
         let mut plot = Plot::from_record(vec![0; PLOT_SIZE]);
         plot.record[..2].copy_from_slice(&id.to_le_bytes());
         plot
+    }
+
+    /// The record as the map file stores it.
+    pub(crate) fn record(&self) -> &[u8] {
+        &self.record
     }
 
     fn from_record(record: Vec<u8>) -> Self {
@@ -359,6 +384,11 @@ impl House {
 
     fn set_word(&mut self, at: usize, value: i16) {
         self.0[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    /// The record as the map file stores it.
+    pub(crate) fn record(&self) -> &[u8] {
+        &self.0
     }
 
     /// The building type. // +0
@@ -522,6 +552,11 @@ impl Facility {
         i16::from_le_bytes([self.0[at], self.0[at + 1]])
     }
 
+    /// The record as the map file stores it.
+    pub(crate) fn record(&self) -> &[u8] {
+        &self.0
+    }
+
     /// The building type. // +0
     #[must_use]
     pub fn building(&self) -> u8 {
@@ -670,6 +705,19 @@ impl BuildingSite {
             building: r[7],
             budget: r[8].cast_signed(),
         }
+    }
+
+    /// The record as `save_map` writes it; the far pointer to the next
+    /// one (`+9`) is 0. // 1068:30d0
+    pub(crate) fn record(&self) -> [u8; BUILDING_SITE_SIZE] {
+        let mut r = [0; BUILDING_SITE_SIZE];
+        r[0] = self.byte_0;
+        r[1..3].copy_from_slice(&self.pos.0.to_le_bytes());
+        r[3..5].copy_from_slice(&self.pos.1.to_le_bytes());
+        r[5..7].copy_from_slice(&self.days.to_le_bytes());
+        r[7] = self.building;
+        r[8] = self.budget.cast_unsigned();
+        r
     }
 }
 
@@ -959,6 +1007,11 @@ pub struct World {
     pub player_names: Vec<Vec<u8>>,
     /// 0 (easy) to 2 (hard). // 1110:008c
     pub difficulty: i16,
+    /// The start menu's settings the island was made from: its shape,
+    /// relief, how much land and how many rivers. Only the start menu
+    /// reads them, when the player goes back to it. // 1110:008a,
+    /// 1110:008e, 1110:0090, 1110:0092
+    pub island_settings: [i16; 4],
     /// The simulation's tick counters and speed.
     pub clock: Clock,
     /// // [1110:65d6]+4
@@ -1083,6 +1136,11 @@ pub struct World {
     /// clock (`Randomize`, 1108:1e21) when it loads the game's data
     /// (1030:38a3), so whoever starts a game picks the seed.
     pub random: Random,
+    /// The globals the map file holds that the port doesn't use yet, as
+    /// they were read, for `save_map` to write back. Fields of zeros
+    /// aren't kept; one that's missing is written as zeros
+    /// (`crate::savegame`).
+    pub unported: Fields,
 }
 
 impl Default for World {
@@ -1095,6 +1153,7 @@ impl Default for World {
             player_count: 8,
             player_names: vec![Vec::new(); 9],
             difficulty: 0,
+            island_settings: [1, 2, 2, 5],
             clock: Clock::default(),
             date: Date::default(),
             finances: Finances::default(),
@@ -1140,6 +1199,7 @@ impl Default for World {
             viewpoint: Viewpoint::default(),
             tables: Arc::default(),
             random: Random::default(),
+            unported: Fields::default(),
         }
     }
 }
@@ -1197,6 +1257,7 @@ fn building_sites(save: &SaveGame) -> Result<Vec<BuildingSite>, Error> {
         .map(|r| (r.len() == BUILDING_SITE_SIZE).then(|| BuildingSite::parse(r)))
         .collect::<Option<Vec<_>>>()
         .ok_or(Error::Field("*1110:6f08"))?;
+    // BUG(original): `save_map` writes them from the list's head, so a saved and loaded game has them the other way round.
     sites.reverse();
     Ok(sites)
 }
@@ -1343,6 +1404,12 @@ impl World {
                 .map(|s| s[1..=usize::from(s[0]).min(s.len() - 1)].to_vec())
                 .collect(),
             difficulty: word(save, "1110:008c")?.cast_signed(),
+            island_settings: [
+                word(save, "1110:008a")?.cast_signed(),
+                word(save, "1110:008e")?.cast_signed(),
+                word(save, "1110:0090")?.cast_signed(),
+                word(save, "1110:0092")?.cast_signed(),
+            ],
             // Unit 1020:2b1d saves the form's counters.
             clock: Clock {
                 hour_ticks: word(save, "[1110:6532]+0x1d6")?,
@@ -1467,7 +1534,9 @@ impl World {
             viewpoint: viewpoint(save)?,
             tables: Arc::default(),
             random: Random::default(),
+            unported: Fields::default(),
         };
+        world.unported = crate::savegame::unported_world_fields(save);
         world.link_plots();
         Ok(world)
     }
@@ -1533,6 +1602,7 @@ impl World {
     /// // 1068:2d49
     fn link_plots(&mut self) {
         // BUG(original): a building on no plot is written through a nil pointer; skipped.
+        // BUG(original): the plots' lists come out the other way round from those of the game that was saved.
         for n in 0..self.houses.len() {
             let pos = self.houses[n].pos();
             if let Some(p) = self.plot_of(pos) {

@@ -324,7 +324,9 @@ the house.
 
 ## State
 
-What the driver and the ported parts use, all saved in the map file:
+What the driver and the ported parts use, saved in the map file but
+where the table says otherwise ([savegame.md](savegame.md#what-a-saved-game-loses)
+has all that a saved game loses):
 
 | Global | What | Map field |
 |---|---|---|
@@ -672,10 +674,12 @@ are in their records, which the view draws over the island after each
 tick (`Hauptschirm::show_people`, 1088:385d, 1088:38c4).
 The view draws the date and money on the info bar when they change, and
 the auction form ([auction.md](auction.md)), whose timers
-(`World::auction_tick`) run before the clock's steps each tick; the
+(`World::auction_tick`) run before the clock's steps each tick, and the
+file menu, which stops the clock while it's open ([savegame.md](savegame.md)); the
 news, the TV, the status bar timeout, tooltips, scrolling by the timer,
-music and the shaking aren't ported. The auction's buttons are the only
-commands so far (`World::apply`).
+music and the shaking aren't ported. The auction's buttons and loading a
+game from the file menu are the only commands so far (`World::apply`).
+`World::to_map` saves the world ([savegame.md](savegame.md)).
 
 Stubs (named after the table above, each with its address and a TODO):
 inside the ported routines `oil_slick_start`, `oil_slick_end`.

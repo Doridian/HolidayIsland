@@ -117,6 +117,11 @@ pub struct Tick {
     /// (1070:2617), working out this year's total (1070:1452) if it's
     /// shown.
     pub books: bool,
+    /// A command loaded a saved game ([`crate::command::Action::Load`]):
+    /// the original redraws everything (`game_show_state`, 1010:26fa).
+    pub loaded: bool,
+    /// The saved game couldn't be loaded; the world is as it was.
+    pub load_failed: bool,
     /// The original refreshes `TUmenuform` if it's shown (1080:0123).
     pub umenu: bool,
     /// Buildings whose occupancy changed by at least a tenth, as their

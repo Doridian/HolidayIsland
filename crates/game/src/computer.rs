@@ -159,6 +159,12 @@ fn list_remove(list: &mut [u8], n: u8) -> u8 {
 }
 
 impl Candidates {
+    /// List `k` (0 directions, 1 `i`, 2 `j`) as the map file stores it:
+    /// the count, then the entries. // 1030:0c42
+    pub(crate) fn list(&self, k: usize) -> &[u8] {
+        self.lists.get(k).map_or(&[], |l| &l[..])
+    }
+
     fn from_fields(fields: &[&[u8]]) -> Option<Self> {
         let mut c = Candidates::default();
         for (list, field) in c.lists.iter_mut().zip(fields) {

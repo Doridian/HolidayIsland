@@ -83,7 +83,9 @@ The result is in `screen_width`/`screen_height` (`1110:54fc`/`54fe`).
 The start menu's Start sets `Timer1.Tag` to 1000 with `+0x191` set on the
 scenario page and `+0x190` cleared. `+0x190` is the other way in: it loads
 the saved game named at `1110:1322` (`Last.map` unless something put
-another name there) from `MAPS\`. Ported in
+another name there) from `MAPS\`, which the load form sets
+([savegame.md](savegame.md#loading-from-the-start-menu-tladenform),
+`hintergrund::load_saved_game`). Ported in
 [`game::hintergrund`](../crates/game/src/hintergrund.rs): a scenario's
 world from its map file (`load_world`) and a normal game's from the
 generator and the game's data (`new_world`,
@@ -127,9 +129,13 @@ ported yet: the video, the progress window, a scenario's events
 
 ## Back to the start menu (1010:25dc)
 
-The other place that creates `TStartform`. It saves the game to
-`Maps\Last.map`, hides the forms in `1110:646c` except 10 and 11, restarts
-`holiday.mid`, and shows a new `TStartform`.
+The other place that creates `TStartform`, from the file menu's "Neues
+Spiel". It saves the game to `Maps\Last.map`, hides the forms in
+`1110:646c` except 10 and 11, frees the game (1030:3974), reloads the data
+(1030:38a3), restarts `holiday.mid`, and shows a new `TStartform`, which
+`startform_init` sets from the globals the game left (`Settings::from_world`).
+The `holiday` binary saves `Last.map` and shows a new start menu; the
+reload and the music aren't ported.
 
 ## The start menu: `TStartform`
 
@@ -201,5 +207,6 @@ Quirks:
   `Click`. The published `MaperstButtonClick` (hide the form and go to
   state 700) and `SprachButtonClick` (empty) have no component in the DFM.
 
-Not ported yet: what "Altes Spiel fortsetzen" (`TLadenForm`) and the
-sounds do. Start leads to [states 1000–1500](#starting-a-game-states-10001500).
+"Altes Spiel fortsetzen" opens `TLadenForm`
+([savegame.md](savegame.md#loading-from-the-start-menu-tladenform)). Not
+ported yet: the sounds. Start leads to [states 1000–1500](#starting-a-game-states-10001500).

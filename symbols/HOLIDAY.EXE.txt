@@ -1,6 +1,8 @@
 # Symbols for HOLIDAY.EXE (Holiday Island, German retail, 1996-11-11 build).
 # Format: symbols/README.md. Addresses are Ghidra selector:offset; NE segment n
 # is selector 1000 + 8*(n-1), so segment 1 is 1000 and DGROUP (segment 35) is 1110.
+1000:032e func save_globals  # the first unit of save_map, the same fields as load_globals
+1000:0c6a func load_globals  # the first unit of load_map; formats::savegame::layout
 1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
 1000:1ea0 func init_game_defaults  # guess: the defaults for a new game (island_shape 1, relief 2, land 2, rivers 5, player_colours 1..8, ...)
 1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
@@ -50,6 +52,7 @@
 1008:55ee func load_abrechne
 1010:000e func load_modatyp
 1010:0414 func load_modatyp_txt_and_namen
+1010:0799 func save_window_positions  # Top, Left, Width, Height, +0x29, +0x2a of the forms in 1110:646c but 2; 10 and 11 as zeros
 1010:08d7 func load_window_positions
 1010:0faa func score
 1010:1129 func plant_palm  # (j, i): counts it on the square's plot (+0x354), location effect, part := part * stages + 8, redraws; game::vegetation
@@ -86,12 +89,16 @@
 1010:2493 func facility_class  # (building): capacity class 0..10, 1110:134c[kind] for kinds 2..10, by type for kind 11 (0x1c 9, 0x20 7, 0x21 8), else 10; game::construction
 1010:254d func set_view
 1010:25dc func back_to_start_menu  # guess: saves Maps\Last.map, hides the forms, restarts holiday.mid, shows a new TStartform
+1010:26ea func erase_scroll_thumbs
 1010:26fa func game_show_state
 1010:2820 func game_start_setup  # after load_map: scroll position from the map, scroll bars, button bar, draws the island
 1010:2970 func disable_forms  # (except): the 17 forms of 1110:646c but 10 and 11 disabled, their Enabled kept at 1110:645a
 1010:29cc func enable_forms  # the forms' Enabled back from 1110:645a
 1010:2a0c func enable_forms  # re-enables the forms in 1110:646c except 10 and 11
+1010:2ac7 func button_bar_down
+1010:2ade func button_bar_up
 1010:2af5 func draw_button_bar
+1010:2c8b func button_bar_click  # the button 1110:5fbe: toggles it and the form it stands for (0 the file menu)
 1010:2fa9 func clear_651a  # 1110:651a..6530 := 0, 1110:6530 := 1; not ported
 1010:3006 func schedule_event  # (i, j, ?, value, ?, arg: Longint; n): event n certain (chance 0x3fffc) with value (+0x14), arg (+0x2c) and square (+0x30)
 1010:3084 func events_tick  # once a day: counts event_days, starts the due events of *1110:6536 by kind (auction, news, disaster, new building type), ends them after their duration; game::events
@@ -101,6 +108,7 @@
 1018:367e func music_next_track  # after each day: the next MIDI track from the list at 1110:31d6 when the current one has ended
 1020:04b0 func hauptschirm_draw_view
 1020:05a7 func hauptschirm_update_scroll
+1020:067c func hauptschirm_erase_thumbs
 1020:0697 func hauptschirm_origin_from_scroll  # view_origin_i/j/parity from +0x408 (wo) and +0x40a (ns)
 1020:06f1 func hauptschirm_origin_from_scroll_exact
 1020:074d func hauptschirm_scroll_from_origin
@@ -144,6 +152,7 @@
 1020:28bf func hauptschirm_formclose
 1020:2d31 func hauptschirm_key_turn
 1020:2d4c func hauptschirm_key_scroll
+1020:2daa func hauptschirm_press_button  # (n): button_bar_click for button n, from FormKeyDown (1/D: the file menu)
 1020:2e09 func hauptschirm_formkeydown
 1020:3214 func hauptschirm_eckimage_mousedown
 1020:324c func hauptschirm_closebild_mousedown
@@ -202,6 +211,7 @@
 1030:0fdd func group_digits
 1030:11a0 func format_money  # (n: Longint; var s): n * waehrungsfaktor with digit groups; game::money
 1030:1418 func get_tile_dcs
+1030:1517 func point_in_rect
 1030:154c func building_origin  # (var pos; i, j): the building's first square from the part: r := part mod HAUSNR col 5, (i - r mod width, j - r div width)
 1030:15d2 func is_road_on_plot  # (j, i, plot): on the map and plot, and a road (ground 10..0x3a) or a building of kind 9/10 (airport, harbour)
 1030:16a2 func is_road_of_plot  # (i, j, plot): on the map and plot, ground 10..0x3a
@@ -235,6 +245,54 @@
 1030:390e func generate_island_busy
 1030:3932 func load_game_data
 1038:0e13 func infobox_load_data
+1038:3682 func ladenform_list_click
+1038:36a2 func ladenform_list_mouse_down
+1038:36d5 func ladenform_up_click
+1038:3776 func ladenform_down_click
+1038:3817 func ladenform_close_click
+1038:3836 func ladenform_load_click
+1038:385b func ladenform_free_names
+1038:389d func ladenform_add_name
+1038:390d func ladenform_name
+1038:3983 func ladenform_find_games  # FindFirst(MAPS\*.map): each name without .map put in front of the list (so backwards); game::ladenform::saved_games
+1038:3a13 func ladenform_fill_list
+1038:3a95 func ladenform_load  # load_map_name := entry + .map, hides the start menu, hintergrund Timer1.Tag 1000 with +0x190; game::ladenform
+1038:3b46 func ladenform_init  # creates the background bitmap, the widgets and the list, bottom-centred 146x210; game::ladenform
+1038:3dfa func ladenform_close
+1038:3e24 func ladenform_bildmousedown
+1038:3ef5 func ladenform_bildmouseup
+1038:3f9b func ladenform_formclose
+1040:0180 func dateimenue_list_click
+1040:0192 func dateimenue_list_mouse_down
+1040:0244 func dateimenue_up_click
+1040:0286 func dateimenue_down_click
+1040:02c8 func dateimenue_edit_click
+1040:02da func dateimenue_hit
+1040:0327 func dateimenue_restore_part
+1040:03e5 func dateimenue_draw_text_pressed
+1040:0460 func dateimenue_draw_text
+1040:04d9 func dateimenue_draw_up
+1040:05a4 func dateimenue_draw_pressed
+1040:073c func dateimenue_dateimenuebildmousedown
+1040:09ca func dateimenue_dateimenuebildmousemove
+1040:0a4c func dateimenue_dateimenuebildmouseup
+1040:0cd3 func dateimenue_editierfensterkeydown
+1040:0d0f func valid_file_name  # (name): 1-8 characters, a letter, then letters, digits, _; game::dateimenue::valid_name
+1040:0e03 func dateimenue_save  # not focused: focuses the name field; else valid_file_name, save_map(MAPS\name.map), relists; game::dateimenue
+1040:0f27 func dateimenue_load  # load_map(MAPS\entry.map) over the running game, game_show_state; game::command::Action::Load
+1040:0fb0 func dateimenue_clear_names
+1040:0fbd func dateimenue_free_names
+1040:0fff func dateimenue_add_name
+1040:106f func dateimenue_name
+1040:10e5 func dateimenue_find_games
+1040:1175 func dateimenue_fill_list
+1040:11f2 func dateimenue_draw_texts
+1040:12be func dateimenue_formshow
+1040:1525 func dateimenue_formhide
+1040:154d func dateimenue_reset
+1040:1564 func dateimenue_map_load
+1040:156b func dateimenue_map_save
+1040:1572 func dateimenue_formkeydown
 1040:1bdf func add_highscore
 1040:1ca7 func reset_highscores
 1040:1d49 func highscoreform_draw_table
@@ -339,7 +397,15 @@
 1068:2bba func create_plots  # plot_count records, each in front, ratings 50; then 1068:25fd; game::world
 1068:2d49 func link_plots  # after loading: every house, then facility, in front of its plot's list
 1068:2e05 func load_houses  # unit routine: the house list *1110:6f10 (count 1110:6f1a, 0x2c-byte records)
+1068:2ebc func load_facilities
+1068:2f73 func save_houses
+1068:2fe1 func save_facilities
+1068:304f func load_building_sites
+1068:30d0 func save_building_sites  # from the list head; load_building_sites puts each in front, so a reload reverses them
 1068:313e func load_plots  # unit routine: the plot list *1110:6f0c (count 1110:552c, 0x364-byte records)
+1068:3244 func save_plots
+1068:32b5 func load_lists
+1068:32df func save_lists
 1070:1345 func guests_last_months
 1070:1419 func books_add
 1070:1452 func geldmenu_year_total  # (Self): kind 0x6b := sum of 0x5f..0x6a, then redraws
@@ -683,6 +749,7 @@
 1108:1f5c func sys_val_longint
 1108:1fa4 func sys_filesize
 1110:004c data base_demand  # Byte, only read from the map: the base of the settlement's demand (factors 9, 22)
+1110:004e data map_version  # string[5] 1.000, the map files version, not checked
 1110:0056 data people_spawn  # Byte: the animation option for new people; plan_road (1080:3216) clears it while it works and sets it after, whatever it was
 1110:0057 data computers_play  # 1 by init_game_defaults
 1110:0058 data view_owner_pointers
@@ -734,6 +801,7 @@
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
 1110:1572 data hauptschirm_layout_table  # 11 x (hidden, left, top, width, height)
 1110:174b data month_lengths  # month lengths, array[0..3, 1..12] of Byte read at 174b + 12 * (year mod 4) + month
+1110:1812 data dateimenue_rects  # array[0..20] of (left, top, right, bottom: Integer), inclusive: the file menu parts; game::dateimenue::RECTS
 1110:33c0 data taxiing_sprites  # array[0..3, 0..5] of Integer: the taxiing planes' (0x35..0x3a) first sprite by rotation
 1110:33f0 data people_looks  # array[0..3, 0..7] of Integer: a facing as seen from each rotation
 1110:3430 data plane_tracks  # array[0..3, 0..15] of Integer: the ANIMDAT3 track of a plane route by rotation
@@ -834,6 +902,7 @@
 1110:6508 data angeschlossenumrechnung  # array[-1..4] of Byte, MODATYP.DAT; a house's +2 by road_distance
 1110:650e data verfallwahrscheinlichkeit  # array[0..2] of Byte
 1110:6516 data baumenue
+1110:651a data buttons_down  # array[0..23] of Byte: the button bar buttons held down; saved
 1110:6532 data hauptschirm
 1110:6536 data ereignis | pointer32  # 41 records of 0x34 bytes: 12 Longints from EREIGNIS.DAT + 1 more
 1110:653a data event_days
@@ -867,6 +936,12 @@
 1110:65f8 data infobox_short_texts
 1110:65fc data infobox2
 1110:6600 data dateimenue
+1110:6604 data dateimenue_background
+1110:6608 data dateimenue_mode  # Byte: 0 load, 1 save, 2 neither, the last of Laden/Speichern; read only by the unused EditierfensterKeyDown
+1110:6609 data dateimenue_pressed  # Byte: the file menu part the left button went down on
+1110:660a data dateimenue_names
+1110:660e data dateimenue_name_count
+1110:6610 data dateimenue_listed
 1110:6612 data endeform
 1110:6620 data kompassform
 1110:6624 data dummyform
@@ -893,6 +968,9 @@
 1110:68ce data scenario_descriptions  # 6 x string[255] from SZENARIO.TXT
 1110:6ece data startform_scenario_page  # Boolean: the start menu shows the scenarios
 1110:6ed0 data ladenform
+1110:6ed4 data ladenform_names
+1110:6ed8 data ladenform_name_count
+1110:6eda data ladenform_listed
 1110:6ee0 data highscoreform
 1110:6ee4 data highscores
 1110:6eea data highscor_texts

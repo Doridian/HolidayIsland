@@ -1,9 +1,10 @@
 //! `THintergrund`'s timer states 1000–1500 (1000:2466), which start a game
 //! once the start menu's Start or the load form has set them going
 //! (`docs/startup.md`). What's ported is the choice of the island, the
-//! part of loading a map file that the world needs, and a new game's
-//! world: the island made from the start menu's settings and everything
-//! the game's data sets up around it.
+//! part of loading a map file that the world needs, a new game's world
+//! (the island made from the start menu's settings and everything the
+//! game's data sets up around it) and a saved game's
+//! ([`load_saved_game`], `docs/savegame.md`).
 
 use std::sync::Arc;
 
@@ -220,6 +221,12 @@ const NAME_STEPS: [i16; 10] = [53, 59, 61, 67, 71, 73, 79, 83, 87, 89];
 /// (1028:361f), and what only the forms keep.
 #[must_use]
 pub fn new_world(settings: &Settings, data: &GameData, seed: u32) -> World {
+    set_up(settings, data, seed, true)
+}
+
+/// States 100 to 1500 for a new game, with the island generated in state
+/// 1210 (`generate`) or, for a map file, only cleared. // 1000:2466
+fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool) -> World {
     let mut w = World {
         random: Random::new(seed),
         tables: Arc::clone(&data.tables),
@@ -233,12 +240,18 @@ pub fn new_world(settings: &Settings, data: &GameData, seed: u32) -> World {
     w.player_colours = settings.colours;
     w.player_count = settings.players;
     w.difficulty = settings.difficulty;
+    w.island_settings = [settings.island, settings.relief, settings.land, settings.rivers];
     w.scenario = 0;
     if let Some(name) = w.player_names.get_mut(1) {
         name.clone_from(&settings.name);
     }
-    // State 1210.
-    let plots = w.generate_island(settings, &data.maperste); // 10b0:52d4
+    // State 1210: for a map file, `clear_map` (10b0:3030) leaves the
+    // empty island `World::default` has.
+    let plots = if generate {
+        w.generate_island(settings, &data.maperste) // 10b0:52d4
+    } else {
+        0
+    };
     // State 1220, 1030:36e5.
     w.settlement = Settlement::new_game(&data.abrechnung, &data.modatyp); // 1008:57dc
     w.accounting = crate::simulation::Accounting::default();
@@ -256,6 +269,22 @@ pub fn new_world(settings: &Settings, data: &GameData, seed: u32) -> World {
     // State 1500: hauptschirm_init (1020:2501).
     w.viewpoint = crate::hauptschirm::start_viewpoint();
     w
+}
+
+/// The world after states 1000 to 1500 have loaded the saved game `map`
+/// (`hintergrund+0x190`, set by the load form, 1038:3a95): a new game is
+/// set up as for Start, with `settings` the start menu's, but without
+/// generating an island, and `load_map` reads the file over it. What the
+/// file doesn't hold stays as the set-up left it
+/// ([`World::keep_unsaved`]), `RandSeed` included, which the set-up has
+/// drawn from. Unlike a scenario, the file's name, colours and difficulty
+/// stay. // 1000:2466
+///
+/// # Errors
+/// If the map lacks a field the world needs.
+pub fn load_saved_game(map: &SaveGame, settings: &Settings, data: &GameData, seed: u32) -> Result<World, world::Error> {
+    let fresh = set_up(settings, data, seed, false);
+    fresh.load_map(map)
 }
 
 /// `MODATYP.DAT`'s values the world keeps. // 1010:000e

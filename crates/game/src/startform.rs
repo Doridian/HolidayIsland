@@ -140,6 +140,28 @@ impl Default for Settings {
     }
 }
 
+impl Settings {
+    /// The globals `startform_init` reads when "Neues Spiel" goes back to
+    /// the start menu (1010:25dc), as `world` left them: a loaded game's
+    /// file has put its own there. The name is player 1's. // 1058:27e6
+    #[must_use]
+    pub fn from_world(world: &crate::world::World) -> Self {
+        let [island, relief, land, rivers] = world.island_settings;
+        Settings {
+            island,
+            relief,
+            land,
+            rivers,
+            difficulty: world.difficulty,
+            opponents: world.player_count.saturating_sub(1),
+            players: world.player_count,
+            colours: world.player_colours,
+            scenario: world.scenario,
+            name: world.player_names.get(1).cloned().unwrap_or_default(),
+        }
+    }
+}
+
 /// A click that leaves the start menu. The port doesn't do these yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {

@@ -6,15 +6,23 @@
 //! scroll and Insert and Delete turn, and runs the simulation's clock
 //! (`World::tick`, every 100 ms), with the date and money on the info bar.
 //! When an event starts an auction the auction form opens over it; its
-//! buttons and keys become commands to the world. Loading a game is only
-//! logged.
+//! buttons and keys become commands to the world.
 //!
-//! `holiday [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`, `GRAFIK`,
-//! `DATA` and `TEXTE` (default `orig`).
+//! The start menu's "Altes Spiel fortsetzen" opens the load form
+//! (`TLadenForm`) with the saved games; in a game, the button bar's first
+//! button (or `1`, `D`) opens the file menu (`TDateimenue`), which saves,
+//! loads (a command to the world), goes back to the start menu (saving
+//! `Last.map`) and quits.
+//!
+//! `holiday [--save-dir=DIR] [GAME_DIR]`, where `GAME_DIR` holds
+//! `HOLIDAY.EXE`, `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved
+//! games go to `DIR` (default `MAPS` in the platform's data directory,
+//! `platform::storage::save_dir`); the lists show those and the game's own
+//! `MAPS` (the tutorial), which is only read.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use formats::bmp::Bitmap;
 use formats::data::{
@@ -28,8 +36,11 @@ use game::auction::{self, Change};
 use game::auktionsform::{self, Auktionsform};
 use game::command::{self, Command};
 use game::darstellung::{self, Camera, Tiles};
-use game::hauptschirm::{self, Hauptschirm, InfoTexts};
+use game::dateimenue::{self, Dateimenue};
+use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult};
 use game::hintergrund::{self, Island};
+use game::ladenform::{self, LadenForm};
+use game::savegame::{Fields, MapView};
 use game::simulation::{TICK_MS, Tick};
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
@@ -49,6 +60,95 @@ const VK_SHIFT: u16 = 0x10;
 const VK_CONTROL: u16 = 0x11;
 const VK_MENU: u16 = 0x12;
 const VK_ESCAPE: u16 = 0x1b;
+/// Windows' default double-click time and distance (`GetDoubleClickTime`,
+/// `SM_CXDOUBLECLK`), for the list boxes' `ssDouble`.
+const DOUBLE_CLICK: Duration = Duration::from_millis(500);
+const DOUBLE_CLICK_DISTANCE: i32 = 2;
+
+/// Where the saved games are: the player's directory, which saves go to,
+/// and the game's `MAPS`, which is only read.
+struct Saves {
+    dir: PathBuf,
+    game_maps: PathBuf,
+}
+
+impl Saves {
+    /// The `*.map` files' names, the player's first, each name once
+    /// (ignoring case), sorted: the port's stand-in for the order
+    /// `FindFirst` gives.
+    fn files(&self) -> Vec<Vec<u8>> {
+        let mut names: Vec<Vec<u8>> = Vec::new();
+        for dir in [&self.dir, &self.game_maps] {
+            let Ok(entries) = std::fs::read_dir(dir) else { continue };
+            for e in entries.flatten() {
+                if !e.file_type().is_ok_and(|t| t.is_file()) {
+                    continue;
+                }
+                let name = e.file_name().to_string_lossy().as_bytes().to_vec();
+                if !names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+                    names.push(name);
+                }
+            }
+        }
+        names.sort_by_key(|n| n.to_ascii_lowercase());
+        names
+    }
+
+    /// The list boxes' entries. // 1038:3983
+    fn games(&self) -> Vec<Vec<u8>> {
+        ladenform::saved_games(&self.files())
+    }
+
+    /// The file called `name` (any case), the player's first.
+    fn find(&self, name: &[u8]) -> Option<PathBuf> {
+        [&self.dir, &self.game_maps].into_iter().find_map(|dir| {
+            std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+                let n = e.file_name();
+                n.to_string_lossy()
+                    .as_bytes()
+                    .eq_ignore_ascii_case(name)
+                    .then(|| e.path())
+            })
+        })
+    }
+
+    /// Reads and parses the saved game `name`.
+    fn read(&self, name: &[u8]) -> Result<SaveGame, String> {
+        let shown = String::from_utf8_lossy(name).into_owned();
+        let path = self.find(name).ok_or_else(|| format!("{shown}: not found"))?;
+        let data = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        SaveGame::parse(&data).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// Writes `map` as `name` into the player's directory, replacing a file
+    /// of that name in any case.
+    fn write(&self, name: &[u8], map: &SaveGame) -> std::io::Result<PathBuf> {
+        std::fs::create_dir_all(&self.dir)?;
+        let path = match self.find(name) {
+            Some(p) if p.starts_with(&self.dir) => p,
+            _ => self.dir.join(String::from_utf8_lossy(name).as_ref()),
+        };
+        let temp = path.with_extension("map.tmp");
+        std::fs::write(&temp, map.to_bytes())?;
+        std::fs::rename(&temp, &path)?;
+        Ok(path)
+    }
+}
+
+/// `TLadenForm` over the start menu, and its VCL form.
+struct LoadMenu {
+    menu: LadenForm,
+    form: Form,
+    captured: bool,
+}
+
+/// `TDateimenue`, and its VCL form.
+struct FileMenu {
+    menu: Dateimenue,
+    form: Form,
+    visible: bool,
+    captured: bool,
+}
 
 /// `TStartform`: the game's widgets, and the VCL form whose `Bild` shows
 /// them.
@@ -124,6 +224,10 @@ struct Game {
     auction_captured: bool,
     /// The player's commands, applied before the next tick.
     commands: Vec<Command>,
+    file_menu: FileMenu,
+    /// The view's fields of the map file the game came from that the port
+    /// doesn't use, saved back as they were.
+    view_rest: Fields,
 }
 
 impl Game {
@@ -138,6 +242,13 @@ impl Game {
         for command in std::mem::take(&mut self.commands) {
             let t = self.world.apply(command);
             changed |= self.show(&t);
+        }
+        if self.file_menu.visible {
+            // The file menu stops the clock (1020:24a0) until it closes.
+            // Single human: in the original this stops the game for
+            // everyone; the view just doesn't tick meanwhile.
+            self.since_tick = Duration::ZERO;
+            return changed;
         }
         while self.since_tick >= tick {
             self.since_tick -= tick;
@@ -165,6 +276,23 @@ impl Game {
 
     /// Shows what a tick or command did, and says whether anything changed.
     fn show(&mut self, t: &Tick) -> bool {
+        if t.loaded {
+            // `game_show_state` (1010:26fa): the view from the file.
+            let camera = MapView {
+                owner_pointers: self.screen.camera().owner_pointers,
+                occupancy_pointers: self.screen.camera().occupancy_pointers,
+                ..MapView::default()
+            }
+            .camera(&self.world);
+            self.screen.show_loaded(camera, &self.world, &self.tiles);
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            self.screen.show_info(&self.world, &self.font, &self.info);
+            return true;
+        }
+        if t.load_failed {
+            eprintln!("the saved game couldn't be loaded");
+        }
         let mut changed = if t.redraw_all {
             self.screen.paint_map(&self.world, &self.tiles);
             true
@@ -244,6 +372,20 @@ impl Game {
         true
     }
 
+    /// What `save_map` writes of this game. // 1048:2bae
+    fn map(&self) -> SaveGame {
+        self.world.to_map(&MapView::of(&self.screen, self.view_rest.clone()))
+    }
+
+    /// `FormShow` of the file menu, from the button bar's first button
+    /// (1010:2c8b): the clock stops, the other forms are disabled.
+    /// // 1040:12be
+    fn open_file_menu(&mut self, games: Vec<Vec<u8>>) {
+        self.file_menu.menu.show(games);
+        self.file_menu.visible = true;
+        self.file_menu.captured = false;
+    }
+
     fn paint(&mut self, screen: &mut Surface, palette: &Palette) {
         for (name, image) in self.screen.images() {
             if let Some(c) = self.form.component_mut(name)
@@ -263,6 +405,15 @@ impl Game {
             }
         }
         self.auction_form.paint(screen, palette);
+        let m = &mut self.file_menu;
+        m.form.components[0].bounds = Rect::new(m.menu.left, m.menu.top, dateimenue::WIDTH, dateimenue::HEIGHT);
+        m.form.components[0].visible = m.visible;
+        if let Some(c) = m.form.component_mut("Dateimenuebild")
+            && let Kind::Image { picture } = &mut c.kind
+        {
+            *picture = Some(m.menu.image().clone());
+        }
+        m.form.paint(screen, palette);
     }
 }
 
@@ -282,6 +433,11 @@ struct Holiday {
     buttons: ShiftState,
     keys: ShiftState,
     quit: bool,
+    /// `TLadenForm`, while it's open over the start menu.
+    load: Option<LoadMenu>,
+    saves: Saves,
+    /// The last left press, for double clicks.
+    last_press: Option<(Instant, i32, i32)>,
 }
 
 impl Holiday {
@@ -303,10 +459,39 @@ impl Holiday {
             game.paint(&mut self.screen, &self.palette);
         }
         self.start.paint(&mut self.screen, &self.palette);
+        if let Some(load) = &mut self.load {
+            if let Some(bild) = load.form.component_mut("Bild")
+                && let Kind::Image { picture } = &mut bild.kind
+            {
+                *picture = Some(load.menu.bild().clone());
+            }
+            load.form.paint(&mut self.screen, &self.palette);
+        }
     }
 
     fn shift(&self) -> ShiftState {
         self.buttons | self.keys
+    }
+
+    /// The `TShiftState` of a press of `button` at `x`, `y`: with
+    /// `ssDouble` for a second left press soon after the first.
+    fn press_shift(&mut self, x: i32, y: i32, button: Button) -> ShiftState {
+        let mut shift = self.shift();
+        if button == Button::Left {
+            let now = Instant::now();
+            let double = self.last_press.is_some_and(|(t, px, py)| {
+                now.duration_since(t) <= DOUBLE_CLICK
+                    && (px - x).abs() <= DOUBLE_CLICK_DISTANCE
+                    && (py - y).abs() <= DOUBLE_CLICK_DISTANCE
+            });
+            if double {
+                shift = shift | ShiftState::DOUBLE;
+                self.last_press = None;
+            } else {
+                self.last_press = Some((now, x, y));
+            }
+        }
+        shift
     }
 
     /// Passes a mouse event on to `Bild` if it's over it or has the mouse
@@ -314,6 +499,10 @@ impl Holiday {
     fn mouse(&mut self, input: Input) {
         if !self.start.visible() {
             self.game_mouse(input);
+            return;
+        }
+        if self.load.is_some() {
+            self.load_mouse(input);
             return;
         }
         let (x, y, button) = match input {
@@ -354,7 +543,9 @@ impl Holiday {
         self.respond(response);
     }
 
-    /// A mouse event in the game: so far only the auction form takes them.
+    /// A mouse event in the game: the file menu while it's open (the
+    /// other forms are disabled), the auction form, and the button bar's
+    /// first button.
     fn game_mouse(&mut self, input: Input) {
         let bit = |b: Button| match b {
             Button::Left => ShiftState::LEFT,
@@ -366,14 +557,191 @@ impl Holiday {
             Input::MouseUp { button, .. } => self.buttons = ShiftState(self.buttons.0 & !bit(button).0),
             _ => {}
         }
-        let shift = self.shift();
+        let shift = match input {
+            Input::MouseDown { x, y, button } => {
+                // `press_shift` adds the button, which the state has now.
+                let s = self.press_shift(x, y, button);
+                ShiftState(s.0 | self.buttons.0)
+            }
+            _ => self.shift(),
+        };
         let mouse = ShiftState::LEFT | ShiftState::RIGHT | ShiftState::MIDDLE;
         let up = self.buttons.0 & mouse.0 == 0;
-        if let Some(game) = &mut self.game
-            && game.auction_mouse(input, shift, up)
+        let Some(game) = &mut self.game else { return };
+        if game.file_menu.visible {
+            self.file_menu_mouse(input, shift, up);
+            return;
+        }
+        if game.auction_mouse(input, shift, up) {
+            self.repaint();
+            return;
+        }
+        // The button bar's mouse handling isn't ported; a click on its
+        // first button opens the file menu (1010:2c8b).
+        if let Input::MouseDown {
+            x,
+            y,
+            button: Button::Left,
+        } = input
         {
+            let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
+            let bar = hauptschirm::LAYOUT[2].1;
+            if Hauptschirm::button_at(x - left - bar.left, y - top - bar.top) == Some(hauptschirm::FILE_MENU_BUTTON) {
+                let games = self.saves.games();
+                game.open_file_menu(games);
+                self.repaint();
+            }
+        }
+    }
+
+    /// A mouse event while the load form is open: the start menu is
+    /// disabled, so only the form gets it.
+    fn load_mouse(&mut self, input: Input) {
+        let Some(load) = &mut self.load else { return };
+        let (lx, ly) = LadenForm::position(screen_size().0, screen_size().1);
+        let bit = |b: Button| match b {
+            Button::Left => ShiftState::LEFT,
+            Button::Right => ShiftState::RIGHT,
+            Button::Middle => ShiftState::MIDDLE,
+        };
+        let inside = |x: i32, y: i32| (0..ladenform::WIDTH).contains(&x) && (0..ladenform::HEIGHT).contains(&y);
+        let response = match input {
+            Input::MouseDown { x, y, button } => {
+                self.buttons = self.buttons | bit(button);
+                let (x, y) = (x - lx, y - ly);
+                if !inside(x, y) {
+                    return;
+                }
+                load.captured = true;
+                let shift = self.press_shift(x + lx, y + ly, button);
+                let shift = ShiftState(shift.0 | self.buttons.0);
+                let Some(load) = &mut self.load else { return };
+                load.menu.mouse_down(x, y, shift)
+            }
+            Input::MouseUp { x, y, button } => {
+                self.buttons = ShiftState(self.buttons.0 & !bit(button).0);
+                let (x, y) = (x - lx, y - ly);
+                let was = load.captured;
+                if self.buttons.0 & (ShiftState::LEFT | ShiftState::RIGHT | ShiftState::MIDDLE).0 == 0 {
+                    load.captured = false;
+                }
+                if !was && !inside(x, y) {
+                    return;
+                }
+                load.menu.mouse_up(x, y)
+            }
+            _ => return,
+        };
+        match response.action {
+            Some(ladenform::Action::Close) => {
+                // 1038:3817: the start menu is enabled again.
+                self.load = None;
+            }
+            Some(ladenform::Action::Load(name)) => {
+                // 1038:3a95: the start menu hides and states 1000-1500
+                // load the game.
+                self.load = None;
+                match self.saves.read(&name) {
+                    Ok(map) => {
+                        self.start.hide();
+                        let settings = self.start.menu.settings().clone();
+                        self.game = Some(load_game(&self.dir, &self.exe, &map, &settings));
+                    }
+                    Err(e) => eprintln!("{e}"),
+                }
+            }
+            None => {}
+        }
+        self.repaint();
+    }
+
+    /// A mouse event while the file menu is open: the other forms are
+    /// disabled. // 1040:073c, 1040:09ca, 1040:0a4c
+    fn file_menu_mouse(&mut self, input: Input, shift: ShiftState, buttons_up: bool) {
+        let Some(game) = &mut self.game else { return };
+        let m = &mut game.file_menu;
+        let (x, y) = match input {
+            Input::MouseMove { x, y } | Input::MouseDown { x, y, .. } | Input::MouseUp { x, y, .. } => {
+                (x - m.menu.left, y - m.menu.top)
+            }
+            _ => return,
+        };
+        let inside = (0..dateimenue::WIDTH).contains(&x) && (0..dateimenue::HEIGHT).contains(&y);
+        if !inside && !m.captured {
+            return;
+        }
+        let response = match input {
+            Input::MouseDown { button, .. } => {
+                m.captured = true;
+                m.menu.mouse_down(x, y, button == Button::Left, shift)
+            }
+            Input::MouseUp { button, .. } => {
+                if buttons_up {
+                    m.captured = false;
+                }
+                m.menu.mouse_up(x, y, button == Button::Left)
+            }
+            _ => m.menu.mouse_move(x, y, shift, screen_size()),
+        };
+        self.file_menu_response(response);
+    }
+
+    /// Does what the file menu asks.
+    fn file_menu_response(&mut self, response: dateimenue::Response) {
+        let Some(game) = &mut self.game else { return };
+        let refresh = response.refresh || response.moved || response.action.is_some();
+        match response.action {
+            Some(dateimenue::Action::Close) => game.file_menu.visible = false,
+            Some(dateimenue::Action::Load(name)) => match self.saves.read(&name) {
+                // 1040:0f27: load_map in the middle of the game, a command
+                // to the world.
+                Ok(map) => {
+                    if World::from_map(&map).is_ok() {
+                        game.view_rest = MapView::from_map(&map).unported;
+                    }
+                    game.commands.push(Command {
+                        player: 1,
+                        action: command::Action::Load(Arc::new(map)),
+                    });
+                }
+                Err(e) => eprintln!("{e}"),
+            },
+            Some(dateimenue::Action::Save(name)) => {
+                // 1040:0e03
+                match self.saves.write(&name, &game.map()) {
+                    Ok(path) => println!("saved {}", path.display()),
+                    Err(e) => eprintln!("can't save {}: {e}", String::from_utf8_lossy(&name)),
+                }
+                let games = self.saves.games();
+                if let Some(game) = &mut self.game {
+                    game.file_menu.menu.set_games(games);
+                }
+            }
+            // The message box (`MessageDlg`) isn't ported.
+            Some(dateimenue::Action::InvalidName) => eprintln!("Dateiname ungültig"),
+            Some(dateimenue::Action::NewGame) => self.back_to_start_menu(),
+            Some(dateimenue::Action::Quit) => {
+                // TEndeform, which asks first, isn't ported.
+                self.quit = true;
+            }
+            None => {}
+        }
+        if refresh {
             self.repaint();
         }
+    }
+
+    /// "Neues Spiel": saves `Last.map`, ends the game and shows a new
+    /// start menu, set from the globals the game left. Reloading the
+    /// data (1030:38a3) and the music aren't ported. // 1010:25dc
+    fn back_to_start_menu(&mut self) {
+        let Some(game) = self.game.take() else { return };
+        if let Err(e) = self.saves.write(hintergrund::LAST_MAP.as_bytes(), &game.map()) {
+            eprintln!("can't save {}: {e}", hintergrund::LAST_MAP);
+        }
+        self.start = start_menu(&self.dir, &self.exe, Settings::from_world(&game.world));
+        self.start.show();
+        self.repaint();
     }
 
     fn respond(&mut self, response: startform::Response) {
@@ -384,7 +752,11 @@ impl Holiday {
                 self.start.hide();
                 self.game = Some(start_game(&self.dir, &self.exe, self.start.menu.settings(), scenario));
             }
-            Some(Action::Load) => println!("load a saved game (TLadenForm): not ported yet"),
+            Some(Action::Load) => {
+                // 1058:0c7d: the start menu is disabled and TLadenForm
+                // opens over it.
+                self.load = Some(load_menu(&self.dir, &self.exe, self.saves.games()));
+            }
             Some(Action::Quit) => self.quit = true,
             None => {}
         }
@@ -414,7 +786,15 @@ impl App for Holiday {
     fn input(&mut self, input: Input) {
         match input {
             Input::Close => self.quit = true,
-            Input::KeyDown(VK_ESCAPE) if !self.game.as_ref().is_some_and(|g| g.auction.visible) => self.quit = true,
+            Input::KeyDown(VK_ESCAPE)
+                if self.load.is_none()
+                    && !self
+                        .game
+                        .as_ref()
+                        .is_some_and(|g| g.auction.visible || g.file_menu.visible) =>
+            {
+                self.quit = true;
+            }
             Input::KeyDown(key) | Input::KeyUp(key) => {
                 let down = matches!(input, Input::KeyDown(_));
                 let bit = match key {
@@ -425,7 +805,16 @@ impl App for Holiday {
                 };
                 if down {
                     self.keys = self.keys | bit;
-                    if self.start.visible() {
+                    if self.load.is_some() {
+                        // TLadenForm has no OnKeyDown, and the start menu
+                        // is disabled.
+                    } else if let Some(game) = &mut self.game
+                        && game.file_menu.visible
+                    {
+                        let shift = self.buttons | self.keys;
+                        let response = game.file_menu.menu.key_down(key, shift);
+                        self.file_menu_response(response);
+                    } else if self.start.visible() {
                         let response = self.start.menu.key_down(key, self.keys);
                         self.respond(response);
                     } else if let Some(game) = &mut self.game
@@ -438,11 +827,21 @@ impl App for Holiday {
                         }
                     } else if let Some(game) = &mut self.game {
                         let shift = self.buttons | self.keys;
-                        if game.screen.key_down(key, shift, &game.world, &game.tiles) == hauptschirm::KeyResult::Redrawn
-                        {
-                            game.screen
-                                .show_people(&game.world, &game.tiles, &game.font, &game.info);
-                            self.repaint();
+                        match game.screen.key_down(key, shift, &game.world, &game.tiles) {
+                            KeyResult::Redrawn => {
+                                game.screen
+                                    .show_people(&game.world, &game.tiles, &game.font, &game.info);
+                                self.repaint();
+                            }
+                            KeyResult::Button(hauptschirm::FILE_MENU_BUTTON) => {
+                                let games = self.saves.games();
+                                if let Some(game) = &mut self.game {
+                                    game.open_file_menu(games);
+                                }
+                                self.repaint();
+                            }
+                            // The other buttons' forms aren't ported.
+                            KeyResult::Button(_) | KeyResult::Ignored => {}
                         }
                     }
                 } else {
@@ -485,28 +884,85 @@ fn load_form(exe: &[u8], class: &str) -> Form {
     Form::load(&Object::parse(res.data).expect("bad form")).expect("bad form")
 }
 
-/// The start menu as `TStartform.Create` and `startform_init` make it.
-/// // 1058:27e6
-fn start_menu(dir: &Path, exe: &[u8]) -> StartMenu {
-    let font = Font::new(
+/// The screen's size, as the game lays out for it.
+fn screen_size() -> (i32, i32) {
+    (i32::try_from(SCREEN.0).unwrap(), i32::try_from(SCREEN.1).unwrap())
+}
+
+fn font(dir: &Path) -> Font {
+    Font::new(
         &bitmap(dir, "GRAFIK/FONT.BMP"),
         &fontdat(&read(dir, "DATA/FONTDAT1.DAT")).expect("FONTDAT1.DAT"),
         &fontdat(&read(dir, "DATA/FONTDAT2.DAT")).expect("FONTDAT2.DAT"),
-    );
-    let bitmaps = startform::BITMAP_FILES
+    )
+}
+
+fn bitmaps(dir: &Path, files: &[&str]) -> Vec<Surface> {
+    files
         .iter()
         .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
-        .collect();
+        .collect()
+}
+
+/// The start menu as `TStartform.Create` and `startform_init` make it,
+/// from the globals in `settings`. // 1058:27e6
+fn start_menu(dir: &Path, exe: &[u8], settings: Settings) -> StartMenu {
     let menu = StartForm::new(
-        font,
-        bitmaps,
+        font(dir),
+        bitmaps(dir, &startform::BITMAP_FILES),
         &start_txt(&read(dir, "TEXTE/START.TXT")),
         &szenario_txt(&read(dir, "TEXTE/SZENARIO.TXT")),
-        Settings::default(),
+        settings,
     );
     StartMenu {
         menu,
         form: load_form(exe, "TSTARTFORM"),
+        captured: false,
+    }
+}
+
+/// `TLadenForm` as 1038:3b46 creates and shows it, with `games`: at the
+/// bottom of the screen, `Bild` filling it. // 1038:3b46
+fn load_menu(dir: &Path, exe: &[u8], games: Vec<Vec<u8>>) -> LoadMenu {
+    let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+    let load = texts.texts.get(7).cloned().unwrap_or_default();
+    let menu = LadenForm::new(font(dir), bitmaps(dir, &ladenform::BITMAP_FILES), &load, games);
+    let mut form = load_form(exe, "TLADENFORM");
+    let (left, top) = LadenForm::position(screen_size().0, screen_size().1);
+    form.components[0].bounds = Rect::new(left, top, ladenform::WIDTH, ladenform::HEIGHT);
+    form.components[0].visible = true;
+    if let Some(bild) = form.component_mut("Bild") {
+        bild.bounds = Rect::new(0, 0, ladenform::WIDTH, ladenform::HEIGHT);
+        bild.visible = true;
+    }
+    LoadMenu {
+        menu,
+        form,
+        captured: false,
+    }
+}
+
+/// `TDateimenue` as `Application.CreateForm` makes it, hidden, at the
+/// DFM's position. // 1040:154d
+fn file_menu(dir: &Path, exe: &[u8]) -> FileMenu {
+    let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+    let mut form = load_form(exe, "TDATEIMENUE");
+    let at = form.components[0].bounds;
+    if let Some(image) = form.component_mut("Dateimenuebild") {
+        image.bounds = Rect::new(0, 0, dateimenue::WIDTH, dateimenue::HEIGHT);
+        image.visible = true;
+    }
+    let menu = Dateimenue::new(
+        font(dir),
+        bitmaps(dir, &dateimenue::BITMAP_FILES),
+        texts.texts,
+        at.left,
+        at.top,
+    );
+    FileMenu {
+        menu,
+        form,
+        visible: false,
         captured: false,
     }
 }
@@ -548,15 +1004,24 @@ fn world_tables(dir: &Path) -> Arc<Tables> {
     })
 }
 
-/// The world a game starts with and the main screen's camera: a
-/// scenario's map (and its view origin) or a generated island. // 1000:2466
-fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> (World, Camera, Option<(i16, i16)>) {
-    // `Randomize` (1108:1e21) seeds RandSeed from the clock.
-    let seed = std::time::SystemTime::now()
+/// `Randomize` (1108:1e21): `RandSeed` from the clock.
+fn seed() -> u32 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| {
             d.subsec_nanos() ^ u32::try_from(d.as_secs() & 0xffff_ffff).unwrap_or(0)
-        });
+        })
+}
+
+/// What a game starts from: its world, the main screen's camera, the
+/// map's view origin (none for a new island) and the view's other fields
+/// of the map.
+type Start = (World, Camera, Option<(i16, i16)>, Fields);
+
+/// The world a game starts with and the main screen's camera: a
+/// scenario's map (and its view origin) or a generated island. // 1000:2466
+fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> Start {
+    let seed = seed();
     match hintergrund::new_island(settings, scenario_page) {
         Island::Scenario(file) => {
             let path = format!("SZENARIO/{}", file.to_ascii_uppercase());
@@ -565,18 +1030,12 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> (World, 
                 hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
             world.random = Random::new(seed);
             world.tables = world_tables(dir);
-            let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
-            let origin = map.field("1110:5530").map_or((0, 0), |d| {
-                (i16::from_le_bytes([d[0], d[1]]), i16::from_le_bytes([d[2], d[3]]))
-            });
+            let view = MapView::from_map(&map);
             let camera = Camera {
-                view: byte("1110:007c"),
-                origin,
                 parity: 0,
-                owner_pointers: byte("1110:0058") != 0,
-                occupancy_pointers: byte("1110:0059") != 0,
+                ..view.camera(&world)
             };
-            (world, camera, Some(origin))
+            (world, camera, Some(camera.origin), view.unported)
         }
         Island::Generated => {
             let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok())
@@ -591,9 +1050,21 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> (World, 
                 owner_pointers: false,
                 occupancy_pointers: true,
             };
-            (world, camera, None)
+            (world, camera, None, Fields::default())
         }
     }
+}
+
+/// States 1000 to 1500 with `hintergrund+0x190`: the saved game `map`
+/// over a newly set up game, and the main screen at the file's view.
+/// // 1000:2466
+fn load_game(dir: &Path, exe: &[u8], map: &SaveGame, settings: &Settings) -> Game {
+    let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok()).unwrap_or_else(|e| panic!("{e}"));
+    let world =
+        hintergrund::load_saved_game(map, settings, &data, seed()).unwrap_or_else(|e| panic!("the saved game: {e}"));
+    let view = MapView::from_map(map);
+    let camera = view.camera(&world);
+    make_game(dir, exe, (world, camera, Some(camera.origin), view.unported))
 }
 
 /// What hintergrund's timer does from state 1000 to 1500 once Start is
@@ -601,12 +1072,13 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool) -> (World, 
 /// (`TWasNunForm`) and what isn't ported yet: load the scenario's map or
 /// generate an island, set up the main screen and show it. // 1000:2466
 fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) -> Game {
-    let (world, camera, origin) = start_world(dir, settings, scenario_page);
-    let font = Font::new(
-        &bitmap(dir, "GRAFIK/FONT.BMP"),
-        &fontdat(&read(dir, "DATA/FONTDAT1.DAT")).expect("FONTDAT1.DAT"),
-        &fontdat(&read(dir, "DATA/FONTDAT2.DAT")).expect("FONTDAT2.DAT"),
-    );
+    make_game(dir, exe, start_world(dir, settings, scenario_page))
+}
+
+/// The main screen and the forms of a game that starts from `start`.
+/// // 1020:2501, 1010:2820
+fn make_game(dir: &Path, exe: &[u8], (world, camera, origin, view_rest): Start) -> Game {
+    let font = font(dir);
     let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
     let bitmaps = hauptschirm::BITMAP_FILES
         .iter()
@@ -665,13 +1137,26 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         dir: dir.to_path_buf(),
         auction_captured: false,
         commands: Vec::new(),
+        file_menu: file_menu(dir, exe),
+        view_rest,
     }
 }
 
 fn main() {
-    let dir = std::env::args_os()
-        .nth(1)
-        .map_or_else(|| PathBuf::from("orig"), PathBuf::from);
+    let mut dir = PathBuf::from("orig");
+    let mut save_dir = None;
+    for arg in std::env::args_os().skip(1) {
+        match arg.to_str().and_then(|a| a.strip_prefix("--save-dir=")) {
+            Some(d) => save_dir = Some(PathBuf::from(d)),
+            None => dir = PathBuf::from(arg),
+        }
+    }
+    let saves = Saves {
+        dir: save_dir
+            .or_else(platform::storage::save_dir)
+            .unwrap_or_else(|| dir.join("MAPS")),
+        game_maps: dir.join("MAPS"),
+    };
     let exe = read(&dir, "HOLIDAY.EXE");
     let mut form = load_form(&exe, "THINTERGRUND");
 
@@ -685,7 +1170,7 @@ fn main() {
     }
 
     let title = bitmap(&dir, "GRAFIK/TIT80X60.BMP");
-    let start = start_menu(&dir, &exe);
+    let start = start_menu(&dir, &exe, Settings::default());
     let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
     let mut holiday = Holiday {
         dir,
@@ -702,6 +1187,9 @@ fn main() {
         buttons: ShiftState::default(),
         keys: ShiftState::default(),
         quit: false,
+        load: None,
+        saves,
+        last_press: None,
     };
     holiday.set_picture(&title);
     if let Err(e) = platform::run("Holiday Island", holiday) {

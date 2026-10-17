@@ -11,7 +11,8 @@ A normal game's island is generated ([island-generator.md](island-generator.md))
 
 The island is nine layers of 251 × 251 bytes, each a heap block behind a
 far pointer at `1110:5500` to `1110:5520`, indexed `[i * 251 + j]`. Map
-files store them in that order (`load_map`'s first unit routine, 1000:0c6a).
+files store them in that order (`load_map`'s first unit routine, 1000:0c6a;
+[savegame.md](savegame.md)).
 
 | Layer | What |
 |---|---|

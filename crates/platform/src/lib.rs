@@ -4,6 +4,7 @@
 
 mod display;
 mod keys;
+pub mod storage;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

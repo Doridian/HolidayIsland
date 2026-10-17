@@ -133,7 +133,17 @@ fn text_tables() {
 
 #[test]
 fn maps_and_scenarios() {
-    use formats::savegame::{SaveGame, VERSION};
+    use formats::savegame::{SaveGame, Source, VERSION};
+    /// Gives back a parsed file's fields.
+    struct Copy<'a>(&'a SaveGame);
+    impl Source for Copy<'_> {
+        fn field(&mut self, dest: &'static str, n: usize, _size: usize) -> Vec<u8> {
+            self.0.nth(dest, n).map(<[u8]>::to_vec).unwrap_or_default()
+        }
+        fn records(&mut self, dest: &'static str) -> Vec<Vec<u8>> {
+            self.0.fields(dest).map(<[u8]>::to_vec).collect()
+        }
+    }
     let files = [
         "MAPS/TUTORIAL.MAP",
         "SZENARIO/GELD.HIS",
@@ -150,6 +160,8 @@ fn maps_and_scenarios() {
         assert!(save.trailing.is_empty(), "{name}");
         assert_eq!(save.players(), players, "{name}");
         assert!(save.to_bytes() == data, "{name} doesn't round-trip");
+        // `save_map`'s order is `load_map`'s.
+        assert!(SaveGame::build(&mut Copy(&save)) == save, "{name} doesn't rebuild");
     }
 }
 

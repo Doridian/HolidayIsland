@@ -36,6 +36,19 @@ impl Sabotage {
             active: r[9] != 0,
         }
     }
+
+    /// The record as the map file stores it.
+    pub(crate) fn record(&self) -> [u8; 10] {
+        let mut r = [0; 10];
+        r[0] = self.attacker;
+        r[1] = self.victim;
+        r[2] = self.kind;
+        r[3..5].copy_from_slice(&self.pos.0.to_le_bytes());
+        r[5..7].copy_from_slice(&self.pos.1.to_le_bytes());
+        r[7..9].copy_from_slice(&self.countdown.to_le_bytes());
+        r[9] = u8::from(self.active);
+        r
+    }
 }
 
 /// The three championships: tennis (0), surfing (1) and Miss Holiday
@@ -60,6 +73,17 @@ impl Championship {
             countdown: word(r, 5).cast_unsigned(),
             active: r[7] != 0,
         }
+    }
+
+    /// The record as the map file stores it.
+    pub(crate) fn record(self) -> [u8; 8] {
+        let mut r = [0; 8];
+        r[0] = self.kind;
+        r[1..3].copy_from_slice(&self.pos.0.to_le_bytes());
+        r[3..5].copy_from_slice(&self.pos.1.to_le_bytes());
+        r[5..7].copy_from_slice(&self.countdown.to_le_bytes());
+        r[7] = u8::from(self.active);
+        r
     }
 }
 
