@@ -73,7 +73,7 @@ use game::command::{self, Command};
 use game::darstellung::{self, Camera, Tiles};
 use game::dateimenue::{self, Dateimenue};
 use game::endeform;
-use game::enhance::{self, Config};
+use game::enhance::{self, Config, Fix, Fixes};
 use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult};
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
@@ -312,6 +312,9 @@ struct Game {
     size: (i32, i32),
     /// The desktop (the window), which `big_map`'s main screen fills.
     desktop: (i32, i32),
+    /// The TV's lights' random numbers with `fix.tv_lights`, the view's
+    /// own instead of the world's `RandSeed`.
+    lights_random: Random,
 }
 
 impl Game {
@@ -622,7 +625,17 @@ impl Game {
                 s.next_day(&mut self.forms.settings);
             }
         }
-        if let Some((lower, upper)) = t.tv_lights
+        // With `fix.tv_lights` the world draws none; the view does.
+        let own = self.world.fixes.has(Fix::TvLights) && self.world.news.speaker == game::news::Speaker::Reading;
+        let lights = t.tv_lights.or_else(|| {
+            own.then(|| {
+                let r = &mut self.lights_random;
+                let lower = r.random(5);
+                let upper = (r.random(20) == 1).then(|| r.random(3) + 1);
+                (lower, upper)
+            })
+        });
+        if let Some((lower, upper)) = lights
             && self.forms.tv.visible
         {
             self.forms.tv.draw_lights(lower, upper);
@@ -1959,8 +1972,10 @@ fn seed() -> u32 {
 type Start = (World, Camera, Option<(i16, i16)>, Fields);
 
 /// The world a game starts with and the main screen's camera: a
-/// scenario's map (and its view origin) or a generated island. // 1000:2466
-fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &mut Options) -> Start {
+/// scenario's map (and its view origin) or a generated island. Either
+/// plays with `fixes`, which a generated island is made with: some change
+/// the generator. // 1000:2466
+fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &mut Options, fixes: Fixes) -> Start {
     let seed = seed();
     match hintergrund::new_island(settings, scenario_page) {
         Island::Scenario(file) => {
@@ -1968,6 +1983,8 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
             let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
             let mut world =
                 hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
+            // A scenario's file has no fixes: the player's.
+            world.set_loaded_fixes(fixes);
             world.random = Random::new(seed);
             world.tables = world_tables(dir);
             world.news.date_format = game::news::DateFormat {
@@ -1989,7 +2006,7 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
             let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok())
                 .unwrap_or_else(|e| panic!("{e}"));
             // States 100, 1210 and 1220.
-            let world = hintergrund::new_world(settings, &data, seed);
+            let world = hintergrund::new_world(settings, &data, seed, fixes);
             // The options as the initialised data has them (1000:1ea0).
             let camera = Camera {
                 view: 0,
@@ -2019,11 +2036,10 @@ fn load_game(
     config: &Config,
 ) -> Game {
     let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok()).unwrap_or_else(|e| panic!("{e}"));
-    let mut world =
-        hintergrund::load_saved_game(map, settings, &data, seed()).unwrap_or_else(|e| panic!("the saved game: {e}"));
     // The file's fixes; the player's for those it doesn't name (all of
     // them in an original file).
-    world.fixes = enhance::fixes_in(&map.trailing, config.fixes);
+    let world = hintergrund::load_saved_game(map, settings, &data, seed(), config.fixes)
+        .unwrap_or_else(|e| panic!("the saved game: {e}"));
     let view = MapView::from_map(map);
     let camera = view.camera(&world);
     let mut game = make_game(
@@ -2055,10 +2071,9 @@ fn start_game(
     size: (i32, i32),
     config: &Config,
 ) -> Game {
-    let mut start = start_world(dir, settings, scenario_page, &mut options);
     // A new game, and a scenario (whose file has no fixes), plays with
-    // the player's.
-    start.0.fixes = config.fixes;
+    // the player's, in place before the world is set up.
+    let start = start_world(dir, settings, scenario_page, &mut options, config.fixes);
     let mut game = make_game(dir, exe, start, options, high, sound, size);
     game.set_view_enhancements(config.view);
     game
@@ -2159,6 +2174,7 @@ fn make_game(
     forms.compass.draw_knob(&mut screen.corner);
     let _ = forms.money.loaded(&world);
     Game {
+        lights_random: Random::new(seed()),
         forms,
         // The caller sets the player's (`start_game`, `load_game`).
         stack: Stack::new(enhance::Enhancements::ORIGINAL),
@@ -3130,6 +3146,23 @@ mod tests {
             on.screen
                 .right_click(bild.width() / 2, bild.height() / 2, &on.world, &on.tiles);
             assert_eq!(on.screen.scroll_position(), before.1);
+        }
+    }
+
+    /// A new game's world is set up with the player's fixes in place (the
+    /// generator's among them), a scenario's gets them too.
+    #[test]
+    fn games_start_with_the_fixes() {
+        let Some(dir) = game_dir() else { return };
+        for fixes in [Fixes::ORIGINAL, Fixes::all_on()] {
+            for (scenario, page) in [(0, false), (1, true)] {
+                let settings = Settings {
+                    scenario,
+                    ..Settings::default()
+                };
+                let (world, ..) = start_world(&dir, &settings, page, &mut Options::default(), fixes);
+                assert_eq!(world.fixes, fixes);
+            }
         }
     }
 

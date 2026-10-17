@@ -12,6 +12,7 @@ use formats::data::{self, Abrechnung, Modatyp};
 use formats::savegame::SaveGame;
 use vcl::random::Random;
 
+use crate::enhance::Fixes;
 use crate::events::Event;
 use crate::generator::Maperste;
 use crate::people::People;
@@ -309,16 +310,21 @@ const NAME_STEPS: [i16; 10] = [53, 59, 61, 67, 71, 73, 79, 83, 87, 89];
 /// `1110:65b4` to `1110:65b9` (1028:2449), `1110:54fa` and `1110:65ba`
 /// (1028:361f), and what only the forms keep.
 #[must_use]
-pub fn new_world(settings: &Settings, data: &GameData, seed: u32) -> World {
-    set_up(settings, data, seed, true)
+///
+/// The game plays with `fixes` (`crate::enhance`), which are in place
+/// before anything is set up, as some change how the island is made.
+pub fn new_world(settings: &Settings, data: &GameData, seed: u32, fixes: Fixes) -> World {
+    set_up(settings, data, seed, true, fixes)
 }
 
-/// States 100 to 1500 for a new game, with the island generated in state
-/// 1210 (`generate`) or, for a map file, only cleared. // 1000:2466
-fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool) -> World {
+/// States 100 to 1500 for a new game with `fixes`, with the island
+/// generated in state 1210 (`generate`) or, for a map file, only
+/// cleared. // 1000:2466
+fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool, fixes: Fixes) -> World {
     let mut w = World {
         random: Random::new(seed),
         tables: Arc::clone(&data.tables),
+        fixes,
         ..World::default()
     };
     // State 100: 1010:064a.
@@ -372,12 +378,19 @@ fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool) -> Wo
 /// file doesn't hold stays as the set-up left it
 /// ([`World::keep_unsaved`]), `RandSeed` included, which the set-up has
 /// drawn from. Unlike a scenario, the file's name, colours and difficulty
-/// stay. // 1000:2466
+/// stay. The game plays with the file's fixes, and `fixes` for those the
+/// file doesn't name (all of them in an original file). // 1000:2466
 ///
 /// # Errors
 /// If the map lacks a field the world needs.
-pub fn load_saved_game(map: &SaveGame, settings: &Settings, data: &GameData, seed: u32) -> Result<World, world::Error> {
-    let fresh = set_up(settings, data, seed, false);
+pub fn load_saved_game(
+    map: &SaveGame,
+    settings: &Settings,
+    data: &GameData,
+    seed: u32,
+    fixes: Fixes,
+) -> Result<World, world::Error> {
+    let fresh = set_up(settings, data, seed, false, fixes);
     fresh.load_map(map)
 }
 

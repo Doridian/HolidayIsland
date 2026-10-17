@@ -7,6 +7,7 @@ use formats::data;
 
 use crate::accounts::BOOK_OTHER;
 use crate::construction::{BUILDING_SITE, EMPTY_CHAMPIONSHIPS, FULL_CHAMPIONSHIPS, Record};
+use crate::enhance::Fix;
 use crate::events::UNSHAKEN;
 use crate::news::Message;
 use crate::simulation::{Status, Tick};
@@ -98,11 +99,14 @@ impl World {
         let order = match kind {
             PIRANHAS if free => None,
             PIRANHAS => {
-                if !self.tables.sabotage_kind(kind).targets.contains(&i16::from(building)) {
+                if self.tables.sabotage_kind(kind).targets.contains(&i16::from(building)) {
+                    Some((120, origin()))
+                } else if self.fixes.has(Fix::SabotagePoolError) {
+                    None
+                } else {
                     // BUG(original): the loop over the pools always ends at 6, so its check for 5 never shows error 0x1a for a building that isn't a pool: nothing happens.
                     return;
                 }
-                Some((120, origin()))
             }
             BOMB if !free => Some((10, origin())),
             STINK_BOMB | RATS if !free => Some((90, origin())),
@@ -739,6 +743,22 @@ mod tests {
         let f = &w.facilities[0];
         assert_eq!((f.building(), f.visitors(), f.fill()), (0x6f, 0, 0));
         assert_eq!(w.island.buildings.at((40, 41)), 0x6f);
+    }
+
+    #[test]
+    fn fix_sabotage_pool_error() {
+        for fixed in [false, true] {
+            let mut w = World::default();
+            w.fixes.set(Fix::SabotagePoolError, fixed);
+            w.island.buildings.set((40, 40), 5);
+            let mut tick = Tick::default();
+            // Piranhas for a building that isn't a pool: the original says
+            // nothing.
+            w.sabotage_command(2, PIRANHAS, (40, 40), &mut tick);
+            let error = (2, crate::simulation::Status::Error(0x1a));
+            assert_eq!(tick.status, if fixed { vec![error] } else { vec![] });
+            assert!(w.sabotage.iter().all(|s| !s.active));
+        }
     }
 
     #[test]

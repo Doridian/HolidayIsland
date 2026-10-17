@@ -19,6 +19,7 @@
 
 use crate::accounts::BOOK_OTHER;
 use crate::construction::NOT_ENOUGH_MONEY;
+use crate::enhance::Fix;
 use crate::simulation::Tick;
 use crate::world::{NO_BUILDING, PALM, Pos, World, on_map};
 
@@ -454,7 +455,8 @@ impl World {
 
     /// The road just built from `from` to `end` counts on its plot's
     /// built squares (`+0x356`; not for a bridge from the sea), and every
-    /// building whose first square (part 0) is within 8 squares before and
+    /// building whose first square (part 0; with `fix.road_connections`
+    /// the first square of any look) is within 8 squares before and
     /// 4 after the road, on both axes, works out how well it's connected
     /// again (1030:1706, 1078:1a66). // 1078:2178
     fn lay_road(&mut self, from: Pos, end: Pos, start_ground: u8) {
@@ -468,11 +470,17 @@ impl World {
             }
         }
         let range = |a: i16, b: i16| (a.min(b) - 8).clamp(0, 250)..=(a.max(b) + 4).clamp(0, 250);
+        let any_look = self.fixes.has(Fix::RoadConnections);
         for a in range(from.0, end.0) {
             for b in range(from.1, end.1) {
                 let building = self.island.buildings.at((a, b));
                 // BUG(original): only part 0 counts, so houses with another look never get their connection again.
-                if building < 0x7f && self.island.parts.at((a, b)) == 0 {
+                let first = if any_look {
+                    self.building_origin((a, b)) == (a, b) // 1030:154c
+                } else {
+                    self.island.parts.at((a, b)) == 0
+                };
+                if building < 0x7f && first {
                     let value = self.connection(building, (a, b)); // 1030:1706
                     self.set_connection_at((a, b), value); // 1078:1a66
                 }
@@ -756,5 +764,35 @@ mod tests {
             (w.island.buildings.at((5, 4)), w.island.parts.at((5, 4))),
             (RIVER_BRIDGE, 2)
         );
+    }
+
+    #[test]
+    fn fix_road_connections() {
+        for fixed in [false, true] {
+            let mut hausnr = vec![[0; 8]; 0x80];
+            // Two looks of a 2 × 1 house.
+            hausnr[40] = [2, 0, 0, 2, 1, 2, 0, 0];
+            let mut w = World {
+                tables: std::sync::Arc::new(crate::world::Tables {
+                    hausnr,
+                    hausdata: vec![[0; 10]; 0x80],
+                    ..crate::world::Tables::default()
+                }),
+                ..World::default()
+            };
+            w.fixes.set(Fix::RoadConnections, fixed);
+            // The second look: parts 2 and 3.
+            w.island.buildings.set((20, 20), 40);
+            w.island.buildings.set((21, 20), 40);
+            w.island.parts.set((20, 20), 2);
+            w.island.parts.set((21, 20), 3);
+            let mut house = crate::world::House::new((20, 20));
+            house.set_building(40);
+            house.set_connection(99);
+            w.houses = vec![house];
+            w.lay_road((22, 20), (22, 25), 2);
+            // The original only looks at squares showing part 0.
+            assert_eq!(w.houses[0].connection() == 99, !fixed);
+        }
     }
 }

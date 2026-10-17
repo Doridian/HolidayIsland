@@ -15,6 +15,7 @@ use super::{
     TAXIING_OFFSETS_38, TAXIING_SPRITES, WALKERS, WATER, nearest_corner,
 };
 use crate::darstellung::{FORM_LIFT, ground_height};
+use crate::enhance::Fix;
 use crate::events::UNSHAKEN;
 use crate::simulation::Tick;
 use crate::world::{NO_BUILDING, Pos, World, on_map};
@@ -1071,7 +1072,8 @@ impl World {
     /// headings (`DETOURS` by `Random(8)`) with ten squares of flat water
     /// ahead, for nine squares; else (with another `Random(8)`) the first
     /// with water on its own square, which the original checks five times
-    /// instead of the squares ahead, for four; else it leaves. Then one
+    /// instead of the squares ahead (`fix.ship_detour`: the five squares
+    /// from its own on), for four; else it leaves. Then one
     /// time in fifty (`Random(50)`) it leaves anyway. // 1098:04f9
     fn detour(&mut self, n: i16) {
         let water =
@@ -1094,10 +1096,17 @@ impl World {
         }
         let turns = DETOURS[usize::from(self.random.random(8))];
         if !found {
+            let ahead = self.fixes.has(Fix::ShipDetour);
             for turn in turns {
                 let p = self.person(n);
                 // BUG(original): checks the ship's own square, five times, instead of the squares ahead.
-                if water(self, p.pos()) {
+                let clear = if ahead {
+                    let (di, dj) = at(&MOVES, wrap_heading(p.heading().wrapping_add(turn)));
+                    (0..=4).all(|k: i16| water(self, add(p.pos(), (di.wrapping_mul(k), dj.wrapping_mul(k)))))
+                } else {
+                    water(self, p.pos())
+                };
+                if clear {
                     self.edit(n, |p| {
                         p.set_word_26(4);
                         p.set_heading(wrap_heading(p.heading().wrapping_add(turn)));
@@ -1493,7 +1502,7 @@ impl World {
 
     /// Whether the plane's home square (`+0x22`) is one of its airport's
     /// two approaches (1110:36a0; the original takes the second if either
-    /// coordinate matches). // 1090:2c1f
+    /// coordinate matches, `fix.plane_approach` if both do). // 1090:2c1f
     fn on_approach(&self, n: i16) -> bool {
         let home = self.person(n).home();
         let b = self.building_or_none(home);
@@ -1504,10 +1513,14 @@ impl World {
             return false;
         };
         let (i, j) = self.building_origin(home); // 1030:154c
-        (a[0].wrapping_add(i) == home.0 && a[1].wrapping_add(j) == home.1)
-            // BUG(original): the second approach counts when either coordinate matches, not both.
-            || a[5].wrapping_add(i) == home.0
-            || a[6].wrapping_add(j) == home.1
+        let first = a[0].wrapping_add(i) == home.0 && a[1].wrapping_add(j) == home.1;
+        let (si, sj) = (a[5].wrapping_add(i) == home.0, a[6].wrapping_add(j) == home.1);
+        // BUG(original): the second approach counts when either coordinate matches, not both.
+        if self.fixes.has(Fix::PlaneApproach) {
+            first || (si && sj)
+        } else {
+            first || si || sj
+        }
     }
 
     /// Whether the plane's square shows one of its airport's runway parts
@@ -1908,5 +1921,53 @@ mod tests {
         // The sea is open all round: the first detour of six works.
         let p = w.person(FIRST);
         assert!(p.kind() == NOBODY || p.word_26() == 9);
+    }
+
+    #[test]
+    fn fix_ship_detour() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::ShipDetour, fixed);
+            // A pond of one square in the land.
+            w.island.ground.set((30, 30), WATER);
+            put(&mut w, FIRST, 0x22, (30, 30)).set_heading(4);
+            w.detour(FIRST);
+            let p = w.person(FIRST);
+            // The original finds water on the ship's own square and takes
+            // the second detour; the squares ahead are land.
+            if fixed {
+                assert_eq!(p.kind(), NOBODY);
+            } else {
+                assert_eq!((p.kind(), p.word_26()), (0x22, 4));
+            }
+        }
+    }
+
+    #[test]
+    fn fix_plane_approach() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::PlaneApproach, fixed);
+            // Airport type 0x2a, 4 × 3, from (20, 20): its approaches are
+            // (3, 2) and (3, 0) from there.
+            let mut t = (*w.tables).clone();
+            t.hausnr[0x2a] = [1, 0, 0, 4, 3, 12, 0, 0];
+            w.tables = Arc::new(t);
+            for i in 0..4 {
+                for j in 0..3 {
+                    w.island.buildings.set((20 + i, 20 + j), 0x2a);
+                    w.island.parts.set((20 + i, 20 + j), u8::try_from(i + 4 * j).unwrap());
+                }
+            }
+            let on = |w: &mut World, home: Pos| {
+                put(w, FIRST, 0x19, home).set_home(home);
+                w.on_approach(FIRST)
+            };
+            assert!(on(&mut w, (23, 22)));
+            assert!(on(&mut w, (23, 20)));
+            // Only `i` matches the second.
+            assert_eq!(on(&mut w, (23, 21)), !fixed);
+            assert!(!on(&mut w, (22, 21)));
+        }
     }
 }

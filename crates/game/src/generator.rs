@@ -24,6 +24,7 @@ mod x87;
 
 use formats::data::MapersteTable;
 
+use crate::enhance::Fix;
 use crate::startform::Settings;
 use crate::terrain::FORMS;
 use crate::world::{NO_BUILDING, PALM, Pos, World, on_map};
@@ -592,6 +593,11 @@ impl Generator<'_> {
                 // BUG(original): the small hills stray by ATVariation2 but are centred by half of ATVariation1.
                 let half_of = self.at(&self.t.at_variation1);
                 let variation = self.at(&self.t.at_variation2);
+                let half_of = if self.w.fixes.has(Fix::AtollHills) {
+                    variation
+                } else {
+                    half_of
+                };
                 let size = self.at(&self.t.at_groesse2);
                 self.ring_hill(from, to, half_of, variation, size);
             }
@@ -732,7 +738,9 @@ impl Generator<'_> {
     /// under it, until it reaches the sea. One that runs into another
     /// river or can't be levelled is taken out again. // 10b0:4d19
     fn river(&mut self) {
-        let mut pos = self.river_start(); // 10b0:4506
+        let Some(mut pos) = self.river_start() else {
+            return;
+        }; // 10b0:4506
         let mut direction = 0;
         if self.river_source(&mut direction, &mut pos) {
             return;
@@ -757,16 +765,20 @@ impl Generator<'_> {
     }
 
     /// Where a river starts: a random square (`Random(249) + 1` for `i`,
-    /// then `j`) whose lowest corner is at least 4 up, tried 1500 times.
-    /// // 10b0:4506
-    fn river_start(&mut self) -> Pos {
+    /// then `j`) whose lowest corner is at least 4 up, tried 1500 times;
+    /// the original takes the last try whatever it is, `fix.river_start`
+    /// none. // 10b0:4506
+    fn river_start(&mut self) -> Option<Pos> {
         let mut tries = 0;
         loop {
             tries += 1;
             let pos = (self.random(0xf9) + 1, self.random(0xf9) + 1);
-            // BUG(original): the 1500th try is taken without looking at its corners, so a river always starts.
-            if tries >= RIVER_TRIES || self.w.island.lowest_corner(pos) >= 4 {
-                return pos;
+            if self.w.island.lowest_corner(pos) >= 4 {
+                return Some(pos);
+            }
+            if tries >= RIVER_TRIES {
+                // BUG(original): the 1500th try is taken without looking at its corners, so a river always starts.
+                return (!self.w.fixes.has(Fix::RiverStart)).then_some(pos);
             }
         }
     }
@@ -918,6 +930,11 @@ impl Generator<'_> {
             }
             k = k.wrapping_add(1);
             if open.iter().filter(|&&o| o).count() <= 1 {
+                break;
+            }
+            // BUG(original): the distance is an `Integer` that wraps, so ways that tie to the map's edge look on round the other side.
+            if k > 250 && self.w.fixes.has(Fix::RiverFlatWay) {
+                // Every way still open is off the map: the last wins.
                 break;
             }
             rounds += 1;
@@ -1072,7 +1089,9 @@ impl Generator<'_> {
             let mut copy = Copy::new(self.w, pos);
             self.raise_step(&mut copy, (0, 0)); // 10b0:0ba3
             // BUG(original): the copy is written back after an error too, with the corners raised before it.
-            self.write_back(&copy);
+            if copy.error == 0 || !self.w.fixes.has(Fix::GeneratorLevelling) {
+                self.write_back(&copy);
+            }
             copy.error
         }
     }
@@ -1125,7 +1144,9 @@ impl Generator<'_> {
         let mut copy = Copy::new(self.w, pos);
         self.lower_step(&mut copy, (0, 0)); // 10b0:1c54
         // BUG(original): written back after an error too, with the corners lowered before it.
-        self.write_back(&copy);
+        if copy.error == 0 || !self.w.fixes.has(Fix::GeneratorLevelling) {
+            self.write_back(&copy);
+        }
         copy.error
     }
 
@@ -1427,5 +1448,100 @@ mod tests {
         assert_eq!(island.plot_map.get((21, 30)), Some(3));
         assert_eq!(island.plot_map.get((0, 0)), Some(0));
         assert_eq!(island.plot_map.get((40, 40)), Some(0));
+    }
+
+    #[test]
+    fn fix_atoll_hills() {
+        let atoll = |fixed: bool, t: &Maperste| {
+            let mut w = world(42);
+            w.fixes.set(Fix::AtollHills, fixed);
+            w.generate_island(&settings(0), t);
+            smooth_enough(&w);
+            w.island
+        };
+        // The small hills are centred by half of ATVariation2, not 1.
+        assert_ne!(atoll(false, &tables()), atoll(true, &tables()));
+        let mut same = tables();
+        same.at_variation2 = same.at_variation1;
+        assert_eq!(atoll(false, &same), atoll(true, &same));
+    }
+
+    #[test]
+    fn fix_river_start() {
+        for fixed in [false, true] {
+            let mut w = world(5);
+            w.fixes.set(Fix::RiverStart, fixed);
+            let t = tables();
+            let mut g = Generator {
+                w: &mut w,
+                t: &t,
+                relief: 2,
+                land: 2,
+            };
+            g.clear();
+            // All sea: the original starts the river on the last try.
+            assert_eq!(g.river_start().is_some(), !fixed);
+        }
+    }
+
+    #[test]
+    fn fix_generator_levelling() {
+        for fixed in [false, true] {
+            let mut w = world(5);
+            w.fixes.set(Fix::GeneratorLevelling, fixed);
+            let t = tables();
+            let mut g = Generator {
+                w: &mut w,
+                t: &t,
+                relief: 2,
+                land: 2,
+            };
+            g.clear();
+            for i in 90..=110 {
+                for j in 90..=110 {
+                    g.w.island.heights.set((i, j), 2);
+                }
+            }
+            // (101, 100) follows the lowered (100, 100) down, and a river
+            // on one of its squares stops it.
+            g.w.island.heights.set((101, 100), 3);
+            g.w.island.ground.set((102, 100), RIVER + 4);
+            assert_eq!(g.lower_checked((100, 100)), 0x10);
+            // The original keeps the first corner lowered: a step of two.
+            let h = g.w.island.heights.at((100, 100));
+            assert_eq!(h, if fixed { 2 } else { 1 });
+            assert_eq!(g.w.island.heights.at((101, 100)), 3);
+        }
+    }
+
+    #[test]
+    fn fix_river_flat_way() {
+        for fixed in [false, true] {
+            let mut w = world(5);
+            w.fixes.set(Fix::RiverFlatWay, fixed);
+            let t = tables();
+            let mut g = Generator {
+                w: &mut w,
+                t: &t,
+                relief: 2,
+                land: 2,
+            };
+            g.clear();
+            // Flat land, the middle of the map: the three ways tie up to
+            // the edge, which they reach together.
+            for i in 0..=250 {
+                for j in 0..=250 {
+                    g.w.island.heights.set((i, j), 2);
+                }
+            }
+            // Lower at the far end of the way back.
+            g.w.island.heights.set((124, 1), 0);
+            g.w.island.heights.set((125, 1), 0);
+            let way = g.flat_way(0, (125, 125));
+            // The original looks on round the map, and the way `j + 1`
+            // comes back onto it at the lower square; the fix stops at the
+            // edge and takes the last of the ways still open, `i + 1`.
+            assert_eq!(way, u8::from(fixed));
+        }
     }
 }

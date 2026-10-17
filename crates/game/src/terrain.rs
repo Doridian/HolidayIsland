@@ -19,6 +19,7 @@
 #![allow(clippy::many_single_char_names)]
 
 use crate::construction::NOT_ENOUGH_MONEY;
+use crate::enhance::Fix;
 use crate::simulation::Tick;
 use crate::world::{NO_BUILDING, PALM, Plot, Pos, World, on_map};
 
@@ -298,8 +299,9 @@ impl World {
                 let mut work = Work::new(self, pos);
                 self.raise_step(&mut work, (0, 0)); // 10b0:03fa
                 result = (work.error, work.cost, work.error_at);
-                if player == 1 && self.money_of(1) < work.cost {
-                    // BUG(original): for player 1 the money check replaces any earlier error.
+                // BUG(original): for player 1 the money check replaces any earlier error.
+                let first = result.0 != 0 && self.fixes.has(Fix::LevellingErrors);
+                if player == 1 && self.money_of(1) < work.cost && !first {
                     result.0 = NOT_ENOUGH_MONEY.into();
                 }
                 if result.0 == 0 {
@@ -323,7 +325,9 @@ impl World {
             let mut work = Work::new(self, pos);
             self.lower_step(&mut work, (0, 0)); // 10b0:12c7
             result = (work.error, work.cost, work.error_at);
-            if player == 1 && self.money_of(1) < work.cost {
+            // BUG(original): for player 1 the money check replaces any earlier error.
+            let first = result.0 != 0 && self.fixes.has(Fix::LevellingErrors);
+            if player == 1 && self.money_of(1) < work.cost && !first {
                 result.0 = NOT_ENOUGH_MONEY.into();
             }
             if result.0 == 0 {
@@ -372,10 +376,11 @@ impl World {
             work.cost = work.cost.wrapping_add(self.land_costs.raise);
         }
         // BUG(original): only a neighbour exactly two steps off follows, so cliffs get steeper.
+        let cliffs = self.fixes.has(Fix::LevellingCliffs);
         for (ni, nj) in NEIGHBOURS {
             let next = (di + ni, dj + nj);
             if let (Some(h), Some(g)) = (work.height((di, dj)), work.height(next))
-                && h - g == 2
+                && (h - g == 2 || (cliffs && h - g > 2))
             {
                 self.raise_step(work, next);
             }
@@ -414,10 +419,14 @@ impl World {
     /// Unlike raising, the buildings are checked (and palms cleared) even
     /// after an error. // 10b0:12c7
     fn lower_step(&self, work: &mut Work, (di, dj): Pos) {
+        let first = self.fixes.has(Fix::LevellingErrors);
         for (si, sj) in SQUARES {
             let s = (di + si, dj + sj);
+            // BUG(original): the buildings are checked (palms cleared, their cost added) even after an error.
+            if first && work.error != 0 {
+                break;
+            }
             if work.building(s) != NO_BUILDING && !work.clear_palm(s, &self.land_costs) {
-                // BUG(original): the buildings are checked (palms cleared, their cost added) even after an error.
                 work.error = 1;
                 work.error_at = work.at(s);
             }
@@ -447,10 +456,11 @@ impl World {
         };
         work.cost = work.cost.wrapping_add(cost);
         // BUG(original): only a neighbour exactly two steps off follows, so cliffs get steeper.
+        let cliffs = self.fixes.has(Fix::LevellingCliffs);
         for (ni, nj) in NEIGHBOURS {
             let next = (di + ni, dj + nj);
             if let (Some(h), Some(g)) = (work.height((di, dj)), work.height(next))
-                && g - h == 2
+                && (g - h == 2 || (cliffs && g - h > 2))
             {
                 self.lower_step(work, next);
             }
@@ -469,6 +479,13 @@ impl World {
                     continue;
                 };
                 self.island.heights.set((a, b), work.heights[n]);
+                // BUG(original): a palm cleared this way only loses its building: part, owner, plot count and location effect stay.
+                if work.buildings[n] == NO_BUILDING
+                    && self.island.buildings.get((a, b)) == Some(PALM)
+                    && self.fixes.has(Fix::PalmRemoval)
+                {
+                    self.clear_palm_square((a, b));
+                }
                 self.island.buildings.set((a, b), work.buildings[n]);
                 let corner = (a.to_le_bytes()[0], b.to_le_bytes()[0]);
                 if work.heights[n] == 1 && work.risen.contains(&corner) {
@@ -488,6 +505,20 @@ impl World {
                 }
             }
         }
+    }
+
+    /// The palm on `pos`, cleared by moving the land, goes as a palm
+    /// that dies does, with its owner (`fix.palm_removal`): off its
+    /// plot's count and the location map, its part back to the ground's
+    /// look.
+    fn clear_palm_square(&mut self, pos: Pos) {
+        self.uncount_palm(pos);
+        self.remove_location_effect(pos, PALM); // 1030:1dc6
+        let stages = self.tables.hausnr(PALM, 6);
+        let part = self.island.parts.at(pos);
+        let variant = i16::from(part).checked_div(stages).unwrap_or(0);
+        self.island.parts.set(pos, variant.to_le_bytes()[0]);
+        self.island.owners.set(pos, 0);
     }
 
     /// The squares from `low` to one past `high` get the form their
@@ -524,7 +555,7 @@ impl World {
     /// no land around it a new one; with land of one plot around it that
     /// one, which grows; with several, they merge into one (1068:27a5).
     /// The neighbours' plot numbers are bytes for the first merge, as in
-    /// the original. // 1078:09f6
+    /// the original (whole with `fix.plot_merge_numbers`). // 1078:09f6
     fn corner_risen(&mut self, (i, j): Pos) {
         let heights = &self.island.heights;
         let above = if i == 0 { 0 } else { heights.at((i - 1, j)) };
@@ -537,14 +568,17 @@ impl World {
             return;
         }
         let island = &self.island;
+        // BUG(original): the neighbours' plot numbers are cut to a byte for the first merge.
+        let whole = self.fixes.has(Fix::PlotMergeNumbers);
         let plot = |h: u8, pos| {
             if h == 0 {
                 0
+            } else if whole {
+                island.plot_at(pos)
             } else {
-                island.plot_at(pos).to_le_bytes()[0]
+                u16::from(island.plot_at(pos).to_le_bytes()[0])
             }
         };
-        // BUG(original): the neighbours' plot numbers are cut to a byte for the first merge.
         let above = plot(above, (i - 1, j));
         let right = plot(right, (i, j + 1));
         let left = plot(left, (i, j - 1));
@@ -552,12 +586,12 @@ impl World {
         let most = below.max(above).max(right).max(left);
         let one = [above, below, right, left].iter().all(|&p| p == 0 || p == most);
         if one {
-            if let Some(p) = self.find_plot(most.into()) {
+            if let Some(p) = self.find_plot(most) {
                 p.set_area(p.area().wrapping_add(1));
             }
-            self.island.plot_map.set((i, j), most.into());
+            self.island.plot_map.set((i, j), most);
         } else {
-            let plot = self.merge_plots(below.into(), above.into()); // 1068:27a5
+            let plot = self.merge_plots(below, above); // 1068:27a5
             self.island.plot_map.set((i, j), plot);
             for side in [(i, j - 1), (i, j + 1)] {
                 let here = self.island.plot_at((i, j));
@@ -828,5 +862,102 @@ mod tests {
         assert_eq!(w.level_corner(2, 0, (30, 33), &mut tick).0, 0);
         let p = w.plots.iter().find(|p| p.id().cast_unsigned() == merged).unwrap();
         assert_eq!(p.area(), 3);
+    }
+
+    /// Tables with the palm's rows as on the CD.
+    fn palm_tables(w: &mut World) {
+        let mut t = crate::world::Tables {
+            hausnr: vec![[0; 8]; 13],
+            hausdata: vec![[0; 10]; 13],
+            ..crate::world::Tables::default()
+        };
+        t.hausnr[usize::from(PALM)] = [10, 12, 0, 1, 1, 1, 10, 0];
+        t.hausdata[usize::from(PALM)][9] = 106;
+        w.tables = t.into();
+        w.max_location_effect = 30;
+    }
+
+    #[test]
+    fn fix_palm_removal_by_moving_the_land() {
+        for fixed in [false, true] {
+            let mut w = world(3);
+            palm_tables(&mut w);
+            w.fixes.set(Fix::PalmRemoval, fixed);
+            w.plots[0].set_palms(5);
+            w.island.buildings.set((20, 21), PALM);
+            w.island.parts.set((20, 21), 3 * 10 + 2);
+            w.island.owners.set((20, 21), 4);
+            w.add_location_effect((20, 21), PALM);
+            let with_palm = w.island.location.clone();
+            assert_eq!(w.level_corner(2, 2, (20, 20), &mut Tick::default()), (0, 6));
+            assert_eq!(w.island.buildings.at((20, 21)), NO_BUILDING);
+            if fixed {
+                assert_eq!(w.plots[0].palms(), 4);
+                assert_eq!(w.island.owners.at((20, 21)), 0);
+                assert_eq!(w.island.location, crate::world::LocationMap::filled(100));
+            } else {
+                // Only the building goes.
+                assert_eq!(w.plots[0].palms(), 5);
+                assert_eq!(w.island.owners.at((20, 21)), 4);
+                assert_eq!(w.island.location, with_palm);
+            }
+        }
+    }
+
+    #[test]
+    fn fix_levelling_cliffs() {
+        for fixed in [false, true] {
+            let mut w = world(3);
+            w.fixes.set(Fix::LevellingCliffs, fixed);
+            // A cliff three steps down from (30, 30) to (31, 30), and four
+            // up from (40, 40) to (41, 40).
+            w.island.heights.set((31, 30), 0);
+            w.island.heights.set((41, 40), 7);
+            assert_eq!(w.level_corner(2, 4, (30, 30), &mut Tick::default()).0, 0);
+            assert_eq!(w.level_corner(2, 2, (40, 40), &mut Tick::default()).0, 0);
+            // The original leaves them, so they get steeper.
+            let (low, high) = if fixed { (1, 6) } else { (0, 7) };
+            assert_eq!(w.island.heights.at((31, 30)), low);
+            assert_eq!(w.island.heights.at((41, 40)), high);
+        }
+    }
+
+    #[test]
+    fn fix_levelling_errors() {
+        for fixed in [false, true] {
+            let mut w = world(3);
+            w.fixes.set(Fix::LevellingErrors, fixed);
+            w.finances.money[0] = -100;
+            // Player 1 without money, a building in the way: the original
+            // says the money.
+            w.island.buildings.set((30, 30), 5);
+            let in_the_way = if fixed { 1 } else { 0xe };
+            assert_eq!(w.level_corner(1, 9, (30, 30), &mut Tick::default()).0, in_the_way);
+            assert_eq!(w.level_corner(1, 1, (30, 30), &mut Tick::default()).0, in_the_way);
+            // Lowering looks at the other squares after the first
+            // building: the last is the one in the way.
+            w.island.buildings.set((11, 11), 5);
+            w.island.buildings.set((10, 10), 5);
+            let (error, at) = w.lower_corner(2, (10, 10), &mut Tick::default());
+            assert_eq!(error.0, 1);
+            assert_eq!(at, if fixed { (10, 10) } else { (11, 11) });
+        }
+    }
+
+    #[test]
+    fn fix_plot_merge_numbers() {
+        for fixed in [false, true] {
+            let mut w = world(0);
+            w.fixes.set(Fix::PlotMergeNumbers, fixed);
+            w.island.plot_map = crate::world::PlotMap::empty();
+            w.plots = vec![Plot::new(300)];
+            w.island.heights.set((29, 30), 1);
+            w.island.plot_map.set((29, 30), 300);
+            assert_eq!(w.level_corner(2, 1, (30, 30), &mut Tick::default()).0, 0);
+            // The original takes plot 300 for 44, which has no record.
+            let plot = if fixed { 300 } else { 300 % 256 };
+            assert_eq!(w.island.plot_map.get((30, 30)), Some(plot));
+            assert_eq!(w.plots[0].area(), u16::from(fixed));
+        }
     }
 }

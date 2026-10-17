@@ -82,7 +82,8 @@ the square around `(i, j)`, `i` outside: each corner within the circle
   percent along it, each coordinate `(to - from) * t div 100 + from +
   Random(ATVariation1) - ATVariation1 div 2`, size `Random(ATGroesse1) +
   1`; then `ATAnzahl2` the same with `ATVariation2` and `ATGroesse2` but
-  half of `ATVariation1`. Then `Random(30) + 20` hills of size
+  half of `ATVariation1` (`fix.atoll_hills`: of `ATVariation2`; the
+  CD's tables differ only for some relief and land). Then `Random(30) + 20` hills of size
   `Random(3) + 2` in the lagoon (the 13th box, 55..195), at `from +
   Random(101) * (to - from) div 100`. The products are 16-bit (`MUL`,
   low word) on the ring, `Longint` in the lagoon.
@@ -113,7 +114,8 @@ bits, halves to even, and `Round` halves to even.
 
 1. `river_start` (10b0:4506): `Random(249) + 1` for `i`, then `j`,
    until the square's lowest corner is at least 4, but the 1500th try
-   is taken unchecked, so a river always starts.
+   is taken unchecked, so a river always starts (`fix.river_start`: no
+   river after 1500 tries).
 2. `river_source` (10b0:4618): the direction `Random(4)` (0 `j + 1`, 1
    `i + 1`, 2 `j - 1`, 3 `i - 1`); the square and the next one that way
    are levelled to the lower of their lowest corners (10b0:459a; it
@@ -141,7 +143,8 @@ of ties, the last of `i - 1`, `j - 1`, `j + 1`, `i + 1` wins. Its distance
 is an `Integer`, so ways that tie up to the map's edge (over the sea,
 say) look on past it until one comes back onto the map from the other
 side, some 65000 rounds later; that happens on about one island in a
-thousand.
+thousand. `fix.river_flat_way` stops at the edge, where the last of the
+ways still open wins.
 
 The levelling uses its own raising and lowering, `gen_raise_checked`
 (10b0:0e0c) and `gen_lower_checked` (10b0:2053), through
@@ -150,7 +153,11 @@ tool (10b0:069f, 10b0:1907, [terrain](../crates/game/src/terrain.rs))
 without costs, markers, plots or the road and `layer_551c` checks: a
 palm in the way goes for nothing, a river stops them (0x10). Unlike the
 tool they write the working copy back after an error, so the corners
-moved before it stay moved.
+moved before it stay moved (`fix.generator_levelling`: nothing moves on
+an error).
+
+These fixes change how the island is made, so a new game's world gets
+its fixes before the generator runs (`hintergrund::new_world`).
 
 ### Plots
 

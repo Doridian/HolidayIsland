@@ -123,7 +123,9 @@ lists of houses and facilities from the houses' list (1068:2d49), the
 reverse of that list, whatever order the game had. A reloaded game can
 therefore play differently from the one in memory. With those turned
 back, a played game, saved and loaded, plays on exactly as the game it
-came from (`orig_savegame.rs`).
+came from (`orig_savegame.rs`). `fix.load_order` loads them that way:
+the file's chunk says whether it's on, or for a file without one the
+game it's loaded into (`World::set_loaded_fixes`).
 
 ## Loading from the start menu: `TLadenForm`
 

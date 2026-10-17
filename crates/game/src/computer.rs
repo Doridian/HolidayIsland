@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use formats::savegame::SaveGame;
 
+use crate::enhance::Fix;
 use crate::roads::CROSSABLE;
 use crate::simulation::Tick;
 use crate::world::{Error, NO_BUILDING, PALM, Pos, World, on_map};
@@ -417,9 +418,13 @@ impl Computers {
 
     /// Appends `building` to `category`'s list, not checking that it's
     /// full: past 40 it runs into the next row. // 10a8:0523
-    fn add_type(&mut self, category: u8, building: u8) {
+    fn add_type(&mut self, category: u8, building: u8, fixed: bool) {
         let row = usize::from(category) * TYPE_ROW;
         let n = self.type_count(category).wrapping_add(1);
+        // BUG(original): more than 40 types write on into the next row.
+        if fixed && usize::from(n) >= TYPE_ROW {
+            return;
+        }
         if let Some(c) = self.types.get_mut(row) {
             *c = n;
         }
@@ -441,12 +446,16 @@ impl World {
     /// it loads the game's data, before the map replaces them. // 10a8:388b
     pub fn build_type_lists(&mut self) {
         let t = Arc::clone(&self.tables);
+        let fixed = self.fixes.has(Fix::ComputerTypeLists);
         let c = &mut self.computers;
         for category in 0..CATEGORIES {
             let row = usize::from(category) * TYPE_ROW;
             let mut n: u8 = 0;
             for building in 0..=LAST_TYPE {
                 if c.matches(category, building, |col| t.hausdata(building, col)) && t.hausdata(building, 6) == 0 {
+                    if fixed && usize::from(n) + 1 >= TYPE_ROW {
+                        break;
+                    }
                     n = n.wrapping_add(1);
                     // BUG(original): more than 40 types write on into the next row.
                     if let Some(cell) = c.types.get_mut(row + usize::from(n)) {
@@ -555,6 +564,10 @@ impl World {
         let top = can.min(price.wrapping_mul(3)); // 1030:0f53
         let r = i32::from(self.random.random(1000));
         // BUG(original): the product overflows for a range past about 2 150 000, and the bid wraps.
+        if self.fixes.has(Fix::ComputerBidOverflow) {
+            let part = i64::from(top.wrapping_sub(price)) * i64::from(r) / 999;
+            return price.wrapping_add(i32::try_from(part).unwrap_or(i32::MAX));
+        }
         price.wrapping_add(top.wrapping_sub(price).wrapping_mul(r) / 999)
     }
 
@@ -579,6 +592,8 @@ impl World {
                 }
             }
             2..=7 => self.order_building(kind, building), // 10a8:2cc1
+            // BUG(original): player 8 gets nothing: make_available has no case for them.
+            8 if self.fixes.has(Fix::PrizePlayer8) => self.order_building(kind, building),
             _ => {}
         }
     }
@@ -592,7 +607,8 @@ impl World {
                 .computers
                 .matches(category, building, |col| t.hausdata(building, col))
             {
-                self.computers.add_type(category, building);
+                let fixed = self.fixes.has(Fix::ComputerTypeLists);
+                self.computers.add_type(category, building, fixed);
             }
         }
     }
@@ -1329,7 +1345,11 @@ impl World {
         // 1078:2396, with the start's ground as the module `roads`
         // explains.
         // BUG(original): the computers use the ground the human's last drag started on (1110:704e): after a drag from water they look for bridges.
-        let ground = self.road_drag_ground;
+        let ground = if self.fixes.has(Fix::ComputerRoadGround) {
+            self.ground_or_water(start) // 1000:3e0d, as the human's drag
+        } else {
+            self.road_drag_ground
+        };
         let Ok(end) = self.build_road(p, start, to, ground, tick) else {
             return false;
         };
@@ -1453,19 +1473,25 @@ impl World {
 
     /// Another area for `p`: a random walk from its square (50 steps of
     /// `Random(4)` and `Random(15)`) until a different plot, as long as the
-    /// plot it left (sic) has 200 squares or more. // 10a8:21de
+    /// plot it left (sic) has 200 squares or more; with
+    /// `fix.computer_area_change` the plot it finds. // 10a8:21de
     fn change_area(&mut self, p: u8) -> bool {
         let k = slot(p);
         let mut pos = self.computers.site[k];
         let first = self.island.plot_at(pos);
         // BUG(original): checks the area of the plot it leaves, not the one it moves to.
-        let area = self.plot_area(first);
+        let left = self.plot_area(first);
         let mut tries = 0;
         loop {
             let plot = self.island.plot_at(pos);
             // The new number is compared as an `Integer`, the old as a
             // `Word`.
             let other = i32::from(plot.cast_signed()) != i32::from(first);
+            let area = if self.fixes.has(Fix::ComputerAreaChange) {
+                self.plot_area(plot)
+            } else {
+                left
+            };
             if (plot != 0 && other && area > 199) || tries > 49 {
                 break;
             }
@@ -1910,5 +1936,106 @@ mod tests {
         w.computer_turn(2, &mut tick);
         w.computer_turn(2, &mut tick);
         assert_eq!(w.computers.state[0], WAITING);
+    }
+
+    #[test]
+    fn fix_computer_area_change() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::ComputerAreaChange, fixed);
+            // A small plot 2 all round plot 1.
+            for i in 0..=250 {
+                for j in 0..=250 {
+                    if !((10..70).contains(&i) && (10..70).contains(&j)) {
+                        w.island.plot_map.set((i, j), 2);
+                    }
+                }
+            }
+            let mut small = Plot::new(2);
+            small.set_byte(0x352, 50);
+            w.plots.push(small);
+            w.computers.site[0] = (11, 11);
+            // The original looks at plot 1's area, and moves to plot 2.
+            assert_eq!(w.change_area(2), !fixed);
+            assert_eq!(w.island.plot_at(w.computers.site[0]), if fixed { 1 } else { 2 });
+        }
+    }
+
+    #[test]
+    fn fix_computer_type_lists() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::ComputerTypeLists, fixed);
+            let mut t = (*w.tables).clone();
+            for b in 50..95 {
+                t.hausdata[b][5] = 9;
+            }
+            w.tables = Arc::new(t);
+            w.build_type_lists();
+            let types = &w.computers.types;
+            if fixed {
+                assert_eq!(types[0], 40);
+                assert_eq!(types[40], 88);
+                // Category 1's row (empty) is left alone.
+                assert_eq!(types[TYPE_ROW..TYPE_ROW + 6], [0; 6]);
+            } else {
+                // 46 types: the last five went into category 1's row.
+                assert_eq!(types[0], 46);
+                assert_eq!(types[TYPE_ROW + 1..TYPE_ROW + 6], [90, 91, 92, 93, 94]);
+            }
+            w.offer_type(60);
+            let types = &w.computers.types;
+            assert_eq!(types[0], if fixed { 40 } else { 47 });
+        }
+    }
+
+    #[test]
+    fn fix_computer_road_ground() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::ComputerRoadGround, fixed);
+            w.finances.money[1] = 1_000_000;
+            w.computers.road[0] = (20, 20);
+            w.computers.road_direction[0] = 0;
+            // The human's last drag started on water.
+            w.road_drag_ground = 2;
+            assert_eq!(w.build_road_on(2, &mut Tick::default()), fixed);
+        }
+    }
+
+    #[test]
+    fn fix_computer_bid_overflow() {
+        let seed = (0..1000).find(|&s| Random::new(s).random(1000) > 900).unwrap();
+        let r = i64::from(Random::new(seed).random(1000));
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::ComputerBidOverflow, fixed);
+            w.finances.money[1] = 100_000_000;
+            w.random = Random::new(seed);
+            // A range of 4 000 000 times the random number overflows.
+            let price = 2_000_000;
+            let bid = w.computer_bid(2, price);
+            let range = 3 * i64::from(price) - i64::from(price);
+            if fixed {
+                assert_eq!(i64::from(bid), i64::from(price) + range * r / 999);
+            } else {
+                #[allow(clippy::cast_possible_truncation)]
+                let wrapped = (range * r) as i32;
+                assert_eq!(bid, price + wrapped / 999);
+                assert!(bid < price);
+            }
+        }
+    }
+
+    #[test]
+    fn fix_prize_player8() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.player_count = 8;
+            w.fixes.set(Fix::PrizePlayer8, fixed);
+            w.make_available(2, 8);
+            assert_eq!(w.computers.state[6] == ORDERED, fixed);
+            assert_eq!(w.computers.building[6] == 2, fixed);
+        }
     }
 }

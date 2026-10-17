@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::accounts::{BOOK_NEW_BUILDINGS, BOOK_OTHER};
 use crate::darstellung::GROUND_ROWS;
+use crate::enhance::Fix;
 use crate::roads::{BRIDGES, CROSSINGS, ROADS};
 use crate::simulation::Tick;
 use crate::world::{BuildingSite, Facility, House, MAX_BEACH_LIFE, NO_BUILDING, Pos, World, on_map};
@@ -507,7 +508,8 @@ impl World {
     /// disasters do), which skips the check that it's theirs: a building
     /// site (its price back for the days left), a building (for a 20th of
     /// its price), a road (`Strassenabrisskosten`) or a bridge over the
-    /// sea (for nothing). `Err` holds the error message the original
+    /// sea (for nothing; `Strassenabrisskosten` a square with
+    /// `fix.bridge_demolition_cost`). `Err` holds the error message the original
     /// shows player 1 (marked; [`NOT_POSSIBLE`] and the others); other
     /// players get none. // 1078:280b
     ///
@@ -545,8 +547,7 @@ impl World {
             if !theirs {
                 return Err(NOT_YOURS);
             }
-            self.demolish_bridge(pos, tick);
-            Ok(())
+            self.demolish_bridge(player, pos, tick)
         } else {
             Err(NOT_POSSIBLE)
         }
@@ -555,7 +556,8 @@ impl World {
     /// Demolishes the building site at `pos`: its squares are emptied and
     /// their people leave, and its owner gets the price back for the days
     /// left of the building time, `price * days div time`. The site's
-    /// effect stays on the location map. // 1078:280b
+    /// effect stays on the location map; with `fix.site_effect` each of
+    /// its squares takes it off. // 1078:280b
     ///
     /// The original reads through a nil pointer if no site's area holds
     /// `pos`, and divides by zero for a type with no building time; the
@@ -565,7 +567,6 @@ impl World {
         let Some(n) = self.find_building_site(pos) else {
             return;
         };
-        // BUG(original): the site's effect stays on the location map.
         let site = self.building_sites[n];
         let t = Arc::clone(&self.tables);
         let (i0, j0) = site.pos;
@@ -573,6 +574,10 @@ impl World {
         let j1 = t.hausnr(site.building, 4).wrapping_add(j0).wrapping_sub(1);
         for i in i0..=i1 {
             for j in j0..=j1 {
+                // BUG(original): the site's effect stays on the location map.
+                if self.fixes.has(Fix::SiteEffect) && self.island.buildings.get((i, j)) == Some(BUILDING_SITE) {
+                    self.remove_location_effect((i, j), BUILDING_SITE); // as place_building does
+                }
                 self.remove_people_from((i, j), tick); // 1088:6975
                 self.empty_square((i, j), tick);
                 self.people_map_changed(); // 1088:6c5a
@@ -695,11 +700,47 @@ impl World {
     /// roads at both ends get their pieces again. // 1078:280b
     ///
     /// The original adds up `Strassenabrisskosten` for each square
-    /// (1078:276f), and never uses the sum.
-    fn demolish_bridge(&mut self, pos: Pos, tick: &mut Tick) {
-        // BUG(original): the original adds up a cost for each square (1078:276f) and never charges it; the port doesn't add it up.
+    /// (1078:276f), and never uses the sum. With `fix.bridge_demolition_cost`
+    /// `player` pays it, as for a road: player 1 needs the money (else
+    /// [`NOT_ENOUGH_MONEY`]) and gets it in the books.
+    fn demolish_bridge(&mut self, player: u8, pos: Pos, tick: &mut Tick) -> Result<(), u8> {
         let bridge = |w: &World, p: Pos| w.island.ground.get(p).is_some_and(|g| BRIDGES.contains(&g));
         let part = self.island.parts.at(pos);
+        // BUG(original): the original adds up a cost for each square (1078:276f) and never charges it; the port doesn't add it up.
+        if self.fixes.has(Fix::BridgeDemolitionCost) {
+            let along = |w: &World, step: Option<(i16, i16)>| {
+                let mut n = 0i32;
+                if let Some((di, dj)) = step {
+                    let mut c = (pos.0 + di, pos.1 + dj);
+                    while bridge(w, c) {
+                        n += 1;
+                        c = (c.0 + di, c.1 + dj);
+                    }
+                }
+                n
+            };
+            let back = match part {
+                2 | 4 => Some((-1, 0)),
+                3 | 5 => Some((0, 1)),
+                _ => None,
+            };
+            let on = match part {
+                0 | 4 => Some((1, 0)),
+                1 | 5 => Some((0, -1)),
+                _ => None,
+            };
+            let squares = 1 + along(self, back) + along(self, on);
+            let cost = self.road_demolition_cost.wrapping_mul(squares);
+            if self.money_of(player) < cost && player == 1 {
+                return Err(NOT_ENOUGH_MONEY);
+            }
+            self.add_money(player, cost.wrapping_neg());
+            if player == 1 {
+                self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+                tick.books = true; // 1070:2617
+                self.float_money(cost, pos); // 1088:0153
+            }
+        }
         let mut start = pos;
         let step = match part {
             2 | 4 => Some((-1, 0)),
@@ -734,6 +775,7 @@ impl World {
         let low = (start.0.min(end.0) - 1, start.1.min(end.1) - 1);
         let high = (start.0.max(end.0) + 1, start.1.max(end.1) + 1);
         redraw_area(tick, low, high); // 1050:264d
+        Ok(())
     }
 
     /// One square of a bridge over the sea becomes water, and its people
@@ -1397,6 +1439,67 @@ mod tests {
         // For nothing.
         assert_eq!(w.finances.money[0], 100);
         assert!(tick.redraw.contains(&(74, 71)));
+    }
+
+    #[test]
+    fn fix_site_effect() {
+        for fixed in [false, true] {
+            let mut w = plot_world();
+            let mut t = (*w.tables).clone();
+            t.hausdata[usize::from(BUILDING_SITE)][9] = 90;
+            w.tables = Arc::new(t);
+            w.fixes.set(Fix::SiteEffect, fixed);
+            put_site(&mut w, site(40, (10, 20), 5));
+            for i in 10..12 {
+                for j in 20..23 {
+                    w.add_location_effect((i, j), BUILDING_SITE);
+                    w.island.owners.set((i, j), 1);
+                }
+            }
+            let with_site = w.island.location.clone();
+            assert_ne!(with_site, crate::world::LocationMap::filled(100));
+            assert_eq!(w.demolish(1, (11, 21), &mut Tick::default()), Ok(()));
+            // The original leaves the site's effect; the fix takes it off
+            // again (the map was all 100 before), up to rounding.
+            let off = (0..126i16)
+                .flat_map(|a| (0..126i16).map(move |b| (a, b)))
+                .map(|c| (i32::from(w.island.location.get(c).unwrap_or(0)) - 100).abs())
+                .max();
+            if fixed {
+                assert!(off <= Some(2));
+            } else {
+                assert_eq!(w.island.location, with_site);
+                assert!(off > Some(5));
+            }
+        }
+    }
+
+    #[test]
+    fn fix_bridge_demolition_cost() {
+        let bridge = |fixed: bool, money: i32| {
+            let mut w = plot_world();
+            w.fixes.set(Fix::BridgeDemolitionCost, fixed);
+            w.finances.money[0] = money;
+            w.road_demolition_cost = 30;
+            for (i, part) in [(70, 0), (71, 4), (72, 2)] {
+                w.island.ground.set((i, 70), 0x5f);
+                w.island.parts.set((i, 70), part);
+            }
+            w.island.owners.set((71, 70), 1);
+            let result = w.demolish(1, (71, 70), &mut Tick::default());
+            (
+                result,
+                w.finances.money[0],
+                w.book_value(BOOK_OTHER),
+                w.island.ground.at((70, 70)),
+            )
+        };
+        // The original: for nothing.
+        assert_eq!(bridge(false, 100), (Ok(()), 100, 0, 2));
+        // Three squares at 30.
+        assert_eq!(bridge(true, 100), (Ok(()), 10, -90, 2));
+        // Without the money, as for a road.
+        assert_eq!(bridge(true, 50), (Err(NOT_ENOUGH_MONEY), 50, 0, 0x5f));
     }
 
     #[test]

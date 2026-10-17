@@ -221,7 +221,9 @@ the original sets in place): the auction waits while it isn't `Off`, and
 while it's `Reading` the world draws the lights' `Random(5)`,
 `Random(20)`, `Random(3)` in its tick, between the earthquake and the
 people, as the original does, and hands them to the view
-(`Tick::tv_lights`). A speech file that doesn't open (the original raises
+(`Tick::tv_lights`). So the speech option and how long the speech plays
+change the game's random numbers; with `fix.tv_lights` the world draws
+nothing and the view's TV blinks with its own. A speech file that doesn't open (the original raises
 an exception in `post_message`) leaves the TV without a speaker.
 
 ## The output

@@ -134,7 +134,9 @@ map), which the view sets before each tick; sounds go to the view in
    the map; they reach below the screen), each with both coordinates
    1..249, by its building: a full tennis court's first square gets the
    four spectators (looked for at its second door); the stage its
-   spectators; a building site's first square builders (`Random(50) = 1`);
+   spectators (looked for on its own square, where they never are, so
+   each pass sends more; `fix.stage_spectators` looks where they stand,
+   `1110:3a58`); a building site's first square builders (`Random(50) = 1`);
    an airport (`Random(100) = 1`, some with a `Random(2)` between two
    parts) a taxiing plane if the square shows the right part; a harbour a
    sound (`Random(500) = 1` and seen, then `Random(2)`), and the Bigport's
@@ -309,9 +311,12 @@ instead of keeping what's under them.
 - 1098:0002 returns an undefined value when a harbour ship's square has no
   harbour next to it; the port keeps the ship's heading (it leaves anyway).
 - The harbour ships' second detour (1098:04f9) checks the ship's own square
-  five times rather than the squares ahead; one with `+0x26` left marks the
-  square ahead without going there. Both are ported as they are.
-- 1090:2c1f takes a plane's second approach if either coordinate matches.
+  five times rather than the squares ahead (`fix.ship_detour` checks its
+  own and the four ahead); one with `+0x26` left marks the square ahead
+  without going there, which looks meant (it gets there at its step's
+  end) and is kept.
+- 1090:2c1f takes a plane's second approach if either coordinate matches
+  (`fix.plane_approach`: both).
 - The world reads the human's view in several places, and 1088:7fb1 runs
   `spawn_people` from the UI. For several players these need an answer.
 - 1088:0324 reads its tables past their ends for building types that

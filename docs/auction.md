@@ -90,7 +90,8 @@ the counter back to 0; at the third call "*name* erhielt den Zuschlag" and
 `Timer1` on), then `Random(15) = 1` waves the hand unless the hammer moves.
 Unless `Timer1` runs: `Random(7) + 2` picks a computer; if it isn't the
 last bidder and no button is held, `Random(30) = 1` and its limit above
-the price, it bids. Then the auctioneer's animation (1028:0221): his
+the price, it bids, though its bid (5 % more) may be above its limit
+(`fix.auction_computer_limit`: only when the bid is within it). Then the auctioneer's animation (1028:0221): his
 mouth `Random(7)` within 800 ms of a call; eyes and brows each with
 `Random(20) = 1` then `Random(4) + 1`; the hammer's and hand's next frames
 (the hammer's sound 0x14 at its fifth).
@@ -101,15 +102,18 @@ mouth `Random(7)` within 800 ms of a call; eyes and brows each with
   only with the money (price + 5 % up to the player's limit, else error
   0xe); mouse up over it bids. If the auction waits for the player, the
   button says "Auktion starten" and starts it instead. Enter does the
-  same without either check.
+  same without either check (`fix.auction_enter_bid` checks both).
 - **Pass** (mouse down, unless `Timer1` runs) and the **close** button
   (mouse down, always): the computers bid among themselves (1028:0c82):
   if any limit is above the price, up to 101 tries of a raise of
   `Random(20)` × 5 % and a computer `Random(7) + 2` until one's limit is
   above it; it gets the item at that price. If none's is and the item is a
-  bankrupt player's property (0x16), it's demolished (10a0:09ea). Mouse up
-  over the button closes the form. Escape, Space and Alt+F4 close the form
-  first.
+  bankrupt player's property (0x16), it's demolished (10a0:09ea). A bid
+  that leads is ignored, and after the third call the close button gives
+  the item away a second time; with `fix.auction_pass` nothing happens
+  once it's sold, and when no computer takes it a leading bidder gets it
+  at their bid. Mouse up over the button closes the form. Escape, Space
+  and Alt+F4 close the form first.
 - **Drag bar**: the form shrinks to its title bar while dragged (and
   stays so after a double click) and follows the mouse, kept on screen.
 
@@ -130,7 +134,8 @@ buildings, 0x67). Then by item:
   message (0x25, 0x56, 0xb, 2, 0x28, 0xe, 0x11, 0x3d, 0x34, 0x14, 0x3a,
   0x37) and `make_available(type, winner)` of 0x71, 0x79, 0x1e, 0x1d,
   0x6f, 0x3c, 0x23, 0x6e, 0x6c, 0x25, 0x7e, 0x7d: the build menu for
-  player 1, building it next for 2–7.
+  player 1, building it next for 2–7 (and for 8 with
+  `fix.prize_player8`; the original has no case for 8).
 - 6: its message 0x27 only. Anything else: nothing.
 
 ## The computers' bids (10a8:0373)

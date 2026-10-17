@@ -645,7 +645,7 @@ impl World {
         let mut w = World::from_map(save)?;
         w.keep_unsaved(self);
         // A file without the port's chunk leaves the fixes as they are.
-        w.fixes = crate::enhance::fixes_in(&save.trailing, self.fixes);
+        w.set_loaded_fixes(crate::enhance::fixes_in(&save.trailing, self.fixes));
         Ok(w)
     }
 }
@@ -737,6 +737,7 @@ mod tests {
         assert_eq!(keep_on_screen(r(-5, -5, 200, 100), (800, 600)), (-5, -5));
         assert_eq!(keep_on_screen(r(320, 272, 640, 479), (800, 600)), (160, 121));
     }
+    use crate::enhance::Fix;
     use crate::world::{BuildingSite, Facility, House, Plot};
 
     #[test]
@@ -825,5 +826,46 @@ mod tests {
             World::from_map(&original).unwrap().fixes,
             crate::enhance::Fixes::ORIGINAL
         );
+    }
+
+    #[test]
+    fn fix_load_order() {
+        let mut w = World::default();
+        for pos in [(5, 6), (6, 6), (7, 6)] {
+            w.island.heights.set(pos, 1);
+            w.island.plot_map.set(pos, 1);
+        }
+        w.plots = vec![Plot::new(1)];
+        w.houses = vec![House::new((5, 6)), House::new((6, 6))];
+        w.facilities = vec![Facility::new(41, (7, 6)), Facility::new(41, (7, 7))];
+        w.plots[0].houses = vec![(5, 6), (6, 6)];
+        w.plots[0].facilities = vec![(7, 6)];
+        let site = |building| BuildingSite {
+            building,
+            ..BuildingSite::default()
+        };
+        w.building_sites = vec![site(4), site(5), site(6)];
+        let sites = |w: &World| w.building_sites.iter().map(|s| s.building).collect::<Vec<_>>();
+        for fixed in [false, true] {
+            w.fixes.set(Fix::LoadOrder, fixed);
+            let save = w.to_map(&MapView::default());
+            let back = World::from_map(&save).unwrap();
+            if fixed {
+                assert_eq!(sites(&back), [4, 5, 6]);
+                assert_eq!(back.plots[0].houses, [(5, 6), (6, 6)]);
+            } else {
+                // The original turns them round.
+                assert_eq!(sites(&back), [6, 5, 4]);
+                assert_eq!(back.plots[0].houses, [(6, 6), (5, 6)]);
+            }
+            // An original file loaded over a game with the fix.
+            let mut original = save.clone();
+            original.trailing.clear();
+            let mut playing = World::default();
+            playing.fixes.set(Fix::LoadOrder, fixed);
+            let back = playing.load_map(&original).unwrap();
+            assert_eq!(sites(&back) == [4, 5, 6], fixed);
+            assert_eq!(back.plots[0].houses == [(5, 6), (6, 6)], fixed);
+        }
     }
 }

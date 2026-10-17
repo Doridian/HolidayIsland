@@ -15,6 +15,7 @@ use formats::savegame::SaveGame;
 use game::auction;
 use game::command::{self, Command};
 use game::dateimenue::{self, Dateimenue};
+use game::enhance::Fixes;
 use game::hintergrund::{GameData, SCENARIO_FILES, load_saved_game, load_world, new_world};
 use game::ladenform::{self, LadenForm, saved_games};
 use game::savegame::{MapView, differences};
@@ -177,7 +178,7 @@ fn cd_maps_load_again() {
 fn a_played_game_loads_and_plays_on() {
     let Some(data) = game_data() else { return };
     let settings = Settings::default();
-    let mut world = new_world(&settings, &data, 0x0bad_cafe);
+    let mut world = new_world(&settings, &data, 0x0bad_cafe, Fixes::ORIGINAL);
     while world.days < 120 || world.building_sites.len() < 2 {
         step(&mut world);
         assert!(world.days < 2000, "no two building sites at once");
@@ -222,7 +223,7 @@ fn a_played_game_loads_and_plays_on() {
 #[test]
 fn a_saved_game_loads_from_the_start_menu() {
     let Some(data) = game_data() else { return };
-    let mut world = new_world(&Settings::default(), &data, 7);
+    let mut world = new_world(&Settings::default(), &data, 7, Fixes::ORIGINAL);
     for _ in 0..2000 {
         step(&mut world);
     }
@@ -233,7 +234,7 @@ fn a_saved_game_loads_from_the_start_menu() {
         name: b"Jemand".to_vec(),
         ..Settings::default()
     };
-    let mut loaded = load_saved_game(&parsed, &menu, &data, 99).unwrap();
+    let mut loaded = load_saved_game(&parsed, &menu, &data, 99, Fixes::ORIGINAL).unwrap();
     assert_eq!(loaded.player_names, world.player_names);
     assert_eq!(loaded.difficulty, world.difficulty);
     assert_eq!(loaded.island, world.island);
@@ -252,7 +253,7 @@ fn a_saved_game_loads_from_the_start_menu() {
 
     // The CD's tutorial loads the same way.
     let tutorial = SaveGame::parse(&read("MAPS/TUTORIAL.MAP").unwrap()).unwrap();
-    let mut w = load_saved_game(&tutorial, &menu, &data, 3).unwrap();
+    let mut w = load_saved_game(&tutorial, &menu, &data, 3, Fixes::ORIGINAL).unwrap();
     assert_eq!(w.island, World::from_map(&tutorial).unwrap().island);
     let day = w.days;
     for _ in 0..1500 {

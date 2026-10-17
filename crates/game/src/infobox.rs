@@ -24,6 +24,7 @@ use vcl::surface::{Rop, Surface};
 use crate::accounts::BOOK_OTHER;
 use crate::command::Action;
 use crate::construction::{BUILDING_SITE, NOT_BUILDINGS, Record};
+use crate::enhance::Fix;
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::settlement::{lower_price, lower_rent, raise_rent};
@@ -729,7 +730,9 @@ impl Infobox {
         let island = &world.island;
         // Single human: the buttons are for player 1's squares and nobody's.
         // BUG(original): a building of nobody's (owner 0) gets the buttons too: the human renovates, prices or sells it.
-        let theirs = on_map(pos) && island.owners.get(pos).unwrap_or(0) < 2 && island.ground.get(pos) != Some(2);
+        let lowest = u8::from(world.fixes.has(Fix::NobodysBuildings));
+        let owner = island.owners.get(pos).unwrap_or(0);
+        let theirs = on_map(pos) && (lowest..2).contains(&owner) && island.ground.get(pos) != Some(2);
         if theirs {
             for row in 0..8 {
                 if kind < IB_ARTEN && self.data.welche_buttonzeile[kind][row] {
@@ -934,9 +937,11 @@ impl World {
     /// Whether `player` may change the building on `pos`: the info box
     /// offers the buttons on the human's squares and nobody's
     /// (1038:1a75), the overview lists only the human's (1080:02d9).
+    /// With `fix.nobodys_buildings` only their own.
     fn may_change(&self, player: u8, pos: Pos) -> bool {
         let owner = self.island.owners.get(pos).unwrap_or(0);
-        owner == 0 || owner == player
+        // BUG(original): nobody's buildings (owner 0) get the buttons too.
+        (owner == 0 && !self.fixes.has(Fix::NobodysBuildings)) || owner == player
     }
 
     /// "Renovieren": `player` renovates the building on `pos` if they
@@ -1079,6 +1084,34 @@ mod tests {
         assert_eq!(decimal_money(12_345, 10, de), b"1234,50");
         assert_eq!(decimal_money(1_234_567, 100, de), b"12.34567,00");
         assert_eq!(decimal_money(500, 1, Land::England), b"5.00");
+    }
+
+    #[test]
+    fn fix_nobodys_buildings() {
+        for fixed in [false, true] {
+            let mut w = World {
+                tables: std::sync::Arc::new(crate::world::Tables {
+                    hausnr: vec![[1, 0, 0, 1, 1, 1, 0, 0]; 0x80],
+                    hausdata: vec![[0; 10]; 0x80],
+                    ..crate::world::Tables::default()
+                }),
+                ..World::default()
+            };
+            w.fixes.set(Fix::NobodysBuildings, fixed);
+            w.island.buildings.set((20, 20), 40);
+            let mut house = crate::world::House::new((20, 20));
+            house.set_building(40);
+            house.set_price(100);
+            w.houses = vec![house];
+            // Nobody's house: the original lets player 1 set its rent.
+            w.step_price(1, (20, 20), true);
+            assert_eq!(w.houses[0].price() == 100, fixed);
+            // Their own, either way.
+            w.island.owners.set((20, 20), 1);
+            let rent = w.houses[0].price();
+            w.step_price(1, (20, 20), true);
+            assert_ne!(w.houses[0].price(), rent);
+        }
     }
 
     #[test]

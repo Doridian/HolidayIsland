@@ -6,6 +6,7 @@
 //! tile's variant the square had before. Stage 8 is a young palm, 9 a
 //! grown one and 0–7 the eight looks of an old one.
 
+use crate::enhance::Fix;
 use crate::simulation::Tick;
 use crate::world::{NO_BUILDING, PALM, Pos, World};
 
@@ -28,7 +29,8 @@ impl World {
     /// Looks at 30 random squares (`Random(250)` for `i`, then `j`): a
     /// young palm grows, a grown one gets one of the old looks
     /// (`Random(8)`), an old one dies with a chance of 60 % (`Random(100)`)
-    /// and leaves the ground as it was. An empty square of [`PALM_GROUND`]
+    /// and leaves the ground as it was (still counted on its plot, but
+    /// with `fix.palm_removal`). An empty square of [`PALM_GROUND`]
     /// gets a new palm with a chance of 30 %. // 1010:129e
     pub(crate) fn vegetation_tick(&mut self, tick: &mut Tick) {
         for _ in 1..=30 {
@@ -51,6 +53,9 @@ impl World {
                     let variant = i16::from(part).checked_div(stages).unwrap_or(0);
                     self.island.parts.set(pos, variant.to_le_bytes()[0]);
                     // BUG(original): a palm that dies stays counted on its plot's +0x354.
+                    if self.fixes.has(Fix::PalmRemoval) {
+                        self.uncount_palm(pos);
+                    }
                     self.island.buildings.set(pos, NO_BUILDING);
                     self.remove_location_effect(pos, PALM); // 1030:1dc6
                 }
@@ -61,6 +66,16 @@ impl World {
             {
                 self.plant_palm(pos, tick);
             }
+        }
+    }
+
+    /// A palm on `pos` goes off its plot's count (`+0x354`), which the
+    /// original never does for a palm that dies or that moving the land
+    /// clears (`fix.palm_removal`); nothing for a square without a plot.
+    pub(crate) fn uncount_palm(&mut self, pos: Pos) {
+        let plot = self.island.plot_at(pos); // 1030:1e62
+        if let Some(p) = self.find_plot(plot) {
+            p.set_palms(p.palms().wrapping_sub(1));
         }
     }
 
@@ -188,6 +203,21 @@ mod tests {
             }
         }
         assert!(below >= died, "{below} cells for {died} palms");
+    }
+
+    #[test]
+    fn fix_palm_removal_when_they_die() {
+        for fixed in [false, true] {
+            let mut w = world(PALM, 3 * 10 + 2);
+            w.fixes.set(Fix::PalmRemoval, fixed);
+            w.plots[1].set_palms(1000);
+            w.vegetation_tick(&mut Tick::default());
+            let died = squares(1234, true).iter().filter(|s| s.1 < 60).count();
+            assert!(died > 0);
+            // The original keeps counting the dead palms.
+            let left = if fixed { 1000 - died } else { 1000 };
+            assert_eq!(usize::try_from(w.plots[1].palms()), Ok(left));
+        }
     }
 
     #[test]

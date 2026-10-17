@@ -18,6 +18,7 @@ use crate::accounts::{
     BOOK_HOUSE_RENT, BOOK_INTEREST, BOOK_OTHER, BOOK_RESTAURANT_COSTS, BOOK_RESTAURANT_TAKINGS,
 };
 use crate::construction::{EMPTY_CHAMPIONSHIPS, FULL_CHAMPIONSHIPS};
+use crate::enhance::Fix;
 use crate::simulation::Tick;
 use crate::world::{Plot, Pos, World, on_map};
 
@@ -381,13 +382,22 @@ impl Settlement {
     }
 
     /// A facility's price class, 0–9. The original divides by `MaxPreis`
-    /// rather than by the range, then takes `MinPreis` off again.
-    /// // 1008:0907
+    /// rather than by the range, then takes `MinPreis` off again; with
+    /// `range` (`fix.price_class_range`) it's the tenth of `MinPreis` to
+    /// `MaxPreis` the price falls in, as [`Settlement::rent_class`] does
+    /// for rents. // 1008:0907
     #[must_use]
-    pub fn price_class(&self, price: i32, class: u8) -> u8 {
+    pub fn price_class(&self, price: i32, class: u8, range: bool) -> u8 {
         let low = self.min_price(class);
-        // BUG(original): divides by `MaxPreis` where the range seems meant.
-        let c = div(price.wrapping_sub(low).wrapping_mul(10), self.max_price(class)).wrapping_sub(low);
+        let c = if range {
+            div(
+                price.wrapping_sub(low).wrapping_mul(10),
+                self.max_price(class).wrapping_sub(low),
+            )
+        } else {
+            // BUG(original): divides by `MaxPreis` where the range seems meant.
+            div(price.wrapping_sub(low).wrapping_mul(10), self.max_price(class)).wrapping_sub(low)
+        };
         u8::try_from(c.clamp(0, 9)).unwrap_or(0)
     }
 
@@ -769,6 +779,18 @@ impl World {
         self.island.owners.get(pos).unwrap_or(0)
     }
 
+    /// A building's takings or costs go into its `owner`'s `sum`. A
+    /// building of nobody (owner 0) adds into player 8's slot of the sum
+    /// before (or, for the houses' rent, the 11th `MaxPreis`), as in the
+    /// original; with `fix.ownerless_buildings` into nothing.
+    fn add_building_sum(&mut self, sum: usize, owner: u8, by: i32) {
+        // BUG(original): a building of nobody adds into the slot before its sum's (player 8's, or the 11th `MaxPreis`).
+        if owner == 0 && self.fixes.has(Fix::OwnerlessBuildings) {
+            return;
+        }
+        self.settlement.add_sum(sum, owner, by);
+    }
+
     /// `player`'s advertising level, 0–7 (the money menu's). Player 0
     /// reads the byte before the block in the original; the port says 0.
     /// // *1110:6f24 + player - 1
@@ -896,7 +918,7 @@ impl World {
                 HOTEL_RENT
             };
             let owner = self.owner(h.pos());
-            self.settlement.add_sum(sum, owner, rent);
+            self.add_building_sum(sum, owner, rent);
         }
     }
 
@@ -911,7 +933,7 @@ impl World {
                 HOTEL_COSTS
             };
             let owner = self.owner(h.pos());
-            self.settlement.add_sum(sum, owner, cost);
+            self.add_building_sum(sum, owner, cost);
         }
     }
 
@@ -1053,7 +1075,8 @@ impl World {
 
     /// Step 0x28: each player's guests ([`crate::money::Finances::guests`]),
     /// for all eight players; the houses of nobody count for player 8's
-    /// interest, as in the original.
+    /// interest, as in the original (with `fix.ownerless_buildings` for
+    /// nobody).
     fn count_player_guests(&mut self) {
         for p in 1..=8 {
             self.finances.set_guests(p, 0); // 1078:0172
@@ -1061,6 +1084,10 @@ impl World {
         for n in 0..self.houses.len() {
             let h = &self.houses[n];
             let owner = self.owner(h.pos());
+            // BUG(original): the guests of nobody's houses count into player 8's interest, the `Longint` before the guests.
+            if owner == 0 && self.fixes.has(Fix::OwnerlessBuildings) {
+                continue;
+            }
             let guests = self.finances.guests(owner).wrapping_add(i32::from(h.guests()));
             self.finances.set_guests(owner, guests);
         }
@@ -1087,7 +1114,8 @@ impl World {
             let price = div(f.price().wrapping_mul(100), places.wrapping_mul(30));
             let class = self.facility_class(f.building());
             let rating = self.settlement.price_rating(price, f.stars(), class);
-            let price_class = self.settlement.price_class(price, class);
+            let range = self.fixes.has(Fix::PriceClassRange);
+            let price_class = self.settlement.price_class(price, class, range);
             let f = &mut self.facilities[n];
             f.set_price_rating(rating);
             f.set_price_class(price_class);
@@ -1306,7 +1334,7 @@ impl World {
                 FACILITY_TAKINGS
             };
             let owner = self.owner(f.pos());
-            self.settlement.add_sum(sum, owner, takings);
+            self.add_building_sum(sum, owner, takings);
         }
     }
 
@@ -1321,7 +1349,7 @@ impl World {
                 FACILITY_COSTS
             };
             let owner = self.owner(f.pos());
-            self.settlement.add_sum(sum, owner, cost);
+            self.add_building_sum(sum, owner, cost);
         }
     }
 
@@ -1727,13 +1755,15 @@ mod tests {
         assert_eq!(s.price_rating(500, 50, 3), 50);
         // The original divides by MaxPreis, not the range, then takes
         // MinPreis off again.
-        assert_eq!(s.price_class(450, 2), 4);
+        assert_eq!(s.price_class(450, 2, false), 4);
         let mut s = s;
         s.min_price[2] = 100;
-        assert_eq!(s.price_class(450, 2), 0);
+        assert_eq!(s.price_class(450, 2, false), 0);
+        // fix.price_class_range: (450 - 100) * 10 div (1000 - 100).
+        assert_eq!(s.price_class(450, 2, true), 3);
         // Class 10's MaxPreis is the first sum.
         s.sums[0] = 1000;
-        assert_eq!(s.price_class(500, 10), 5);
+        assert_eq!(s.price_class(500, 10, false), 5);
     }
 
     #[test]
@@ -1809,6 +1839,31 @@ mod tests {
         w.settlement_step(0x28, &mut tick);
         assert_eq!(w.finances.guests(1), 20);
         assert_eq!(w.finances.interest[7], 10);
+    }
+
+    #[test]
+    fn fix_ownerless_buildings() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.player_count = 8;
+            w.fixes.set(Fix::OwnerlessBuildings, fixed);
+            let mut hotel = House::new((12, 10));
+            hotel.set_building(41);
+            hotel.set_price(500);
+            hotel.set_guests(10);
+            w.houses = vec![hotel];
+            let mut tick = Tick::default();
+            for step in [0x1a, 0x1c, 0x20, 0x28] {
+                w.settlement_step(step, &mut tick);
+            }
+            // Nobody's hotel: the original pays its rent less its costs to
+            // player 8 (as their houses') and counts its guests as player
+            // 8's interest.
+            let (money, interest) = if fixed { (0, 0) } else { (10 * 500 - 70, 10) };
+            assert_eq!(w.finances.money[7], money);
+            assert_eq!(w.finances.interest[7], interest);
+            assert_eq!(w.settlement.sum(HOUSE_RENT, 8), if fixed { 0 } else { 5000 });
+        }
     }
 
     #[test]

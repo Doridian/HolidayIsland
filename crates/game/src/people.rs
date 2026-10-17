@@ -27,6 +27,7 @@ mod movement;
 
 use std::sync::Arc;
 
+use crate::enhance::Fix;
 use crate::simulation::Tick;
 use crate::world::{NO_BUILDING, Pos, World};
 
@@ -1646,7 +1647,12 @@ impl World {
             }
             0x7b | 0x7c => {
                 // BUG(original): works out the stage's offset (1110:3a58), then looks for spectators on the square itself.
-                if self.part_or_zero(pos) == 0 && !self.person_at(STAGE_SPECTATORS, pos) {
+                let look = if self.fixes.has(Fix::StageSpectators) {
+                    self.place(At::Stage, pos)
+                } else {
+                    pos
+                };
+                if self.part_or_zero(pos) == 0 && !self.person_at(STAGE_SPECTATORS, look) {
                     self.add_person(STAGE_SPECTATORS, pos, tick);
                 }
             }
@@ -2205,6 +2211,22 @@ mod tests {
         w.send_person((20, 20), &mut tick);
         w.send_person((20, 20), &mut tick);
         assert_eq!(kinds(&w), [(FIRST, 0x27)]);
+    }
+
+    #[test]
+    fn fix_stage_spectators() {
+        for fixed in [false, true] {
+            let mut w = world(0x7b, 2, 2);
+            w.fixes.set(Fix::StageSpectators, fixed);
+            let mut tick = Tick::default();
+            w.spawn_at((20, 20), &mut tick);
+            w.spawn_at((20, 20), &mut tick);
+            // They stand at (20, 21): the original looks on (20, 20) and
+            // sends more every time.
+            let spectators = kinds(&w).iter().filter(|k| k.1 == STAGE_SPECTATORS).count();
+            assert_eq!(spectators, if fixed { 1 } else { 2 });
+            assert_eq!(w.people.get(FIRST).unwrap().pos(), (20, 21));
+        }
     }
 
     #[test]

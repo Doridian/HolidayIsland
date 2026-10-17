@@ -41,7 +41,7 @@ candidate lists are saved for players 2 to the player count only.
 | `*1110:70d6` | The area has no road yet: the first roads start around its transport building |
 | `*1110:70de` | 12 counters each; 2, 4, 8 and 10 are used |
 | `*1110:70e2`, `*1110:70e6` | Candidate lists (1030:0c82: three byte lists of up to 254 entries, the direction, `i` and `j`): an area's first road starts, the built roads' ends |
-| `*1110:70ea` | Per category a count and 40 types, 13 rows, 11 used; the original reads and writes past a row's end |
+| `*1110:70ea` | Per category a count and 40 types, 13 rows, 11 used; the original reads and writes past a row's end (`fix.computer_type_lists` stops at 40) |
 | `*1110:70ee` | `COMPBAU.DAT`: 13 rows of 7 bytes |
 | `1110:70f2` | The status text, a `string` (shown nowhere) |
 | `*1110:6512` | The budgets: 13 `Longint`s for each of players 2–8, the capacity (`HAUSDATA.DAT` column 3) of its building sites per category; a site adds it (1078:15d9), finishing takes it off (1078:203d) |
@@ -161,7 +161,8 @@ then 1.
   `i -`, `j +`, `j -`) and `Random(20)`, kept within 0..250, until a plot
   of 200 squares (`+0x352`); another (10a8:21de) by up to 50 steps with
   `Random(15)` until another plot, as long as the plot it left has 200
-  squares (it checks the old plot, it seems by mistake).
+  squares (it checks the old plot, it seems by mistake;
+  `fix.computer_area_change` checks the new one).
 
 ## The build check (1030:04e3)
 
@@ -203,11 +204,15 @@ human's tools call too, through commands
   the corner: a building stops it (1; a palm goes for
   `Palmenabrisskosten`), a road (2), a river (0x10), and when raising
   `layer_551c` (0x1c). Neighbours exactly two steps off follow,
-  recursively (i + 1, j + 1, i - 1, j - 1). Raising also needs the corner
+  recursively (i + 1, j + 1, i - 1, j - 1); with `fix.levelling_cliffs`
+  those two or more off. Raising also needs the corner
   below 20 (4) and as far from the map's edge as it is high (5–8). The
   cost adds up `LandausWasserhebekosten` (from 0), `Landhebekosten`,
   `LandinWassersenkkosten` (to 0) or `Landsenkkosten` per corner; only
-  player 1 must have it (0xe), and the computers drop it. On an error
+  player 1 must have it (0xe, which replaces any other error but with
+  `fix.levelling_errors`), and the computers drop it. Lowering looks at
+  the buildings of every square it reaches, even after an error
+  (`fix.levelling_errors` stops at the first). On an error
   nothing changes and a marker (person kind 0x2a) appears at the square
   that caused it. Otherwise the copy goes back, the corners that rose
   from the sea get a plot (1078:09f6: new, grown or merged, 1068:2698,
@@ -240,7 +245,8 @@ human's tools call too, through commands
   and form (`1110:704e`, `704f`) are the world's, set by the drag's
   command. The computers' roads read the ground too, as in the original:
   after the human's drag from water they look for bridges. Before any
-  drag it's sand (0), or what the map saved.
+  drag it's sand (0), or what the map saved. With
+  `fix.computer_road_ground` they go by their own start square's ground.
 
 None of this draws random numbers, but the markers are people
 (1088:0324). The bugs kept are in
@@ -253,7 +259,9 @@ out once, at the start price (10a8:0221, 10a8:0167 with `Random(1000)`):
 see [auction.md](auction.md#the-computers-bids-10a80373). A computer
 bids only for a building or a bankrupt player's property, or while its
 area isn't waiting for its first roads, and up to three times the price
-or what it can pay (money less loan plus `MaxSchulden`).
+or what it can pay (money less loan plus `MaxSchulden`). The random part
+overflows for a range past about 2 150 000 (`fix.computer_bid_overflow`
+works it out in 64 bits).
 
 ## Open questions
 
@@ -263,11 +271,14 @@ or what it can pay (money less loan plus `MaxSchulden`).
   reads them; perhaps left over from planned behaviour (sabotage?).
 - The turn's state 3 (selling) is never set; the selling happens in
   state 5.
-- 10a8:21de checks the area of the plot it leaves, not the new one's.
+- 10a8:21de checks the area of the plot it leaves, not the new one's
+  (`fix.computer_area_change`).
 - A computer in the red with the bank's no only waits (or demolishes one
   time in a hundred); nothing else pays its debts.
 - `1110:634c` and `1110:704e` are the human's UI state in the world: for
   multiplayer the computers' wait on another player's road tool, and
   their roads by another player's drag, need a decision.
-- Building any road turns the animations' `1110:0056` on (1080:3216),
-  whatever the player chose; the port keeps it.
+- Building any road turns `1110:0056` on (1080:3216). It isn't a
+  player's option but a flag that the road planner, `draw_columns` and
+  the overview map's scroll timers clear while busy and set when done
+  (no people spawn meanwhile), so the port keeps it, with no fix.

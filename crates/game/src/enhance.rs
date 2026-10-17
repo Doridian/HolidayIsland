@@ -121,7 +121,8 @@ macro_rules! enhancements {
 }
 
 enhancements! {
-    /// A fix that changes the simulation. None yet.
+    /// A fix that changes the simulation (`docs/original-bugs.md`,
+    /// "Simulation logic").
     Fix,
     /// The world's fixes that are on ([`World::fixes`]). The default is
     /// [`Fixes::ORIGINAL`], so a `World` built in a test is the original's
@@ -130,6 +131,125 @@ enhancements! {
     /// [`World::fixes`]: crate::world::World::fixes
     Fixes,
     Side::World;
+    /// Demolishing a building site takes its effect off the location map
+    /// (1078:280b).
+    SiteEffect = "site_effect",
+        "Demolishing a building site takes its effect off the location map";
+    /// Demolishing a bridge over the sea costs `Strassenabrisskosten` a
+    /// square, which the original adds up and never charges (1078:276f).
+    BridgeDemolitionCost = "bridge_demolition_cost",
+        "Demolishing a sea bridge costs the road demolition cost per square, as the original adds up but never charges";
+    /// A facility's price class divides by the price range, not by
+    /// `MaxPreis` (1008:0907).
+    PriceClassRange = "price_class_range",
+        "A facility's price class is its place between MinPreis and MaxPreis, not divided by MaxPreis";
+    /// Buildings of nobody (owner 0) earn and cost nobody: their takings,
+    /// costs and guests no longer go into player 8's slots of the month's
+    /// sums and interest (settlement, 1078:0172).
+    OwnerlessBuildings = "ownerless_buildings",
+        "Buildings of nobody no longer pay their takings, costs and guests into player 8's sums and interest";
+    /// A palm that dies or that moving the land clears comes off its
+    /// plot's count, and a cleared one off the location map, its owner
+    /// and part (1010:129e, 10b0:069f, 10b0:1907).
+    PalmRemoval = "palm_removal",
+        "Palms that die or are cleared by moving the land come off their plot's count and the location map";
+    /// A computer looking for another area checks the area of the plot
+    /// it moves to, not the one it leaves (10a8:21de).
+    ComputerAreaChange = "computer_area_change",
+        "A computer changing area checks the size of the plot it moves to, not the one it leaves";
+    /// The computers' type lists keep to their 40 places a category
+    /// (10a8:388b, 10a8:0523).
+    ComputerTypeLists = "computer_type_lists",
+        "The computers' building lists stop at 40 types a category instead of running into the next";
+    /// A blocked harbour ship's second detour checks the squares ahead,
+    /// not its own square five times (1098:04f9).
+    ShipDetour = "ship_detour",
+        "A blocked harbour ship's second detour looks at the squares ahead, not its own square";
+    /// The stage spectators are looked for where they stand, so a stage
+    /// doesn't get new ones every time (1090:2373).
+    StageSpectators = "stage_spectators",
+        "Stages look for their spectators where they stand, not on the stage's first square";
+    /// A plane's second approach needs both coordinates to match
+    /// (1090:2c1f).
+    PlaneApproach = "plane_approach",
+        "A plane's second approach needs both coordinates to match, not either";
+    /// A corner rising from the sea between plots merges them by their
+    /// whole numbers, not cut to a byte (1078:09f6).
+    PlotMergeNumbers = "plot_merge_numbers",
+        "Land rising between plots merges them by their full numbers, not their numbers cut to a byte";
+    /// The computers' roads start from their own start square's ground,
+    /// not the human's last road drag's (1078:2396).
+    ComputerRoadGround = "computer_road_ground",
+        "The computers' roads go by the ground they start on, not the human's last road drag";
+    /// Moving the land takes neighbours along that are two steps or more
+    /// off, so cliffs don't get steeper (10b0:03fa, 10b0:12c7).
+    LevellingCliffs = "levelling_cliffs",
+        "Moving the land takes along neighbours two or more steps off, so existing cliffs don't get steeper";
+    /// Raising and lowering the land report the first error: lowering
+    /// stops looking at buildings after one, and the money check doesn't
+    /// replace it (10b0:069f, 10b0:12c7).
+    LevellingErrors = "levelling_errors",
+        "Raising and lowering the land report the first error, not a later building or the money";
+    /// After a road is built, every building near it gets its connection
+    /// again, by its first square, whatever its look (1078:2178).
+    RoadConnections = "road_connections",
+        "A new road reconnects every building near it, not only those whose first square shows part 0";
+    /// The info box's buttons (renovate, prices, sell, bribe) are only
+    /// for the player's own squares, not nobody's (1038:1a75).
+    NobodysBuildings = "nobodys_buildings",
+        "The info box's buttons work on the player's own buildings only, not on nobody's";
+    /// A computer bids only when its bid (5 % more) is within its limit
+    /// (1028:1973).
+    AuctionComputerLimit = "auction_computer_limit",
+        "A computer bids at an auction only when its bid is within its limit, not just the price";
+    /// Passing at an auction leaves a leading bid standing and doesn't
+    /// give the item away a second time after the third call (1028:0c82).
+    AuctionPass = "auction_pass",
+        "Passing at an auction keeps the leading bid and doesn't sell the item again after the third call";
+    /// Enter bids at an auction with the same checks as the mouse: the
+    /// money, and not after the third call (1028:26e4).
+    AuctionEnterBid = "auction_enter_bid",
+        "Enter bids at an auction only with the money and before the third call, as the mouse does";
+    /// Player 8 gets the building type it wins at an auction
+    /// (`make_available`, 10a0:0691).
+    PrizePlayer8 = "prize_player8",
+        "Player 8 gets the building it wins at an auction, as players 2 to 7 do";
+    /// A computer's highest bid is worked out without overflowing
+    /// (10a8:0167).
+    ComputerBidOverflow = "computer_bid_overflow",
+        "A rich computer's auction limit no longer overflows and wraps";
+    /// The atoll's small hills are centred by half of their own
+    /// variation (10b0:3c5c).
+    AtollHills = "atoll_hills",
+        "The atoll's small hills are centred on the ring by their own variation, not the big hills'";
+    /// A river's 1500th try at a start is checked like the others; with
+    /// none found there's no river (10b0:4506).
+    RiverStart = "river_start",
+        "The island generator's rivers only start on the hills, never on the flat or in the sea";
+    /// The generator's raising and lowering change nothing on an error,
+    /// as the player's tool (10b0:0e0c, 10b0:2053).
+    GeneratorLevelling = "generator_levelling",
+        "The island generator's land changes are undone on an error, so its rivers leave no cliffs";
+    /// A river on the flat stops looking for its way at the map's edge,
+    /// not round the other side (10b0:48d7).
+    RiverFlatWay = "river_flat_way",
+        "A river on the flat looks for its way up to the map's edge, not round the other side";
+    /// Loading a game keeps the order of the building sites and of the
+    /// plots' houses and facilities (1068:304f, 1068:2d49).
+    LoadOrder = "load_order",
+        "Loading a game keeps the building sites and the plots' building lists in their saved order";
+    /// Piranhas ordered for a building that isn't a pool show error 0x1a
+    /// (10a0:1f65).
+    SabotagePoolError = "sabotage_pool_error",
+        "Piranhas ordered for a building that isn't a pool say so, as the other sabotage kinds do";
+    /// The news archive keeps its messages in order when it first wraps
+    /// (1048:0a54).
+    NewsArchiveOrder = "news_archive_order",
+        "The news archive keeps its 26th and 27th messages in order when it first fills";
+    /// The TV's lights don't draw from the game's random numbers, so the
+    /// speech doesn't change the game (1048:1b3e).
+    TvLights = "tv_lights",
+        "The TV's blinking lights no longer use the game's random numbers, so the speech doesn't change the game";
 }
 
 enhancements! {

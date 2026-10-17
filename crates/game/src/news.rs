@@ -15,6 +15,7 @@
 //! `docs/original-bugs.md`, "Design issues for multiplayer", for the
 //! intended multiplayer behaviour).
 
+use crate::enhance::Fix;
 use crate::simulation::Tick;
 use crate::world::{Pos, World};
 
@@ -317,10 +318,13 @@ impl World {
         let news = &mut self.news;
         news.nothing_yet = false;
         // BUG(original): the first wrap leaves entry 24 empty, so the next message goes there and the 26th and 27th stay in the wrong order for good.
+        let in_order = self.fixes.has(Fix::NewsArchiveOrder);
         let mut n = 0;
         let index = loop {
             if news.entries[n].is_empty() || n == ARCHIVE_ENTRIES - 1 {
-                if n == ARCHIVE_ENTRIES - 1 {
+                // With `fix.news_archive_order` an empty last entry takes
+                // the message without the others moving up.
+                if n == ARCHIVE_ENTRIES - 1 && !(in_order && news.entries[n].is_empty()) {
                     news.entries.remove(0);
                     let last = news.entries[ARCHIVE_ENTRIES - 2].clone();
                     news.entries.push(last);
@@ -389,8 +393,11 @@ impl World {
     /// `Random(5)`, and one time in `Random(20)` the upper one's
     /// `Random(3) + 1`. The view draws them ([`Tick::tv_lights`]).
     // BUG(original): the TV's lights draw from the game's random numbers, so how long the speaker reads (and the speech option) changes the game.
+    ///
+    /// With `fix.tv_lights` the world draws nothing; the view's TV blinks
+    /// its lights with its own random numbers.
     pub(crate) fn tv_lights(&mut self, tick: &mut Tick) {
-        if self.news.speaker != Speaker::Reading {
+        if self.news.speaker != Speaker::Reading || self.fixes.has(Fix::TvLights) {
             return;
         }
         let lower = self.random.random(5);
@@ -492,6 +499,21 @@ mod tests {
         assert_eq!(tick.news.len(), 28);
         assert!(tick.news.iter().all(|p| !p.opens_tv([false; 4])));
         assert!(!w.clock.paused);
+    }
+
+    #[test]
+    fn fix_news_archive_order() {
+        let mut w = World::default();
+        w.fixes.set(Fix::NewsArchiveOrder, true);
+        let mut tick = Tick::default();
+        let days = |w: &World| w.news.entries.iter().map(|e| e.day).collect::<Vec<_>>();
+        for k in 0..28 {
+            w.days = k;
+            w.post_message(message(0), &mut tick);
+            assert_eq!(w.news.last, i16::try_from(k.min(25)).unwrap());
+        }
+        // In order, the oldest dropped first, nothing empty.
+        assert_eq!(days(&w), (2..28).collect::<Vec<_>>());
     }
 
     #[test]

@@ -13,6 +13,7 @@ use formats::ne::{RT_RCDATA, ResId, resources};
 use game::auction;
 use game::command::{self, Command};
 use game::darstellung::{BITMAP_FILES, Camera, Tiles};
+use game::enhance::Fixes;
 use game::hauptschirm::{self, Hauptschirm, LAYOUT, start_viewpoint};
 use game::hintergrund::{GameData, Island, new_island, new_world};
 use game::startform::Settings;
@@ -102,15 +103,31 @@ fn check(w: &World, what: &str) {
     assert_eq!(usize::try_from(area).unwrap(), land(w).0, "{what}");
 }
 
+/// The fixes are in place before the island is made: those of the
+/// generator change it.
+#[test]
+fn made_with_the_fixes() {
+    let Some(data) = game_data() else { return };
+    // `ATVariation1` and 2 are 30 and 34 here: `fix.atoll_hills` changes
+    // the hills.
+    let atoll = settings(0, 4, 4, 5);
+    let original = new_world(&atoll, &data, 0x1234_5678, Fixes::ORIGINAL);
+    let fixed = new_world(&atoll, &data, 0x1234_5678, Fixes::all_on());
+    assert_eq!(original.fixes, Fixes::ORIGINAL);
+    assert_eq!(fixed.fixes, Fixes::all_on());
+    assert_ne!(original.island, fixed.island);
+    check(&fixed, "fixed");
+}
+
 #[test]
 fn same_seed_same_island() {
     let Some(data) = game_data() else { return };
     let menu = Settings::default();
     assert_eq!(new_island(&menu, false), Island::Generated);
-    let first = new_world(&menu, &data, 0x1234_5678);
-    let again = new_world(&menu, &data, 0x1234_5678);
+    let first = new_world(&menu, &data, 0x1234_5678, Fixes::ORIGINAL);
+    let again = new_world(&menu, &data, 0x1234_5678, Fixes::ORIGINAL);
     assert_eq!(first, again);
-    let other = new_world(&menu, &data, 0x1234_5679);
+    let other = new_world(&menu, &data, 0x1234_5679, Fixes::ORIGINAL);
     assert_ne!(first.island, other.island);
     check(&first, "default");
     let (n, top) = land(&first);
@@ -134,7 +151,12 @@ fn every_setting_generates() {
                 for rivers in [0, 3, 10] {
                     seed = seed.wrapping_mul(0x0808_8405).wrapping_add(1);
                     let what = format!("shape {island} relief {relief} land {land_amount} rivers {rivers}");
-                    let w = new_world(&settings(island, relief, land_amount, rivers), &data, seed);
+                    let w = new_world(
+                        &settings(island, relief, land_amount, rivers),
+                        &data,
+                        seed,
+                        Fixes::ORIGINAL,
+                    );
                     check(&w, &what);
                     assert!(land(&w).0 > 0, "{what}: no land");
                 }
@@ -142,7 +164,7 @@ fn every_setting_generates() {
         }
     }
     for rivers in 0..=10 {
-        let w = new_world(&settings(2, 4, 4, rivers), &data, 77);
+        let w = new_world(&settings(2, 4, 4, rivers), &data, 77, Fixes::ORIGINAL);
         check(&w, &format!("rivers {rivers}"));
     }
 }
@@ -162,7 +184,12 @@ fn every_setting_combination_generates() {
                         seed = seed.wrapping_mul(0x0808_8405).wrapping_add(1);
                         let what =
                             format!("shape {island} relief {relief} land {land_amount} rivers {rivers} seed {seed}");
-                        let w = new_world(&settings(island, relief, land_amount, rivers), &data, seed);
+                        let w = new_world(
+                            &settings(island, relief, land_amount, rivers),
+                            &data,
+                            seed,
+                            Fixes::ORIGINAL,
+                        );
                         check(&w, &what);
                     }
                 }
@@ -176,7 +203,7 @@ fn rivers_reach_the_sea() {
     let Some(data) = game_data() else { return };
     let mut squares = 0;
     for seed in 0..8 {
-        let w = new_world(&settings(2, 4, 3, 10), &data, seed);
+        let w = new_world(&settings(2, 4, 3, 10), &data, seed, Fixes::ORIGINAL);
         let river = |pos| w.island.ground.get(pos).is_some_and(|g| g >= 0x37);
         for i in 1..250 {
             for j in 1..250 {
@@ -206,7 +233,7 @@ fn step(world: &mut World) {
 fn plays_a_generated_island() {
     let Some(data) = game_data() else { return };
     for (island, seed) in [(0, 11), (1, 12), (2, 13)] {
-        let mut w = new_world(&settings(island, 2, 2, 5), &data, seed);
+        let mut w = new_world(&settings(island, 2, 2, 5), &data, seed, Fixes::ORIGINAL);
         let start = w.clone();
         let year = w.date.year;
         while w.date.year < year + 2 {
@@ -347,7 +374,7 @@ fn draws_generated_islands() {
         ("one-hilly", settings(2, 4, 4, 10), 105),
         ("group-hilly", settings(1, 4, 0, 10), 106),
     ] {
-        let w = new_world(&s, &data, seed);
+        let w = new_world(&s, &data, seed, Fixes::ORIGINAL);
         let mut h = main_screen(0);
         assert_eq!(h.viewpoint(), w.viewpoint);
         h.paint_map(&w, &tiles);

@@ -97,7 +97,8 @@ box is as wide as the widest line or button row (column 8 of
 ## The buttons (1038:0d3a, 1038:2742, 1038:27b4, 1038:24d6)
 
 Only with `1110:64b8` set: on the map, on a square of the human or
-nobody (owner below 2) that isn't water, the button rows of the kind
+nobody (owner below 2; only the human's with `fix.nobodys_buildings`)
+that isn't water, the button rows of the kind
 (`WelcheButtonzeile`); else row 7, just OK. A row draws its buttons
 (`WelcheButton`) at its height, its text and its value: row 1 the rent a
 week, row 2 the price per visit (with the class's short text for a
@@ -164,7 +165,7 @@ are commands for player 1 (`Action::Renovate`, `Price`, `Bribe`,
 `Sell`), carried out by `World::renovate_building`, `step_price`,
 `bribe_builders` and `sell_building` in `game::infobox`, which check
 that the square is the player's or nobody's (the original only offers
-the buttons there). The world's ticks tell the view what it needs:
+the buttons there; with `fix.nobodys_buildings` the player's only). The world's ticks tell the view what it needs:
 `Tick::finished_sites` (the box closes over one) and `Tick::umenu`.
 
 Single human: the buttons are for squares of player 1 (or nobody), the

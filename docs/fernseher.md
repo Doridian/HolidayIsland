@@ -38,7 +38,8 @@ square pass the human's view origin (`1110:5530`).
 2. The entry: the first empty one (day -1) of 0..24, else 25, after
    entries 1..25 moved down to 0..24. The first wrap moves the empty 25
    into 24, so the 27th message goes into 24 and the 26th and 27th stay
-   the wrong way round for good (kept).
+   the wrong way round for good (kept; with `fix.news_archive_order` an
+   empty 25 takes the 26th without the others moving).
 3. `1110:6638` (the TV's page) and `6664` (the last entry) := it; `662e`
    (the first button) := `centre`.
 4. The entry (0x11c bytes): `+0` the day count (`1110:653a`, `Longint`),

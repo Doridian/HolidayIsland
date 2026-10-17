@@ -1597,7 +1597,34 @@ impl World {
         };
         world.unported = crate::savegame::unported_world_fields(save);
         world.link_plots();
+        if world.fixes.has(crate::enhance::Fix::LoadOrder) {
+            world.turn_loaded_lists();
+        }
         Ok(world)
+    }
+
+    /// Gives a world just loaded from a file ([`World::from_map`]) the
+    /// fixes `fixes`, where the file's chunk didn't decide them (an
+    /// original file plays with the player's): what loading did that
+    /// depends on them follows (`fix.load_order`).
+    pub fn set_loaded_fixes(&mut self, fixes: crate::enhance::Fixes) {
+        let order = crate::enhance::Fix::LoadOrder;
+        if self.fixes.has(order) != fixes.has(order) {
+            self.turn_loaded_lists();
+        }
+        self.fixes = fixes;
+    }
+
+    /// The building sites and the plots' lists of houses and facilities
+    /// the other way round: loading turns them round (1068:304f,
+    /// 1068:2d49), and `fix.load_order` turns them back to the order the
+    /// game that was saved had.
+    fn turn_loaded_lists(&mut self) {
+        self.building_sites.reverse();
+        for p in &mut self.plots {
+            p.houses.reverse();
+            p.facilities.reverse();
+        }
     }
 
     /// The plot with the number `plot`, if there is one. // 1068:2591

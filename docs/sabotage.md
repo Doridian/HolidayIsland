@@ -90,7 +90,8 @@ square under the mouse, the kind and player 1. In order:
    never sabotage).
 2. By kind, the square must fit (the table above); else error 0x1a. The
    piranhas' check never gives the error: its loop always ends at 6 and
-   tests for 5, so piranhas for a building that isn't a pool do nothing.
+   tests for 5, so piranhas for a building that isn't a pool do nothing
+   (`fix.sabotage_pool_error` gives 0x1a).
 3. 10a0:1d5e: the player pays the price (player 1: the books' "other",
    0x6a, and the money rising from the square). `Random(100) < 30`: it
    fails. Then `Random(100) < 50`: quietly (message 0x1c, "a saboteur

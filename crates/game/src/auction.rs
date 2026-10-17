@@ -17,6 +17,7 @@
 
 use crate::accounts::BOOK_NEW_BUILDINGS;
 use crate::construction::BUILDING_SITE;
+use crate::enhance::Fix;
 use crate::events::{UNSHAKEN, low_word};
 use crate::news::Message;
 use crate::simulation::Tick;
@@ -260,7 +261,7 @@ impl World {
         self.computer_bids(self.auction.price); // 10a8:0373
         let seller = self.events.get(SALE_EVENT).map_or(0, |e| e.arg);
         if self.auction.item == BUILDING_SALE && seller == 1 {
-            self.sell_to_computers(tick); // 1028:0c82
+            self.sell_to_computers(false, tick); // 1028:0c82
             return;
         }
         let a = &mut self.auction;
@@ -316,11 +317,13 @@ impl World {
             let b = self.random.random(7).cast_signed() + 2;
             let a = &self.auction;
             // BUG(original): a computer bids when its limit is above the price, though its bid (5 % more) may be above the limit.
-            if a.bidder != b
-                && !a.held
-                && self.random.random(30) == 1
-                && a.price < a.limits[usize::from(player_byte(b) - 1)]
-            {
+            let limit = a.limits[usize::from(player_byte(b) - 1)];
+            let within = if self.fixes.has(Fix::AuctionComputerLimit) {
+                a.price.wrapping_add(a.price / 20) <= limit
+            } else {
+                a.price < limit
+            };
+            if a.bidder != b && !a.held && self.random.random(30) == 1 && within {
                 self.auction_bid(b, tick); // 1028:15ef
             }
         }
@@ -416,11 +419,23 @@ impl World {
     /// and a computer (`Random(7) + 2`), until one whose limit is above
     /// the raised price, who gets the item at it. If none's is, a bankrupt
     /// player's property is cleared away (10a0:09ea). // 1028:0c82
-    fn sell_to_computers(&mut self, tick: &mut Tick) {
+    ///
+    /// With `fix.auction_pass` nothing happens once the item is sold
+    /// (`Timer1` gives it to the last bidder), and when no computer takes
+    /// it, a bidder who leads gets it at their bid; `passed` says the
+    /// player passed on the form (not the human's own sale, which only the
+    /// computers bid for).
+    fn sell_to_computers(&mut self, passed: bool, tick: &mut Tick) {
+        let fixed = passed && self.fixes.has(Fix::AuctionPass);
+        // BUG(original): passing hands the item to a computer or to nobody, even when a bidder leads (the player too); after the third call the close button gives it away a second time.
+        if fixed && self.auction.sold.is_some() {
+            return;
+        }
         let a = &self.auction;
         let best = a.limits[1..].iter().copied().max().unwrap_or(0);
-        // BUG(original): passing hands the item to a computer or to nobody, even when a bidder leads (the player too); after the third call the close button gives it away a second time.
-        if best > a.price {
+        let tried = best > a.price;
+        let mut sold = false;
+        if tried {
             for _ in 0..=100 {
                 let price = self.auction.price;
                 let raise = i32::from(self.random.random(20)).wrapping_mul(price / 20);
@@ -430,10 +445,14 @@ impl World {
                     self.auction.bidder = b;
                     self.auction.price = offer;
                     self.award_auction(tick); // 1028:08e7
+                    sold = true;
                     break;
                 }
             }
-        } else if self.auction.item == PROPERTY_SALE {
+        }
+        if fixed && !sold && self.auction.bidder != 0 {
+            self.award_auction(tick); // 1028:08e7
+        } else if !tried && self.auction.item == PROPERTY_SALE {
             let owner = self.events.get(PROPERTY_EVENT).map_or(0, |e| e.arg);
             self.clear_property(owner.to_le_bytes()[0], tick); // 10a0:09ea
         }
@@ -579,6 +598,8 @@ impl World {
         match action {
             Action::Hold(held) => self.auction.held = held,
             Action::Bid { checked } => {
+                // BUG(original): Enter bids without the money check, and even after the third call.
+                let checked = checked || self.fixes.has(Fix::AuctionEnterBid);
                 let a = &self.auction;
                 // The mouse does nothing on the buttons once it's sold.
                 if checked && a.sold.is_some() {
@@ -591,17 +612,16 @@ impl World {
                 }
                 let limit = a.limits.get(usize::from(player.wrapping_sub(1))).copied().unwrap_or(0);
                 // The view shows error 0xe (1030:232d) for the mouse.
-                // BUG(original): Enter bids without the money check, and even after the third call.
                 if checked && a.price.wrapping_add(a.price / 20) > limit {
                     return;
                 }
                 self.auction_bid(i16::from(player), tick);
             }
-            Action::Pass => self.sell_to_computers(tick),
+            Action::Pass => self.sell_to_computers(true, tick),
             Action::Close => self.close_auction(tick),
             Action::Leave => {
                 self.close_auction(tick);
-                self.sell_to_computers(tick);
+                self.sell_to_computers(true, tick);
             }
         }
     }
@@ -790,6 +810,100 @@ mod tests {
         assert!((2..=8).contains(&w.auction.bidder));
         assert_eq!(w.auction.price, 10_000);
         assert_eq!(tick.messages.len(), 1);
+    }
+
+    fn auction_command(w: &mut World, action: Action) -> Tick {
+        w.apply(Command {
+            player: 1,
+            action: command::Action::Auction(action),
+        })
+    }
+
+    #[test]
+    fn fix_auction_computer_limit() {
+        for fixed in [false, true] {
+            let mut w = world(false);
+            w.fixes.set(Fix::AuctionComputerLimit, fixed);
+            run(&mut w, OPEN_TICKS.into());
+            // Computer 2 would pay 10 100: above the price, below its bid.
+            w.auction.limits[1] = 10_100;
+            w.auction.limits[2..].fill(0);
+            let bids = run(&mut w, 3000)
+                .iter()
+                .flat_map(|t| t.auction_changes.clone())
+                .filter(|c| matches!(c, Change::Bid(_)))
+                .count();
+            assert_eq!(bids, usize::from(!fixed));
+            assert_eq!(w.auction.price, if fixed { 10_000 } else { 10_500 });
+        }
+    }
+
+    #[test]
+    fn fix_auction_pass() {
+        for fixed in [false, true] {
+            // The player leads and no computer would pay more.
+            let mut w = world(false);
+            w.fixes.set(Fix::AuctionPass, fixed);
+            run(&mut w, OPEN_TICKS.into());
+            assert_eq!(
+                auction_command(&mut w, Action::Bid { checked: true }).auction_changes,
+                [Change::Bid(1)]
+            );
+            w.auction.limits[1..].fill(0);
+            let tick = auction_command(&mut w, Action::Pass);
+            // The original gives the item to nobody.
+            assert_eq!(tick.messages.len(), usize::from(fixed));
+            assert_eq!(w.finances.money[0], if fixed { 50_000 - 10_500 } else { 50_000 });
+            // After the third call the close button sells it again.
+            let mut w = world(false);
+            w.fixes.set(Fix::AuctionPass, fixed);
+            run(&mut w, OPEN_TICKS.into());
+            auction_command(&mut w, Action::Bid { checked: true });
+            w.auction.sold = Some(SOLD_TICKS);
+            w.auction.limits[1..].fill(1_000_000);
+            let tick = auction_command(&mut w, Action::Leave);
+            assert_eq!(tick.messages.len(), usize::from(!fixed));
+            assert_eq!(w.auction.bidder == 1, fixed);
+        }
+    }
+
+    #[test]
+    fn fix_auction_enter_bid() {
+        for fixed in [false, true] {
+            let mut w = world(false);
+            w.fixes.set(Fix::AuctionEnterBid, fixed);
+            run(&mut w, OPEN_TICKS.into());
+            // Over the player's money, Enter bids in the original.
+            w.auction.limits[0] = 10_400;
+            let enter = Action::Bid { checked: false };
+            assert_eq!(auction_command(&mut w, enter).auction_changes.is_empty(), fixed);
+            // And after the third call.
+            w.auction.bid_pause = 0;
+            w.auction.limits[0] = 1_000_000;
+            w.auction.sold = Some(SOLD_TICKS);
+            assert_eq!(auction_command(&mut w, enter).auction_changes.is_empty(), fixed);
+        }
+    }
+
+    #[test]
+    fn fix_tv_lights() {
+        for fixed in [false, true] {
+            let reading = |speaker| {
+                let mut w = world(false);
+                w.fixes.set(Fix::TvLights, fixed);
+                let _ = w.apply(Command {
+                    player: 1,
+                    action: command::Action::Speaker(speaker),
+                });
+                let ticks = run(&mut w, usize::from(OPEN_TICKS) * 2);
+                (w.random, ticks.iter().any(|t| t.tv_lights.is_some()))
+            };
+            let (read, lights) = reading(crate::news::Speaker::Reading);
+            let (open, _) = reading(crate::news::Speaker::Open);
+            // The original's lights take the game's random numbers.
+            assert_eq!(read == open, fixed);
+            assert_eq!(lights, !fixed);
+        }
     }
 
     #[test]

@@ -33,7 +33,11 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   player's defaults; loading a file without the chunk from the file
   menu keeps the running game's. `World::default()` and `World::from_map`
   of an original file have none, so the tests are in original mode unless
-  they ask for a fix. None is built yet.
+  they ask for a fix. A new game's world is set up with them in place
+  (`hintergrund::new_world` takes them), since some change the island
+  generator; a scenario's and a loaded game's get them as they're loaded
+  (`World::set_loaded_fixes`, as `fix.load_order` changes what loading
+  does). The fixes are keyed in "Simulation logic" below.
 - **View enhancements** (`enhance::Enhancement`, a set is
   `enhance::Enhancements`) change one player's screen, sound or input.
   They are that player's settings: `window_stacking`
@@ -133,51 +137,51 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 
 | Where | Bug | Kept |
 |---|---|---|
-| 1078:280b | Removing a building site leaves its location effect on the map ([simulation.md](simulation.md#open-questions)) | yes |
-| 1078:280b | Removing a sea bridge adds up a cost that is never charged | yes |
-| 1008:0f37 | Every price class's shop price level goes into the same byte (`+0xf`), so the last class wins; it also computes copies of the shops' places by class (1078:0780) and then drops them ([settlement.md](settlement.md#open-questions)) | yes |
-| 1060:0637 | Switching disasters off on the options form sets `1110:133c` for good, so the score stays lowered after they're switched on again ([options.md](options.md)) | yes |
-| 1008:0907 | Divides by `MaxPreis` where the range seems meant | yes |
-| Settlement | Buildings with owner 0 add into the slots next to theirs ([settlement.md](settlement.md#the-months-sums-11104aea)) | yes |
-| Settlement step 0x28 (1078:014c, 1078:0172) | The guests of houses with owner 0 are counted in player 8's interest, the `Longint` before the guests | yes |
-| Settlement, year end | Only the human pays advertising, insurance, cost of living and renovation; computers pay a sixth of their interest. This may be meant as a handicap, not a bug | yes |
-| 1010:129e | A palm that dies stays counted on its plot (`+0x354`) | yes |
-| 10a8:21de | Checks the area of the plot the computer is leaving, not the one it moves to | yes |
-| 10a8:388b | A category with more than 40 types writes them on into the next row of the computers' lists ([computer.md](computer.md#state)) | yes |
+| 1078:280b | Removing a building site leaves its location effect on the map ([simulation.md](simulation.md#open-questions)) | `site_effect` |
+| 1078:280b | Removing a sea bridge adds up a cost that is never charged | `bridge_demolition_cost`: `Strassenabrisskosten` a square, checked and booked as for a road |
+| 1008:0f37 | Every price class's shop price level goes into the same byte (`+0xf`), so the last class wins; it also computes copies of the shops' places by class (1078:0780) and then drops them ([settlement.md](settlement.md#open-questions)) | yes; not fixed: what was meant is unclear. The "level" by price class comes out as the price class itself (the places times their class over the places), and writing it to `+0x10..`, which the classes' quality reads (0 today), would change every plot's ratings |
+| 1060:0637 | Switching disasters off on the options form sets `1110:133c` for good, so the score stays lowered after they're switched on again ([options.md](options.md)) | yes; not fixed: looks meant, a mark that the game was played without disasters for a while (easy sets it from the start), so switching them off through a risky stretch costs score |
+| 1008:0907 | Divides by `MaxPreis` where the range seems meant | `price_class_range`: the tenth of `MinPreis`..`MaxPreis`, as for the rents |
+| Settlement | Buildings with owner 0 add into the slots next to theirs ([settlement.md](settlement.md#the-months-sums-11104aea)) | `ownerless_buildings`: into nothing |
+| Settlement step 0x28 (1078:014c, 1078:0172) | The guests of houses with owner 0 are counted in player 8's interest, the `Longint` before the guests | `ownerless_buildings` |
+| Settlement, year end | Only the human pays advertising, insurance, cost of living and renovation; computers pay a sixth of their interest. This may be meant as a handicap, not a bug | yes; not fixed: most likely the computers' handicap (the code marks it as player 1's), and making them pay would change the balance a lot |
+| 1010:129e | A palm that dies stays counted on its plot (`+0x354`) | `palm_removal` |
+| 10a8:21de | Checks the area of the plot the computer is leaving, not the one it moves to | `computer_area_change` |
+| 10a8:388b | A category with more than 40 types writes them on into the next row of the computers' lists ([computer.md](computer.md#state)) | `computer_type_lists`: stops at 40 |
 | 1098:0002 | Returns an undefined value; the port keeps the ship's heading | n/a |
-| Harbour ships (1098:04f9, from 1098:109f) | The second detour checks the ship's own square instead of the squares ahead ([people.md](people.md#open-questions)) | yes |
-| Harbour ships (1098:109f) | A ship with `+0x26` left marks the square ahead without going there | yes |
-| 1090:2373 | Works out a stage's offset for its spectators, then looks for them on the stage's own square | yes |
-| 1090:2c1f | A plane's second approach is accepted when either coordinate matches, not both | yes |
-| 1078:09f6 | A corner rising from the sea between plots merges the first pair by their numbers cut to a byte | yes |
-| 1080:3216 | Building any road (the computers' too) turns the "new people" animation option (`1110:0056`) on, whatever the player chose | yes |
-| 1078:2396 (computers) | The computers' roads use the ground the human's last road drag started on (`1110:704e`): after a drag from water they look for bridges ([computer.md](computer.md#levelling-and-roads)) | yes |
+| Harbour ships (1098:04f9, from 1098:109f) | The second detour checks the ship's own square instead of the squares ahead ([people.md](people.md#open-questions)) | `ship_detour`: its own square and the four ahead |
+| Harbour ships (1098:109f) | A ship with `+0x26` left marks the square ahead without going there | yes; not fixed: what was meant is unclear. The ship does get there (`sail`, at its step's end), so the marks only run a square ahead of it, like claiming the square |
+| 1090:2373 | Works out a stage's offset for its spectators, then looks for them on the stage's own square | `stage_spectators` |
+| 1090:2c1f | A plane's second approach is accepted when either coordinate matches, not both | `plane_approach` |
+| 1078:09f6 | A corner rising from the sea between plots merges the first pair by their numbers cut to a byte | `plot_merge_numbers` |
+| 1080:3216 | Building any road (the computers' too) turns the "new people" animation option (`1110:0056`) on, whatever the player chose | yes; not fixed: not a bug. `1110:0056` isn't a player's option (the options form has none) but a flag that `plan_road`, `draw_columns` (1050:0e68) and the overview map's scroll timers clear while they're busy and set when done, so no people spawn meanwhile; the road only sets it back |
+| 1078:2396 (computers) | The computers' roads use the ground the human's last road drag started on (`1110:704e`): after a drag from water they look for bridges ([computer.md](computer.md#levelling-and-roads)) | `computer_road_ground`: the ground of their start square |
 | 1090:0014, 1090:124f | The tools' pictures go into the people's records from 1 on: for a road drag or a building of more than 35 squares they overwrite real people (square, offset, picture, kind 6) ([player-tools.md](player-tools.md#the-pictures-over-the-island-10900014-1090124f-1090155b)) | no: the view keeps the pictures |
-| 10b0:03fa, 10b0:12c7 | The land only follows a moved corner where a neighbour is exactly two steps off, so existing cliffs get steeper | yes |
-| 10b0:12c7 | Lowering checks the buildings (and clears palms, adding their cost) of squares it reaches after an error already stopped it | yes |
-| 10b0:069f, 10b0:1907 | A palm cleared by moving the land only loses its building: its part, owner, plot count and location effect stay | yes |
-| 10b0:069f, 10b0:1907 | For player 1 the money check replaces any earlier error with 0xe | yes |
-| 1078:2178 | After a road is built only buildings whose square shows part 0 get their connection again, so houses with another look never do | yes |
-| 1038:1a75 | The info box offers its buttons on squares of nobody (owner 0) too: the human renovates, re-prices or sells nobody's buildings and bribes on nobody's sites | yes |
-| 1028:1973 | A computer bids when its limit is above the price, though its bid (5 % more) may be above its limit ([auction.md](auction.md#a-step-10281973)) | yes |
-| 1028:0c82 | Passing (or the close button) hands the item to a computer at a random raise, or to nobody, even when someone (the player too) leads; after the third call the close button gives the item away again before `Timer1` does | yes |
-| 1028:26e4 | Enter bids without checking the player's money, and even after the third call, when the mouse can't | yes |
-| 1028:08e7 | Player 8 gets nothing for an item (`make_available` has no case for 8); item 6 gives nothing but its message, and an unknown item nothing at all, for the price | yes |
-| 10a8:0167 | A computer's bid overflows when its range (what it can pay or three times the price, less the price) passes about 2 150 000, and wraps | yes |
-| 10b0:3c5c | The atoll's small hills stray from the ring by `ATVariation2` but are centred by half of `ATVariation1` | yes |
-| 10b0:4506 | A river's 1500th try at a start is taken without looking at its corners, so a river always starts, maybe on the flat or in the sea | yes |
-| 10b0:0e0c, 10b0:2053 | The generator's raising and lowering write the working copy back after an error, with the corners moved before it: rivers leave cliffs | yes |
-| 10b0:48d7 | A river's distance on the flat is an `Integer` that wraps: ways that tie to the map's edge look on round the other side | yes |
-| 10b0:424f | A river square of another ground (sand to grass on the flat, water at a bend) or on a slope that falls another way gets no piece: a gap in the river | yes |
+| 10b0:03fa, 10b0:12c7 | The land only follows a moved corner where a neighbour is exactly two steps off, so existing cliffs get steeper | `levelling_cliffs`: two or more |
+| 10b0:12c7 | Lowering checks the buildings (and clears palms, adding their cost) of squares it reaches after an error already stopped it | `levelling_errors` |
+| 10b0:069f, 10b0:1907 | A palm cleared by moving the land only loses its building: its part, owner, plot count and location effect stay | `palm_removal` |
+| 10b0:069f, 10b0:1907 | For player 1 the money check replaces any earlier error with 0xe | `levelling_errors` |
+| 1078:2178 | After a road is built only buildings whose square shows part 0 get their connection again, so houses with another look never do | `road_connections`: the first square of any look |
+| 1038:1a75 | The info box offers its buttons on squares of nobody (owner 0) too: the human renovates, re-prices or sells nobody's buildings and bribes on nobody's sites | `nobodys_buildings`: the buttons, and the commands, for the player's own only |
+| 1028:1973 | A computer bids when its limit is above the price, though its bid (5 % more) may be above its limit ([auction.md](auction.md#a-step-10281973)) | `auction_computer_limit` |
+| 1028:0c82 | Passing (or the close button) hands the item to a computer at a random raise, or to nobody, even when someone (the player too) leads; after the third call the close button gives the item away again before `Timer1` does | `auction_pass`: a leading bid stands when no computer takes the item; nothing once it's sold |
+| 1028:26e4 | Enter bids without checking the player's money, and even after the third call, when the mouse can't | `auction_enter_bid` |
+| 1028:08e7 | Player 8 gets nothing for an item (`make_available` has no case for 8); item 6 gives nothing but its message, and an unknown item nothing at all, for the price | `prize_player8` for player 8; item 6 and unknown items not fixed: nothing says what they should give |
+| 10a8:0167 | A computer's bid overflows when its range (what it can pay or three times the price, less the price) passes about 2 150 000, and wraps | `computer_bid_overflow` |
+| 10b0:3c5c | The atoll's small hills stray from the ring by `ATVariation2` but are centred by half of `ATVariation1` | `atoll_hills` |
+| 10b0:4506 | A river's 1500th try at a start is taken without looking at its corners, so a river always starts, maybe on the flat or in the sea | `river_start`: no river then |
+| 10b0:0e0c, 10b0:2053 | The generator's raising and lowering write the working copy back after an error, with the corners moved before it: rivers leave cliffs | `generator_levelling` |
+| 10b0:48d7 | A river's distance on the flat is an `Integer` that wraps: ways that tie to the map's edge look on round the other side | `river_flat_way`: the last way still open at the edge |
+| 10b0:424f | A river square of another ground (sand to grass on the flat, water at a bend) or on a slope that falls another way gets no piece: a gap in the river | yes; not fixed: `FLUSSPOS.DAT` has no pieces for those grounds and slopes, so nothing says what should go there |
 | 1088:868c, 1010:3ab4 | A new game leaves the people records' last bytes, record 0, the planes' unused track rows and the events' 13th value as the heap had them | no: 0 |
-| 1048:2a19 (`World::keep_unsaved`) | Not saved, so a loaded game takes them from the game in memory (from the file menu, the game that was running): `RandSeed`, the oil slick (`1110:0088`), the people's `6fcc`, `6fce`, `6ff2`, `7040` and `3c42`, the auction's limits, joined flag and timers, and the computers' road candidates past the file's player count ([savegame.md](savegame.md#what-a-saved-game-loses)) | yes |
-| 1068:30d0, 1068:304f | `save_map` writes the building sites from the list's head and `load_map` puts each in front: a reload turns them round | yes |
-| 1068:2d49 | Loading builds each plot's lists of houses and facilities backwards from the houses' list, not in the order the game had them | yes |
-| 1048:358f | A line shorter than three characters keeps the previous line's bytes, so one after a `***` line also ends a list of `HAUSNAME.TXT` | yes |
-| 10a0:1f65 | Piranhas ordered for a building that isn't a pool do nothing, without the error 0x1a the other kinds give: the loop over the pools always ends at 6, and the check is for 5 ([sabotage.md](sabotage.md)) | yes |
+| 1048:2a19 (`World::keep_unsaved`) | Not saved, so a loaded game takes them from the game in memory (from the file menu, the game that was running): `RandSeed`, the oil slick (`1110:0088`), the people's `6fcc`, `6fce`, `6ff2`, `7040` and `3c42`, the auction's limits, joined flag and timers, and the computers' road candidates past the file's player count ([savegame.md](savegame.md#what-a-saved-game-loses)) | yes; not fixed yet: a fix means carrying that state in the port's chunk, a change of the saved file rather than of the simulation |
+| 1068:30d0, 1068:304f | `save_map` writes the building sites from the list's head and `load_map` puts each in front: a reload turns them round | `load_order` |
+| 1068:2d49 | Loading builds each plot's lists of houses and facilities backwards from the houses' list, not in the order the game had them | `load_order` |
+| 1048:358f | A line shorter than three characters keeps the previous line's bytes, so one after a `***` line also ends a list of `HAUSNAME.TXT` | yes; not fixed: the data files are read before there's a world with fixes, and it changes nothing for the CD's files |
+| 10a0:1f65 | Piranhas ordered for a building that isn't a pool do nothing, without the error 0x1a the other kinds give: the loop over the pools always ends at 6, and the check is for 5 ([sabotage.md](sabotage.md)) | `sabotage_pool_error` |
 | 10a0:1f65, 1028:3079 | A sabotage kind past the nine (only a command can ask for one) reads past `SABOTAGE.TXT`'s table | no: a free kind with no targets; nothing happens |
-| 1048:0a54 | When the news archive first wraps, the empty 26th entry moves into the 25th, so the 27th message goes there and the 26th and 27th stay the wrong way round ([fernseher.md](fernseher.md#posting-a-message-10480a54)) | yes |
-| 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speech option and on how long the speech plays | yes: the view's TV tells the world (`Action::Speaker`), which draws them in its tick (`World::tv_lights`) ([sound.md](sound.md#the-tvs-speaker)) |
+| 1048:0a54 | When the news archive first wraps, the empty 26th entry moves into the 25th, so the 27th message goes there and the 26th and 27th stay the wrong way round ([fernseher.md](fernseher.md#posting-a-message-10480a54)) | `news_archive_order` |
+| 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speech option and on how long the speech plays | `tv_lights`: the view's TV draws its own. Kept, the view's TV tells the world (`Action::Speaker`), which draws them in its tick (`World::tv_lights`) ([sound.md](sound.md#the-tvs-speaker)) |
 
 ## UI quirks
 

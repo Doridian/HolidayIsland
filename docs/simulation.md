@@ -186,7 +186,8 @@ building:
     owner gets `price * days left div building time` back (`HAUSPREI`
     column 0, `HAUSDATA` column 0; player 1 also in the books, kind
     0x6a), and the site goes off the list. The site's effect stays on
-    the location map.
+    the location map (with `fix.site_effect` each square of the site
+    takes it off).
   - A full championship building (`1110:1418`): 0x1d.
   - Any other building, for `price div 20` (0xe if player 1 can't pay):
     the house's beach life is cleared (1078:267e, `clear_square` with
@@ -204,7 +205,9 @@ building:
   towards `j + 1`; then 0, 4 towards `i + 1`; 1, 5 towards `j - 1`) every
   square of bridge ground becomes water (1078:276f), then the square
   itself, and the roads at both ends are reconnected. 1078:276f adds up
-  `Strassenabrisskosten` per square in a sum nothing uses.
+  `Strassenabrisskosten` per square in a sum nothing uses. With
+  `fix.bridge_demolition_cost` the player pays that sum first, as for a
+  road (0xe if player 1 can't).
 - Anything else: 0x18.
 
 The empty squares' ground (10b0:3199): with a corner at sea level water
@@ -432,7 +435,8 @@ a young palm, 9 for a grown one and 0–7 for the eight looks of an old one.
 
 - A palm, by stage: 8 becomes 9; 9 becomes `Random(8)`; 0–7 dies if
   `Random(100) < 60`: the part goes back to the variant, the building to
-  255, and the palm's effect comes off the location map (1030:1dc6). The
+  255, and the palm's effect comes off the location map (1030:1dc6);
+  with `fix.palm_removal` it also comes off its plot's count. The
   square is redrawn either way (1050:21f9).
 - An empty square whose ground is in the set at `1110:13b8` (0, 1, 4: sand,
   grass, sand to grass), whatever its height: `plant_palm` (1010:1129) if
@@ -748,7 +752,9 @@ the original's once it runs.
 - Demolishing a building site doesn't take its effect (type 31's 90 %)
   off the location map. A demolished park comes off its plot's
   `+0x354`, a dead palm doesn't. The original's bridge demolition costs
-  nothing, though it adds up a cost.
+  nothing, though it adds up a cost. `fix.site_effect`,
+  `fix.palm_removal` and `fix.bridge_demolition_cost` mend these
+  ([original-bugs.md](original-bugs.md#simulation-logic)).
 - The plots' lists of houses and facilities hold the buildings' first
   squares in the port, not pointers; the settlement finds the records by
   them.

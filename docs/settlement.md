@@ -50,7 +50,7 @@ and a few more:
 | 1008:097f | A rent's class, 0–9: `(rent - MinMiete) · 10 div (MaxMiete - MinMiete)` |
 | 1008:0829, 1008:0863 | The fair rent for a house's stars, `MinMiete + stars · range div 100`, and how fair its rent is: `r = fair · 50 div rent`, `r` from 50 on, else `(r - 25) · 2`, clamped to 0–100; 100 for no rent |
 | 1008:0709, 1008:0776 | The same for a facility's price per visitor and day, by its class's `MinPreis`/`MaxPreis` |
-| 1008:0907 | A facility's price class, 0–9: `(price - MinPreis) · 10 div MaxPreis - MinPreis`. The original divides by `MaxPreis`, not by the range, and takes `MinPreis` off again |
+| 1008:0907 | A facility's price class, 0–9: `(price - MinPreis) · 10 div MaxPreis - MinPreis`. The original divides by `MaxPreis`, not by the range, and takes `MinPreis` off again; with `fix.price_class_range` it's `(price - MinPreis) · 10 div (MaxPreis - MinPreis)` |
 | 1008:06b6 | `a · 50 div b` clamped to 0–100 when `b > 0`, else 0: guests per place |
 | 1078:0780 | The class mixing: `out[k] = Σc mix[k][c] · in[c] div divisor`, the remainders carried on through all 100 terms so nobody gets lost |
 
@@ -79,7 +79,8 @@ restaurants (kind 2) and the other buildings; their running costs
 (insurance and the cost of living, negative); interest; the month's
 total. A building of nobody (owner 0) adds into player 8's slot of the
 sum before (and into the 11th `MaxPreis` for the houses' rent), as in
-the original.
+the original; with `fix.ownerless_buildings` into nothing, and its
+guests don't count as player 8's interest (step 0x28).
 
 ## The books (`TGeldmenuform`, 1070:1419)
 
@@ -208,12 +209,15 @@ renovations ([year_end](simulation.md#the-new-year-10084f64)) are ported.
 - 1008:0f37 writes each price class's shop price level into the same
   byte (`+0xf`), so `+0x10..` is never written and the last class wins;
   and it mixes copies of the shops' places by class (1078:0780) that it
-  then drops. Both look like bugs; the port keeps them.
-- `MaxPreis` divides in 1008:0907 where the range seems meant.
+  then drops. Both look like bugs; the port keeps them, with no fix:
+  the "level" by price class comes out as the price class itself, so
+  what was meant is unclear.
+- `MaxPreis` divides in 1008:0907 where the range seems meant
+  (`fix.price_class_range` divides by the range).
 - Division by zero (a type without beds or places, a factor with divisor
   0) stops the original; the port's divisions give 0.
 - Only the human pays advertising, insurance and the cost of living, and
   the computers pay a sixth of their interest (marked in the code as
-  player 1's).
+  player 1's): most likely their handicap, so no fix.
 - The events 10, 12, 16 and 18 and the computers' status text are
   saved, but what the scheduled events say isn't checked yet.
