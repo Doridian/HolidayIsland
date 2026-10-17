@@ -83,8 +83,12 @@ pub fn layout_for(width: i32, height: i32) -> [(&'static str, Rect); 10] {
 /// bigger than the original's smallest, 640 × 480, either way.
 pub const BIG_FROM: (i32, i32) = (640, 480);
 /// `buttoff.bmp`'s wooden piece between the button groups (the one at
-/// 75), which fills a wider button bar right of the last button.
+/// 75), which closes off a wider button bar's panel at both ends.
 const BAR_GAP: Rect = Rect::new(75, 0, 13, BUTTON_SIZE);
+/// The flat brown panel under the overview map's and money menu's
+/// buttons (`uebigmen.bmp`, `geldmenu.bmp`): its fill, light top and left
+/// edge and dark bottom and right edge, as palette indices.
+const PANEL: [u8; 3] = [187, 185, 188];
 /// How much of a scroll bar's trough stays at each end (the arrows and a
 /// little more) when `big_map` stretches it.
 const TROUGH_END: i32 = 32;
@@ -512,8 +516,12 @@ impl Hauptschirm {
         let b = &self.bitmaps;
         copy(&mut self.info, &self.info_bar); // 1030:213f
         copy(&mut self.status, &b[STATUS]); // 1030:21a8
-        // 1010:2af5: every button up, from buttoff.bmp (1050:0074).
+        // 1010:2b3b: the whole bar first (button 0x17 is all 640 pixels,
+        // the wooden pieces between the groups too), then 1010:2af5: every
+        // button up, from buttoff.bmp (1050:0074).
         let all = self.buttons.bounds();
+        let whole = Rect::new(0, 0, WIDTH, BUTTON_SIZE);
+        self.buttons.blit(0, 0, &b[BUTTOFF], whole, Rop::Copy, all);
         for x in BUTTONS {
             let r = Rect::new(x, 0, BUTTON_SIZE, BUTTON_SIZE);
             self.buttons.blit(x, 0, &b[BUTTOFF], r, Rop::Copy, all);
@@ -530,15 +538,30 @@ impl Hauptschirm {
         self.fill_button_bar();
     }
 
-    /// `big_map`'s wider button bar: the wooden piece between the button
-    /// groups over the rest, right of the last button.
+    /// `big_map`'s wider button bar: right of the last button, a wooden
+    /// piece like those between the button groups, the brown panel the
+    /// other menus have under their buttons, and a wooden piece at the end.
     fn fill_button_bar(&mut self) {
         let all = self.buttons.bounds();
-        let mut x = WIDTH;
-        while x < all.width() {
-            self.buttons.blit(x, 0, &self.bitmaps[BUTTOFF], BAR_GAP, Rop::Copy, all);
-            x += BAR_GAP.width();
+        let gap = BAR_GAP.width();
+        if all.width() <= WIDTH {
+            return;
         }
+        let gaps = [WIDTH, (all.width() - gap).max(WIDTH)];
+        for x in gaps {
+            self.buttons.blit(x, 0, &self.bitmaps[BUTTOFF], BAR_GAP, Rop::Copy, all);
+        }
+        let (left, right) = (WIDTH + gap, gaps[1]);
+        if right <= left {
+            return;
+        }
+        let (w, h) = (right - left, BUTTON_SIZE);
+        let [fill, light, dark] = PANEL;
+        self.buttons.fill_rect(Rect::new(left, 0, w, h), all, fill);
+        self.buttons.fill_rect(Rect::new(left, 0, w, 1), all, light);
+        self.buttons.fill_rect(Rect::new(left, 0, 1, h), all, light);
+        self.buttons.fill_rect(Rect::new(left, h - 1, w, 1), all, dark);
+        self.buttons.fill_rect(Rect::new(right - 1, 0, 1, h), all, dark);
     }
 
     /// Puts the info bar's background back from `x` on, `width` wide.
