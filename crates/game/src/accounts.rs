@@ -1,0 +1,521 @@
+//! The accounting's yearly parts (the `ABRECHNE` unit, segment `1008`):
+//! the new year's renovations and debt limit, and on the 2nd of January
+//! whether the scenario is won or lost. Also what those read: a player's
+//! net worth, the score and the money menu's books.
+
+use crate::simulation::{GameOver, Tick};
+use crate::world::{FIRST_BOOK, World};
+
+/// The books' kind the original books building costs under (1070:1419).
+pub const BOOK_BUILDING: u8 = 0x6a;
+/// The books' last year's total. // 1070:269d
+const BOOK_LAST_YEAR: u8 = 0x5e;
+/// The books' first kind of this year. // 1070:269d
+const BOOK_THIS_YEAR: u8 = 0x5f;
+/// The books' total of this year. // 1070:1452
+const BOOK_THIS_YEAR_TOTAL: u8 = 0x6b;
+
+/// Where the books' monthly history keeps each player's `Longint`s:
+/// 120 months of 8 players. // 1070:1345
+const HISTORY: usize = 0x1e14;
+/// The history's number of months and first month. // 1070:1345
+const HISTORY_MONTHS: usize = 0x2d1c;
+const HISTORY_START: usize = 0x2d1d;
+
+/// What a player whose money can't be read has: when the money is frozen,
+/// or for a player not in the game. // 1078:0191
+const NO_MONEY: i32 = 99_999_999;
+
+/// The building type scenario 5 counts. // 1008:00a2
+const SCENARIO_5_BUILDING: u8 = 0x6d;
+
+impl World {
+    /// The new year: the books' year ends (1070:269d), every player's
+    /// buildings are renovated if the year is a multiple of their interval
+    /// ([`World::renovation_years`]; the human pays for it), and the debt
+    /// limit goes up by 100 000, 50 000 or 10 000 by the difficulty.
+    /// // 1008:4f64
+    ///
+    /// The original then shows the money menu's new year if the player's
+    /// option `1110:0064` says so (1070:2b11).
+    pub(crate) fn year_end(&mut self) {
+        self.close_books_year();
+        let year = self.date.year.cast_signed();
+        for n in 0..self.houses.len() {
+            let h = &self.houses[n];
+            let (pos, building, condition) = (h.pos(), h.building(), h.condition());
+            if self.renovation_due(pos, year) {
+                self.renovate(pos, building, condition);
+                self.houses[n].set_condition(0x7f);
+            }
+        }
+        for n in 0..self.facilities.len() {
+            let f = &self.facilities[n];
+            let (pos, building, condition) = (f.pos(), f.building(), f.condition());
+            if self.renovation_due(pos, year) {
+                self.renovate(pos, building, condition);
+                self.facilities[n].set_condition(0x7f);
+            }
+        }
+        let f = &mut self.finances;
+        match self.difficulty {
+            0 => f.max_debt = f.max_debt.wrapping_add(100_000),
+            1 => f.max_debt = f.max_debt.wrapping_add(50_000),
+            2 => f.max_debt = f.max_debt.wrapping_add(10_000),
+            _ => {}
+        }
+    }
+
+    /// Whether the building at `pos` is renovated this `year`: its owner
+    /// (the square's) has an interval, and the year is a multiple of it.
+    /// // 1008:4f64
+    fn renovation_due(&self, pos: crate::world::Pos, year: i16) -> bool {
+        let owner = self.island.owners.get(pos).unwrap_or(0);
+        // `1110:1333 + owner`: 1110:1333 is 0, and past player 8 the
+        // original reads the bytes after the table.
+        let years = usize::from(owner)
+            .checked_sub(1)
+            .and_then(|i| self.renovation_years.get(i))
+            .copied()
+            .unwrap_or(0);
+        years != 0 && year % i16::from(years) == 0
+    }
+
+    /// The human pays for renovating their building at `pos` (marked:
+    /// the original only charges player 1; the computer players' buildings
+    /// are renovated for free). // 1008:4f64
+    fn renovate(&mut self, pos: crate::world::Pos, building: u8, condition: u8) {
+        if self.island.owners.get(pos) == Some(1) {
+            let cost = self.renovation_price(building, condition);
+            self.add_money(1, cost.wrapping_neg());
+            self.book(BOOK_BUILDING, cost.wrapping_neg());
+        }
+    }
+
+    /// What renovating a `building` in `condition` costs: `(127 -
+    /// condition) * Renovierungskosten * price div 1000`. // 1008:0660
+    #[must_use]
+    pub fn renovation_price(&self, building: u8, condition: u8) -> i32 {
+        (0x7f - i32::from(condition))
+            .wrapping_mul(self.renovation_cost)
+            .wrapping_mul(self.tables.hausprei(building, 0))
+            / 1000
+    }
+
+    /// The scenario's check on the 2nd of January, until it's won: won, the
+    /// game is over with a score if the player didn't cheat and the money
+    /// isn't frozen; lost, it's over without one. The view shows the end
+    /// (`schlussform`, 1068:1016) from [`Tick::game_over`]. // 1008:0512
+    pub(crate) fn january_second(&mut self, tick: &mut Tick) {
+        if self.won {
+            return;
+        }
+        if self.scenario_won() {
+            self.won = true;
+            let score = (!self.cheated && !self.finances.frozen).then(|| self.score()); // 1010:0faa
+            tick.game_over = Some(GameOver {
+                won: true,
+                score,
+                net_worth: self.net_worth(1),
+            });
+        } else if self.scenario_lost() {
+            self.won = false;
+            tick.game_over = Some(GameOver {
+                won: false,
+                score: None,
+                net_worth: self.net_worth(1),
+            });
+        }
+    }
+
+    /// Whether the human (marked: player 1) has reached the scenario's
+    /// goal. // 1008:0297
+    fn scenario_won(&self) -> bool {
+        match self.scenario {
+            // A normal game is won in 2056.
+            0 => self.date.year == 0x808,
+            1 => self.net_worth(1) >= 50_000_000,
+            2 => self.books_last_months(1) >= 120_000,
+            // Monopolus: everyone else is out.
+            3 => self.player_out(1) == 0 && (2..=8).all(|p| self.player_out(p) != 0),
+            4 => self.luxury_guests(1) >= 4000,
+            5 => self.facility_sum(1) >= 4000,
+            6 => self.books_last_months(1) >= 12_000 && self.plot_average() > 0x46,
+            // Not a scenario on the CD.
+            7 => self.date.year >= 2001 || self.net_worth(1) >= 1_000_000,
+            // The original returns an uninitialised byte.
+            _ => false,
+        }
+    }
+
+    /// Whether the human (player 1) has lost: bankrupt in a normal game
+    /// (which also marks them out), or the scenario's last year has come.
+    /// // 1008:042b
+    fn scenario_lost(&mut self) -> bool {
+        match self.scenario {
+            0 | 7 => {
+                let lost = self.bankrupt(1);
+                if lost {
+                    self.set_player_out(1, 1);
+                }
+                lost
+            }
+            1 | 2 | 3 | 6 => self.date.year == 2017,
+            4 => self.date.year == 2027,
+            5 => self.date.year == 2007,
+            _ => false,
+        }
+    }
+
+    /// Whether `player` is out of the game. // *1110:6f24 + 0x7f + player
+    #[must_use]
+    pub fn player_out(&self, player: u8) -> u8 {
+        self.player_block.get(0x7f + usize::from(player)).copied().unwrap_or(0)
+    }
+
+    pub fn set_player_out(&mut self, player: u8, out: u8) {
+        if let Some(b) = self.player_block.get_mut(0x7f + usize::from(player)) {
+            *b = out;
+        }
+    }
+
+    /// Whether `player` (still in the game) has gone bankrupt: their net
+    /// worth is below minus the debt limit, and for the human, last year's
+    /// books were in the red too. // 1008:0002
+    #[must_use]
+    pub fn bankrupt(&self, player: u8) -> bool {
+        if self.player_out(player) != 0 {
+            return false;
+        }
+        let broke = self.finances.max_debt.wrapping_neg() > self.net_worth(player);
+        if player == 1 {
+            broke && self.book_value(BOOK_LAST_YEAR) < 0 // 1070:13f1
+        } else {
+            broke
+        }
+    }
+
+    /// `player`'s money, or 99 999 999 while the money is frozen and for a
+    /// player not in the game. // 1078:0191
+    fn money_of(&self, player: u8) -> i32 {
+        if self.finances.frozen || player == 0 || player > self.player_count {
+            return NO_MONEY;
+        }
+        self.finances.money[usize::from(player - 1)]
+    }
+
+    /// What `player` owns: their buildings and building sites' value, at
+    /// least 0, and their money less their loan, saturating at the top.
+    /// // 1008:0c6e
+    #[must_use]
+    pub fn net_worth(&self, player: u8) -> i32 {
+        let assets = self.assets(player).max(0); // 1030:0ee7
+        // 1078:057a reads the loan; player 0 would read the money of 8.
+        let loan = usize::from(player)
+            .checked_sub(1)
+            .and_then(|i| self.finances.loan.get(i))
+            .copied()
+            .unwrap_or(0);
+        let cash = self.money_of(player).wrapping_sub(loan);
+        if cash > 0 && i32::MAX.wrapping_sub(cash).wrapping_sub(assets) < 0 {
+            i32::MAX
+        } else {
+            assets.wrapping_add(cash)
+        }
+    }
+
+    /// The value of `player`'s houses, other buildings and building sites
+    /// (their price). // 1008:0b0b
+    fn assets(&self, player: u8) -> i32 {
+        let owned = |pos| self.island.owners.get(pos) == Some(player);
+        let mut sum = 0i32;
+        for h in self.houses.iter().filter(|h| owned(h.pos())) {
+            sum = sum.wrapping_add(self.building_value(h.building(), h.value_1(), h.condition()));
+        }
+        for f in self.facilities.iter().filter(|f| owned(f.pos())) {
+            sum = sum.wrapping_add(self.building_value(f.building(), f.value_1(), f.condition()));
+        }
+        for s in self.building_sites.iter().filter(|s| owned(s.pos)) {
+            sum = sum.wrapping_add(self.tables.hausprei(s.building, 0));
+        }
+        sum
+    }
+
+    /// A building's value: its price times `value_1` over `HAUSDATA.DAT`'s
+    /// column 4 if that's positive, else times its condition over 127.
+    /// // 1008:0a56
+    fn building_value(&self, building: u8, value_1: u8, condition: u8) -> i32 {
+        let price = self.tables.hausprei(building, 0);
+        let column_4 = i32::from(self.tables.hausdata(building, 4));
+        if column_4 > 0 {
+            price.wrapping_mul(i32::from(value_1)) / column_4
+        } else {
+            price.wrapping_mul(i32::from(condition)) / 0x7f
+        }
+    }
+
+    /// The `+0x10` values (guests?) of `player`'s houses whose price is
+    /// over 320. // 1008:0134
+    fn luxury_guests(&self, player: u8) -> i32 {
+        self.houses
+            .iter()
+            .filter(|h| self.island.owners.get(h.pos()) == Some(player) && h.price() > 320)
+            .fold(0i32, |sum, h| sum.wrapping_add(i32::from(h.value_10())))
+    }
+
+    /// The `+0xc` values of `player`'s buildings of type 0x6d.
+    /// // 1008:00a2
+    fn facility_sum(&self, player: u8) -> i32 {
+        self.facilities
+            .iter()
+            .filter(|f| f.building() == SCENARIO_5_BUILDING && self.island.owners.get(f.pos()) == Some(player))
+            .fold(0i32, |sum, f| sum.wrapping_add(f.value_c()))
+    }
+
+    /// The plots' `+4` values averaged by their weights, rounded. The
+    /// original divides by zero without plots; the port says 0.
+    /// // 1008:01d2
+    fn plot_average(&self) -> i32 {
+        let (mut sum, mut weights) = (0i32, 0i32);
+        for p in &self.plots {
+            let w = i32::from(p.weight());
+            sum = sum.wrapping_add(w.wrapping_mul(i32::from(p.value_4())));
+            weights = weights.wrapping_add(w);
+        }
+        if weights == 0 {
+            return 0;
+        }
+        (weights / 2).wrapping_add(sum) / weights
+    }
+
+    /// The human's score, 0–100: the mean of their net worth in 90 000s,
+    /// their last twelve months' books in 1800s and their reputation, each
+    /// at most 100; lowered with `1110:133c` and on the easier levels (by
+    /// 10, 20 on easy, but never below half). // 1010:0faa
+    #[must_use]
+    pub fn score(&self) -> i32 {
+        let worth = (self.net_worth(1) / 90_000).clamp(0, 100);
+        let books = (self.books_last_months(1) / 1800).clamp(0, 100);
+        let reputation = i32::from(self.reputation(1)).min(100);
+        let mut score = (worth.wrapping_add(books).wrapping_add(reputation) / 3).clamp(0, 100);
+        let lower = |s: i32, by: i32| (s - by).max(0).max(s / 2);
+        if self.flag_133c {
+            score = lower(score, 10);
+        }
+        match self.difficulty {
+            0 => lower(score, 20),
+            1 => lower(score, 10),
+            _ => score,
+        }
+    }
+
+    /// Adds `amount` to the books' `kind` (marked: the books are the
+    /// human's). The original writes any field of the money menu for other
+    /// kinds; the port only has 0x52–0x6e. // 1070:1419
+    pub fn book(&mut self, kind: u8, amount: i32) {
+        if let Some(v) = kind
+            .checked_sub(FIRST_BOOK)
+            .and_then(|k| self.books.year.get_mut(usize::from(k)))
+        {
+            *v = v.wrapping_add(amount);
+        }
+    }
+
+    /// The books' `kind`, 0 outside 0x52–0x6e. // 1070:13f1
+    #[must_use]
+    pub fn book_value(&self, kind: u8) -> i32 {
+        kind.checked_sub(FIRST_BOOK)
+            .and_then(|k| self.books.year.get(usize::from(k)))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// The books' year ends: this year's total (1070:1452) and sums
+    /// become last year's, and this year's start at 0. // 1070:269d
+    ///
+    /// The original also redraws the money menu (1070:2ab8, 1070:1eeb).
+    fn close_books_year(&mut self) {
+        let y = &mut self.books.year;
+        let this = usize::from(BOOK_THIS_YEAR - FIRST_BOOK);
+        let total = usize::from(BOOK_THIS_YEAR_TOTAL - FIRST_BOOK);
+        y[total] = y[this..total].iter().fold(0i32, |s, &v| s.wrapping_add(v));
+        for k in 0..13 {
+            y[k] = y[this + k];
+            y[this + k] = 0;
+        }
+    }
+
+    /// The sum of `player`'s last twelve months (or fewer, as many as
+    /// there are) in the books' history. // 1070:1345
+    #[must_use]
+    pub fn books_last_months(&self, player: u8) -> i32 {
+        let h = &self.books.history;
+        let months = h.get(HISTORY_MONTHS).copied().unwrap_or(0);
+        let start = h.get(HISTORY_START).copied().unwrap_or(0);
+        let mut sum = 0i32;
+        for k in 1..=months.min(12) {
+            let month = (usize::from(months) + usize::from(start) - usize::from(k)) % 120;
+            let at = (HISTORY + month * 0x20 + usize::from(player) * 4).wrapping_sub(4);
+            if let Some(b) = h.get(at..at + 4) {
+                sum = sum.wrapping_add(i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+            }
+        }
+        sum
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::world::{BuildingSite, Facility, House, Tables};
+
+    fn world() -> World {
+        let mut hausprei = vec![[0; 4]; 127];
+        hausprei[40] = [10_000, 0, 0, 0];
+        hausprei[41] = [12_700, 0, 0, 0];
+        let mut hausdata = vec![[0; 10]; 127];
+        hausdata[40][4] = 4;
+        World {
+            tables: Arc::new(Tables {
+                hausnr: Vec::new(),
+                hausdata,
+                hausprei,
+            }),
+            player_count: 2,
+            renovation_cost: 3,
+            ..World::default()
+        }
+    }
+
+    #[test]
+    fn renovation() {
+        let mut w = world();
+        w.renovation_years = [2, 3, 0, 0, 0, 0, 0, 0];
+        w.date.year = 2000;
+        let mut mine = House::new((10, 10));
+        mine.set_building(41);
+        mine.set_condition(100);
+        w.island.owners.set((10, 10), 1);
+        let mut f = Facility::new(41, (20, 20));
+        f.set_condition(7);
+        w.island.owners.set((20, 20), 2);
+        w.houses = vec![mine, House::new((30, 30))];
+        w.facilities = vec![f];
+        w.year_end();
+        // 27 steps of condition at 3 per 1000 of 12 700.
+        assert_eq!(w.finances.money[0], -(27 * 3 * 12_700 / 1000));
+        assert_eq!(w.book_value(BOOK_LAST_YEAR), 0);
+        assert_eq!(w.book_value(BOOK_BUILDING), -1028);
+        assert_eq!(w.houses[0].condition(), 0x7f);
+        // Player 2's every three years: not in 2000.
+        assert_eq!(w.facilities[0].condition(), 7);
+        assert_eq!(w.finances.max_debt, 100_000);
+        w.date.year = 2001;
+        w.difficulty = 2;
+        w.houses[0].set_condition(50);
+        w.year_end();
+        assert_eq!(w.houses[0].condition(), 50);
+        // The computer player's renovation is free.
+        assert_eq!(w.facilities[0].condition(), 0x7f);
+        assert_eq!(w.finances.money[1], 0);
+        assert_eq!(w.book_value(BOOK_LAST_YEAR), -1028);
+        assert_eq!(w.book_value(0x5d), -1028);
+        assert_eq!(w.book_value(BOOK_BUILDING), 0);
+        assert_eq!(w.finances.max_debt, 110_000);
+    }
+
+    #[test]
+    fn net_worth() {
+        let mut w = world();
+        w.finances.money = [5000, 0, 0, 0, 0, 0, 0, 0];
+        w.finances.loan = [2000, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(w.net_worth(1), 3000);
+        let mut h = House::new((1, 1));
+        h.set_building(40);
+        h.set_value_1(2);
+        w.houses.push(h);
+        w.island.owners.set((1, 1), 1);
+        let mut f = Facility::new(41, (2, 2));
+        f.set_condition(10);
+        w.facilities.push(f);
+        w.island.owners.set((2, 2), 1);
+        w.building_sites.push(BuildingSite {
+            pos: (3, 3),
+            building: 40,
+            ..BuildingSite::default()
+        });
+        w.island.owners.set((3, 3), 1);
+        assert_eq!(w.net_worth(1), 3000 + 5000 + 1000 + 10_000);
+        w.finances.money[0] = i32::MAX;
+        assert_eq!(w.net_worth(1), i32::MAX);
+        w.finances.frozen = true;
+        assert_eq!(w.net_worth(1), NO_MONEY - 2000 + 16_000);
+    }
+
+    #[test]
+    fn bankrupt_and_lost() {
+        let mut w = world();
+        w.finances.max_debt = 1000;
+        w.finances.money[0] = -1001;
+        assert!(!w.bankrupt(1));
+        w.books.year[usize::from(BOOK_LAST_YEAR - FIRST_BOOK)] = -1;
+        assert!(w.bankrupt(1));
+        w.finances.money[1] = -1001;
+        assert!(w.bankrupt(2));
+        let mut tick = Tick::default();
+        w.january_second(&mut tick);
+        assert_eq!(
+            tick.game_over,
+            Some(GameOver {
+                won: false,
+                score: None,
+                net_worth: -1001
+            })
+        );
+        assert_eq!(w.player_out(1), 1);
+        assert!(!w.bankrupt(1));
+    }
+
+    #[test]
+    fn won_with_a_score() {
+        let mut w = world();
+        w.scenario = 1;
+        w.difficulty = 2;
+        w.finances.money[0] = 50_000_000;
+        w.set_reputation(1, 50);
+        let mut tick = Tick::default();
+        w.january_second(&mut tick);
+        // (100 + 0 + 50) / 3.
+        assert_eq!(tick.game_over.map(|g| (g.won, g.score)), Some((true, Some(50))));
+        assert!(w.won);
+        // Only once.
+        let mut tick = Tick::default();
+        w.january_second(&mut tick);
+        assert_eq!(tick.game_over, None);
+        w.difficulty = 0;
+        assert_eq!(w.score(), 30);
+        w.cheated = true;
+        w.won = false;
+        w.january_second(&mut tick);
+        assert_eq!(tick.game_over.map(|g| g.score), Some(None));
+    }
+
+    #[test]
+    fn history() {
+        let mut w = world();
+        let h = &mut w.books.history;
+        h[HISTORY_MONTHS] = 14;
+        h[HISTORY_START] = 110;
+        for month in 0..120 {
+            let at = HISTORY + month * 0x20 + 4;
+            h[at..at + 4].copy_from_slice(&i32::try_from(month).unwrap().to_le_bytes());
+        }
+        // Months 123 down to 112, wrapping round the ring.
+        let expected: i32 = (112..124).map(|m| m % 120).sum();
+        assert_eq!(w.books_last_months(2), expected);
+        assert_eq!(w.scenario, 0);
+        assert!(!w.scenario_won());
+    }
+}

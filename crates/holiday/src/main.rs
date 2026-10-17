@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use formats::bmp::Bitmap;
 use formats::data::{
-    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, modatyp, monate, sonstige,
-    start_txt, straspos, szenario_txt,
+    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, hausprei, modatyp, monate,
+    sonstige, start_txt, straspos, szenario_txt,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
@@ -400,6 +400,7 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
     world.tables = Arc::new(Tables {
         hausnr: hausnr(&read(dir, "DATA/HAUSNR.DAT")).expect("HAUSNR.DAT"),
         hausdata: hausdata(&read(dir, "DATA/HAUSDATA.DAT")).expect("HAUSDATA.DAT"),
+        hausprei: hausprei(&read(dir, "DATA/HAUSPREI.DAT")).expect("HAUSPREI.DAT"),
     });
     let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
     let origin = map.field("1110:5530").map_or((0, 0), |d| {

@@ -125,6 +125,13 @@ pub struct Damage {
     pub slick: Pos,
 }
 
+/// What earthquakes and floods leave standing: palms, beach life and
+/// empty squares. // 1110:1358 (`set of Byte`)
+pub const UNSHAKEN: [u8; 3] = [12, 36, 255];
+
+/// How many squares an earthquake hits each hour. // 10a0:0d1c
+const QUAKE_SQUARES: usize = 100;
+
 impl World {
     /// Counts the day ([`World::days`]) and goes through the events. One
     /// that isn't running starts on a day in its window with its chance
@@ -299,6 +306,27 @@ impl World {
         self.damage.insured = self.insured;
     }
 
+    /// An hour of an earthquake: 100 random squares (`Random(250)` for `i`,
+    /// then `j`) lose their building and people, unless it's a palm or
+    /// beach life; the human's count as damage at half their price
+    /// (marked: only player 1's). // 10a0:0d1c
+    pub(crate) fn quake_damage(&mut self, tick: &mut Tick) {
+        for _ in 0..QUAKE_SQUARES {
+            let i = self.random.random(250).cast_signed();
+            let j = self.random.random(250).cast_signed();
+            let building = self.island.buildings.at((i, j));
+            if UNSHAKEN.contains(&building) {
+                continue;
+            }
+            if self.island.owners.at((i, j)) == 1 {
+                let half = self.tables.hausprei(building, 0) / 2;
+                self.damage.amount = self.damage.amount.wrapping_add(half);
+            }
+            self.remove_people_from((i, j));
+            self.demolish(0, (i, j), tick);
+        }
+    }
+
     /// A flood or an earthquake ends: an insured player gets the damage
     /// back. // 10a0:0cce, 10a0:0ddc
     fn disaster_end(&mut self) {
@@ -314,10 +342,10 @@ impl World {
 #[allow(clippy::unused_self)]
 impl World {
     /// The flood begins: no damage yet, insurance as for an earthquake,
-    /// and every square at sea level (lowest corner below 2) whose ground
-    /// isn't in the set at `1110:1358` loses its building (1078:280b), the
-    /// player's counted as damage (`HAUSPREI.DAT`), and its people
-    /// (1088:2df2). // 10a0:0b49, 389 bytes
+    /// and every square at sea level (lowest corner below 2) whose building
+    /// isn't one of [`UNSHAKEN`] loses it (1078:280b), the player's counted
+    /// as damage (`HAUSPREI.DAT`), and its people (1088:2df2).
+    /// // 10a0:0b49, 389 bytes
     fn flood_start(&mut self) {
         // TODO: port the demolition once 1078:280b and the people are.
         self.quake_start();
@@ -338,6 +366,23 @@ impl World {
     /// insured, the oil gone. // 10a0:0915, 213 bytes
     fn oil_slick_end(&mut self) {
         // TODO: port with 10a0:074d.
+    }
+
+    /// Takes the people on `pos` off the island (1088:2df2), and those in
+    /// the building there. // 1088:6975, 567 bytes
+    fn remove_people_from(&mut self, pos: Pos) {
+        // TODO: port 1088:6975 with the people (`*1110:6fd6`).
+        let _ = pos;
+    }
+
+    /// Demolishes what's on `pos` for `player` (0: for no one, without
+    /// costs or error messages): a building site, a building (its price
+    /// back, through 1078:1684), a road or a river piece. // 1078:280b,
+    /// 2662 bytes
+    fn demolish(&mut self, player: u8, pos: Pos, tick: &mut Tick) {
+        // TODO: port 1078:280b once the building records (1078:1684) and
+        // the people are. Until then an earthquake only counts its damage.
+        let _ = (player, pos, tick);
     }
 
     /// Building type `building` becomes available in the build menu
@@ -523,6 +568,33 @@ mod tests {
         assert!(!w.earthquake);
         assert_eq!(tick.messages[0].number, 39);
         assert_eq!(w.finances.money[0], 1234);
+    }
+
+    #[test]
+    fn quake_damage() {
+        let mut hausprei = vec![[0; 4]; 13];
+        hausprei[5][0] = 1001;
+        let mut w = World {
+            tables: std::sync::Arc::new(crate::world::Tables {
+                hausnr: Vec::new(),
+                hausdata: Vec::new(),
+                hausprei,
+            }),
+            random: Random::new(4),
+            ..World::default()
+        };
+        let mut r = Random::new(4);
+        let squares: Vec<Pos> = (0..QUAKE_SQUARES)
+            .map(|_| (r.random(250).cast_signed(), r.random(250).cast_signed()))
+            .collect();
+        // The human's building on the first square, a palm on the second.
+        w.island.buildings.set(squares[0], 5);
+        w.island.owners.set(squares[0], 1);
+        w.island.buildings.set(squares[1], 12);
+        w.island.owners.set(squares[1], 1);
+        w.quake_damage(&mut Tick::default());
+        assert_eq!(w.damage.amount, 500);
+        assert_eq!(w.random, r);
     }
 
     #[test]

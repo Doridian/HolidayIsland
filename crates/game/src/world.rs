@@ -183,6 +183,20 @@ impl Plot {
     pub fn set_palms(&mut self, palms: i16) {
         self.0[0x354..0x356].copy_from_slice(&palms.to_le_bytes());
     }
+
+    /// Not known yet: a value 0–255 that scenario 6 averages over the
+    /// plots, weighted by [`Plot::weight`]. // +4
+    #[must_use]
+    pub fn value_4(&self) -> u8 {
+        self.0[4]
+    }
+
+    /// Not known yet (its size?): the weight of [`Plot::value_4`].
+    /// // +0x352
+    #[must_use]
+    pub fn weight(&self) -> u16 {
+        self.word(0x352).cast_unsigned()
+    }
 }
 
 /// The size of a [`House`] record. // 1068:2e05
@@ -215,10 +229,49 @@ impl House {
         self.0[at..at + 2].copy_from_slice(&value.to_le_bytes());
     }
 
+    /// The building type. // +0
+    #[must_use]
+    pub fn building(&self) -> u8 {
+        self.0[0]
+    }
+
+    pub fn set_building(&mut self, building: u8) {
+        self.0[0] = building;
+    }
+
     /// The square the building starts at. // +3, +5
     #[must_use]
     pub fn pos(&self) -> Pos {
         (self.word(3), self.word(5))
+    }
+
+    /// `HAUSDATA.DAT`'s column 4 for its type, copied when it was built
+    /// (1068:1a08). // +1
+    #[must_use]
+    pub fn value_1(&self) -> u8 {
+        self.0[1]
+    }
+
+    pub fn set_value_1(&mut self, value: u8) {
+        self.0[1] = value;
+    }
+
+    /// Its condition: 127 when new or renovated ([`World::year_end`]),
+    /// which its value follows. // +7
+    #[must_use]
+    pub fn condition(&self) -> u8 {
+        self.0[7]
+    }
+
+    pub fn set_condition(&mut self, condition: u8) {
+        self.0[7] = condition;
+    }
+
+    /// Probably its price per night: `HAUSPREI.DAT`'s third column when
+    /// it was built. // +0x12, `Longint`
+    #[must_use]
+    pub fn price(&self) -> i32 {
+        i32::from_le_bytes([self.0[0x12], self.0[0x13], self.0[0x14], self.0[0x15]])
     }
 
     /// Not known yet, maybe its guests: how much beach life it gets
@@ -265,6 +318,141 @@ impl House {
     }
 }
 
+/// The size of a [`Facility`] record. // 1068:2ebc
+pub const FACILITY_SIZE: usize = 0x1b;
+
+/// A finished building of the kinds that aren't in the houses' list
+/// (`1110:1341[HAUSDATA.DAT column 5]` is 1 or 2 for them, 0 for houses;
+/// restaurants, shops and the like?), the record as the map file stores it.
+/// Only the fields the ported code uses are known; `+8` is the list's far
+/// pointer to the next record. // *1110:6f14
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Facility(Vec<u8>);
+
+impl Facility {
+    /// A record of zeros for `building` at `pos`, in the condition of a new
+    /// one.
+    #[must_use]
+    pub fn new(building: u8, (i, j): Pos) -> Self {
+        let mut r = vec![0; FACILITY_SIZE];
+        r[0] = building;
+        r[3..5].copy_from_slice(&i.to_le_bytes());
+        r[5..7].copy_from_slice(&j.to_le_bytes());
+        r[7] = 0x7f;
+        Facility(r)
+    }
+
+    fn word(&self, at: usize) -> i16 {
+        i16::from_le_bytes([self.0[at], self.0[at + 1]])
+    }
+
+    /// The building type. // +0
+    #[must_use]
+    pub fn building(&self) -> u8 {
+        self.0[0]
+    }
+
+    /// Like [`House::value_1`]. // +1
+    #[must_use]
+    pub fn value_1(&self) -> u8 {
+        self.0[1]
+    }
+
+    /// The square the building starts at. // +3, +5
+    #[must_use]
+    pub fn pos(&self) -> Pos {
+        (self.word(3), self.word(5))
+    }
+
+    /// Its condition, like [`House::condition`]. // +7
+    #[must_use]
+    pub fn condition(&self) -> u8 {
+        self.0[7]
+    }
+
+    pub fn set_condition(&mut self, condition: u8) {
+        self.0[7] = condition;
+    }
+
+    /// Not known yet: what scenario 5 counts for building type 0x6d.
+    /// // +0xc, `Longint`
+    #[must_use]
+    pub fn value_c(&self) -> i32 {
+        i32::from_le_bytes([self.0[0xc], self.0[0xd], self.0[0xe], self.0[0xf]])
+    }
+
+    pub fn set_value_c(&mut self, value: i32) {
+        self.0[0xc..0x10].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+/// The size of a [`BuildingSite`] record. // 1068:304f
+pub const BUILDING_SITE_SIZE: usize = 0xd;
+
+/// A building under construction (building type 31 on its squares).
+/// // *1110:6f08, 13 bytes each (1068:1c7d)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct BuildingSite {
+    /// Not written by 1068:1c7d. // +0
+    pub byte_0: u8,
+    /// The building's first square. // +1, +3
+    pub pos: Pos,
+    /// Days left; it's finished when they reach 0. // +5
+    pub days: i16,
+    /// The building type it becomes. // +7
+    pub building: u8,
+    /// For a computer player's building, which of its budgets
+    /// ([`World::computer_budgets`]) it comes out of. // +8
+    pub budget: i8,
+}
+
+impl BuildingSite {
+    fn parse(r: &[u8]) -> Self {
+        let word = |at: usize| i16::from_le_bytes([r[at], r[at + 1]]);
+        BuildingSite {
+            byte_0: r[0],
+            pos: (word(1), word(3)),
+            days: word(5),
+            building: r[7],
+            budget: r[8].cast_signed(),
+        }
+    }
+}
+
+/// The number of [`World::computer_budgets`]: 13 for each of players 2
+/// to 8. // *1110:6512, 0x16c bytes
+pub const COMPUTER_BUDGETS: usize = 7 * 13;
+
+/// The money menu's books (`TGeldmenuform`, `*1110:6f04`): the parts the
+/// world reads.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Books {
+    /// The human's sums by kind, `array[0x52..0x6e] of Longint`: kinds
+    /// 0x52–0x5d last year's, 0x5e last year's total, 0x5f–0x6a this
+    /// year's, 0x6b this year's total; 0x6c–0x6e not known yet.
+    /// // [1110:6f04]+0x49 + 4·kind, saved from +0x191
+    pub year: [i32; 29],
+    /// The monthly history: 120 months of a `Longint` for each player at
+    /// `+0x1e14`, a ring with the number of months at `+0x2d1c` and where
+    /// it starts at `+0x2d1d`; the rest isn't known yet.
+    /// // *[1110:6f04]+0x24b, 0x3c28 bytes
+    pub history: Vec<u8>,
+}
+
+/// The first kind in [`Books::year`].
+pub const FIRST_BOOK: u8 = 0x52;
+/// The size of [`Books::history`].
+pub const HISTORY_SIZE: usize = 0x3c28;
+
+impl Default for Books {
+    fn default() -> Self {
+        Books {
+            year: [0; 29],
+            history: vec![0; HISTORY_SIZE],
+        }
+    }
+}
+
 /// The size of [`World::player_block`]. // 1078:34ad
 pub const PLAYER_BLOCK_SIZE: usize = 0x88;
 
@@ -276,6 +464,9 @@ pub struct Tables {
     pub hausnr: Vec<[i16; 8]>,
     /// `HAUSDATA.DAT`, one row per building type. // *1110:7372
     pub hausdata: Vec<[i16; 10]>,
+    /// `HAUSPREI.DAT`, one row per building type; the first column is the
+    /// building's price. // *1110:736e
+    pub hausprei: Vec<[i32; 4]>,
 }
 
 impl Tables {
@@ -290,6 +481,12 @@ impl Tables {
     #[must_use]
     pub fn hausdata(&self, building: u8, column: usize) -> i16 {
         self.hausdata.get(usize::from(building)).map_or(0, |r| r[column])
+    }
+
+    /// A `HAUSPREI.DAT` cell, 0 for a type the table doesn't have.
+    #[must_use]
+    pub fn hausprei(&self, building: u8, column: usize) -> i32 {
+        self.hausprei.get(usize::from(building)).map_or(0, |r| r[column])
     }
 }
 
@@ -466,6 +663,36 @@ pub struct World {
     pub plots: Vec<Plot>,
     /// The finished buildings, in the list's order. // *1110:6f10
     pub houses: Vec<House>,
+    /// The other finished buildings, in the list's order. // *1110:6f14
+    pub facilities: Vec<Facility>,
+    /// The buildings under construction, in the list's order: new ones
+    /// come first (1068:1c7d), and since loading a map puts each record in
+    /// front of the ones before it (1068:304f), the file has them the other
+    /// way round. // *1110:6f08
+    pub building_sites: Vec<BuildingSite>,
+    /// Each computer player's budgets, 13 for each of players 2 to 8,
+    /// which their buildings' costs come out of. // *1110:6512
+    pub computer_budgets: Vec<i32>,
+    /// The money menu's books.
+    pub books: Books,
+    /// Every how many years each player's buildings are renovated, 0 for
+    /// never ([`World::year_end`]). `array[1..8] of Byte`. // 1110:1334
+    pub renovation_years: [u8; 8],
+    /// `Renovierungskosten` (`MODATYP.DAT`): what renovating costs, per
+    /// 1000 of a building's price and step of condition. // 1110:64c2
+    pub renovation_cost: i32,
+    /// The scenario, 1–6, 0 for a normal game: what wins and loses it
+    /// ([`World::january_second`]). // 1110:006e
+    pub scenario: u8,
+    /// Probably that the player cheated: a key on the main screen sets it
+    /// (`hauptschirm_formkeydown`), and a won game then gets no score.
+    /// // 1110:006f
+    pub cheated: bool,
+    /// The scenario is won. // 1110:0071
+    pub won: bool,
+    /// Not known yet: set on easy when a scenario starts, and by the
+    /// options (1060:0637); it lowers the score. // 1110:133c
+    pub flag_133c: bool,
     /// A block of per-player values, mostly not known yet; `+0x2f +
     /// player` is the player's reputation ([`World::reputation`]).
     /// // *1110:6f24, 0x88 bytes
@@ -511,6 +738,16 @@ impl Default for World {
             options: Options::default(),
             plots: Vec::new(),
             houses: Vec::new(),
+            facilities: Vec::new(),
+            building_sites: Vec::new(),
+            computer_budgets: vec![0; COMPUTER_BUDGETS],
+            books: Books::default(),
+            renovation_years: [0, 1, 1, 1, 1, 1, 1, 1],
+            renovation_cost: 0,
+            scenario: 0,
+            cheated: false,
+            won: false,
+            flag_133c: false,
             player_block: vec![0; PLAYER_BLOCK_SIZE],
             sabotage: Default::default(),
             championships: Default::default(),
@@ -544,6 +781,47 @@ fn word(save: &SaveGame, dest: &'static str) -> Result<u16, Error> {
 
 fn longint(save: &SaveGame, dest: &'static str) -> Result<i32, Error> {
     Ok(i32::from_le_bytes(bytes(save, dest)?))
+}
+
+/// The other buildings (unit 1068:32b5).
+fn facilities(save: &SaveGame) -> Result<Vec<Facility>, Error> {
+    save.fields("*1110:6f14")
+        .map(|r| (r.len() == FACILITY_SIZE).then(|| Facility(r.to_vec())))
+        .collect::<Option<_>>()
+        .ok_or(Error::Field("*1110:6f14"))
+}
+
+/// The computer players' budgets, `Longint`s.
+fn computer_budgets(save: &SaveGame) -> Result<Vec<i32>, Error> {
+    Ok(bytes::<{ COMPUTER_BUDGETS * 4 }>(save, "*1110:6512")?
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| i32::from_le_bytes(*b))
+        .collect())
+}
+
+/// The building sites in the list's order: loading puts each record in
+/// front of the ones before it. // 1068:304f
+fn building_sites(save: &SaveGame) -> Result<Vec<BuildingSite>, Error> {
+    let mut sites = save
+        .fields("*1110:6f08")
+        .map(|r| (r.len() == BUILDING_SITE_SIZE).then(|| BuildingSite::parse(r)))
+        .collect::<Option<Vec<_>>>()
+        .ok_or(Error::Field("*1110:6f08"))?;
+    sites.reverse();
+    Ok(sites)
+}
+
+/// The money menu's books (unit 1070:3bf8).
+fn books(save: &SaveGame) -> Result<Books, Error> {
+    let data: [u8; 29 * 4] = bytes(save, "[1110:6f04]+0x191")?;
+    Ok(Books {
+        year: std::array::from_fn(|n| {
+            i32::from_le_bytes([data[4 * n], data[4 * n + 1], data[4 * n + 2], data[4 * n + 3]])
+        }),
+        history: bytes::<HISTORY_SIZE>(save, "*[1110:6f04]+0x24b")?.to_vec(),
+    })
 }
 
 /// An `array[1..8] of Longint`.
@@ -661,6 +939,17 @@ impl World {
                 .map(|r| (r.len() == HOUSE_SIZE).then(|| House(r.to_vec())))
                 .collect::<Option<_>>()
                 .ok_or(Error::Field("*1110:6f10"))?,
+            facilities: facilities(save)?,
+            building_sites: building_sites(save)?,
+            // Unit 1010:0d4c.
+            computer_budgets: computer_budgets(save)?,
+            books: books(save)?,
+            renovation_years: bytes(save, "1110:1334")?,
+            renovation_cost: longint(save, "1110:64c2")?,
+            scenario: byte(save, "1110:006e")?,
+            cheated: byte(save, "1110:006f")? != 0,
+            won: byte(save, "1110:0071")? != 0,
+            flag_133c: byte(save, "1110:133c")? != 0,
             // Unit 1078:34ad.
             player_block: bytes::<PLAYER_BLOCK_SIZE>(save, "*1110:6f24")?.to_vec(),
             // Unit 10a0:23c9.

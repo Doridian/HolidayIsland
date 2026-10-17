@@ -27,7 +27,7 @@ impl World {
     /// last column, 100 for none) and its radius: a cell for every 6 the
     /// strength is away from 100, at least 1 and at most half of
     /// `MaxLageeinfluss`. // 1030:1d10, 1030:1dc6
-    fn location_effect(&self, (i, j): Pos, building: u8) -> (Pos, i32, i32) {
+    pub(crate) fn location_effect(&self, (i, j): Pos, building: u8) -> (Pos, i32, i32) {
         let t = &self.tables;
         let centre = (
             i.wrapping_add(t.hausnr(building, 3) / 2),
@@ -85,6 +85,7 @@ mod tests {
         let mut tables = Tables {
             hausnr: vec![[0; 8]; 13],
             hausdata: vec![[0; 10]; 13],
+            hausprei: Vec::new(),
         };
         tables.hausnr[12][3] = 1;
         tables.hausnr[12][4] = 1;

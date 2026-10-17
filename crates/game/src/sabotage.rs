@@ -1,6 +1,7 @@
 //! Sabotage and the championships: the timed effects `effects_tick`
 //! counts down once a day (segment `10a0`).
 
+use crate::construction::BUILDING_SITE;
 use crate::news::Message;
 use crate::simulation::Tick;
 use crate::world::{Pos, World};
@@ -78,8 +79,6 @@ pub fn parse_championships(data: &[u8]) -> Option<[Championship; 3]> {
     (data.len() == 3 * 8).then(|| std::array::from_fn(|n| Championship::parse(&data[8 * n..])))
 }
 
-/// The building site's type. // 1078:1995
-const BUILDING_SITE: u8 = 31;
 /// The tennis championship's building, empty and full. // 10a0:117e
 const TENNIS: [u8; 2] = [0x6f, 0x70];
 /// The surfing championship's buildings: four empty, four full.
@@ -212,6 +211,38 @@ impl World {
         let r = self.reputation(player);
         self.set_reputation(player, r.saturating_add(by).min(100));
     }
+
+    /// The building site at `pos` takes as long again as its type's
+    /// building time (`HAUSDATA.DAT`'s first column) more.
+    /// // 10a0:117e, sabotage kind 6
+    fn delay_construction(&mut self, pos: Pos) {
+        // The original would read through a nil pointer if no site's area
+        // held the square.
+        if let Some(n) = self.find_building_site(pos) {
+            let site = &mut self.building_sites[n];
+            site.days = site.days.wrapping_add(self.tables.hausdata(site.building, 0));
+        }
+    }
+
+    /// A finished championship building (0x6f–0x7c) takes the first free
+    /// championship slot, if there is one. The empty buildings set its kind
+    /// and days: tennis (0x6f) and surfing (0x71–0x74) 60, Miss Holiday
+    /// Island (0x79, 0x7a) 30; the full ones (finished as such only from a
+    /// map) take the slot with the kind and days it had before.
+    /// // 10a0:02ad
+    pub(crate) fn start_championship(&mut self, building: u8, pos: Pos) {
+        let Some(c) = self.championships.iter_mut().find(|c| !c.active) else {
+            return;
+        };
+        c.pos = pos;
+        c.active = true;
+        match building {
+            0x6f => (c.kind, c.countdown) = (0, 0x3c),
+            0x71..=0x74 => (c.kind, c.countdown) = (1, 0x3c),
+            0x79 | 0x7a => (c.kind, c.countdown) = (2, 0x1e),
+            _ => {}
+        }
+    }
 }
 
 /// The parts of the effects that aren't ported yet. Where the original
@@ -219,16 +250,6 @@ impl World {
 /// original's once they run.
 #[allow(clippy::unused_self)]
 impl World {
-    /// The building site at `pos` takes as long again as its type's
-    /// building time (`HAUSDATA.DAT`'s first column) more: 1078:1995 finds
-    /// it in the building sites (`*1110:6f08`, 13-byte records: `+1`, `+3`
-    /// the square, `+5` the days left, `+7` the type, `+9` the next).
-    /// // 10a0:117e, sabotage kind 6
-    fn delay_construction(&mut self, pos: Pos) {
-        // TODO: port once the building sites (`*1110:6f08`) are loaded.
-        let _ = pos;
-    }
-
     /// Puts building type `building` on the area of the one at `pos` (its
     /// size from `HAUSNR.DAT`), updates its record (1078:169a) and, for
     /// some types, sends the people inside away (1088:2df2). // 10a0:0026,
@@ -356,6 +377,33 @@ mod tests {
         w.sabotage[0] = sabotage(6, 10);
         days(&mut w, 1);
         assert!(!w.sabotage[0].active);
+    }
+
+    #[test]
+    fn go_slow() {
+        let mut hausnr = vec![[0; 8]; 41];
+        hausnr[40][3..5].copy_from_slice(&[2, 2]);
+        let mut hausdata = vec![[0; 10]; 41];
+        hausdata[40][0] = 30;
+        let mut w = World {
+            tables: std::sync::Arc::new(crate::world::Tables {
+                hausnr,
+                hausdata,
+                hausprei: Vec::new(),
+            }),
+            ..World::default()
+        };
+        w.building_sites.push(crate::world::BuildingSite {
+            pos: (99, 60),
+            days: 5,
+            building: 40,
+            ..Default::default()
+        });
+        w.island.buildings.set((100, 60), BUILDING_SITE);
+        w.sabotage[0] = sabotage(6, 10);
+        days(&mut w, 1);
+        assert_eq!(w.building_sites[0].days, 35);
+        assert_eq!(w.sabotage[0].countdown, 9);
     }
 
     #[test]

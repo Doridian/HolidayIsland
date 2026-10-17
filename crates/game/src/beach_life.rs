@@ -189,6 +189,7 @@ mod tests {
         let mut tables = Tables {
             hausnr: vec![[0; 8]; 37],
             hausdata: vec![[0; 10]; 37],
+            hausprei: Vec::new(),
         };
         tables.hausnr[1][3] = 2;
         tables.hausnr[1][4] = 3;

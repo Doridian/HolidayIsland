@@ -142,7 +142,7 @@ pub(super) static LAYOUT: &[(&str, &[Step])] = &[
             List {
                 count: "1110:6f18",
                 record: 0xd,
-                dest: "(records counted by 1110:6f18)",
+                dest: "*1110:6f08",
             },
         ],
     ),

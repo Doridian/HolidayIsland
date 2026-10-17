@@ -104,6 +104,7 @@ mod tests {
         let mut tables = Tables {
             hausnr: vec![[0; 8]; 13],
             hausdata: vec![[0; 10]; 13],
+            hausprei: Vec::new(),
         };
         tables.hausnr[usize::from(PALM)] = [10, 12, 0, 1, 1, 1, 10, 0];
         tables.hausdata[usize::from(PALM)][9] = 106;

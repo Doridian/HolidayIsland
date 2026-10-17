@@ -65,12 +65,12 @@ one sees the new date.
 (`Longint`) a step counter. Both are saved (unit 1008:539f).
 
 - If the day changed since the last tick: `construction_tick` (1008:5212,
-  245 bytes: counts down the building sites in the list at `1110:6f08`
-  and finishes the ones at 0, 1078:203d) and remember the day.
+  [below](#building-sites-10085212)) and remember the day.
 - Otherwise: the step counter goes up. Past 12 on the 1st of a month it
   goes back to 0, and in January that is the new year (`year_end`,
-  1008:4f64, 686 bytes). In January at step 5 (on the 2nd), 1008:0512
-  (199 bytes). Then, every time, `settlement_step(step)` (1008:1bf7).
+  1008:4f64, [below](#the-new-year-10084f64)). In January at step 5 (on
+  the 2nd), `january_second` (1008:0512, [below](#the-scenarios-end-10080512)).
+  Then, every time, `settlement_step(step)` (1008:1bf7).
 
 So the step runs from 0 (the 1st) to about 150 over the month, five a
 day. `settlement_step` (1008:1bf7, **13165 bytes**, the `ABRECHNE` unit)
@@ -82,6 +82,118 @@ through 1070:1419 and 1010:2493, the occupancy map at 0x48 ...). Its main
 callees are 1008:0de9, 1008:0d10, 1008:15dd, 1008:097f, 1008:09c8,
 1008:06b6, 1070:1419, 1070:2617, 1010:2493, 1010:3006. Money goes through
 `add_money` (1078:01e7).
+
+### Building sites (1008:5212)
+
+Ported in [`game::construction`](../crates/game/src/construction.rs).
+A building under construction is building type 31 on its squares and a
+13-byte record in the list at `*1110:6f08` (saved by unit 1068:32b5):
+`+1`, `+3` its first square, `+5` the days left (`Integer`), `+7` the
+type it becomes, `+8` (a signed byte) the computer player's budget it's
+paid from. New sites go in front (1068:1c7d, with `HAUSDATA.DAT`'s column
+0 as the days, 1 while the money is frozen). Loading a map puts each
+record in front of the ones before it (1068:304f) while saving walks the
+list (1068:30d0), so the file has them in reverse.
+
+`construction_tick` takes a day off each site, and `finish_building`
+(1078:203d) finishes the ones at 0 or less, in the list's order:
+
+1. `place_building` (1078:1de9): the first square's part is
+   `Random(looks) * HAUSNR.DAT column 5` (low byte) for types 0, 12 and
+   0x15 with at least two looks (column 0), 1 for type 0x3b on sand, else
+   0. Then for each `j`, for each `i` of the area (byte loops): the
+   building site's effect comes off the location map (1030:1d10 with
+   `remove`), the building goes on and the part is `first + (i - i0) +
+   width * (j - j0)`. Then `register_building` (1078:0eda, not ported)
+   and the redraw.
+2. If a computer player (2 to the player count) owns the square,
+   `HAUSDATA.DAT` column 3 comes off its budget `*1110:6512 + owner *
+   0x34 + budget * 4 - 0x68` (13 `Longint`s for each of players 2–8).
+3. The builders (people of kind 0x26 in the area) leave (1088:6bac).
+4. A championship building (0x6f–0x7c) takes the first free
+   championship slot (10a0:02ad): 0x6f tennis and 0x71–0x74 surfing for
+   60 days, 0x79–0x7a Miss Holiday Island for 30; the full versions take
+   the slot without setting its kind and days. Other types in the set at
+   `1110:1458` (29, 30, 35, 37, 60, 108, 110, 125, 126) raise the square
+   owner's reputation by 30, to at most 100, whoever the owner is.
+5. The record comes off the list (1068:2153).
+
+The original also closes the info box if it shows a square of the site
+(1038:1ee0). `find_building_site` (1078:1995) finds the record whose area
+holds a square showing type 31; the go-slow sabotage uses it.
+
+`register_building` (1078:0eda) adds the building's `HAUSNR.DAT` column
+5 to its plot's `+0x354` (kind 6, `HAUSDATA.DAT` column 5) or `+0x356`,
+makes its record by `1110:1341[kind]` (0: a house, 1068:1a08; 1, 2: a
+"facility" in `*1110:6f14`, 1068:1b3e; 0x2c and 0x1b bytes, both with
+condition `+7` = 127, `+1` = `HAUSDATA.DAT` column 4 and `HAUSPREI.DAT`'s
+third column at `+0x12`/`+0x16`), adds `HAUSDATA.DAT` column 3 to sums in
+the plot and in `*1110:6f20` by the class 1010:2493 gives, counts kinds 9
+and 10 in the plot's `+2`, and puts the building's location effect on.
+
+### The new year (1008:4f64)
+
+Ported in [`game::accounts`](../crates/game/src/accounts.rs).
+
+1. The money menu's year ends (1070:269d): this year's total (kind 0x6b,
+   1070:1452) is worked out, kinds 0x5f–0x6b become last year's 0x52–0x5e
+   and are cleared.
+2. Every house, then every facility, whose owner `p` has a renovation
+   interval (`1110:1333 + p`: `1110:1334`, `array[1..8] of Byte` from the
+   map; 0 never) that divides the year (`Integer` mod) is renovated: its
+   condition `+7` becomes 127. Only player 1 pays: `(127 - condition) *
+   Renovierungskosten (1110:64c2) * price (HAUSPREI column 0) div 1000`,
+   through `add_money` and the books' kind 0x6a (1070:1419).
+3. `MaxSchulden` goes up by 100 000, 50 000 or 10 000 by the difficulty.
+
+With the option `1110:0064` the original then shows the money menu
+(1070:2b11).
+
+### The scenario's end (1008:0512)
+
+Ported in [`game::accounts`](../crates/game/src/accounts.rs). Unless
+`1110:0071` (won) is set: if the scenario (`1110:006e`) is won
+(1008:0297), `0071` := 1, and unless `1110:006f` (set by a key on the main
+screen; cheating?) or the money is frozen, the score (1010:0faa) goes into
+the high scores with the net worth. Otherwise, if it's lost (1008:042b),
+it ends without a score. Either way the original shows `schlussform`
+(1068:1016); the port hands that to the view in `Tick::game_over`.
+
+| Scenario | Won when | Lost when |
+|---|---|---|
+| 0 (normal) | the year is 2056 | bankrupt (then `*1110:6f24+0x80` := 1) |
+| 1 Geld | net worth ≥ 50 000 000 | 2017 |
+| 2 Urlauber | the last 12 months' books ≥ 120 000 | 2017 |
+| 3 Koenig | players 2–8 are all out (`*1110:6f24+0x7f+p`), player 1 not | 2017 |
+| 4 Luxus | the guests (`+0x10`) of houses with a price (`+0x12`) over 320 ≥ 4000 | 2027 |
+| 5 Surfer | the `+0xc` values of the facilities of type 0x6d ≥ 4000 | 2007 |
+| 6 Oeko | the last 12 months ≥ 12 000 and the plots' `+4` averaged by their `+0x352` ≥ 71 | 2017 |
+| 7 (not on the CD) | from 2001, or net worth ≥ 1 000 000 | bankrupt |
+
+- Net worth (1008:0c6e): the buildings' value (at least 0) plus money
+  less loan, at most `MaxInt`. Money (1078:0191) is 99 999 999 while it's
+  frozen or for a player not in the game. A building's value (1008:0a56)
+  is `price * +1 div HAUSDATA column 4` if that column is positive, else
+  `price * condition div 127`; a building site's is its price.
+- Bankrupt (1008:0002): not out yet, net worth below `-MaxSchulden`, and
+  for player 1 last year's books (kind 0x5e, 1070:13f1) negative too.
+- The last 12 months (1070:1345): the books' history `*[1110:6f04]+0x24b`
+  holds 120 months of a `Longint` per player at `+0x1e14`, with the count
+  at `+0x2d1c` and the start at `+0x2d1d`.
+- The score (1010:0faa): the mean of net worth div 90 000, the 12 months
+  div 1800 and the reputation, each clamped to 0..100; then with
+  `1110:133c`, and again on easy (20) and normal (10), it drops by that
+  much but not below half.
+
+### Earthquakes (10a0:0d1c)
+
+Ported in [`game::events`](../crates/game/src/events.rs). On the first
+tick of each hour of an earthquake, 100 squares (`Random(250)` for `i`,
+then `j`) whose building isn't in the set at `1110:1358` (12 palms, 36
+beach life, 255 none) lose their people (1088:6975) and building
+(`demolish(0, ...)`, 1078:280b); player 1's count half their price
+(`HAUSPREI` column 0) as damage. The flood (10a0:0b49) uses the same set,
+also on the building.
 
 ### Animations (step 9)
 
@@ -131,6 +243,13 @@ What the driver and the ported parts use, all saved in the map file:
 | `*1110:6f24` | 0x88 bytes of per-player values; `+0x2f + player` the reputation | same |
 | `*1110:705a`, `*1110:705e` | Sabotage slots, championships | same |
 | `1110:64bf` | `MaxLageeinfluss` | same |
+| `*1110:6f08` | The building sites (count `1110:6f18`) | list, reversed (unit 1068:32b5) |
+| `*1110:6f14` | The facilities (count `1110:6f1c`) | list (unit 1068:32b5) |
+| `*1110:6512` | The computer players' budgets, 13 `Longint`s for each of players 2–8 | same (unit 1010:0d4c) |
+| `[1110:6f04]+0x191`, `*[..]+0x24b` | The money menu's books: kinds 0x52–0x6e, the monthly history | same (unit 1070:3bf8) |
+| `1110:1334`, `1110:64c2` | Renovation interval per player, `Renovierungskosten` | same |
+| `1110:006e`, `006f`, `0071`, `133c` | Scenario, cheated(?), won, the score's unknown flag | same |
+| `*1110:6f24+0x7f+p` | Player `p` is out | `*1110:6f24` |
 | `1110:4a06` | `RandSeed`: **not** saved; `Randomize` (1108:1e21) seeds it from the DOS clock when the game's data is loaded (1030:38a3) | |
 
 ## The date (1030:000d..)
@@ -287,8 +406,8 @@ the square's:
 The championship messages scroll the view to the building first. Not
 ported yet: `replace_building` (10a0:0026, which also updates the
 building's record and sends people away), `send_surfers` (10a0:10c6,
-five `Random(2)`s and the people), `remove_people_at` (1088:2d2a) and the
-go-slow's building site record. They're stubs, so a championship's
+five `Random(2)`s and the people) and `remove_people_at` (1088:2d2a).
+They're stubs, so a championship's
 building doesn't fill yet and the random numbers part from the
 original's while surfers would be sent.
 
@@ -366,8 +485,8 @@ The disasters keep their damage at `1110:7050` (`Longint`), and at their
 start copy `1110:0072` (probably the player's insurance) to `1110:7054`;
 at the end an insured player 1 gets the damage back (`add_money`, and the
 money menu's books, 1070:1419). Not ported yet: the flood's demolition
-(10a0:0b49 knocks down everything at sea level and counts player 1's
-buildings as damage), the oil slick (10a0:074d and 10a0:0915: a random
+(10a0:0b49 knocks down everything at sea level but palms and beach life
+and counts player 1's buildings as damage), the oil slick (10a0:074d and 10a0:0915: a random
 sea square with up to 2000 `Random(250)`s and a random walk of oil, the
 location map × 50 % within 30 cells), the books, and `make_available`
 (the build menu's list of types is still a form's). While an oil slick
@@ -388,27 +507,33 @@ the original's.
 
 Ported: the driver's world steps in their order (`World::tick`), the date,
 `add_money`, `set_loan`, `format_money`, the start money, the accounting
-scheduler (1008:5307), `vegetation_tick` with the location map,
+scheduler (1008:5307), `construction_tick` (with stubs for registering
+the building and the builders), `year_end`, `january_second` with the
+scenarios' goals, the net worth and the score, `quake_damage` (with stubs
+for the demolition and the people), `vegetation_tick` with the location map,
 `beach_life_tick`, `effects_tick` (with stubs for the buildings and
 people it changes), `events_tick` (with stubs for the flood's
 demolition, the oil slick and new building types), and the news' random
-text. The tables the simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`) are
+text. The tables the simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`,
+`HAUSPREI.DAT`) are
 in `World::tables`, loaded from the CD by whoever starts the game.
 
 What the view shows comes out of `World::tick` in `Tick`: the squares
 that changed (`redraw`; the view redraws the whole island for them rather
 than the columns 1050:21f9 picks, and has no overview map yet), a flood
-(`redraw_all`), the news (`messages`) and a started auction (`auction`).
+(`redraw_all`), the news (`messages`), a started auction (`auction`) and the end of the game
+(`game_over`); finished buildings are in `redraw`.
 The view draws the date and money on the info bar when they change; the
 news, the TV, auctions, the status bar timeout, tooltips, scrolling by
 the timer, music and the shaking aren't ported.
 
 Stubs (named after the table above, each with its address and a TODO):
-`construction_tick`, `year_end`, `january_second`, `settlement_step`,
-`building_slice`, `quake_damage`, `people_tick`, `spawn_people`, and
-inside the ported routines `replace_building`, `send_surfers`,
-`remove_people_at`, `delay_construction`, `flood_start`'s demolition,
-`oil_slick_start`, `oil_slick_end` and `make_available`. Where a stub
+`settlement_step`, `building_slice`, `people_tick`, `spawn_people`, and
+inside the ported routines `register_building` (1078:0eda),
+`remove_workers` (1088:6bac), `demolish` (1078:280b), `remove_people_from`
+(1088:6975), `replace_building`, `send_surfers`, `remove_people_at`,
+`flood_start`'s demolition, `oil_slick_start`, `oil_slick_end` and
+`make_available` (which doesn't touch the building sites). Where a stub
 stands for code that draws random numbers, the port's numbers part from
 the original's once it runs.
 
@@ -428,6 +553,24 @@ the original's once it runs.
   stores that player's view origin. Both need a multiplayer answer.
 - The houses' `+0x10` value, which sets their beach life, isn't
   identified (guests?), nor is `1110:0072` for sure (insurance?).
+- Until `register_building` (1078:0eda) is ported, a finished building
+  gets no house or facility record and no location effect, so the beach
+  life, renovations and net worth don't see it; until `demolish` is, an
+  earthquake only counts its damage.
+- The books' totals (kinds 0x5e, 0x6b) are worked out by 1070:1452, which
+  the original runs at the year's end and whenever the money menu is
+  shown (1070:2617, only with the form's height above 0): a view
+  condition in world state. The port only works it out at the year's end.
+- Which kinds the books' 0x52–0x6e hold, what plots' `+4` and `+0x352`,
+  facilities' `+0xc` and houses' `+0x10` are (scenarios 6, 5, 4 suggest
+  an environment value and area, a count for type 0x6d, and guests), and
+  what `1110:133c` and `1110:006f` mean.
+- The high score entry also stores a floating-point value made by
+  1100:1142/1100:1808 from `1110:0a02` (the date?); that's left to the
+  view. A scenario's `*1110:6f24+0x80` out flags come from its map; state
+  1500 may change them (not ported).
+- Renovations only charge player 1; computer players' buildings get
+  renovated for free (they may pay in their own turns, not ported).
 - 1010:1129 counts palms on the square's plot through a nil pointer when
   the square has none; the CD's maps have plots on all land, but a
   generated island may not. The port skips the count then.

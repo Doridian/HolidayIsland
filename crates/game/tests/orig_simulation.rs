@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use formats::bmp::Bitmap;
-use formats::data::{fontdat, hausdata, hausnr, modatyp, monate, sonstige};
+use formats::data::{fontdat, hausdata, hausnr, hausprei, modatyp, monate, sonstige};
 use formats::savegame::SaveGame;
 use game::darstellung::Camera;
 use game::hauptschirm::{BITMAP_FILES, Hauptschirm, InfoTexts};
@@ -42,6 +42,7 @@ fn tables() -> Arc<Tables> {
     Arc::new(Tables {
         hausnr: hausnr(&read("DATA/HAUSNR.DAT")).unwrap(),
         hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
+        hausprei: hausprei(&read("DATA/HAUSPREI.DAT")).unwrap(),
     })
 }
 
@@ -220,4 +221,47 @@ fn events_happen() {
     }
     assert_ne!(messages, []);
     assert!(auctions > 0);
+}
+
+#[test]
+fn new_year() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tables = tables();
+    for (n, file) in (1..=6).zip(SCENARIO_FILES) {
+        let settings = Settings {
+            scenario: n,
+            difficulty: 1,
+            ..Settings::default()
+        };
+        let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+        let mut world = load_world(&map, &settings, true).unwrap();
+        world.tables = Arc::clone(&tables);
+        world.random = Random::new(0x1234_5678);
+        assert_eq!(world.scenario, n, "{file}");
+        assert!(world.building_sites.is_empty(), "{file}");
+        assert!(!world.facilities.is_empty(), "{file}");
+        assert!((0..=100).contains(&world.score()), "{file}");
+        let (year, debt) = (world.date.year, world.finances.max_debt);
+        let mut game_over = None;
+        while world.date.year == year || world.date.day < 3 {
+            game_over = game_over.or(world.tick().game_over);
+        }
+        // A year's end on normal difficulty, and nobody's won or lost yet.
+        assert_eq!(world.finances.max_debt, debt + 50_000, "{file}");
+        assert_eq!(game_over, None, "{file}");
+        // The computer players renovate every year.
+        for (pos, condition) in world
+            .houses
+            .iter()
+            .map(|h| (h.pos(), h.condition()))
+            .chain(world.facilities.iter().map(|f| (f.pos(), f.condition())))
+        {
+            if world.island.owners.at(pos) >= 2 {
+                assert_eq!(condition, 0x7f, "{file}: {pos:?}");
+            }
+        }
+    }
 }

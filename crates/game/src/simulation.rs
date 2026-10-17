@@ -96,6 +96,22 @@ pub struct Tick {
     /// An auction of [`World::auction`]'s item begins: the original starts
     /// `TAuktionsform`'s timer (1028:08ac).
     pub auction: bool,
+    /// The scenario was won or lost ([`World::january_second`]): the
+    /// original shows the end of the game (`schlussform`, 1068:1016).
+    pub game_over: Option<GameOver>,
+}
+
+/// How a game ended. // 1008:0512
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameOver {
+    /// Won, or lost. // 1110:0071
+    pub won: bool,
+    /// For a won game without cheating, the score (0–100) the original
+    /// enters in the high scores (`add_highscore`, 1040:1bdf, with the
+    /// player's net worth as money text). // 1110:0068, 1110:006c
+    pub score: Option<i32>,
+    /// The player's net worth for the high scores (1008:0c6e).
+    pub net_worth: i32,
 }
 
 impl World {
@@ -127,7 +143,7 @@ impl World {
             }
             if i32::from(self.clock.hour_ticks) >= self.clock.speed {
                 self.clock.hour_ticks = 0;
-                self.accounting_tick();
+                self.accounting_tick(&mut tick);
             }
         }
         self.clock.slice = (self.clock.slice.wrapping_add(1)) % 30;
@@ -136,7 +152,7 @@ impl World {
         // two `Random(7)`s; the port leaves that to the view, so its random
         // numbers part from the original's while the earth shakes.
         if self.earthquake && self.clock.hour_ticks == 1 {
-            self.quake_damage();
+            self.quake_damage(&mut tick);
         }
         if self.options.animations {
             self.people_tick();
@@ -148,10 +164,10 @@ impl World {
     }
 
     /// The monthly settlement's scheduler. // 1008:5307
-    pub fn accounting_tick(&mut self) {
+    pub fn accounting_tick(&mut self, tick: &mut Tick) {
         let day = u16::from(self.date.day);
         if day != self.accounting.last_day {
-            self.construction_tick();
+            self.construction_tick(tick);
             self.accounting.last_day = day;
             return;
         }
@@ -164,7 +180,7 @@ impl World {
             }
         }
         if self.date.month == 1 && self.accounting.step == 5 {
-            self.january_second();
+            self.january_second(tick);
         }
         self.settlement_step(self.accounting.step);
     }
@@ -174,23 +190,6 @@ impl World {
 /// calls; most don't touch the world yet.
 #[allow(clippy::unused_self)]
 impl World {
-    /// Building sites count down and finish (1078:203d). // 1008:5212,
-    /// 245 bytes
-    fn construction_tick(&mut self) {
-        // TODO: port 1008:5212 once the building site list (`1110:6f08`) is
-        // loaded.
-    }
-
-    /// The new year. // 1008:4f64, 686 bytes
-    fn year_end(&mut self) {
-        // TODO: port 1008:4f64.
-    }
-
-    /// Something on the 2nd of January. // 1008:0512, 199 bytes
-    fn january_second(&mut self) {
-        // TODO: port 1008:0512.
-    }
-
     /// One step of the monthly settlement. // 1008:1bf7, 13165 bytes
     fn settlement_step(&mut self, step: i32) {
         // TODO: port 1008:1bf7, step by step.
@@ -202,11 +201,6 @@ impl World {
     fn building_slice(&mut self, slice: i16) {
         // TODO: port 1078:0002.
         let _ = slice;
-    }
-
-    /// An earthquake's damage, once an hour. // 10a0:0d1c, 192 bytes
-    fn quake_damage(&mut self) {
-        // TODO: port 10a0:0d1c.
     }
 
     /// The people and cars move (`*1110:6fd6`). // 1090:5293, about
