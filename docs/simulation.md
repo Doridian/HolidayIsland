@@ -303,7 +303,7 @@ them in [`game::darstellung`](../crates/game/src/darstellung.rs).
 | `people_tick`: counts down `1110:723c[1..42]` (how long each sound still plays: the view's), then for each record 0x24..0x640 `person_animate` (1098:109f, about 10 KB), `person_step` (1090:2ce5, 9498 bytes, the planes) and with `1110:0055` the walkers along their `ANIMDAT2` paths ([people.md](people.md#moving-10905293)); `Random`s for the helicopter, the surfers' and harbour ships' ways and the walkers' turns and sounds | 1090:5293 | ~3850 | world |
 | `spawn_people`: new ships and boats, and people at the buildings the player sees, `Random` ([people.md](people.md#new-people-10902373)) | 1090:2373 | 2220 | world |
 | Collect the people in view, put back what was under them and keep what's under them now | 1088:385d (1088:3496) | 103 | view |
-| With a building tool (`1110:6056` in 6..21): the tool's preview, before and after | 1090:124f, 1090:155b | 780, 731 | view |
+| With a tool (`1110:6056` in 6..21): the tool's pictures, before and after ([player-tools.md](player-tools.md)) | 1090:124f, 1090:155b | 780, 731 | view |
 | Draw the people, and what's in front of them over them ([people.md](people.md#drawing-them-1088385d)) | 1088:38c4 (1088:3a19, 4285) | 219 | view |
 | `Hauptbild.Refresh`, then more drawing | 1090:1836, 1090:1919 | 227, 256 | view |
 
@@ -344,7 +344,10 @@ has all that a saved game loses):
 | `1110:0072`, `7050`, `7054`, `7056` | Insured, the disaster's damage, insured for it, the oil slick's square | same |
 | `1110:6548`..`65a6`, `1110:0063` | The auction: bidder, price, item, calls, ... ([auction.md](auction.md#state-unit-10282506)); "Auktion wartet" | same (unit 1028:2506) |
 | `1110:0902` | The players' names, `array[0..8] of string` (0 `keiner`) | same |
-| `1110:0054`, `0055`, `0056`, `6056` | Animation options, the selected tool | same |
+| `1110:0054`, `0055`, `0056` | Animation options | same |
+| `1110:6056`, `6058`, `605a`, `651a` | The tool, its building, the mouse square, the buttons held down: the view's ([player-tools.md](player-tools.md)) | same |
+| `*[1110:6516]+0x180`, `+0x184`, `[..]+0x1c6` | The build menu's lists ([player-tools.md](player-tools.md#the-build-menu-tbaumenue-segment-1018)) | same (unit 1018:34a0) |
+| `1110:704e`, `704f` | The ground and form where the human's last road drag started | same (unit 1080:3c6d) |
 | `1110:008c`, `1110:1479` | Difficulty, number of players | same |
 | `*1110:5524`, `*1110:5528` | The location map and the plot map, [below](#the-location-map-and-plots) | same |
 | `*1110:6f0c` | The plots (count `1110:552c`) | list (unit 1068:313e) |
@@ -676,17 +679,22 @@ The view draws the date and money on the info bar when they change, and
 the auction form ([auction.md](auction.md)), whose timers
 (`World::auction_tick`) run before the clock's steps each tick, and the
 file menu, which stops the clock while it's open ([savegame.md](savegame.md)); the
-news, the TV, the status bar timeout, tooltips, scrolling by the timer,
-music and the shaking aren't ported. The auction's buttons and loading a
-game from the file menu are the only commands so far (`World::apply`).
+news, the TV, tooltips, scrolling by the timer, music and the shaking
+aren't ported; the status bar's messages time out (step 2). The auction's buttons and loading a
+game from the file menu, and the main screen's tools (building,
+raising and lowering, demolishing, the road drag,
+[player-tools.md](player-tools.md)) are the commands so far
+(`World::apply`).
 `World::to_map` saves the world ([savegame.md](savegame.md)).
 
 Stubs (named after the table above, each with its address and a TODO):
 inside the ported routines `oil_slick_start`, `oil_slick_end`.
 Raising and lowering the land (`game::terrain`) and building roads
 (`game::roads`) are ported as world code the computers use
-([computer.md](computer.md#levelling-and-roads)). `make_available` only gives the computers the type; the
-build menu's part is the view's. 1088:7fb1,
+([computer.md](computer.md#levelling-and-roads)), and the human's tools
+call them through commands. `make_available` gives the type to the
+human's build menu (the world's lists, `game::build_menu`) and the
+computers. 1088:7fb1,
 which runs `spawn_people` again after the player scrolls or turns the
 view, isn't ported. Demolishing refreshes the money menu (1070:2617) in the original,
 which the port leaves to the view. Where a stub
@@ -704,8 +712,9 @@ the original's once it runs.
   multiplayer these need to become world state everyone agrees on.
 - `1110:0070` stops all money changes; nothing found sets it. `1110:133c`,
   which a scenario sets on easy, is unknown.
-- The computers' roads ignore the ground the human's last road drag
-  started on (`1110:704e`), which the original lets them use
+- The computers' roads go by the ground the human's last road drag
+  started on (`1110:704e`), and don't build while the human drags
+  (`1110:634c`): the human's tool state in the world
   ([computer.md](computer.md#levelling-and-roads)).
 - The sounds' countdown `1110:723c` (people_tick's first loop) stops a
   sound from playing again while it still plays; the port leaves it to
@@ -719,8 +728,9 @@ the original's once it runs.
   stores that player's view origin. Both need a multiplayer answer.
 - The houses' `+0x10` is their guests ([settlement.md](settlement.md));
   `1110:0072` is the insurance (a 120th of the buildings' value a month).
-- `demolish` reports the error messages for player 1 as a `Result`; a
-  player's demolition isn't a command yet, so only the disasters call it.
+- `demolish` reports the error messages for player 1 as a `Result`,
+  which the demolish tool's command (`Action::Demolish`) puts in
+  `Tick::status`.
   The floating cost (1088:0153) is a people record in the original but
   only for the human: it may belong to the view. The port keeps it in
   the world, as the original does.

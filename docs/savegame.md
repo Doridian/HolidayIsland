@@ -31,14 +31,14 @@ behind the far pointer the global holds. A file is 765–805 KB.
 | 1008:539f, 1008:54c0 | `ABRECHNE.DAT`, the accounting schedule, the month's sums |
 | 1088:8a07, 1088:8950 | The people, their paths, entries and tracks |
 | 1028:2506, 1028:25f4 | The auction ([auction.md](auction.md#state-unit-10282506)) |
-| 1018:34a0, 1018:3350 | The build menu's (`TBaumenue`) fields |
+| 1018:34a0, 1018:3350 | The build menu's (`TBaumenue`) fields: its lists (`+0x180`, `+0x184`, `+0x1c6`, the world's) and the form's state, the selections and scrolling (the view's) ([player-tools.md](player-tools.md#the-build-menu-tbaumenue-segment-1018)) |
 | 1010:2fea, 1010:2fce | The button bar's buttons held down (`651a`) |
 | 10a8:32ec, 10a8:3080 | The computer players ([computer.md](computer.md#state)); their road candidates for players 2 to the player count only |
 | 1050:313a, 1050:2eaa | The drawing's tables (`DARSTELL.DAT`, ...) |
 | 1010:3e8a, 1010:3ee7 | The events, the days since the start |
 | 1070:3bf8, 1070:3b27 | The money menu's fields and books |
 | 1030:2bc5, 1030:2bae | The date |
-| 1018:3e46, 1018:3dd6 | `7044`..`704c`, not known yet |
+| 1018:3e46, 1018:3dd6 | `7044`..`704c`: the mouse on the main screen, the one before, its buttons |
 | 1048:25ea, 1048:2524 | The news archive and the TV |
 | 1020:2b1d, 1020:2909 | The main screen's fields: the scroll position (`+0x408`), the scroll bars, the clock's counters (`+0x1d6`, `+0x1d8`) |
 | 1078:34ad, 1078:33e5 | The sums over the island, the players' block, the money, loans, interest and guests, the economy's periods |

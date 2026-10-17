@@ -145,6 +145,8 @@ pub struct GameData {
     /// from. // 1010:0414
     pub nobody: Vec<u8>,
     pub names: data::Strings,
+    /// `BAUMENU.DAT`: the build menu's lists and layouts. // 1018:080f
+    pub baumenu: data::BaumenuData,
 }
 
 /// A file [`GameData::load`] couldn't read or parse.
@@ -199,6 +201,7 @@ impl GameData {
             compbau: parsed("COMPBAU.DAT", data::compbau(&dat("COMPBAU.DAT")?))?,
             nobody,
             names,
+            baumenu: parsed("BAUMENU.DAT", data::baumenu_dat(&dat("BAUMENU.DAT")?))?,
         })
     }
 }
@@ -263,6 +266,7 @@ fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool) -> Wo
     let money = w.money_of(1);
     let loan = w.loan_of(1);
     w.books = Books::new_game(money, loan); // 1070:2e6c
+    w.build_menu = crate::build_menu::BuildMenu::new(&data.baumenu); // 1018:2fa2
     w.events = data.events.iter().map(Event::from_row).collect(); // 1010:3ab4
     w.sabotage = Default::default(); // 10a0:0f6c
     w.championships = Default::default();

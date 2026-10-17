@@ -815,29 +815,39 @@ impl World {
     /// squares go by rows of `j`, and the first error wins. // 1030:04e3
     ///
     /// For error 1 the original keeps the square in the way at
-    /// `1110:64ba` (for the message, the view's).
+    /// `1110:64ba` for the message: [`World::can_build_at`].
+    #[must_use]
+    pub fn can_build(&self, pos: Pos, building: u8, player: u8) -> (u8, i32) {
+        let (error, cost, _) = self.can_build_at(pos, building, player);
+        (error, cost)
+    }
+
+    /// [`World::can_build`], and the square of the building in the way
+    /// for error 1 (`1110:64ba`, else the first square). // 1030:04e3
     #[must_use]
     #[allow(clippy::many_single_char_names)] // The original's i, j, w and d.
-    pub fn can_build(&self, (i, j): Pos, building: u8, player: u8) -> (u8, i32) {
+    pub fn can_build_at(&self, (i, j): Pos, building: u8, player: u8) -> (u8, i32, Pos) {
         let t = &self.tables;
         let (w, d) = (t.hausnr(building, 3), t.hausnr(building, 4));
         if i < 0 || j < 0 || w.wrapping_add(i).wrapping_sub(1) >= 251 || d.wrapping_add(j).wrapping_sub(1) >= 251 {
-            return (OFF_THE_MAP, 0);
+            return (OFF_THE_MAP, 0, (i, j));
         }
         let mut cost = t.hausprei(building, 0);
+        // Single human: only player 1 needs the money.
         let poor = |w: &World, cost: i32| player == 1 && w.money_of(player) < cost;
         if poor(self, cost) {
-            return (NOT_ENOUGH_MONEY, cost);
+            return (NOT_ENOUGH_MONEY, cost, (i, j));
         }
         let island = &self.island;
         let top = island.highest_corner((i, j));
         let ground_kind = t.hausdata(building, 7);
         let form_kind = t.hausdata(building, 8);
         let mut error = 0;
+        let mut in_the_way = (i, j);
         for b in j..=j.wrapping_add(d).wrapping_sub(1) {
             for a in i..=i.wrapping_add(w).wrapping_sub(1) {
                 if error != 0 {
-                    return (error, cost);
+                    return (error, cost, in_the_way);
                 }
                 let pos = (a, b);
                 if island.lowest_corner(pos) < island.highest_corner(pos)
@@ -851,13 +861,16 @@ impl World {
                 }
                 if error == 0 {
                     error = self.ground_error(pos, (i, j), top, ground_kind);
+                    if error == 1 {
+                        in_the_way = pos; // 1110:64ba
+                    }
                 }
                 if error == 0 {
                     error = form_error(island.forms.at(pos), island.buildings.at(pos), pos, (i, j), form_kind);
                 }
             }
         }
-        (error, cost)
+        (error, cost, in_the_way)
     }
 
     /// [`World::can_build`]'s ground: no road or river, no building but
@@ -925,8 +938,9 @@ impl World {
     /// price and the cost rises from the square. // 1078:1d21
     ///
     /// For player 1 and a type of which there's one (`HAUSDATA.DAT` column
-    /// 6 is 1), the original also takes it out of the build menu
-    /// (1018:26b9, 1010:2c8b), the view's.
+    /// 6 is 1), it also comes off the build menu (1018:26b9) and the
+    /// pointer's button is pressed (1010:2c8b, the view's:
+    /// [`Tick::pointer_tool`]). Single human: the build menu is player 1's.
     pub fn start_building(&mut self, cost: i32, budget: i8, player: u8, building: u8, pos: Pos, tick: &mut Tick) {
         if building == crate::world::PALM {
             self.plant_palm(pos, tick); // 1010:1129
@@ -939,6 +953,12 @@ impl World {
             self.book(BOOK_NEW_BUILDINGS, price.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
             self.float_money(cost, pos); // 1088:0153
+        }
+        if self.tables.hausdata(building, 6) == 1 && player == 1 {
+            if let Some(menu) = self.remove_from_build_menu(building) {
+                tick.build_menu_removed.push(menu); // 1018:26b9
+            }
+            tick.pointer_tool = true; // 1110:5fbe := 0x16, 1010:2c8b
         }
     }
 

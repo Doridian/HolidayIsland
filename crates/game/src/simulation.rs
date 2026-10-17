@@ -129,6 +129,27 @@ pub struct Tick {
     /// overview map (10b8:1534) and, with the occupancy pointers shown
     /// (`1110:0059`), on the main screen (1050:264d).
     pub occupancy: Vec<(Pos, Pos)>,
+    /// What the original shows a player on the status bar after their
+    /// command, with the player: an error from `FEHLER.TXT` (1030:232d) or
+    /// the building in the way (1030:235a). Single human: the original
+    /// only has messages for player 1.
+    pub status: Vec<(u8, Status)>,
+    /// The build menu's submenus the player's building took a type off
+    /// (1018:26b9): the original selects their first row again.
+    pub build_menu_removed: Vec<u8>,
+    /// The human built a type there's only one of: the original presses
+    /// the pointer's button (1078:1d21, 1010:2c8b).
+    pub pointer_tool: bool,
+}
+
+/// A message on the status bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Status {
+    /// `FEHLER.TXT`'s text `n` (1-based), with sound 0xc. // 1030:232d
+    Error(u8),
+    /// The building type in the way: its name and `FEHLER.TXT` 0x1d, error
+    /// 1 for a type past 0x7e, nothing for a palm. // 1030:235a
+    InTheWay(u8),
 }
 
 /// How a game ended. // 1008:0512

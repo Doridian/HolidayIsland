@@ -6,7 +6,11 @@
 //! scroll and Insert and Delete turn, and runs the simulation's clock
 //! (`World::tick`, every 100 ms), with the date and money on the info bar.
 //! When an event starts an auction the auction form opens over it; its
-//! buttons and keys become commands to the world.
+//! buttons and keys become commands to the world. The button bar picks
+//! the tools (`game::tools`): building from the build menu
+//! (`TBaumenue`), the road, raising and lowering the land and
+//! demolishing, whose clicks on the island become commands too; a right
+//! click on the island moves the view there.
 //!
 //! The start menu's "Altes Spiel fortsetzen" opens the load form
 //! (`TLadenForm`) with the saved games; in a game, the button bar's first
@@ -26,14 +30,16 @@ use std::time::{Duration, Instant};
 
 use formats::bmp::Bitmap;
 use formats::data::{
-    animdat1, animdat4, auktion, darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos,
-    hausprei, message_media_names, modatyp, monate, sonstige, start_txt, straspos, szenario_txt,
+    animdat1, animdat4, auktion, auswahl, baumenu_dat, baumenu_txt, darstell, fehler, flusspos, fontdat, gfxpos,
+    groundnr, grounpos, hausdata, hausname, hausnr, hauspos, hausprei, message_media_names, modatyp, monate, sonstige,
+    start_txt, straspos, szenario_txt,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
 use game::auction::{self, Change};
 use game::auktionsform::{self, Auktionsform};
+use game::baumenue::{self, Baumenue};
 use game::command::{self, Command};
 use game::darstellung::{self, Camera, Tiles};
 use game::dateimenue::{self, Dateimenue};
@@ -44,6 +50,7 @@ use game::savegame::{Fields, MapView};
 use game::simulation::{TICK_MS, Tick};
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
+use game::tools::Tools;
 use game::widgets::ShiftState;
 use game::world::{Tables, World};
 use platform::{App, Button, Frame, Input};
@@ -228,6 +235,16 @@ struct Game {
     /// The view's fields of the map file the game came from that the port
     /// doesn't use, saved back as they were.
     view_rest: Fields,
+    /// The main screen's tools and the build menu (`TBaumenue`), and the
+    /// build menu's VCL form.
+    tools: Tools,
+    menu_form: Form,
+    /// The build menu has the mouse captured.
+    menu_captured: bool,
+    /// The main screen's image that has the mouse captured.
+    captured: Option<&'static str>,
+    /// The mouse on the screen, which `GetCursorPos` gives the original.
+    mouse: (i32, i32),
 }
 
 impl Game {
@@ -252,6 +269,8 @@ impl Game {
         }
         while self.since_tick >= tick {
             self.since_tick -= tick;
+            // Step 2: the status bar's message times out.
+            changed |= self.screen.status_tick(&self.font);
             // The original's people code reads the player's view.
             self.world.set_viewpoint(self.screen.viewpoint());
             let t = self.world.tick();
@@ -268,14 +287,91 @@ impl Game {
             // 1088:385d, 1088:38c4: the people where they moved to.
             self.screen
                 .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            // 1090:124f, 1090:155b: the tool's pictures, with the people.
+            if self.world.options.animations && self.world.options.people_spawn {
+                let cam = self.screen.camera();
+                let mouse = self.hauptbild_mouse();
+                self.tools.preview(&self.world, &self.tiles, &cam, mouse);
+                self.tools
+                    .draw_preview(&mut self.screen.map, &self.world, &self.tiles, &cam);
+            }
             changed = true;
         }
         let info = ticked && self.screen.show_info(&self.world, &self.font, &self.info);
         changed || info
     }
 
+    /// The mouse in `Hauptbild`'s coordinates.
+    fn hauptbild_mouse(&self) -> (i32, i32) {
+        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
+        let bild = hauptschirm::LAYOUT[3].1;
+        (self.mouse.0 - left - bild.left, self.mouse.1 - top - bild.top)
+    }
+
+    /// Hands the tools' actions to the world as the human's commands.
+    fn tool_actions(&mut self, actions: Vec<command::Action>) {
+        // Single human: the original's player 1.
+        self.commands
+            .extend(actions.into_iter().map(|action| Command { player: 1, action }));
+    }
+
+    /// Button `b` of the button bar is clicked (1010:2c8b): the file menu
+    /// is the caller's, the rest the tools'.
+    fn click_button(&mut self, b: u8) {
+        let view = self.screen.camera().view;
+        let actions = self
+            .tools
+            .click(b, &self.world, &self.font, &self.tiles, &self.info, view, screen_size());
+        self.tool_actions(actions);
+        self.show_tools();
+    }
+
+    /// What the build menu's click or key asks, and the key it passes on
+    /// to the main screen.
+    fn menu_response(&mut self, response: baumenue::Response) -> Option<u16> {
+        let view = self.screen.camera().view;
+        let (actions, key) = self.tools.menu_response(
+            response,
+            &self.world,
+            &self.font,
+            &self.tiles,
+            &self.info,
+            view,
+            screen_size(),
+        );
+        self.tool_actions(actions);
+        self.show_tools();
+        key
+    }
+
+    /// The button bar and the status bar after the tools changed.
+    fn show_tools(&mut self) {
+        if self.tools.buttons_changed {
+            self.screen.draw_buttons(&self.tools.down);
+            self.tools.buttons_changed = false;
+        }
+        if let Some(text) = self.tools.status.take() {
+            self.screen.show_status(&text, &self.font);
+        }
+        // The sounds aren't played yet.
+        self.tools.sounds.clear();
+        self.tools.menu.sounds.clear();
+    }
+
     /// Shows what a tick or command did, and says whether anything changed.
     fn show(&mut self, t: &Tick) -> bool {
+        let view = self.screen.camera().view;
+        self.tools.world_changed(
+            t,
+            1,
+            &self.world,
+            &self.font,
+            &self.tiles,
+            &self.info,
+            view,
+            screen_size(),
+        );
+        self.show_tools();
         if t.loaded {
             // `game_show_state` (1010:26fa): the view from the file.
             let camera = MapView {
@@ -285,6 +381,12 @@ impl Game {
             }
             .camera(&self.world);
             self.screen.show_loaded(camera, &self.world, &self.tiles);
+            // The tools and the build menu from the file (1018:2a17).
+            let rest = self.view_rest.clone();
+            self.tools
+                .start(&rest, &self.world, &self.font, &self.tiles, &self.info, camera.view);
+            self.screen.draw_buttons(&self.tools.down);
+            self.show_tools();
             self.screen
                 .show_people(&self.world, &self.tiles, &self.font, &self.info);
             self.screen.show_info(&self.world, &self.font, &self.info);
@@ -293,7 +395,8 @@ impl Game {
         if t.load_failed {
             eprintln!("the saved game couldn't be loaded");
         }
-        let mut changed = if t.redraw_all {
+        let mut changed = !t.status.is_empty() || t.pointer_tool;
+        changed |= if t.redraw_all {
             self.screen.paint_map(&self.world, &self.tiles);
             true
         } else {
@@ -372,9 +475,139 @@ impl Game {
         true
     }
 
+    /// A mouse event on the build menu while it's shown, and whether it
+    /// took it. // 1018:0208, 1018:0461, 1018:04e7
+    fn menu_mouse(&mut self, input: Input, shift: ShiftState, buttons_up: bool) -> bool {
+        let (Input::MouseMove { x: sx, y: sy }
+        | Input::MouseDown { x: sx, y: sy, .. }
+        | Input::MouseUp { x: sx, y: sy, .. }) = input
+        else {
+            return false;
+        };
+        let m = &self.tools.menu;
+        if !self.menu_captured && !m.contains(sx, sy) {
+            return false;
+        }
+        let (x, y) = (sx - m.left, sy - m.top);
+        let view = self.screen.camera().view;
+        let response = match input {
+            Input::MouseDown { button, .. } => {
+                self.menu_captured = true;
+                self.tools.menu_focused = true;
+                self.tools.menu.mouse_down(
+                    x,
+                    y,
+                    button == Button::Left,
+                    shift,
+                    (sx, sy),
+                    &self.world,
+                    &self.font,
+                    &self.tiles,
+                    &self.info,
+                    view,
+                )
+            }
+            Input::MouseUp { button, .. } => {
+                if buttons_up {
+                    self.menu_captured = false;
+                }
+                self.tools.menu.mouse_up(
+                    x,
+                    y,
+                    button == Button::Left,
+                    &self.world,
+                    &self.font,
+                    &self.tiles,
+                    &self.info,
+                    view,
+                )
+            }
+            _ => {
+                self.tools.menu.mouse_move(shift, (sx, sy), screen_size());
+                baumenue::Response::Nothing
+            }
+        };
+        let _ = self.menu_response(response);
+        true
+    }
+
+    /// A mouse event on the main screen: a click on the button bar
+    /// (`ButtonImage`'s `OnClick`, 1020:1946) or the island (`Hauptbild`,
+    /// 1020:1984, 1020:1b31). Whether the screen changed, and whether the
+    /// file menu's button was clicked.
+    fn main_mouse(&mut self, input: Input, shift: ShiftState, buttons_up: bool) -> (bool, bool) {
+        let (Input::MouseMove { x: sx, y: sy }
+        | Input::MouseDown { x: sx, y: sy, .. }
+        | Input::MouseUp { x: sx, y: sy, .. }) = input
+        else {
+            return (false, false);
+        };
+        let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
+        let (fx, fy) = (sx - left, sy - top);
+        let target = self.captured.or_else(|| {
+            hauptschirm::LAYOUT
+                .iter()
+                .find(|(_, r)| (r.left..r.right).contains(&fx) && (r.top..r.bottom).contains(&fy))
+                .map(|(name, _)| *name)
+        });
+        let Some(target) = target else {
+            return (false, false);
+        };
+        let bounds = hauptschirm::LAYOUT
+            .iter()
+            .find(|(n, _)| *n == target)
+            .map_or(Rect::default(), |(_, r)| *r);
+        let (x, y) = (fx - bounds.left, fy - bounds.top);
+        match input {
+            Input::MouseDown { .. } => {
+                self.captured = Some(target);
+                // The main screen takes the focus from the build menu.
+                self.tools.menu_focused = false;
+            }
+            Input::MouseUp { .. } if buttons_up => self.captured = None,
+            _ => {}
+        }
+        match (target, input) {
+            // `OnClick`: the left button let go over the button bar.
+            (
+                "ButtonImage",
+                Input::MouseUp {
+                    button: Button::Left, ..
+                },
+            ) if (0..bounds.width()).contains(&x) && (0..bounds.height()).contains(&y) => {
+                match Hauptschirm::button_at(x, y) {
+                    Some(hauptschirm::FILE_MENU_BUTTON) => return (true, true),
+                    Some(b) => self.click_button(b),
+                    None => {}
+                }
+                (true, false)
+            }
+            ("Hauptbild", Input::MouseDown { .. }) => {
+                if shift == ShiftState::RIGHT {
+                    self.screen.right_click(x, y, &self.world, &self.tiles); // 1020:1984
+                    self.screen
+                        .show_people(&self.world, &self.tiles, &self.font, &self.info);
+                } else {
+                    let cam = self.screen.camera();
+                    let actions = self.tools.press(x, y, shift, &self.world, &self.tiles, &cam);
+                    self.tool_actions(actions);
+                }
+                (true, false)
+            }
+            ("Hauptbild", Input::MouseUp { button, .. }) => {
+                let actions = self.tools.release(button == Button::Left);
+                self.tool_actions(actions);
+                (false, false)
+            }
+            _ => (false, false),
+        }
+    }
+
     /// What `save_map` writes of this game. // 1048:2bae
     fn map(&self) -> SaveGame {
-        self.world.to_map(&MapView::of(&self.screen, self.view_rest.clone()))
+        let mut rest = self.view_rest.clone();
+        self.tools.save(&mut rest);
+        self.world.to_map(&MapView::of(&self.screen, rest))
     }
 
     /// `FormShow` of the file menu, from the button bar's first button
@@ -395,6 +628,17 @@ impl Game {
             }
         }
         self.form.paint(screen, palette);
+        let m = &self.tools.menu;
+        self.menu_form.components[0].bounds = m.bounds();
+        self.menu_form.components[0].visible = m.height > 0;
+        if let Some(c) = self.menu_form.component_mut("Baumenuebild") {
+            c.bounds = Rect::new(0, 0, m.width, m.full_height());
+            c.visible = true;
+            if let Kind::Image { picture } = &mut c.kind {
+                *picture = Some(m.image.clone());
+            }
+        }
+        self.menu_form.paint(screen, palette);
         self.auction_form.components[0].bounds = self.auction.bounds();
         self.auction_form.components[0].visible = self.auction.visible;
         for (name, image) in self.auction.images() {
@@ -568,6 +812,9 @@ impl Holiday {
         let mouse = ShiftState::LEFT | ShiftState::RIGHT | ShiftState::MIDDLE;
         let up = self.buttons.0 & mouse.0 == 0;
         let Some(game) = &mut self.game else { return };
+        if let Input::MouseMove { x, y } | Input::MouseDown { x, y, .. } | Input::MouseUp { x, y, .. } = input {
+            game.mouse = (x, y);
+        }
         if game.file_menu.visible {
             self.file_menu_mouse(input, shift, up);
             return;
@@ -576,21 +823,19 @@ impl Holiday {
             self.repaint();
             return;
         }
-        // The button bar's mouse handling isn't ported; a click on its
-        // first button opens the file menu (1010:2c8b).
-        if let Input::MouseDown {
-            x,
-            y,
-            button: Button::Left,
-        } = input
-        {
-            let (left, top) = Hauptschirm::position(screen_size().0, screen_size().1);
-            let bar = hauptschirm::LAYOUT[2].1;
-            if Hauptschirm::button_at(x - left - bar.left, y - top - bar.top) == Some(hauptschirm::FILE_MENU_BUTTON) {
-                let games = self.saves.games();
+        if game.menu_mouse(input, shift, up) {
+            self.repaint();
+            return;
+        }
+        let (changed, file_menu) = game.main_mouse(input, shift, up);
+        if file_menu {
+            let games = self.saves.games();
+            if let Some(game) = &mut self.game {
                 game.open_file_menu(games);
-                self.repaint();
             }
+        }
+        if changed || file_menu {
+            self.repaint();
         }
     }
 
@@ -791,7 +1036,7 @@ impl App for Holiday {
                     && !self
                         .game
                         .as_ref()
-                        .is_some_and(|g| g.auction.visible || g.file_menu.visible) =>
+                        .is_some_and(|g| g.auction.visible || g.file_menu.visible || g.tools.menu_focused) =>
             {
                 self.quit = true;
             }
@@ -827,10 +1072,27 @@ impl App for Holiday {
                         }
                     } else if let Some(game) = &mut self.game {
                         let shift = self.buttons | self.keys;
-                        match game.screen.key_down(key, shift, &game.world, &game.tiles) {
+                        let mut key = Some(key);
+                        if game.tools.menu_focused {
+                            // `TBaumenue` has the focus. // 1018:3290
+                            let response = game.tools.menu.key_down(key.unwrap_or(0));
+                            key = game.menu_response(response);
+                            self.repaint();
+                        }
+                        let Some(game) = &mut self.game else { return };
+                        let result = key.map_or(KeyResult::Ignored, |key| {
+                            game.screen.key_down(key, shift, &game.world, &game.tiles)
+                        });
+                        match result {
                             KeyResult::Redrawn => {
                                 game.screen
                                     .show_people(&game.world, &game.tiles, &game.font, &game.info);
+                                // `set_view` (1010:254d) turns the build
+                                // menu's picture too.
+                                let view = game.screen.camera().view;
+                                game.tools
+                                    .menu
+                                    .view_turned(&game.world, &game.font, &game.tiles, &game.info, view);
                                 self.repaint();
                             }
                             KeyResult::Button(hauptschirm::FILE_MENU_BUTTON) => {
@@ -840,8 +1102,11 @@ impl App for Holiday {
                                 }
                                 self.repaint();
                             }
-                            // The other buttons' forms aren't ported.
-                            KeyResult::Button(_) | KeyResult::Ignored => {}
+                            KeyResult::Button(b) => {
+                                game.click_button(b);
+                                self.repaint();
+                            }
+                            KeyResult::Ignored => {}
                         }
                     }
                 } else {
@@ -1080,14 +1345,11 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
 fn make_game(dir: &Path, exe: &[u8], (world, camera, origin, view_rest): Start) -> Game {
     let font = font(dir);
     let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
-    let bitmaps = hauptschirm::BITMAP_FILES
-        .iter()
-        .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
-        .collect();
+    let frame = bitmaps(dir, &hauptschirm::BITMAP_FILES);
     let title = texts.texts.first().cloned().unwrap_or_default();
     let mut screen = match origin {
-        Some(origin) => Hauptschirm::new(camera, origin, bitmaps, &font, &title),
-        None => Hauptschirm::new_game(camera, bitmaps, &font, &title),
+        Some(origin) => Hauptschirm::new(camera, origin, frame, &font, &title),
+        None => Hauptschirm::new_game(camera, frame, &font, &title),
     };
     let tiles = load_tiles(dir);
     screen.paint_map(&world, &tiles);
@@ -1123,7 +1385,29 @@ fn make_game(dir: &Path, exe: &[u8], (world, camera, origin, view_rest): Start) 
             c.visible = true;
         }
     }
+    // 1030:36e5 (1018:2fa2) and `game_start_setup` (1010:2820): the
+    // build menu, and the tools from the map.
+    let names = hausname(&read(dir, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
+    let menu = Baumenue::new(
+        baumenu_txt(&read(dir, "TEXTE/BAUMENU.TXT")).expect("BAUMENU.TXT"),
+        &baumenu_dat(&read(dir, "DATA/BAUMENU.DAT")).expect("BAUMENU.DAT"),
+        names,
+        auswahl(&read(dir, "TEXTE/AUSWAHL.TXT")),
+        bitmaps(dir, &baumenue::BITMAP_FILES),
+        screen_size(),
+    );
+    let mut tools = Tools::new(menu, fehler(&read(dir, "TEXTE/FEHLER.TXT")).expect("FEHLER.TXT"));
+    tools.start(&view_rest, &world, &font, &tiles, &info, screen.camera().view);
+    screen.draw_buttons(&tools.down);
+    tools.buttons_changed = false;
+    let mut menu_form = load_form(exe, "TBAUMENUE");
+    menu_form.components[0].visible = false;
     Game {
+        tools,
+        menu_form,
+        menu_captured: false,
+        captured: None,
+        mouse: (0, 0),
         world,
         tiles,
         screen,

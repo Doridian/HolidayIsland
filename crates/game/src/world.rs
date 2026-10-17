@@ -1124,9 +1124,18 @@ pub struct World {
     /// What raising and lowering the land costs (`MODATYP.DAT`).
     pub land_costs: crate::terrain::LandCosts,
     /// The human is dragging out a road (the road tool, 1080:3195): the
-    /// view's, but the computers don't build roads meanwhile (marked).
-    /// // 1110:634c
+    /// human's UI state, but the computers don't build roads meanwhile,
+    /// so it's the world's and changes by commands. Single human: one
+    /// flag for player 1's drag. // 1110:634c
     pub road_dragging: bool,
+    /// The ground the human's last road drag started on (1080:3195): the
+    /// road planner builds a bridge from water (2, 3), and the computers'
+    /// roads read it too, so it's the world's. Single human. // 1110:704e
+    pub road_drag_ground: u8,
+    /// That square's form; saved, never read. // 1110:704f
+    pub road_drag_form: u8,
+    /// What the human's build menu offers (`crate::build_menu`).
+    pub build_menu: crate::build_menu::BuildMenu,
     /// The human's view, which the people code reads (marked).
     pub viewpoint: Viewpoint,
     /// The tables from the CD the simulation reads; empty until the game's
@@ -1196,6 +1205,9 @@ impl Default for World {
             foundation_cost: 0,
             land_costs: crate::terrain::LandCosts::default(),
             road_dragging: false,
+            road_drag_ground: crate::roads::NO_DRAG_GROUND,
+            road_drag_form: 0,
+            build_menu: crate::build_menu::BuildMenu::default(),
             viewpoint: Viewpoint::default(),
             tables: Arc::default(),
             random: Random::default(),
@@ -1531,6 +1543,10 @@ impl World {
                 palm: longint(save, "1110:64f2")?,
             },
             road_dragging: byte(save, "1110:634c")? != 0,
+            // Unit 1080:3c6d.
+            road_drag_ground: byte(save, "1110:704e")?,
+            road_drag_form: byte(save, "1110:704f")?,
+            build_menu: crate::build_menu::BuildMenu::from_map(save)?,
             viewpoint: viewpoint(save)?,
             tables: Arc::default(),
             random: Random::default(),

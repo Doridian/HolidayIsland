@@ -4,7 +4,9 @@
 pub mod accounts;
 pub mod auction;
 pub mod auktionsform;
+pub mod baumenue;
 pub mod beach_life;
+pub mod build_menu;
 pub mod command;
 pub mod computer;
 pub mod construction;
@@ -28,6 +30,7 @@ pub mod simulation;
 pub mod startform;
 pub mod terrain;
 pub mod text;
+pub mod tools;
 pub mod vegetation;
 pub mod widgets;
 pub mod world;

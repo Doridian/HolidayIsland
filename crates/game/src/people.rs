@@ -5,7 +5,7 @@
 //!
 //! | Records | What |
 //! |---|---|
-//! | 0–0x23 | Not known yet; [`World::people_map_changed`] clears their kinds |
+//! | 0–0x23 | The tools' pictures (1090:124f), the view's in the port (`crate::tools`); [`World::people_map_changed`] clears their kinds |
 //! | 0x24–0x2e | The money rising from a square ([`World::float_money`]) |
 //! | 0x2f–0x577 | Everyone else, up to [`People::last`] |
 //! | 0x578–0x5dc | Planes and the helicopter ([`PLANE`], [`HELICOPTER`]) |

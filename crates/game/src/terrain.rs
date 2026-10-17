@@ -12,7 +12,8 @@
 //! forms and grounds are worked out again (10b0:33bc).
 //!
 //! The computer players level their sites and road squares this way
-//! without paying; the human's levelling tool isn't ported.
+//! without paying; the human's tools raise and lower one corner a step
+//! at a time and pay for it (`crate::command`, 1028:3b7c, 1028:3a68).
 
 // The original's names: squares `(i, j)`, offsets `di`, `dj`.
 #![allow(clippy::many_single_char_names)]
@@ -206,8 +207,8 @@ impl World {
             return (OFF_THE_MAP, 0);
         }
         match i16::from(self.island.heights.at(pos)).cmp(&height) {
-            std::cmp::Ordering::Less => self.raise_corner(player, pos, tick), // 10b0:069f
-            std::cmp::Ordering::Greater => self.lower_corner(player, pos, tick), // 10b0:1907
+            std::cmp::Ordering::Less => self.raise_corner(player, pos, tick).0, // 10b0:069f
+            std::cmp::Ordering::Greater => self.lower_corner(player, pos, tick).0, // 10b0:1907
             std::cmp::Ordering::Equal => (0, 0),
         }
     }
@@ -224,12 +225,12 @@ impl World {
         }
         let mut error = 0;
         while i16::from(self.island.heights.at(pos)) < height && error == 0 {
-            let (e, c) = self.raise_corner(player, pos, tick); // 10b0:069f
+            let ((e, c), _) = self.raise_corner(player, pos, tick); // 10b0:069f
             error = e;
             cost = cost.wrapping_add(c);
         }
         while height < i16::from(self.island.heights.at(pos)) && error == 0 {
-            let (e, c) = self.lower_corner(player, pos, tick); // 10b0:1907
+            let ((e, c), _) = self.lower_corner(player, pos, tick); // 10b0:1907
             error = e;
             cost = cost.wrapping_add(c);
         }
@@ -275,8 +276,10 @@ impl World {
     }
 
     /// Raises the corner `(i, j)` a step for `player`: the error (0 when
-    /// done) and the cost so far. // 10b0:069f
-    fn raise_corner(&mut self, player: u8, pos: Pos, tick: &mut Tick) -> (u16, i32) {
+    /// done) and the cost so far, and the square that caused the error
+    /// (`1110:64ba`, for the message). Single human: only player 1 needs
+    /// the money. // 10b0:069f
+    pub(crate) fn raise_corner(&mut self, player: u8, pos: Pos, tick: &mut Tick) -> ((u16, i32), Pos) {
         let (i, j) = pos;
         let mut result = (0xd, 0, pos);
         if on_map(pos) {
@@ -306,12 +309,13 @@ impl World {
             };
         }
         self.show_marker(result.0, result.2, tick);
-        (result.0, result.1)
+        ((result.0, result.1), result.2)
     }
 
     /// Lowers the corner `(i, j)` a step for `player`: the error (0 when
-    /// done) and the cost so far. // 10b0:1907
-    fn lower_corner(&mut self, player: u8, pos: Pos, tick: &mut Tick) -> (u16, i32) {
+    /// done), the cost so far and the square that caused the error, as
+    /// [`World::raise_corner`]. // 10b0:1907
+    pub(crate) fn lower_corner(&mut self, player: u8, pos: Pos, tick: &mut Tick) -> ((u16, i32), Pos) {
         let mut result = (0, 0, pos);
         if !on_map(pos) || self.island.heights.at(pos) == 0 {
             result.0 = 3;
@@ -330,7 +334,7 @@ impl World {
             }
         }
         self.show_marker(result.0, result.2, tick);
-        (result.0, result.1)
+        ((result.0, result.1), result.2)
     }
 
     /// After an error, the marker at the square that caused it.

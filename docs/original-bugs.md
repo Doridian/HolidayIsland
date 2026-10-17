@@ -55,6 +55,10 @@ explains a bug in detail, the row links there instead of repeating it.
 | 1010:0414 | With no names in `NAMEN.TXT` the computers' names divide by zero | Their names stay empty |
 | 1048:2a19 `load_map` | I/O checks are off: a short or missing file stops the reads at the error, keeps the rest of the old game's globals (a half-loaded game) and leaves the error pending, so later file operations fail silently ([savegame.md](savegame.md#the-port)) | Parses the whole file first and loads nothing from one that doesn't parse |
 | 1038:3a13, 1040:1175 | More than 100 saved games are written past the list box's 100 entries | Lists 100 |
+| 1018:16c8, 1028:3cb1 | An empty submenu of the build menu selects type -1: its name and figures are read from before the tables, and the build tool builds type 255, past them | Shows none; the tool builds nothing |
+| 1018:23f8, 1018:26b9 | A type of kind 7, which has no submenu (`1110:00ea` holds -1), or of a kind past 11 is written into or looked for before or after the build menu's lists | Leaves the lists |
+| 1018:1a43 | A row of -1 in a build menu list (a map that saved one) shows the name before the first | Shows none |
+| 1018:2a17 | The start of every game draws the build menu for the pointer tool, whose heading is read from past the 12 | Draws nothing |
 | Data files: `HAUSNAME.TXT` (1048:358f), `ANIMDAT2.DAT`, `ANIMDAT3.DAT` (1088:80a7), `NAMEN.TXT` (1010:0414), the high scores | A missing `***` end marker loops for ever; a group or list longer than its room overruns the next memory; a high score file of another size isn't checked | The file fails to load |
 
 ## Simulation logic
@@ -78,7 +82,8 @@ explains a bug in detail, the row links there instead of repeating it.
 | 1090:2c1f | A plane's second approach is accepted when either coordinate matches, not both | yes |
 | 1078:09f6 | A corner rising from the sea between plots merges the first pair by their numbers cut to a byte | yes |
 | 1080:3216 | Building any road (the computers' too) turns the "new people" animation option (`1110:0056`) on, whatever the player chose | yes |
-| 1078:2396 (computers) | The computers' roads use the ground the human's last road drag started on (`1110:704e`): after a drag from water they'd look for bridges ([computer.md](computer.md#levelling-and-roads)) | no: they pass sand, what it holds before any drag |
+| 1078:2396 (computers) | The computers' roads use the ground the human's last road drag started on (`1110:704e`): after a drag from water they look for bridges ([computer.md](computer.md#levelling-and-roads)) | yes |
+| 1090:0014, 1090:124f | The tools' pictures go into the people's records from 1 on: for a road drag or a building of more than 35 squares they overwrite real people (square, offset, picture, kind 6) ([player-tools.md](player-tools.md#the-pictures-over-the-island-10900014-1090124f-1090155b)) | no: the view keeps the pictures |
 | 10b0:03fa, 10b0:12c7 | The land only follows a moved corner where a neighbour is exactly two steps off, so existing cliffs get steeper | yes |
 | 10b0:12c7 | Lowering checks the buildings (and clears palms, adding their cost) of squares it reaches after an error already stopped it | yes |
 | 10b0:069f, 10b0:1907 | A palm cleared by moving the land only loses its building: its part, owner, plot count and location effect stay | yes |
@@ -123,6 +128,12 @@ The widgets' are described in
 | 1040:073c | Any press while the file menu's name field is focused unfocuses it, so clicking "Speichern" focuses it again instead of saving; only Enter saves a typed name | yes |
 | 1040:0192 | A name picked from the file menu's list goes into the field without moving its cursor | yes |
 | 1028:1ce0 | After a click on the title bar the title is drawn one row higher than the form opened with | yes |
+| 1090:124f, 1080:31ed | The road drag's end only follows the mouse in the clock's tick with the animations and new people on: otherwise the road is one square, and it always ends where the mouse was at the last tick ([player-tools.md](player-tools.md)) | yes |
+| 1090:0014 | For a square without a building the demolish tool's picture shows the area of the building it or the people code (`1110:6ff2`) last found | partly: the port's picture remembers its own |
+| 1020:1984 | The tools only act on exactly `[ssLeft]`: with Shift or Ctrl held, or on the second press of a double click, a click does nothing | yes |
+| 1010:2be1 | Picking any tool closes the build menu, with its sound, even when it's closed (its `Visible` is always set) | yes |
+| 1010:2c8b | The road's button selects building type 1 for the build tools, until a submenu selects another | yes |
+| 1018:3290 | With the build menu focused only F1–F12, 1–9 and Pause reach the main screen: the arrow keys and 0 do nothing | yes |
 
 ## Design issues for multiplayer
 
@@ -132,7 +143,9 @@ state into the simulation. See the open questions in
 - the TV pause;
 - the animation options;
 - the human's view, used when people are placed;
-- the road drag state;
+- the road drag state (`1110:634c`, `704e`), which the computers read
+  ([player-tools.md](player-tools.md#world-and-view));
+- the build menu's lists, player 1's;
 - the auction form, which stops the simulation while one human bids and
   waits for them to start it ([auction.md](auction.md#open-questions)), and
   whose held buttons stop the computers' bids.

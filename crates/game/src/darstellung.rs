@@ -882,6 +882,13 @@ pub fn draw_people(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera
     }
 }
 
+/// A square's form as the camera's view turns it, flat off the map's
+/// inner squares: what the tools' pictures are picked by. // 1088:4bfa
+#[must_use]
+pub fn form_look(world: &World, tiles: &Tiles, cam: &Camera, pos: Pos) -> u8 {
+    dt_form(tiles, cam.view(), &world.island, pos)
+}
+
 /// A square's form as `view` turns it (1088:4bfa), flat off the map's
 /// inner squares.
 fn dt_form(tiles: &Tiles, view: usize, island: &Island, (i, j): Pos) -> u8 {
@@ -1067,6 +1074,172 @@ fn covers(
         out.push(c);
     }
     out
+}
+
+/// The height and the turned form of the square `(i, j)` as the tools'
+/// picking sees it: 0 and flat off the map (0..=250). // 1018:39c2
+fn pick_ground(world: &World, tiles: &Tiles, view: usize, (i, j): Pos) -> (i32, usize) {
+    if !(0..=0xfa).contains(&i) || !(0..=0xfa).contains(&j) {
+        return (0, usize::from(FLAT));
+    }
+    let h = ground_height(&world.island, view, (i, j)); // 1050:075e
+    let form = tiles.darstell.form_korrektur[view]
+        .get(usize::from(world.island.forms.at((i, j))))
+        .copied()
+        .unwrap_or(FLAT);
+    (i32::from(h), usize::from(form))
+}
+
+/// The square the point `(x, y)` of `Hauptbild` shows (the point kept
+/// within `Hauptbild`'s 624 × 404): the column's squares are walked down
+/// from the top until one's tile reaches below the point; then the
+/// square above it, unless the point is on the black around its diamond
+/// (the form's pointer picture in `gfxgroun.BMP`, `GFXPOS.DAT`), which
+/// means the one beside. The point may be off the map, and so may the
+/// square. `GetPixel`'s black is the bitmap's colour 0 here.
+/// // 1018:39c2 (from the cursor, 1018:3d8d)
+#[must_use]
+#[allow(clippy::many_single_char_names)] // The original's x, y, i, j and h.
+pub fn square_at(world: &World, tiles: &Tiles, cam: &Camera, x: i32, y: i32) -> Pos {
+    let dt = &tiles.darstell;
+    let view = cam.view();
+    let x = x.clamp(0, VIEW_WIDTH);
+    let y = y.clamp(0, VIEW_HEIGHT - 1);
+    let col = usize::try_from(x / COLUMN_WIDTH).unwrap_or(0).min(19);
+    let mut half = usize::try_from((x / COLUMN_WIDTH % 2 + i32::from(cam.parity)).rem_euclid(2)).unwrap_or(0);
+    let mut top = -HALF_ROW;
+    let mut i = dt.spalten_x_korrektur[view][half][col] + cam.origin.0 + dt.zeilen_x_korrektur[view][half][0];
+    let mut j = dt.spalten_y_korrektur[view][half][col] + cam.origin.1 + dt.zeilen_y_korrektur[view][half][0];
+    // The original walks on until it finds one; the heights bound it.
+    for _ in 0..1000 {
+        half = 1 - half;
+        let (h, form) = pick_ground(world, tiles, view, (i, j));
+        let lift = h * STEP + FORM_LIFT.get(form).copied().unwrap_or(0);
+        if y < top - lift {
+            top -= HALF_ROW;
+            half = 1 - half;
+            i -= dt.extratab_x_korrektur[view][half];
+            j -= dt.extratab_y_korrektur[view][half];
+            let (h, form) = pick_ground(world, tiles, view, (i, j));
+            let lift = h * STEP + FORM_LIFT.get(form).copied().unwrap_or(0);
+            let row = tiles.gfxpos.get(form).copied().unwrap_or_default();
+            let px = i32::from(row[1]) + x % COLUMN_WIDTH + to_i32(half) * COLUMN_WIDTH;
+            let py = i32::from(row[2]) + (y - (top - lift));
+            // GetPixel off the bitmap is CLR_INVALID, not black.
+            let black = tiles.bitmaps[GROUND].as_ref().is_some_and(|b| {
+                usize::try_from(px)
+                    .ok()
+                    .zip(usize::try_from(py).ok())
+                    .filter(|&(px, py)| px < b.width && py < b.height)
+                    .is_some_and(|(px, py)| b.pixels[py * b.width + px] == 0)
+            });
+            return if black {
+                (
+                    i - dt.extratab_x_korrektur[view][1 - half],
+                    j - dt.extratab_y_korrektur[view][1 - half],
+                )
+            } else {
+                (i, j)
+            };
+        }
+        top += HALF_ROW;
+        i += dt.extratab_x_korrektur[view][half];
+        j += dt.extratab_y_korrektur[view][half];
+    }
+    (i, j)
+}
+
+/// One of the tools' pictures over the island, which the original keeps
+/// in the people's records 0 (the tool's pointer) and 1 on (the squares
+/// a building or road would take): its square, offset and `ANIMDAT1.DAT`
+/// row. // 1090:124f, 1090:0014
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolSprite {
+    pub pos: Pos,
+    pub offset: (i16, i16),
+    pub sprite: i16,
+    /// The pointer: lifted by its corner only, not by the form.
+    pub pointer: bool,
+}
+
+/// Draws a tool's picture as 1088:3a19 draws records 0 and up, without
+/// what's in front of it. // 1090:155b
+pub fn draw_tool_sprite(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera, s: &ToolSprite) {
+    let island = &world.island;
+    let t = &world.tables;
+    let view = cam.view();
+    let corner = if on_map(s.pos) {
+        ground_height(island, view, s.pos)
+    } else {
+        0
+    }; // 1088:4c27
+    let form = usize::from(dt_form(tiles, view, island, s.pos)); // 1088:4bfa
+    let mut lift = (i32::from(corner) - 1) * STEP;
+    if !s.pointer {
+        lift += FORM_LIFT.get(form).copied().unwrap_or(0);
+    }
+    let mut p = crate::people::Person::default();
+    p.set_pos(s.pos);
+    p.set_offset(s.offset);
+    let placed = place_person(&p, cam, lift); // 1088:30ba
+    let sprite = s.sprite;
+    let size = (i32::from(t.animdat1(sprite, 1)), i32::from(t.animdat1(sprite, 0)));
+    let bitmap = usize::try_from(t.animdat1(sprite, 10)).unwrap_or(BITMAPS);
+    let picture = (i32::from(t.animdat1(sprite, 2)), i32::from(t.animdat1(sprite, 3)));
+    let mask = (i32::from(t.animdat1(sprite, 4)), i32::from(t.animdat1(sprite, 5)));
+    draw_masked(dst, tiles, bitmap, (placed.x, placed.y), size, picture, mask);
+}
+
+/// A building's picture, every part of it, as the build menu shows it in
+/// the rectangle `(x1, y1)`–`(x2, y2)` (inclusive) of `dst`: turned as the
+/// view is, centred, cut to the rectangle. // 1018:0e4d, 1018:0b9a
+#[allow(clippy::many_single_char_names)] // The original's w, d, x, y.
+pub fn draw_building_picture(dst: &mut Surface, tiles: &Tiles, building: u8, view: u8, rect: [i16; 4]) {
+    let view = usize::from(view & 3);
+    let (_, b) = turn_building(tiles, 0, building, view); // 1050:0997
+    let first = tiles.hausnr(b, 2);
+    let (w, d) = (i32::from(tiles.hausnr(b, 3)), i32::from(tiles.hausnr(b, 4)));
+    let bitmap = usize::try_from(tiles.hausnr(b, 7)).unwrap_or(BITMAPS);
+    let [x1, y1, x2, y2] = rect.map(i32::from);
+    let (rw, rh) = (x2 - x1 + 1, y2 - y1 + 1);
+    let row = |n: i32| {
+        usize::try_from(n)
+            .ok()
+            .and_then(|r| tiles.hauspos.get(r))
+            .map(Sprite::new)
+    };
+    let first_rise = row(i32::from(first)).map_or(0, |s| s.rise);
+    let left = (rw - (w + d) * 31) / 2;
+    let top = (rh - ((w + d) * 16 + first_rise)) / 2 + first_rise;
+    for a in 0..w {
+        for c in 0..d {
+            let Some(s) = row(i32::from(first) + a + c * w) else {
+                continue;
+            };
+            let y = top - s.rise + (a + c) * 16;
+            let x = ((d - 1) - c + a) * 31 + left + s.left;
+            // 1018:0b9a: cut to the rectangle. The original draws a part
+            // exactly 62 wide in two blits of 32 that overlap by two
+            // pixels, which comes to the same.
+            let (cut_l, cut_t) = ((-x).max(0), (-y).max(0));
+            let cut_r = (x + s.width - rw).max(0);
+            let cut_b = (y + s.tile.height - rh).max(0);
+            let size = (s.width - cut_l - cut_r, s.tile.height - cut_t - cut_b);
+            if size.0 <= 0 || size.1 <= 0 {
+                continue;
+            }
+            let t = s.tile;
+            draw_masked(
+                dst,
+                tiles,
+                bitmap,
+                (x1 + x + cut_l, y1 + y + cut_t),
+                size,
+                (t.picture.0 + cut_l, t.picture.1 + cut_t),
+                (t.mask.0 + cut_l, t.mask.1 + cut_t),
+            );
+        }
+    }
 }
 
 fn height_px(h: u8) -> i32 {

@@ -14,7 +14,10 @@ bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
 `game` crate has the first ported game code: text in the game's own bitmap
 font, its widget toolkit, the start menu, and starting a game: the island
 from a scenario, or one generated from the start menu's settings, is drawn
-on the main screen, which scrolls and turns. Games are saved and loaded in
+on the main screen, which scrolls and turns, and the player builds on it
+from the build menu, lays roads, raises and lowers the land and
+demolishes ([docs/player-tools.md](docs/player-tools.md)), while the
+computer players do the same. Games are saved and loaded in
 the original's format, from the start menu's load form and the in-game
 file menu ([docs/savegame.md](docs/savegame.md)). Also here:
 - tools that get the game from the CD image, including the installer's
@@ -71,7 +74,9 @@ The argument is the directory with the game's files (`HOLIDAY.EXE`,
 the background with the start menu on it. The menu's settings work. Start
 shows the main screen with the scenario's island, or the tutorial island
 for a normal game until island generation is ported. The arrow keys and the
-number pad scroll it (Ctrl for bigger steps), Insert and Delete turn it.
+number pad scroll it (Ctrl for bigger steps), Insert and Delete turn it,
+a right click moves it. The button bar's tool buttons (or F1 to F12)
+pick the tools; a click on the island uses them.
 Loading a game is only logged. Escape quits.
 
 ## Decompiling

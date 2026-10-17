@@ -47,7 +47,7 @@ pub const LAYOUT: [(&str, Rect); 10] = [
 
 /// The bitmaps the frame is drawn from, from `GRAFIK`, in the order
 /// [`Hauptschirm::new`] takes them.
-pub const BITMAP_FILES: [&str; 10] = [
+pub const BITMAP_FILES: [&str; 11] = [
     "menulei3.bmp", // the title bar, 1020:1df3
     "statusle.bmp", // the info bar's, despite the name: 1110:600e
     "buttoff.bmp",  // 1110:600a
@@ -58,6 +58,7 @@ pub const BITMAP_FILES: [&str; 10] = [
     "kompkn.bmp",   // the compass knob, 1020:2501
     "close.bmp",    // 1110:54b8
     "minimize.bmp", // 1020:2501
+    "button.bmp",   // the buttons held down, 1110:6006
 ];
 const MENULEI: usize = 0;
 const INFO: usize = 1;
@@ -69,6 +70,7 @@ const STATUS: usize = 6;
 const KOMPKN: usize = 7;
 const CLOSE: usize = 8;
 const MINIMIZE: usize = 9;
+const BUTTON: usize = 10;
 
 /// The left edges of the 23 buttons in the button bar, each 25 wide.
 /// // 1110:12c0
@@ -203,6 +205,8 @@ pub struct Hauptschirm {
     keep_origin: bool,
     /// The date and player 1's money the info bar shows, once drawn.
     info_shown: Option<(Date, i32)>,
+    /// The ticks the status bar's message stays. // 1110:009a
+    status_timeout: i16,
     bitmaps: Vec<Surface>,
     /// The island without the people, which [`Hauptschirm::show_people`]
     /// draws over it into [`Hauptschirm::map`]. The original keeps what's
@@ -310,6 +314,7 @@ impl Hauptschirm {
             },
             keep_origin: false,
             info_shown: None,
+            status_timeout: 0,
             title: bitmaps
                 .get(MENULEI)
                 .cloned()
@@ -466,6 +471,58 @@ impl Hauptschirm {
             .iter()
             .position(|&left| (left..left + BUTTON_SIZE).contains(&x))?;
         u8::try_from(n).ok()
+    }
+
+    /// Draws the button bar: each button down or up, from `button.bmp`
+    /// or `buttoff.bmp`. // 1010:2af5, 1050:0002, 1050:0074
+    pub fn draw_buttons(&mut self, down: &[bool]) {
+        let all = self.buttons.bounds();
+        for (n, x) in BUTTONS.into_iter().enumerate() {
+            let from = if down.get(n).copied().unwrap_or(false) {
+                BUTTON
+            } else {
+                BUTTOFF
+            };
+            let r = Rect::new(x, 0, BUTTON_SIZE, BUTTON_SIZE);
+            self.buttons.blit(x, 0, &self.bitmaps[from], r, Rop::Copy, all);
+        }
+    }
+
+    /// Shows `text` on the status bar, centred, in colour 11, for 20
+    /// ticks. // 1030:22de (1030:232d, 1030:235a)
+    pub fn show_status(&mut self, text: &[u8], font: &Font) {
+        self.status_timeout = 20;
+        self.draw_status(text, font);
+    }
+
+    fn draw_status(&mut self, text: &[u8], font: &Font) {
+        // 1030:21a8: the bar's picture back over its first 220 pixels.
+        let all = self.status.bounds();
+        let from = Rect::new(0, 0, 0xdc, all.height());
+        self.status.blit(0, 0, &self.bitmaps[STATUS], from, Rop::Copy, all);
+        font.draw(&mut self.status, text, (2, 0), 200, Align::Center, 0xb); // 1030:23d3
+    }
+
+    /// The clock's step 2: the status bar's message goes after its time.
+    /// Whether the bar changed. // 1020:1e9b
+    pub fn status_tick(&mut self, font: &Font) -> bool {
+        if self.status_timeout > 0 {
+            self.status_timeout -= 1;
+            if self.status_timeout == 0 {
+                self.draw_status(b"", font);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// A right click on `Hauptbild` at `x`, `y`: the view moves towards it,
+    /// by the distance from the middle in half rows of 18 and columns of
+    /// 32 pixels. // 1020:1984
+    pub fn right_click(&mut self, x: i32, y: i32, world: &World, tiles: &Tiles) {
+        let (w, h) = (LAYOUT[3].1.width(), LAYOUT[3].1.height());
+        let short = |n: i32| i16::try_from(n).unwrap_or(0);
+        self.scroll(short((y - h / 2) / 0x12), short((x - w / 2) / 0x20), world, tiles);
     }
 
     /// Redraws the island, without the people. // 1050:2700

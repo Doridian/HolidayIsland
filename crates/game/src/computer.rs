@@ -14,7 +14,7 @@
 //!
 //! They level land with [`game::terrain`](crate::terrain) and lay roads
 //! with [`World::build_road`] (`game::roads`), which the human's tools
-//! share.
+//! share (`game::tools`, through commands).
 
 // The original's names: squares `(i, j)`, sizes `w`, `d`, the player `p`.
 #![allow(clippy::many_single_char_names)]
@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use formats::savegame::SaveGame;
 
-use crate::roads::{CROSSABLE, NO_DRAG_GROUND};
+use crate::roads::CROSSABLE;
 use crate::simulation::Tick;
 use crate::world::{Error, NO_BUILDING, PALM, Pos, World, on_map};
 
@@ -558,14 +558,17 @@ impl World {
         price.wrapping_add(top.wrapping_sub(price).wrapping_mul(r) / 999)
     }
 
-    /// An event makes `building` available: the build menu gets it
-    /// (`kind` 0 and 1, the view's, 1018:23f8) and with `kind` 0 the
-    /// computers' lists too, the hotels 0x60, 0x64 and 0x68 with the
-    /// three types after them and 0x2c, 0x2e, 0x30 and 0x32 with the one
-    /// after; `kind` 2 to 7 is a player who builds it next. // 10a0:0691
+    /// An event makes `building` available: the human's build menu gets
+    /// it (`kind` 0 and 1, 1018:23f8) and with `kind` 0 the computers'
+    /// lists too, the hotels 0x60, 0x64 and 0x68 with the three types
+    /// after them and 0x2c, 0x2e, 0x30 and 0x32 with the one after; `kind`
+    /// 2 to 7 is a player who builds it next. Single human: kind 1 is
+    /// player 1, whose build menu it is. // 10a0:0691
     pub(crate) fn make_available(&mut self, building: u8, kind: u8) {
         match kind {
+            1 => self.add_to_build_menu(building), // 1018:23f8
             0 => {
+                self.add_to_build_menu(building); // 1018:23f8
                 let more = match building {
                     0x60 | 0x64 | 0x68 => 3,
                     0x2c | 0x2e | 0x30 | 0x32 => 1,
@@ -1325,8 +1328,9 @@ impl World {
         };
         // 1078:2396, with the start's ground as the module `roads`
         // explains.
-        // BUG(original): the computers use the ground the human's last drag started on (1110:704e); the port passes sand.
-        let Ok(end) = self.build_road(p, start, to, NO_DRAG_GROUND, tick) else {
+        // BUG(original): the computers use the ground the human's last drag started on (1110:704e): after a drag from water they look for bridges.
+        let ground = self.road_drag_ground;
+        let Ok(end) = self.build_road(p, start, to, ground, tick) else {
             return false;
         };
         self.computers.site[k] = end;

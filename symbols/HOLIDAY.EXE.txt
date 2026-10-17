@@ -98,15 +98,72 @@
 1010:2ac7 func button_bar_down
 1010:2ade func button_bar_up
 1010:2af5 func draw_button_bar
+1010:2b4c func tool_button_down
+1010:2b60 func release_tool  # a tool's button clicked again: the pointer, but a closed submenu opens again; road_dragging := 0; game::tools
+1010:2bc4 func pointer_instead_of  # (button): the pointer tool instead of the button's
+1010:2be1 func leave_tool  # (tool): its button up, the sabotage form hidden, the build menu closed (its Visible is always set)
+1010:2c20 func buttonimage_click
 1010:2c8b func button_bar_click  # the button 1110:5fbe: toggles it and the form it stands for (0 the file menu)
 1010:2fa9 func clear_651a  # 1110:651a..6530 := 0, 1110:6530 := 1; not ported
 1010:3006 func schedule_event  # (i, j, ?, value, ?, arg: Longint; n): event n certain (chance 0x3fffc) with value (+0x14), arg (+0x2c) and square (+0x30)
 1010:3084 func events_tick  # once a day: counts event_days, starts the due events of *1110:6536 by kind (auction, news, disaster, new building type), ends them after their duration; game::events
 1010:36f8 func load_ereignis_file  # (filename): reloads ereignis from EREIGNn.DAT; Ghidra missed this function
 1010:3ab4 func load_ereignis
+1018:015f func baumenue_hit
+1018:0208 func baumenue_baumenuebildmousedown  # build menu: close, rotate, up, down, list (double click closes), Bauen, Schliessen; any button on the title bar drags and shrinks it to 16; game::baumenue
+1018:0461 func baumenue_baumenuebildmousemove
+1018:04e7 func baumenue_baumenuebildmouseup
 1018:080f func baumenu_load_data  # form method (Self); BAUMENU.TXT + BAUMENU.DAT; form class not identified yet
+1018:0b9a func baumenue_draw_building_part
+1018:0e4d func baumenue_draw_building  # the selected type's picture, turned with the view, centred and cut to rect 9 (1018:0b9a); game::darstellung::draw_building_picture
+1018:10a9 func baumenue_draw_picture_ground
+1018:11ce func baumenue_restore_rect
+1018:1374 func baumenue_draw_rotate_button
+1018:1468 func baumenue_restore_area
+1018:1502 func baumenue_text_in
+1018:15e1 func baumenue_button_text
+1018:16c8 func baumenue_draw_item  # the selected row's type (1110:6058, by its look +0x1d5 when +0x1ea), its name, figures and picture
+1018:1917 func baumenue_draw_row
+1018:1a43 func baumenue_draw_list
+1018:1b5e func baumenue_draw_texts
+1018:1cff func baumenue_close_released
+1018:1d12 func baumenue_rotate_released
+1018:1d23 func baumenue_build_released
+1018:1d50 func baumenue_cancel_released
+1018:1d7d func baumenue_close_pressed
+1018:1e6d func baumenue_rotate_pressed
+1018:1f61 func baumenue_build_pressed
+1018:2069 func baumenue_cancel_pressed
+1018:2171 func baumenue_up_pressed
+1018:2265 func baumenue_up_released
+1018:2278 func baumenue_down_pressed
+1018:236c func baumenue_down_released
+1018:237f func baumenue_select_row
+1018:23f8 func build_menu_add  # (building): onto the end of its kind's submenu (1110:00ea) with its looks; from make_available; game::build_menu
+1018:26b9 func build_menu_remove  # (building): off its kind's submenu, the rows after it moving up, the selection 0; one-of-a-kind types after start_building; game::build_menu
+1018:29f7 func baumenue_view_turned
+1018:2a17 func baumenue_restore_menu  # the menu for the tool 1110:6056 drawn, not opened: game_start_setup, game_show_state
+1018:2b01 func baumenue_open  # opens the tool's submenu: layout 2 for 10, 0x12, 0xe, else 1; sound 0xd; focus
+1018:2c71 func baumenue_close  # closes the build menu: sound 0xe, height 0, +0x1fe := 0, the main screen's focus
+1018:2fa2 func baumenue_create  # FormCreate-like setup from load_game_rest: the lists (1018:080f), selections 0, hidden, layout 2, top (h-480)/2+0x3b, right edge
+1018:3175 func baumenue_free_bitmaps
+1018:3203 func baumenue_free
+1018:3290 func baumenue_formkeydown  # build menu FormKeyDown: Left/Right the previous/next submenu (1110:14c5, 1110:14d1), Esc cancel, Enter close, Space focus; F1-F12, 1-9, Pause to the main screen
+1018:3350 func baumenue_save
+1018:34a0 func baumenue_load
 1018:367e func music_next_track  # after each day: the next MIDI track from the list at 1110:31d6 when the current one has ended
+1018:3904 func button_under_mouse
+1018:394e func button_at_mouse
+1018:399a func mouse_moved
+1018:39b3 func mouse_square
+1018:39c2 func square_at  # (var square; x, y): the map square under a screen point on Hauptbild: walks the column down, then the pointer picture's pixel (gfxgroun, GFXPOS) decides; game::darstellung::square_at
+1018:3d8d func cursor_square  # (var square): square_at at the cursor
+1018:3dad func cursor_corner_square  # (var square): square_at 16 pixels above the cursor (the raise/lower tools' corner)
+1018:3dd6 func save_mouse
+1018:3e46 func load_mouse
 1020:04b0 func hauptschirm_draw_view
+1020:04bc func show_info_box
+1020:050b func hide_info_box
 1020:05a7 func hauptschirm_update_scroll
 1020:067c func hauptschirm_erase_thumbs
 1020:0697 func hauptschirm_origin_from_scroll  # view_origin_i/j/parity from +0x408 (wo) and +0x40a (ns)
@@ -182,6 +239,23 @@
 1028:25f4 func auktion_save
 1028:26e4 func auktionsform_formkeydown  # Escape, Space, Alt+F4: 1028:0476 and 1028:0c82; Enter: bid without the money check, or start
 1028:361f func load_sabotage
+1028:3a68 func lower_tool  # (player): lower_corner at the cursor's corner by the view; pays, books 0x6a, float_money, sound 0x1f, or the error; game::command Level
+1028:3b7c func raise_tool  # (player): raise_corner at the cursor's corner by the view; as 1028:3a68; game::command Level
+1028:3c90 func demolish_tool  # (player): demolish at the cursor; game::command Demolish
+1028:3cb1 func build_tool  # (player): can_build the tool's building at the cursor, start_building with budget 0xb, sound 0x1f, or the error; game::command Build
+1028:3d25 func build_tool_9
+1028:3d2f func build_tool_10
+1028:3d39 func build_tool_11
+1028:3d43 func build_tool_12
+1028:3d4d func build_tool_13
+1028:3d57 func build_tool_14
+1028:3d61 func build_tool_15
+1028:3d6b func build_tool_17
+1028:3d75 func build_tool_18
+1028:3d7f func build_tool_19
+1028:3d89 func build_tool_20
+1028:3d93 func sabotage_tool
+1028:3dd0 func tool_click  # the tool's work on a [ssLeft] press on Hauptbild, by 1110:6056; game::tools::Tools::press
 1030:000d func monate_create  # constructor: 12 month names (string[15]) from MONATE.TXT; sets +4,+5 to 1 and +6 to 1996
 1030:00eb func date_advance  # (Self): the next day, month lengths at 1110:174c; game::monate
 1030:0148 func date_text  # (Self, var s): '1. Januar 1996', suffix by land
@@ -508,6 +582,11 @@
 1088:88bb func people_free  # frees the people blocks
 1088:8950 func save_people  # saves 1110:3c2e, *1110:6fd6, ANIMDAT2, NEINTRAG, ANIMDAT3, 6ff4, 6fee, 6ff0
 1088:8a07 func load_people  # loads them, unit of load_map; game::world
+1090:0014 func tool_preview_squares  # the tool's squares into people records 1..: the road drag (6348 := the mouse square) or bridge, the building's squares coloured by can_build, the demolish tool's building; game::tools
+1090:124f func tool_preview  # the clock's tick for tools 6..21: the mouse square, the pointer in people record 0 (frame 1110:6fd4), 1090:0014
+1090:155b func draw_tool_preview  # draws the tool's pictures after the people (draw_person source 4)
+1090:1836 func restore_under_tool_preview
+1090:1919 func restore_under_people
 1090:1a25 func send_person  # (j, i): by the building there, someone of its kind if none is at its door (1088:0324), some kinds by Random; Ghidra missed this function
 1090:2373 func spawn_people  # boats and ships on random open sea, then the squares of 1110:5536 from the view origin; game::people
 1090:2c1f func plane_on_approach  # (n): the plane's +0x22 square is one of its airport's approaches (1110:36a0; the second if either coordinate matches)
@@ -777,12 +856,14 @@
 1110:009a data status_message_timeout
 1110:009e data building_slice_tick  # Integer 0..29: building_slice argument
 1110:00a2 data height_limit  # Word, 20 at first; level_site starts its lowest corner there
+1110:00ea data kind_menus  # array[0..11] of Integer: the build submenu of each HAUSDATA kind (9..0x14, -1 for kind 7)
 1110:0102 data player_names  # guess: array of string[255], player 1 first ("Holiday", "Moritz", ..., "Lisa", then "keiner")
 1110:0902 data player_names_by_number  # array[0..8] of string: keiner, then players 1..8 (the auction's bidder)
 1110:0a02 data last_player_name  # string: the name the start menu offers
 1110:1224 data form_table  # array[0..18, 0..3] of Integer: per form the corners (i, j), (i, j-1), (i-1, j-1), (i-1, j) above (i, j); 10b0:33bc; game::terrain::FORMS
 1110:12bc data view_width
 1110:12be data view_height
+1110:12c0 data button_edges  # array[0..22] of (left, right: Integer): the button bar's buttons
 1110:1322 data load_map_name  # string: the file state 1500 loads from MAPS when hintergrund+0x190 is set, Last.map
 1110:133e data view_keep_origin
 1110:1340 data record_kinds  # array[-1..11] of Byte really 1110:1341 array[0..10]: by HAUSDATA kind, 0 house, 1/2 facility, 3 none
@@ -799,6 +880,11 @@
 1110:147a data name_steps  # array[0..9] of Integer: 53, 59, ... 89, the step through NAMEN.TXT's names (1010:0414)
 1110:1492 data ui_label_vmt  # VMT of plain labels. Ghidra shows wrong bytes here: DGROUP is stored as iterated data in the NE file and the loader does not expand it
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
+1110:14c5 data menu_previous  # array[9..20] of Byte (from 14ce): the submenu left of each, for the build menu's Left key
+1110:14ca data menu_visible_rows  # array[1..2] of Integer: the list's rows in each build menu layout, 7 and 11
+1110:14d1 data menu_next  # array[9..20] of Byte (from 14da): the submenu right of each
+1110:14e0 data tool_buttons  # array[6..22] of Byte (from 14e6): a tool's button, the same numbers; 1110:14f2 another copy
+1110:14f2 data tool_buttons2
 1110:1572 data hauptschirm_layout_table  # 11 x (hidden, left, top, width, height)
 1110:174b data month_lengths  # month lengths, array[0..3, 1..12] of Byte read at 174b + 12 * (year mod 4) + month
 1110:1812 data dateimenue_rects  # array[0..20] of (left, top, right, bottom: Integer), inclusive: the file menu parts; game::dateimenue::RECTS
@@ -875,8 +961,13 @@
 1110:5532 data view_origin_j
 1110:5534 data view_parity
 1110:5536 data view_squares  # array[0..10, 0..60] of (i, j): the squares spawn_people looks at, from the view origin; saved
+1110:5fbe data button_clicked  # Byte: the button under the mouse or clicked, 0x17 none; saved
 1110:5fc0 data tile_dcs
-1110:6344 data road_drag_start  # (i, j: Integer): the road tool's start square; plan_road sets it to the road's start; 1110:6348 the current square
+1110:6056 data tool  # Integer: the tool, 6 raise, 7 lower, 8 demolish, 9..20 build (but 16 road), 21 sabotage, 22 pointer; saved
+1110:6058 data tool_building  # Integer: the building type the build tools build; saved
+1110:605a data mouse_square  # (i, j: Integer): the square under the mouse, each tick (1090:124f); saved
+1110:6344 data road_drag_from  # (i, j: Integer): the road tool's start square; plan_road sets it to the road's start; 1110:6348 the current square
+1110:6348 data road_drag_to  # (i, j: Integer): the road drag's end, each tick while dragging (1090:0014); saved
 1110:634c data road_dragging  # Byte: the road tool is being dragged; the computers don't build roads meanwhile; saved
 1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
 1110:64b0 data werbung_to_text
@@ -992,6 +1083,7 @@
 1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fcc data people_runway  # the runway of the next taxiing plane (kinds 0x35..0x3a)
+1110:6fd4 data tool_pointer_frame  # Integer: the tools' pointers' frame, 0..7
 1110:6fd6 data people  # pointer32 to 1601 records of 0x28 bytes, the people and vehicles; game::people
 1110:6fda data animdat2 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fde data neintrag | pointer32  # far pointer to the table loaded from the file of that name
@@ -1002,7 +1094,12 @@
 1110:6ff2 data people_last_building  # Integer: the building remove_people_from last found
 1110:6ff4 data people_last  # Integer: the last record of the general range in use
 1110:7040 data surfer_beach  # (i, j): the beach of the next surfer, -1 once taken
-1110:704e data road_drag_ground  # Byte: the ground at the road tool's start (1080:3195); plan_road builds bridges from water (2, 3); saved (unit 1080:3c6d); the port passes it to build_road
+1110:7044 data mouse_x
+1110:7046 data mouse_y
+1110:7048 data last_mouse_x
+1110:704a data last_mouse_y
+1110:704c data mouse_shift
+1110:704e data road_drag_ground  # Byte: the ground at the road tool's start (1080:3195); plan_road builds bridges from water (2, 3); saved (unit 1080:3c6d); game::World::road_drag_ground, which the computers' roads read too
 1110:704f data road_drag_form  # Byte: the form there; saved
 1110:7050 data disaster_damage  # Longint
 1110:7054 data disaster_insured

@@ -299,8 +299,11 @@ instead of keeping what's under them.
 
 ## Open questions
 
-- What records 0–0x23 (kind 6) and `+0x14` are; what the planes' second
-  halves are (a shadow on the ground, it seems).
+- What `+0x14` is; what the planes' second halves are (a shadow on the
+  ground, it seems). Records 0–0x23 (kind 6) are the main screen's tools'
+  pictures: the pointer and the squares a building or road would take
+  (1090:124f, [player-tools.md](player-tools.md)), which the port keeps
+  in the view.
 - Who sends the walkers out: nothing ported adds kinds 0x11–0x16 (1088:7a14,
   which runs from the view, may).
 - 1098:0002 returns an undefined value when a harbour ship's square has no

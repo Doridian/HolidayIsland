@@ -7,14 +7,15 @@
 //! The human's road tool drags a road out: `road_drag_start` (1080:3195)
 //! keeps the start square (`1110:6344`, `1110:6346`), its ground
 //! (`1110:704e`) and form (`1110:704f`) and sets `1110:634c`, and letting
-//! go builds the road (1080:31ed). In the port the start square and its
-//! ground are [`World::build_road`]'s arguments, so the drag's start
-//! stays the view's; only `1110:634c` (which the computers wait on, and
-//! building a road clears) is in the world. The computers pass
-//! [`NO_DRAG_GROUND`], what `1110:704e` holds until the human first
-//! drags a road: the original lets them use whatever ground the human's
-//! last drag started on, which only matters when that was water (then
-//! they'd look for bridges).
+//! go builds the road (1080:31ed). In the port the start square is the
+//! view's (`crate::tools`) and an argument of [`World::build_road`], as is
+//! the ground; `1110:634c` (which the computers wait on, and building a
+//! road clears) and the ground are the world's
+//! ([`World::road_dragging`], [`World::road_drag_ground`]), set by the
+//! drag's command (`crate::command`). The computers pass the ground too:
+//! the original lets them use whatever ground the human's last drag
+//! started on, which only matters when that was water (then they look
+//! for bridges). Before any drag it's [`NO_DRAG_GROUND`].
 
 use crate::accounts::BOOK_OTHER;
 use crate::construction::NOT_ENOUGH_MONEY;
@@ -346,7 +347,7 @@ impl World {
     /// a road or a crossable river; then a flat square that isn't a river
     /// (or a crossable river piece across the road's way), or a ramp
     /// (forms 0–3) the road goes up or down. // 1080:2831
-    fn can_road(&self, pos: Pos, start_ground: u8, from: Pos) -> bool {
+    pub(crate) fn can_road(&self, pos: Pos, start_ground: u8, from: Pos) -> bool {
         let building = self.building_or_none(pos); // 1000:3dc9
         if building != NO_BUILDING && building != PALM {
             return false;
@@ -375,13 +376,13 @@ impl World {
 
     /// Whether a bridge goes on over `pos`: water, flat or a ramp (forms
     /// 0–3). The map's edge and off it count as flat water. // 1080:2a82
-    fn can_bridge(&self, pos: Pos) -> bool {
+    pub(crate) fn can_bridge(&self, pos: Pos) -> bool {
         matches!(self.ground_or_water(pos), 2 | 3) && matches!(self.form_or_flat(pos), FLAT | 0..=3)
     }
 
     /// Whether a road can be laid on `pos`: no building but a palm, not
     /// water, flat or a ramp. // 1080:29d8
-    fn road_fits(&self, pos: Pos) -> bool {
+    pub(crate) fn road_fits(&self, pos: Pos) -> bool {
         matches!(self.building_or_none(pos), NO_BUILDING | PALM)
             && !matches!(self.ground_or_water(pos), 2 | 3)
             && matches!(self.form_or_flat(pos), FLAT | 0..=3)

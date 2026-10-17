@@ -46,7 +46,7 @@ candidate lists are saved for players 2 to the player count only.
 | `1110:70f2` | The status text, a `string` (shown nowhere) |
 | `*1110:6512` | The budgets: 13 `Longint`s for each of players 2–8, the capacity (`HAUSDATA.DAT` column 3) of its building sites per category; a site adds it (1078:15d9), finishing takes it off (1078:203d) |
 | `1110:6f28` | `array[1..8] of Boolean`: the bank said no |
-| `1110:634c` | The human drags out a road (1080:3195); the computers don't build roads meanwhile, building one clears it |
+| `1110:634c` | The human drags out a road (1080:3195); the computers don't build roads meanwhile, building one clears it ([player-tools.md](player-tools.md)) |
 
 When the game's data is loaded (1030:3745), 10a8:388b builds the type
 lists (for each category 0–10 the types 0–0x7e whose row matches and
@@ -194,7 +194,8 @@ a type that's one of a kind leaves the build menu.
 Raising and lowering the land is ported in
 [`game::terrain`](../crates/game/src/terrain.rs), the road planner in
 [`game::roads`](../crates/game/src/roads.rs), both world code that the
-human's tools (not ported) will call too.
+human's tools call too, through commands
+([player-tools.md](player-tools.md)).
 
 - A corner moves one step at a time (10b0:069f up, 10b0:1907 down) on a
   41 × 41 working copy of the heights and buildings around it
@@ -233,11 +234,13 @@ human's tools (not ported) will call too.
   before) costs `Strassenbaukosten` (`1110:64ee`, `MODATYP.DAT`, not in
   the map), which the computers pay too. Player 1 also needs the money for
   the drag's length and gets the messages (0xe, 0x1f, 1030:235a).
-- The human's road drag (`1110:6344` start, `1110:704e` its ground,
-  `1110:704f` its form) is passed to `build_road` as arguments instead of
-  living in the world; the computers pass sand (0) as the start's ground,
-  what `1110:704e` holds before any drag. Only `1110:634c`, which the
-  computers wait on and building a road clears, is still in the world.
+- The human's road drag: its start square (`1110:6344`) is the view's
+  and an argument of `build_road`; its flag (`1110:634c`, which the
+  computers wait on and building a road clears) and its start's ground
+  and form (`1110:704e`, `704f`) are the world's, set by the drag's
+  command. The computers' roads read the ground too, as in the original:
+  after the human's drag from water they look for bridges. Before any
+  drag it's sand (0), or what the map saved.
 
 None of this draws random numbers, but the markers are people
 (1088:0324). The bugs kept are in
@@ -252,11 +255,6 @@ bids only for a building or a bankrupt player's property, or while its
 area isn't waiting for its first roads, and up to three times the price
 or what it can pay (money less loan plus `MaxSchulden`).
 
-## Not ported yet
-
-- The human's levelling and road tools, which would call the routines
-  above through commands.
-
 ## Open questions
 
 - What `1110:00a2` (20) is: the levelling's lowest corner starts there,
@@ -268,7 +266,8 @@ or what it can pay (money less loan plus `MaxSchulden`).
 - 10a8:21de checks the area of the plot it leaves, not the new one's.
 - A computer in the red with the bank's no only waits (or demolishes one
   time in a hundred); nothing else pays its debts.
-- `1110:634c` is the human's UI state in the world: for multiplayer the
-  computers' wait on another player's road tool needs a decision.
+- `1110:634c` and `1110:704e` are the human's UI state in the world: for
+  multiplayer the computers' wait on another player's road tool, and
+  their roads by another player's drag, need a decision.
 - Building any road turns the animations' `1110:0056` on (1080:3216),
   whatever the player chose; the port keeps it.

@@ -49,6 +49,16 @@ impl Fields {
         }
     }
 
+    /// Sets the `n`th field at `dest` to `data`; zeros take it out, as
+    /// they're what a missing field is written as.
+    pub fn set(&mut self, dest: &'static str, n: usize, data: &[u8]) {
+        if data.iter().any(|&b| b != 0) {
+            self.0.insert((dest, n), data.to_vec());
+        } else {
+            self.0.remove(&(dest, n));
+        }
+    }
+
     /// How many fields are kept.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -167,13 +177,14 @@ const VIEW_GLOBALS: [u16; 8] = [0x12bc, 0x12be, 0x6344, 0x6348, 0x645a, 0x651a, 
 
 /// Whether the field at `dest` is the view's. The forms' fields are,
 /// except the clock's counters in the main screen's (`+0x1d6`, `+0x1d8`),
-/// the date in `TMonate` (`1110:65d6`) and the books in the money menu's
-/// (`+0x191`, `+0x24b`), which the world keeps. So are the globals of the
+/// the date in `TMonate` (`1110:65d6`), the books in the money menu's
+/// (`+0x191`, `+0x24b`) and the build menu's lists (`*[1110:6516]+0x180`,
+/// `+0x184`, `+0x1c6`), which the world keeps. So are the globals of the
 /// main screen's tools and mouse (`1110:5fb2` to `1110:6090`), the news
 /// and the TV (`1110:6638` to `667c`, unit 1048:25ea) and the drawing
 /// (`1110:667e` to `66c6`, unit 1050:313a).
 fn is_view(dest: &str) -> bool {
-    const WORLD_FORM_FIELDS: [&str; 7] = [
+    const WORLD_FORM_FIELDS: [&str; 10] = [
         "[1110:6532]+0x1d6",
         "[1110:6532]+0x1d8",
         "[1110:65d6]+0x4",
@@ -181,6 +192,10 @@ fn is_view(dest: &str) -> bool {
         "[1110:65d6]+0x6",
         "[1110:6f04]+0x191",
         "*[1110:6f04]+0x24b",
+        // The build menu's lists (`crate::build_menu`).
+        "*[1110:6516]+0x180",
+        "*[1110:6516]+0x184",
+        "[1110:6516]+0x1c6",
     ];
     if dest.starts_with('[') || dest.starts_with("*[1110:6") || dest.starts_with("*[1110:7") {
         // The computers' lists (`*[1110:70e2[i]]`, `*[1110:70e6[i]]`) are
@@ -293,6 +308,9 @@ fn world_field(w: &World, dest: &str, n: usize) -> Option<Vec<u8>> {
         "1110:5534" => word(w.viewpoint.parity),
         "1110:008c" => word(w.difficulty),
         "1110:634c" => flag(w.road_dragging),
+        "1110:704e" => vec![w.road_drag_ground],
+        "1110:704f" => vec![w.road_drag_form],
+        "*[1110:6516]+0x180" | "*[1110:6516]+0x184" | "[1110:6516]+0x1c6" => return w.build_menu.field(dest),
         "1110:006e" => vec![w.scenario],
         "1110:006f" => flag(w.cheated),
         "1110:0071" => flag(w.won),
@@ -610,6 +628,9 @@ pub fn differences(a: &World, b: &World) -> Vec<&'static str> {
     same!(foundation_cost);
     same!(land_costs);
     same!(road_dragging);
+    same!(road_drag_ground);
+    same!(road_drag_form);
+    same!(build_menu);
     same!(viewpoint);
     same!(tables);
     same!(random);
@@ -629,7 +650,8 @@ mod tests {
         assert!(!is_view("[1110:6532]+0x1d6"));
         assert!(!is_view("*[1110:6f04]+0x24b"));
         assert!(is_view("*[1110:6f04]+0x24b0"));
-        assert!(is_view("*[1110:6516]+0x184"));
+        assert!(!is_view("*[1110:6516]+0x184"));
+        assert!(is_view("[1110:6516]+0x1ae") && is_view("*[1110:6516]+0x1ed"));
         assert!(!is_view("*[1110:70e2[i]]"));
         assert!(is_view("1110:6056") && is_view("*1110:663a") && is_view("1110:651a"));
         assert!(!is_view("1110:0058") && !is_view("1110:6f30") && !is_view("(a local in 10a0:23c9)"));
