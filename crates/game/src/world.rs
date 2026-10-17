@@ -17,6 +17,7 @@ use vcl::random::Random;
 use crate::events::{Auction, Damage, Event, parse_events};
 use crate::monate::Date;
 use crate::money::Finances;
+use crate::people::{DIRECTIONS_SIZE, ENTRIES_SIZE, PATHS_SIZE, People, TRACKS_SIZE, Viewpoint};
 use crate::sabotage::{Championship, Sabotage, parse_championships, parse_sabotage};
 use crate::simulation::{Accounting, Clock, Options};
 
@@ -619,6 +620,15 @@ pub struct Tables {
     /// `GROUNDNR.DAT`, one row per kind of ground and form; the first
     /// column is how many variants its tile has. // *1110:54e6
     pub groundnr: Vec<[i16; 2]>,
+    /// `ANIMDAT1.DAT`, the people's pictures: the first two columns are
+    /// a picture's height and width. // *1110:6fea
+    pub animdat1: Vec<[i16; 11]>,
+    /// `ANIMDAT4.DAT`, 8 groups of 16 rows of 3 columns: the planes'
+    /// routes. // *1110:6fc6
+    pub animdat4: Vec<Vec<[i16; 3]>>,
+    /// `DARSTELL.DAT`'s `AnsichtFormkorrektur`: a square's form as seen
+    /// from each rotation. // *1110:667e
+    pub form_korrektur: [[u8; 19]; 4],
 }
 
 impl Tables {
@@ -645,6 +655,25 @@ impl Tables {
     #[must_use]
     pub fn groundnr(&self, row: usize, column: usize) -> i16 {
         self.groundnr.get(row).map_or(0, |r| r[column])
+    }
+
+    /// An `ANIMDAT1.DAT` cell, 0 for a row the table doesn't have (the
+    /// original reads past it).
+    #[must_use]
+    pub fn animdat1(&self, row: i16, column: usize) -> i16 {
+        usize::try_from(row)
+            .ok()
+            .and_then(|r| self.animdat1.get(r))
+            .map_or(0, |r| r[column])
+    }
+
+    /// An `ANIMDAT4.DAT` cell, 0 outside the table.
+    #[must_use]
+    pub fn animdat4(&self, group: i16, row: i16, column: usize) -> i16 {
+        let (Ok(g), Ok(r)) = (usize::try_from(group), usize::try_from(row)) else {
+            return 0;
+        };
+        self.animdat4.get(g).and_then(|g| g.get(r)).map_or(0, |r| r[column])
     }
 }
 
@@ -875,6 +904,10 @@ pub struct World {
     /// 4·class` the facilities', by 1010:2493's class (`Longint`s).
     /// // *1110:6f20, 0x19b bytes
     pub totals: Vec<u8>,
+    /// The people and vehicles.
+    pub people: People,
+    /// The human's view, which the people code reads (marked).
+    pub viewpoint: Viewpoint,
     /// The tables from the CD the simulation reads; empty until the game's
     /// data is loaded.
     pub tables: Arc<Tables>,
@@ -926,6 +959,8 @@ impl Default for World {
             road_demolition_cost: 0,
             connection_values: [0; 6],
             totals: vec![0; TOTALS_SIZE],
+            people: People::default(),
+            viewpoint: Viewpoint::default(),
             tables: Arc::default(),
             random: Random::default(),
         }
@@ -998,6 +1033,36 @@ fn books(save: &SaveGame) -> Result<Books, Error> {
     })
 }
 
+/// The people and their tables (unit 1088:8a07).
+fn people(save: &SaveGame) -> Result<People, Error> {
+    let records = People::parse_records(field(save, "*1110:6fd6")?).ok_or(Error::Field("*1110:6fd6"))?;
+    let signed = |dest| Ok::<_, Error>(word(save, dest)?.cast_signed());
+    Ok(People {
+        records,
+        paths: bytes::<PATHS_SIZE>(save, "*1110:6fda")?.to_vec(),
+        entries: bytes::<ENTRIES_SIZE>(save, "*1110:6fde")?.to_vec(),
+        tracks: bytes::<TRACKS_SIZE>(save, "*1110:6fe2")?.to_vec(),
+        directions: bytes::<DIRECTIONS_SIZE>(save, "1110:3c2e")?,
+        last: signed("1110:6ff4")?,
+        ships: signed("1110:6fee")?,
+        boats: signed("1110:6ff0")?,
+        ..People::default()
+    })
+}
+
+/// The human's view as the map saved it (units 1000:0c6a and 1048:2a19).
+fn viewpoint(save: &SaveGame) -> Result<Viewpoint, Error> {
+    let origin: [u8; 4] = bytes(save, "1110:5530")?;
+    Ok(Viewpoint {
+        rotation: byte(save, "1110:007c")?,
+        origin: (
+            i16::from_le_bytes([origin[0], origin[1]]),
+            i16::from_le_bytes([origin[2], origin[3]]),
+        ),
+        parity: word(save, "1110:5534")?.cast_signed(),
+    })
+}
+
 /// An `array[1..8] of Longint`.
 fn longints(save: &SaveGame, dest: &'static str) -> Result<[i32; 8], Error> {
     let data: [u8; 32] = bytes(save, dest)?;
@@ -1027,6 +1092,7 @@ impl World {
     ///
     /// # Errors
     /// If a field is missing or has the wrong size.
+    #[allow(clippy::too_many_lines)] // One field after the other.
     pub fn from_map(save: &SaveGame) -> Result<Self, Error> {
         let mut world = World {
             island: Island {
@@ -1135,6 +1201,8 @@ impl World {
             connection_values: bytes(save, "1110:6508")?,
             // Unit 1078:34ad.
             totals: bytes::<TOTALS_SIZE>(save, "*1110:6f20")?.to_vec(),
+            people: people(save)?,
+            viewpoint: viewpoint(save)?,
             tables: Arc::default(),
             random: Random::default(),
         };

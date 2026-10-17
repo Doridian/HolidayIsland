@@ -118,7 +118,7 @@ impl World {
                 *b = b.wrapping_sub(cost);
             }
         }
-        self.remove_workers(site.building, site.pos);
+        self.remove_workers(site.building, site.pos); // 1088:6bac
         if CHAMPIONSHIPS.contains(&site.building) {
             self.start_championship(site.building, site.pos); // 10a0:02ad
         } else if REPUTATION_BUILDINGS.contains(&site.building) {
@@ -566,7 +566,7 @@ impl World {
         let j1 = t.hausnr(site.building, 4).wrapping_add(j0).wrapping_sub(1);
         for i in i0..=i1 {
             for j in j0..=j1 {
-                self.remove_people_from((i, j)); // 1088:6975
+                self.remove_people_from((i, j), tick); // 1088:6975
                 self.empty_square((i, j), tick);
                 self.people_map_changed(); // 1088:6c5a
             }
@@ -604,9 +604,9 @@ impl World {
         }
         self.remove_house_beach_life(origin, tick); // 1078:267e
         if self.island.buildings.get(origin).is_some_and(|b| RENTALS.contains(&b)) {
-            self.remove_people_at(origin); // 1078:273a, 1088:2d2a
+            let _ = self.remove_people_at(origin); // 1078:273a, 1088:2d2a
         }
-        self.remove_people_from(origin); // 1088:6975
+        self.remove_people_from(origin, tick); // 1088:6975
         self.unregister_building(building, origin); // 1078:1684
         // Byte loops, as in place_building.
         let t = Arc::clone(&self.tables);
@@ -659,7 +659,7 @@ impl World {
             return Err(NOT_ENOUGH_MONEY);
         }
         self.add_money(player, cost.wrapping_neg());
-        self.remove_people_from(pos); // 1088:6975
+        self.remove_people_from(pos, tick); // 1088:6975
         if player == 1 {
             self.book(BOOK_BUILDING, cost.wrapping_neg()); // 1070:1419
             self.float_money(cost, pos); // 1088:0153
@@ -728,7 +728,7 @@ impl World {
     /// One square of a bridge over the sea becomes water, and its people
     /// leave. // 1078:276f
     fn remove_bridge_square(&mut self, pos: Pos, tick: &mut Tick) {
-        self.remove_people_from(pos); // 1088:6975
+        self.remove_people_from(pos, tick); // 1088:6975
         self.island.buildings.set(pos, NO_BUILDING);
         self.island.parts.set(pos, 0);
         self.island.ground.set(pos, 2);
@@ -747,7 +747,7 @@ impl World {
     ///
     /// The original stops with a division by zero for a house type with
     /// no capacity; the port skips the house, without a random number.
-    pub(crate) fn building_slice(&mut self, slice: i16) {
+    pub(crate) fn building_slice(&mut self, slice: i16, tick: &mut Tick) {
         let slice = i32::from(slice);
         for n in 0..self.houses.len() {
             let house = &self.houses[n];
@@ -760,7 +760,7 @@ impl World {
                 continue;
             };
             if i32::from(self.random.random(100)) < chance {
-                self.send_person((i, j));
+                self.send_person((i, j), tick); // 1090:1a25
             }
         }
         for n in 0..self.facilities.len() {
@@ -771,7 +771,7 @@ impl World {
             }
             let chance = u16::from(f.fill());
             if self.random.random(100) < chance {
-                self.send_person((i, j));
+                self.send_person((i, j), tick); // 1090:1a25
             }
         }
     }
@@ -786,43 +786,6 @@ fn redraw_area(tick: &mut Tick, low: Pos, high: Pos) {
                 tick.redraw.push((i, j));
             }
         }
-    }
-}
-
-/// The parts of the buildings' code that wait on the people and cars
-/// (`*1110:6fd6`, segments `1088` and `1090`).
-#[allow(clippy::unused_self)]
-impl World {
-    /// Sends the people of kind 0x26 (the builders?) in the building's
-    /// area away (1088:2df2). // 1088:6bac, 174 bytes
-    fn remove_workers(&mut self, building: u8, pos: Pos) {
-        // TODO: port 1088:6bac with the people (`*1110:6fd6`).
-        let _ = (building, pos);
-    }
-
-    /// Someone leaves the building at `pos`: by the building's type a
-    /// guest, a car, a boat... (1088:0324, some with a `Random(2)`).
-    /// // 1090:1a25, about 2400 bytes (not a function in Ghidra yet)
-    fn send_person(&mut self, pos: Pos) {
-        // TODO: port 1090:1a25 with the people. Where it draws random
-        // numbers, the port's part from the original's once it runs.
-        let _ = pos;
-    }
-
-    /// The map changed for the people: clears `+0x17` of the first 36
-    /// records of `*1110:6fd6` (their routes?) and `1110:6fce`,
-    /// `1110:6ff2`. // 1088:6c5a, 49 bytes
-    fn people_map_changed(&mut self) {
-        // TODO: port 1088:6c5a with the people.
-    }
-
-    /// Shows `amount` rising from `pos`: one of the records 0x24..0x2e of
-    /// `*1110:6fd6`, of kind 0xf, for the human's costs. // 1088:0153,
-    /// 207 bytes
-    fn float_money(&mut self, amount: i32, pos: Pos) {
-        // TODO: port 1088:0153 with the people; it's only for player 1
-        // (marked), so the view may want it instead.
-        let _ = (amount, pos);
     }
 }
 
@@ -852,6 +815,7 @@ mod tests {
                 hausdata,
                 hausprei: Vec::new(),
                 groundnr: Vec::new(),
+                ..Tables::default()
             }),
             random: Random::new(3),
             ..World::default()
@@ -1158,12 +1122,12 @@ mod tests {
         let mut f = Facility::new(41, (5, 6));
         f.set_fill(100);
         w.facilities.push(f);
-        w.building_slice(0);
+        w.building_slice(0, &mut Tick::default());
         let mut r = Random::new(3);
         r.random(100);
         r.random(100);
         assert_eq!(w.random, r);
-        w.building_slice(1);
+        w.building_slice(1, &mut Tick::default());
         r.random(100);
         assert_eq!(w.random, r);
     }

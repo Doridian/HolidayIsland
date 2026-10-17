@@ -7,13 +7,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use formats::bmp::Bitmap;
-use formats::data::{fontdat, groundnr, hausdata, hausnr, hausprei, modatyp, monate, sonstige};
+use formats::data::{
+    animdat1, animdat4, darstell, fontdat, groundnr, hausdata, hausnr, hausprei, modatyp, monate, sonstige,
+};
 use formats::savegame::SaveGame;
 use game::darstellung::Camera;
 use game::events::Event;
 use game::hauptschirm::{BITMAP_FILES, Hauptschirm, InfoTexts};
 use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::monate::Date;
+use game::people::{BOAT, SHIP, view_square};
 use game::startform::Settings;
 use game::text::Font;
 use game::world::{Facility, House, Tables, World};
@@ -45,6 +48,9 @@ fn tables() -> Arc<Tables> {
         hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
         hausprei: hausprei(&read("DATA/HAUSPREI.DAT")).unwrap(),
         groundnr: groundnr(&read("DATA/GROUNDNR.DAT")).unwrap(),
+        animdat1: animdat1(&read("DATA/ANIMDAT1.DAT")).unwrap(),
+        animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
+        form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
     })
 }
 
@@ -315,4 +321,50 @@ fn disasters_demolish() {
             assert_ne!(world.island.buildings.at(pos), 255, "{file}: {pos:?}");
         }
     }
+}
+
+#[test]
+fn people_from_the_map() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tables = tables();
+    let mut came = 0;
+    for file in ["MAPS/TUTORIAL.MAP".to_owned()]
+        .into_iter()
+        .chain(SCENARIO_FILES.iter().map(|f| format!("SZENARIO/{f}")))
+    {
+        let map = SaveGame::parse(&read(&file)).unwrap();
+        let mut world = World::from_map(&map).unwrap();
+        world.tables = Arc::clone(&tables);
+        world.random = Random::new(0x1234_5678);
+        world.clock.paused = false;
+        // The ships' and boats' counts are theirs.
+        let count =
+            |w: &World, kind| i16::try_from(w.people.records.iter().filter(|p| p.kind() == kind).count()).unwrap();
+        assert_eq!(count(&world, SHIP), world.people.ships, "{file}");
+        assert_eq!(count(&world, BOAT), world.people.boats, "{file}");
+        // The map's copy of the squares spawn_people looks at is the table
+        // 1030:2bdc fills.
+        let table = map.field("1110:5536").unwrap();
+        for e in 0..=10 {
+            for l in 0..=60 {
+                let at = usize::try_from(e * 0xf4 + l * 4).unwrap();
+                let saved = (
+                    i16::from_le_bytes([table[at], table[at + 1]]),
+                    i16::from_le_bytes([table[at + 2], table[at + 3]]),
+                );
+                assert_eq!(saved, view_square(e, l), "{file}");
+            }
+        }
+        let before = world.people.records.iter().filter(|p| p.kind() != 0).count();
+        for _ in 0..TICKS {
+            world.tick();
+        }
+        let after = world.people.records.iter().filter(|p| p.kind() != 0).count();
+        came += after.saturating_sub(before);
+        assert!(world.people.ships <= 10 && world.people.boats <= 10, "{file}");
+    }
+    assert!(came > 0);
 }

@@ -287,14 +287,16 @@ flood (10a0:0b49) uses the same set, also on the building.
 
 The "animations" are the people and vehicles on the island: 1601 records
 of 0x28 bytes at `*1110:6fd6` (saved, unit 1088:8a07), using
-`ANIMDAT*.DAT`. They walk, enter buildings and are counted, so they are
-part of the world, although the original lets the player switch them off
-(`1110:0054`, `0055`, `0056`).
+`ANIMDAT*.DAT`, described in [people.md](people.md). They walk, enter
+buildings and are counted, so they are part of the world, although the
+original lets the player switch them off (`1110:0054`, `0055`, `0056`).
+Adding and removing them is ported in
+[`game::people`](../crates/game/src/people.rs); `people_tick` isn't.
 
 | Routine | Address | Size | Side |
 |---|---|---|---|
 | `people_tick`: counts down `1110:723c[1..42]`, then for each entity 0x24..0x640: 1098:109f (not a function in Ghidra yet) and `person_step` (1090:2ce5, 9498 bytes), and with `1110:0055` the movement along `ANIMDAT2` paths | 1090:5293 | ~3850 | world |
-| `spawn_people`: new guests and cars, `Random` | 1090:2373 | 2220 | world |
+| `spawn_people`: new ships and boats, and people at the buildings the player sees, `Random` ([people.md](people.md#new-people-10902373)) | 1090:2373 | 2220 | world |
 | Erase the sprites | 1088:385d | 103 | view |
 | With a building tool (`1110:6056` in 6..21): the tool's preview, before and after | 1090:124f, 1090:155b | 780, 731 | view |
 | Draw the sprites | 1088:38c4 (1088:3a19, 4285) | 219 | view |
@@ -308,9 +310,10 @@ Ported in [`game::construction`](../crates/game/src/construction.rs).
 out a person if that's below `+0x10 * 100 div capacity` (`HAUSDATA.DAT`
 column 3), probably its occupancy in percent; then each facility whose
 `(i * j) mod 30` is `n` the same with its `+0x15` byte. Sending out
-(1090:1a25, about 2400 bytes, not a function in Ghidra) is the people's
-code: by the building type at the square it adds a guest, car or boat
-(1088:0324, 1088:4ae2), some with a `Random(2)`. A house type with no
+(`send_person`, 1090:1a25, 2154 bytes, [people.md](people.md#sending-someone-out-10901a25))
+is the people's code: by the building type at the square it adds
+someone (1088:0324) if there's none of that kind at its door
+(1088:4ae2), some kinds picked with a `Random`. A house type with no
 capacity stops the original with a division by zero; the port skips
 the house.
 
@@ -350,6 +353,8 @@ What the driver and the ported parts use, all saved in the map file:
 | `1110:1334`, `1110:64c2` | Renovation interval per player, `Renovierungskosten` | same |
 | `1110:006e`, `006f`, `0071`, `133c` | Scenario, cheated(?), won, the score's unknown flag | same |
 | `*1110:6f24+0x7f+p` | Player `p` is out | `*1110:6f24` |
+| `*1110:6fd6`, `*1110:6fda`, `*1110:6fde`, `*1110:6fe2`, `1110:3c2e`, `1110:6ff4`, `1110:6fee`, `1110:6ff0` | The people and their tables, [people.md](people.md) | same (unit 1088:8a07) |
+| `1110:007c`, `1110:5530`, `1110:5534` | The human's view as the people code reads it | same |
 | `1110:4a06` | `RandSeed`: **not** saved; `Randomize` (1108:1e21) seeds it from the DOS clock when the game's data is loaded (1030:38a3) | |
 
 ## The date (1030:000d..)
@@ -507,15 +512,14 @@ the square's:
 | 2 Miss Holiday Island | 0x79, 0x7a empty, 0x7b, 0x7c full | 0x19 full; 0x18 location; 0x17 reputation + 30; 0x14 message 0x59; 2 location undone; 1 empty |
 
 The championship messages scroll the view to the building first.
-`replace_building` (10a0:0026) is ported but for its first part, the
-spectators leaving an emptied tennis court (people of kinds 0x4d–0x50)
-or stage (0x41): the type goes on the area and into the record
+`replace_building` (10a0:0026), its first part the spectators leaving an
+emptied tennis court (people of kinds 0x4d–0x50) or stage (0x41) (port
+in `game::people`): the type goes on the area and into the record
 (1078:169a); a full building (`1110:1418`) gets `min(plot+0xee,
 capacity)` at `+0xc` and that in percent of the capacity at `+0x15`,
-an empty one (`1110:1438`) 0 for both. Not ported yet: `send_surfers`
-(10a0:10c6, five `Random(2)`s and the people) and `remove_people_at`
-(1088:2d2a). They're stubs, so the random numbers part from the
-original's while surfers would be sent.
+an empty one (`1110:1438`) 0 for both. `send_surfers` (10a0:10c6, five
+tries with a `Random(2)` each) and `remove_people_at` (1088:2d2a) are in
+`game::people`.
 
 ## The news (1048:0a54)
 
@@ -595,7 +599,7 @@ square, `i` then `j` from 0 to 250: one at sea level (lowest corner
 below 2) whose building isn't in `1110:1358` is demolished for no one,
 player 1's counting half their price as damage; then, still at sea
 level, the people on it leave if `layer_551c` or `layer_5520` isn't 255
-there (not ported, the people). Not ported yet: the oil slick (10a0:074d and 10a0:0915: a random
+there (`flood_people`, in `game::people`). Not ported yet: the oil slick (10a0:074d and 10a0:0915: a random
 sea square with up to 2000 `Random(250)`s and a random walk of oil, the
 location map × 50 % within 30 cells), the books, and `make_available`
 (the build menu's list of types is still a form's). While an oil slick
@@ -616,39 +620,42 @@ the original's.
 
 Ported: the driver's world steps in their order (`World::tick`), the date,
 `add_money`, `set_loan`, `format_money`, the start money, the accounting
-scheduler (1008:5307), `construction_tick` (with a stub for the
-builders), `year_end`, `january_second` with the scenarios' goals, the
-net worth and the score, `quake_damage` (with a stub for the people),
+scheduler (1008:5307), `construction_tick`, `year_end`, `january_second` with the scenarios' goals, the
+net worth and the score, `quake_damage`,
 `vegetation_tick` with the location map,
-`beach_life_tick`, `effects_tick` (with stubs for the people it
-changes), `events_tick` (with stubs for the oil slick and new building
+`beach_life_tick`, `effects_tick`, `events_tick` (with stubs for the oil slick and new building
 types), the buildings' records (`register_building`,
 `unregister_building`, `find_record`), `demolish` with the road pieces,
-`building_slice` (with a stub for sending people out), the flood's
-demolition, `replace_building`, and the news' random text. The tables
-the simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`, `HAUSPREI.DAT`,
-`GROUNDNR.DAT`) are in `World::tables`, loaded from the CD by whoever
-starts the game.
+`building_slice` with `send_person`, the flood's
+demolition and its people, `replace_building`, the news' random text,
+and adding and removing the people ([people.md](people.md):
+`spawn_people`, `send_person`, `add_person` and the removal helpers;
+their records and tables are loaded from the map). The tables the
+simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`, `HAUSPREI.DAT`,
+`GROUNDNR.DAT`, `ANIMDAT1.DAT`, `ANIMDAT4.DAT` and `DARSTELL.DAT`'s
+`AnsichtFormkorrektur`) are in `World::tables`, loaded from the CD by
+whoever starts the game. The human's view (rotation, origin, parity),
+which the people code reads, is in `World::viewpoint`; the view sets it
+before each tick (marked).
 
 What the view shows comes out of `World::tick` in `Tick`: the squares
 that changed (`redraw`; the view redraws the whole island for them rather
 than the columns 1050:21f9 picks, and has no overview map yet), a flood
-(`redraw_all`), the news (`messages`), a started auction (`auction`) and the end of the game
+(`redraw_all`), the news (`messages`), a started auction (`auction`), the
+people's sounds (`sounds`, not played yet) and the end of the game
 (`game_over`); finished buildings are in `redraw`.
 The view draws the date and money on the info bar when they change; the
 news, the TV, auctions, the status bar timeout, tooltips, scrolling by
 the timer, music and the shaking aren't ported.
 
 Stubs (named after the table above, each with its address and a TODO):
-`settlement_step`, `people_tick`, `spawn_people`, and inside the ported
-routines, all people and cars (`*1110:6fd6`): `remove_workers`
-(1088:6bac), `send_person` (1090:1a25), `people_map_changed`
-(1088:6c5a), `float_money` (1088:0153, the human's costs rising from the
-square), `remove_people_from` (1088:6975), `send_spectators_away`
-(10a0:0026's first part), `send_surfers`, `remove_people_at`,
-`flood_people` (10a0:0b49's second part); and `oil_slick_start`,
-`oil_slick_end` and `make_available` (which doesn't touch the building
-sites). Demolishing refreshes the money menu (1070:2617) in the original,
+`settlement_step`, `people_tick` (the movement: 1090:5293 and
+`person_step`, 1090:2ce5; the data it needs is in `World::people`,
+`World::viewpoint`, the marker layers and `World::tables`), and inside
+the ported routines `oil_slick_start`, `oil_slick_end` and
+`make_available` (which doesn't touch the building sites). 1088:7fb1,
+which runs `spawn_people` again after the player scrolls or turns the
+view, isn't ported. Demolishing refreshes the money menu (1070:2617) in the original,
 which the port leaves to the view. Where a stub
 stands for code that draws random numbers, the port's numbers part from
 the original's once it runs.
@@ -661,9 +668,13 @@ the original's once it runs.
   multiplayer these need to become world state everyone agrees on.
 - `1110:0070` stops all money changes; nothing found sets it. `1110:133c`,
   which a scenario sets on easy, is unknown.
-- `settlement_step`'s individual steps and the people records still need
-  mapping before they can be ported. Many of the stubs above wait on the
-  people.
+- `settlement_step`'s individual steps still need mapping before they
+  can be ported. Without `people_tick` nobody moves or leaves, so few new
+  people come (most kinds don't when one is at the door already).
+- The people code reads the human's view (`World::viewpoint`): where
+  people appear, their pictures, and the sounds' `Random`s. 1088:7fb1
+  also runs `spawn_people` from the UI. Both need a multiplayer answer
+  ([people.md](people.md)).
 - The news (1048:0a54) pauses the game through the TV for the human
   player, depending on their options per kind of news; the archive also
   stores that player's view origin. Both need a multiplayer answer.
@@ -672,7 +683,8 @@ the original's once it runs.
 - `demolish` reports the error messages for player 1 as a `Result`; a
   player's demolition isn't a command yet, so only the disasters call it.
   The floating cost (1088:0153) is a people record in the original but
-  only for the human: it may belong to the view.
+  only for the human: it may belong to the view. The port keeps it in
+  the world, as the original does.
 - What the plots' `+0xee` is (a full championship building takes its
   `+0xc` from it, at most its capacity: spectators?), the facilities'
   `+0xc` and `+0x15` (visitors and how full, in percent?), houses'

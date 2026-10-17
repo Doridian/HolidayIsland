@@ -383,6 +383,7 @@ mod tests {
                 hausdata,
                 hausprei,
                 groundnr: Vec::new(),
+                ..Tables::default()
             }),
             player_count: 2,
             renovation_cost: 3,

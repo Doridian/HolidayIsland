@@ -12,6 +12,7 @@ pub mod location;
 pub mod monate;
 pub mod money;
 pub mod news;
+pub mod people;
 pub mod roads;
 pub mod sabotage;
 pub mod simulation;

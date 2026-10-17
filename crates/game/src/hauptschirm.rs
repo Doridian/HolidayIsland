@@ -19,6 +19,7 @@ use vcl::surface::{Rop, Surface};
 use crate::darstellung::{self, Camera, Tiles, VIEW_HEIGHT, VIEW_WIDTH};
 use crate::monate::Date;
 use crate::money::format_money;
+use crate::people::Viewpoint;
 use crate::text::{Align, Font};
 use crate::widgets::ShiftState;
 use crate::world::{Pos, World};
@@ -454,6 +455,17 @@ impl Hauptschirm {
     #[must_use]
     pub fn position(width: i32, height: i32) -> (i32, i32) {
         (width / 2 - WIDTH / 2, height / 2 - HEIGHT / 2)
+    }
+
+    /// What the world's people code reads of this view
+    /// ([`World::set_viewpoint`]): the rotation, origin and parity.
+    #[must_use]
+    pub fn viewpoint(&self) -> Viewpoint {
+        Viewpoint {
+            rotation: self.camera.view,
+            origin: self.camera.origin,
+            parity: self.camera.parity,
+        }
     }
 
     /// Each image with the name of the `TImage` it goes into.

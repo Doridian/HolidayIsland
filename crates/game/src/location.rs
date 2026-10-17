@@ -87,6 +87,7 @@ mod tests {
             hausdata: vec![[0; 10]; 13],
             hausprei: Vec::new(),
             groundnr: Vec::new(),
+            ..Tables::default()
         };
         tables.hausnr[12][3] = 1;
         tables.hausnr[12][4] = 1;

@@ -185,11 +185,13 @@ impl World {
             1 if SURFING.contains(&building) => match c.countdown {
                 0x38 => self.replace_building(building + 4, c.pos, tick),
                 0x37 => self.change_location(c.pos, 160, 1, false),
-                0x31..=0x36 | 0x24 | 0x1e | 0x14 | 10 => self.send_surfers(c.pos),
+                0x31..=0x36 | 0x24 | 0x1e | 0x14 | 10 => self.send_surfers(c.pos, tick), // 10a0:10c6
                 0x2b => self.raise_reputation(owner, 50),
                 0x2a => self.post_message(message(0x57), tick),
                 3 => self.change_location(c.pos, 160, 1, true),
-                2 => self.remove_people_at(c.pos),
+                2 => {
+                    let _ = self.remove_people_at(c.pos); // 1088:2d2a
+                }
                 1 => self.replace_building(building.wrapping_sub(4), c.pos, tick),
                 _ => {}
             },
@@ -260,7 +262,7 @@ impl World {
     /// buildings are facilities, and the port leaves the records alone
     /// otherwise.
     pub(crate) fn replace_building(&mut self, building: u8, pos: Pos, tick: &mut Tick) {
-        self.send_spectators_away(building);
+        self.send_spectators_away(building); // 10a0:0026
         let record = self.find_record(pos); // 1078:169a
         let t = std::sync::Arc::clone(&self.tables);
         // Byte loops, as in place_building.
@@ -296,35 +298,6 @@ impl World {
             }
             None => {}
         }
-    }
-}
-
-/// The parts of the effects that aren't ported yet. Where the original
-/// draws random numbers in them, the port's numbers part from the
-/// original's once they run.
-#[allow(clippy::unused_self)]
-impl World {
-    /// When a championship ends: for the empty tennis court (0x6f) the
-    /// people of kinds 0x4d–0x50, for Miss Holiday Island's stage (0x79,
-    /// 0x7a) those of kind 0x41, leave (1088:2df2). // 10a0:0026's first
-    /// part
-    fn send_spectators_away(&mut self, building: u8) {
-        // TODO: port with the people (`*1110:6fd6`, up to `1110:6ff4`).
-        let _ = building;
-    }
-
-    /// Five tries to send a surfer from the beach at `pos` into the sea
-    /// (1010:20e0, `Random(2)`, 1088:2c04), counted in `layer_551c`.
-    /// // 10a0:10c6, 168 bytes
-    fn send_surfers(&mut self, pos: Pos) {
-        // TODO: port 10a0:10c6 with the people.
-        let _ = pos;
-    }
-
-    /// Takes the people at `pos` off the island. // 1088:2d2a, 200 bytes
-    pub(crate) fn remove_people_at(&mut self, pos: Pos) {
-        // TODO: port 1088:2d2a with the people.
-        let _ = pos;
     }
 }
 
@@ -444,6 +417,7 @@ mod tests {
                 hausdata,
                 hausprei: Vec::new(),
                 groundnr: Vec::new(),
+                ..crate::world::Tables::default()
             }),
             ..World::default()
         };
@@ -475,6 +449,7 @@ mod tests {
                 hausdata,
                 hausprei: Vec::new(),
                 groundnr: Vec::new(),
+                ..crate::world::Tables::default()
             }),
             ..World::default()
         };

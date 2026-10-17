@@ -4,9 +4,13 @@
 1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
 1000:1ea0 func init_game_defaults  # guess: the defaults for a new game (island_shape 1, relief 2, land 2, rivers 5, player_colours 1..8, ...)
 1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
+1000:3d54 func marker_or_zero  # (i, j, layer): *1110:551c[layer] at the square, 0 unless both are 1..249
 1000:3d9e func event_chance  # (chance: Longint): Random(65000) always; true from 65536 on, false below 1, else Random + 1 < chance; game::events
+1000:3dc9 func building_or_none  # (i, j): the building, 255 unless both are 1..249
 1000:3e0d func ground_or_water  # (i, j): the ground, 2 (water) unless both are 1..249; game::roads
+1000:3e51 func highest_corner_or_zero  # (i, j): highest_corner, 0 unless both are 1..249
 1000:3e8d func form_or_flat  # (i, j): the form, 16 (flat) unless both are 1..249
+1000:3ed1 func part_or_zero  # (i, j): the part, 0 unless both are 1..249
 1008:0002 func bankrupt
 1008:0297 func scenario_won
 1008:042b func scenario_lost
@@ -51,6 +55,9 @@
 1010:1820 func ui_scrollbar_paged  # VMT+0x24 of scroll bars: play_sound(9)
 1010:1838 func ui_listbox_draw  # (image): VMT+0x14 of list boxes: listbox_draw, then the visible rows centred
 1010:1919 func ui_listbox_selected  # VMT+0x1c of list boxes: play_sound(9)
+1010:1ea5 func markers_free  # (i, j): on the map and both people marker layers (551c, 5520) are 255
+1010:1f2d func open_sea  # (i, j): flat water (ground 2, form 16) with free marker layers
+1010:20e0 func find_sea  # (var j, var i; i0, j0, i1, j1, rings): the nearest open sea ring by ring around the area: columns, then rows; the ring or -1
 1010:2493 func facility_class  # (building): capacity class 0..10, 1110:134c[kind] for kinds 2..10, by type for kind 11 (0x1c 9, 0x20 7, 0x21 8), else 10; game::construction
 1010:254d func set_view
 1010:25dc func back_to_start_menu  # guess: saves Maps\Last.map, hides the forms, restarts holiday.mid, shows a new TStartform
@@ -148,6 +155,7 @@
 1030:2972 func load_fontdat
 1030:2b19 func text_init  # unit init: font_bitmap := GRAFIK\font.bmp, then load_fontdat
 1030:2b7e func text_done  # unit exit: frees font_bitmap and the fontdat tables
+1030:2bdc func init_view_squares  # origin (20, 20) and 1110:5536[e][l] := ((l + 1) div 2 + e, l div 2 - e), 11 x 61
 1030:2e48 func load_tables
 1030:307a func load_game_bitmaps
 1030:36e5 func load_game_rest
@@ -189,7 +197,9 @@
 1050:0811 func turn_part
 1050:0997 func turn_building  # (part, var type): the part and type to draw for the view rotation
 1050:0e68 func draw_columns  # (first, last, rows): draws the island view column by column; game::darstellung
+1050:21b7 func in_view  # (h1, h2, row_low, row_high, column, column_low): column_low < 20, column >= 0 and the rows within the height's range
 1050:21f9 func redraw_area  # (i, j, w, h): redraws the columns showing that area, if in view
+1050:245b func square_visible  # (i, j): whether the square is on the main screen, by view_rotation, view_origin and view_parity; game::people
 1050:2697 func draw_bottom_rows
 1050:26ae func draw_top_rows
 1050:26c8 func draw_column_range
@@ -274,15 +284,40 @@
 1080:22be func road_set  # (i, j): where the ground's road pieces start: sand 0, grass 0xf, water 0x5f, sand to grass 0x1e; game::roads
 1080:232a func road_piece  # (i, j): the road piece for the neighbours (jump table 1080:230a), or a river piece 0x3b..0x3e becomes a crossing 0x37..0x3a with building 11
 1080:302a func reconnect_roads  # (i, j): the flat road neighbours (i+1, i-1, j+1, j-1) get road_piece
-1088:0153 func float_money  # (amount, i, j): one of people records 0x24..0x2e, kind 0xf: the cost rising from a square (player 1 only)
-1088:2d2a func remove_people_at  # (i, j): the people (*1110:6fd6) of kinds 0x11..0x16, 0x20, 0x21 at that square leave
+1088:000c func person_visible  # (i, j): 1050:245b
+1088:0025 func person_fill  # (n, i, j, +4, +6, +8, +0xa, +0x14, +0x15, +0x16, kind, +0x18, +0x1a (Longint), +0x1e, +0x20, +0x22, +0x24, +0x26): fills a people record
+1088:0153 func float_money  # (amount, i, j): the first free people record 0x24..0x2e gets kind 1, +6 = 0xf, the amount in +0x1a: the cost rising from a square (player 1 only)
+1088:0324 func add_person  # (kind, i, j): someone into the first free record: 7, 8, 9, 0x2e into 0x578..0x5dc (with a second half 100 on), else 0x2f..1110:6ff4 (which grows); most kinds only with 1110:0055; game::people
+1088:2c04 func add_surfer  # (kind, i, j, beach_i, beach_j): add_person with the beach in 1110:7040; whether it took it
+1088:2c3b func remove_first_at_home  # (i, j): like remove_people_at, but the first one only
+1088:2d2a func remove_people_at  # (i, j): the walkers (0x11..0x16) and surfers (0x20, 0x21) whose home (+0x22, +0x24) is the square leave; whether there were any
+1088:2df2 func remove_person  # (n): the record leaves: planes with their second half, walkers and surfers off their home's count in 551c, others clear 551c and 5520 on their square
+1088:4ae2 func person_at  # (n, kind, i, j): someone of kind on the square (walkers 0x11..0x16: a marker layer taken)
+1088:4b93 func anyone_at  # (i, j): anyone in 0x2f..1110:6ff4 on the square
+1088:4bfa func form_look  # (i, j): ansicht_formkorrektur[view_rotation, form]
+1088:4c55 func place_walker  # (n): a walker's sprite and offset from its ANIMDAT2 path, by view_rotation
+1088:5841 func free_path_square  # (n): a walker frees the square its path step leads to in 551c and 5520
 1088:6975 func remove_people_from  # (j, i): the people on the square and in its building leave
+1088:6bac func remove_workers  # (building, i, j): the builders (kind 0x26) in the area leave
 1088:6c5a func people_map_changed  # clears +0x17 of people records 0..0x23 and 1110:6fce, 1110:6ff2
+1088:6c8b func people_map_changed2  # the same as people_map_changed
+1088:75de func place_plane  # (n): a plane's sprites and offsets for both halves from ANIMDAT4 and ANIMDAT3, by view_rotation
+1088:7ee3 func people_flag16_clear  # +0x16 := 0 for 0x2f..1110:6ff4 but kinds 6, 0x2a, 0x46, 1, 0x19, 0x25, 0x2b..0x2d
+1088:7f4a func people_flag16_set  # the same with +0x16 := 1
+1088:7fb1 func people_refresh  # 1088:7a14, then spawn_people and the drawing; after scrolling (1020:0a4c), turning (1010:258c) and the options (1060:05cb)
 1088:80a7 func load_animdat
-1090:1a25 func send_person  # (j, i): by the building there, a guest, car, boat... (1088:0324, sometimes Random(2)); Ghidra missed this function
-1090:2373 func spawn_people
+1088:88bb func people_free  # frees the people blocks
+1088:8950 func save_people  # saves 1110:3c2e, *1110:6fd6, ANIMDAT2, NEINTRAG, ANIMDAT3, 6ff4, 6fee, 6ff0
+1088:8a07 func load_people  # loads them, unit of load_map; game::world
+1090:1a25 func send_person  # (j, i): by the building there, someone of its kind if none is at its door (1088:0324), some kinds by Random; Ghidra missed this function
+1090:2373 func spawn_people  # boats and ships on random open sea, then the squares of 1110:5536 from the view origin; game::people
 1090:2ce5 func person_step
-1090:5293 func people_tick  # the people and cars at *1110:6fd6, entities 0x24..0x640; about 3850 bytes, Ghidra sees 123
+1090:5293 func people_tick  # the people and vehicles at *1110:6fd6, records 0x24..0x640; about 3850 bytes, Ghidra sees 123
+1098:00ef func nearest_corner  # (i, j): the map corner (1110:3ce4) nearest by Manhattan distance, the first of equals
+1098:0745 func turn_taxiing_35  # (n): a taxiing plane's (kind 0x35) offset by view_rotation and its runway +0x20
+1098:0a14 func turn_taxiing_36  # kind 0x36
+1098:0ce3 func turn_taxiing_37  # kind 0x37
+1098:0e6d func turn_taxiing_38  # kind 0x38
 10a0:0026 func replace_building  # (building, i, j): the area gets the type, its record (1078:169a) too; full championship (1110:1418): +0xc := min(plot+0xee, capacity), +0x15 its percent; empty (1110:1438): both 0; for 0x6f/0x79/0x7a the spectators leave; game::sabotage
 10a0:02ad func start_championship
 10a0:0691 func make_available  # (building, kind): kind 0: the build menu (1018:23f8) and the computer players (10a8:0523) get the type, some with the next ones of its group; 1: the menu only; 2..7: 10a8:2cc1
@@ -437,7 +472,16 @@
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
 1110:1572 data hauptschirm_layout_table  # 11 x (hidden, left, top, width, height)
 1110:174b data month_lengths  # month lengths, array[0..3, 1..12] of Byte read at 174b + 12 * (year mod 4) + month
+1110:33f0 data people_looks  # array[0..3, 0..7] of Integer: a facing as seen from each rotation
+1110:3430 data plane_tracks  # array[0..3, 0..15] of Integer: the ANIMDAT3 track of a plane route by rotation
+1110:34b0 data people_doors  # array[0..3, 1..3] of (i, j): a building's door from its first square by rotation
+1110:34e0 data path_turns  # array[0..3, 0..39] of Integer: the ANIMDAT2 path of a walker path by rotation
 1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
+1110:36a0 data airport_approaches  # array[0x28..0x33] of 9 Integers: an airport's two approaches (offsets) and its planes' heading (+8)
+1110:3bb2 data ship_sprites  # ship and boat sprites less 0x18
+1110:3c2e data people_directions  # ten Integers, saved with the people
+1110:3c42 data stage_spectators_flag  # set when stage spectators (kind 0x41) come, cleared by 1088:0002
+1110:3ce4 data map_corners  # array[0..3] of (i, j): (0, 0), (0, 250), (250, 0), (250, 250)
 1110:4a06 data rand_seed  # RandSeed (Longint)
 1110:4a82 data module_handle  # entry quits when GetModuleUsage of it is above 1 (a second copy)
 1110:4a84 data accounting_step
@@ -489,6 +533,7 @@
 1110:5530 data view_origin_i
 1110:5532 data view_origin_j
 1110:5534 data view_parity
+1110:5536 data view_squares  # array[0..10, 0..60] of (i, j): the squares spawn_people looks at, from the view origin; saved
 1110:5fc0 data tile_dcs
 1110:6456 data hintergrund  # THintergrund (VMT 1000:1fed), the main form: created first by entry
 1110:64b0 data werbung_to_text
@@ -568,10 +613,17 @@
 1110:6fb4 data umenuform
 1110:6fba data umenu_texts
 1110:6fc6 data animdat4 | pointer32  # far pointer to the table loaded from the file of that name
+1110:6fcc data people_runway  # the runway of the next taxiing plane (kinds 0x35..0x3a)
+1110:6fd6 data people  # pointer32 to 1601 records of 0x28 bytes, the people and vehicles; game::people
 1110:6fda data animdat2 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fde data neintrag | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fe2 data animdat3 | pointer32  # far pointer to the table loaded from the file of that name
 1110:6fea data animdat1 | pointer32  # far pointer to the table loaded from the file of that name
+1110:6fee data people_ships  # Integer: ships (kind 2) on the sea
+1110:6ff0 data people_boats  # Integer: boats (kind 3) on the sea
+1110:6ff2 data people_last_building  # Integer: the building remove_people_from last found
+1110:6ff4 data people_last  # Integer: the last record of the general range in use
+1110:7040 data surfer_beach  # (i, j): the beach of the next surfer, -1 once taken
 1110:7050 data disaster_damage  # Longint
 1110:7054 data disaster_insured
 1110:7056 data oil_slick_pos  # i, j

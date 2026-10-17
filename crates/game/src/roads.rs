@@ -32,7 +32,7 @@ const FLAT: u8 = 16;
 impl World {
     /// The ground of `pos`, or 2 (water) for a square on the map's edge or
     /// off it: only 1..=249 count. // 1000:3e0d
-    fn ground_or_water(&self, (i, j): Pos) -> u8 {
+    pub(crate) fn ground_or_water(&self, (i, j): Pos) -> u8 {
         if (1..=249).contains(&i) && (1..=249).contains(&j) {
             self.island.ground.at((i, j))
         } else {
@@ -42,7 +42,7 @@ impl World {
 
     /// The form of `pos`, or [`FLAT`] on the edge or off the map.
     /// // 1000:3e8d
-    fn form_or_flat(&self, (i, j): Pos) -> u8 {
+    pub(crate) fn form_or_flat(&self, (i, j): Pos) -> u8 {
         if (1..=249).contains(&i) && (1..=249).contains(&j) {
             self.island.forms.at((i, j))
         } else {

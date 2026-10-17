@@ -322,7 +322,7 @@ impl World {
                 let half = self.tables.hausprei(building, 0) / 2;
                 self.damage.amount = self.damage.amount.wrapping_add(half);
             }
-            self.remove_people_from((i, j));
+            self.remove_people_from((i, j), tick); // 1088:6975
             // For no one, so it never refuses.
             let _ = self.demolish(0, (i, j), tick);
         }
@@ -369,14 +369,6 @@ impl World {
 /// The parts of the events that aren't ported yet.
 #[allow(clippy::unused_self)]
 impl World {
-    /// The people on a flooded square (one whose `layer_551c` or
-    /// `layer_5520` isn't 255) leave (1088:2df2), and both layers become
-    /// 255 there. // 10a0:0b49's second part
-    fn flood_people(&mut self, pos: Pos) {
-        // TODO: port with the people (`*1110:6fd6`, 1088:2df2).
-        let _ = pos;
-    }
-
     /// An oil slick begins: 1000 tries at a random spot (`Random(250)`
     /// twice) of the sea next to land, then 51 steps of a random walk
     /// (`Random(3)`s) leaving oil (1088:0324), and the location map × 50 %
@@ -392,13 +384,6 @@ impl World {
     /// insured, the oil gone. // 10a0:0915, 213 bytes
     fn oil_slick_end(&mut self) {
         // TODO: port with 10a0:074d.
-    }
-
-    /// Takes the people on `pos` off the island (1088:2df2), and those in
-    /// the building there. // 1088:6975, 567 bytes
-    pub(crate) fn remove_people_from(&mut self, pos: Pos) {
-        // TODO: port 1088:6975 with the people (`*1110:6fd6`).
-        let _ = pos;
     }
 
     /// Building type `building` becomes available in the build menu
@@ -598,6 +583,7 @@ mod tests {
                 hausdata: Vec::new(),
                 hausprei,
                 groundnr: Vec::new(),
+                ..crate::world::Tables::default()
             }),
             random: Random::new(4),
             ..World::default()
@@ -633,6 +619,7 @@ mod tests {
                 hausdata: vec![[0; 10]; 13],
                 hausprei,
                 groundnr: Vec::new(),
+                ..crate::world::Tables::default()
             }),
             ..World::default()
         };

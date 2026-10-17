@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use formats::bmp::Bitmap;
 use formats::data::{
-    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, hausprei, modatyp, monate,
-    sonstige, start_txt, straspos, szenario_txt,
+    animdat1, animdat4, darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, hausprei,
+    modatyp, monate, sonstige, start_txt, straspos, szenario_txt,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
@@ -121,6 +121,8 @@ impl Game {
         let mut changed = false;
         while self.since_tick >= tick {
             self.since_tick -= tick;
+            // The original's people code reads the player's view.
+            self.world.set_viewpoint(self.screen.viewpoint());
             let t = self.world.tick();
             if t.redraw_all {
                 self.screen.paint_map(&self.world, &self.tiles);
@@ -402,6 +404,11 @@ fn start_game(dir: &Path, exe: &[u8], settings: &Settings, scenario_page: bool) 
         hausdata: hausdata(&read(dir, "DATA/HAUSDATA.DAT")).expect("HAUSDATA.DAT"),
         hausprei: hausprei(&read(dir, "DATA/HAUSPREI.DAT")).expect("HAUSPREI.DAT"),
         groundnr: groundnr(&read(dir, "DATA/GROUNDNR.DAT")).expect("GROUNDNR.DAT"),
+        animdat1: animdat1(&read(dir, "DATA/ANIMDAT1.DAT")).expect("ANIMDAT1.DAT"),
+        animdat4: animdat4(&read(dir, "DATA/ANIMDAT4.DAT")).expect("ANIMDAT4.DAT"),
+        form_korrektur: darstell(&read(dir, "DATA/DARSTELL.DAT"))
+            .expect("DARSTELL.DAT")
+            .form_korrektur,
     });
     let byte = |dest| map.field(dest).map_or(0, |d| d[0]);
     let origin = map.field("1110:5530").map_or((0, 0), |d| {

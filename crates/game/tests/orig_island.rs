@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use formats::bmp::Bitmap;
 use formats::data::{
-    darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, hausprei, sonstige, straspos,
+    animdat1, animdat4, darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, hausprei,
+    sonstige, straspos,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
@@ -239,6 +240,9 @@ fn palms_grow() {
         hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
         hausprei: hausprei(&read("DATA/HAUSPREI.DAT")).unwrap(),
         groundnr: groundnr(&read("DATA/GROUNDNR.DAT")).unwrap(),
+        animdat1: animdat1(&read("DATA/ANIMDAT1.DAT")).unwrap(),
+        animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
+        form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
     });
     world.random = Random::new(0xdead_beef);
     let before = palm_stages(&world);

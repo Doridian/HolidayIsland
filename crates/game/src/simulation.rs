@@ -96,6 +96,9 @@ pub struct Tick {
     /// An auction of [`World::auction`]'s item begins: the original starts
     /// `TAuktionsform`'s timer (1028:08ac).
     pub auction: bool,
+    /// Sounds to play, in order (`play_sound`, 10a0:30b6): the people's,
+    /// where the player sees them.
+    pub sounds: Vec<u8>,
     /// The scenario was won or lost ([`World::january_second`]): the
     /// original shows the end of the game (`schlussform`, 1068:1016).
     pub game_over: Option<GameOver>,
@@ -147,7 +150,7 @@ impl World {
             }
         }
         self.clock.slice = (self.clock.slice.wrapping_add(1)) % 30;
-        self.building_slice(self.clock.slice);
+        self.building_slice(self.clock.slice, &mut tick);
         // The original shakes the screen here during an earthquake, with
         // two `Random(7)`s; the port leaves that to the view, so its random
         // numbers part from the original's while the earth shakes.
@@ -157,7 +160,7 @@ impl World {
         if self.options.animations {
             self.people_tick();
             if self.options.people_spawn {
-                self.spawn_people();
+                self.spawn_people(&mut tick); // 1090:2373
             }
         }
         tick
@@ -196,15 +199,17 @@ impl World {
         let _ = step;
     }
 
-    /// The people and cars move (`*1110:6fd6`). // 1090:5293, about
-    /// 3850 bytes, and 1090:2ce5, 9498 bytes
+    /// The people and vehicles move ([`crate::people`]): counts down
+    /// `1110:723c[1..42]`, then for each record 0x24..=0x640 1098:109f and
+    /// `person_step` (1090:2ce5, 9498 bytes), and while people move the
+    /// walkers' steps along their paths (1088:4c55, 1088:4e18, 1088:571e).
+    /// // 1090:5293, about 3850 bytes
     fn people_tick(&mut self) {
-        // TODO: port 1090:5293.
-    }
-
-    /// New people and cars come to the island. // 1090:2373, 2220 bytes
-    fn spawn_people(&mut self) {
-        // TODO: port 1090:2373.
+        // TODO: port 1090:5293 and 1090:2ce5. They read and write
+        // `self.people` (the records, `paths`, `tracks`, `directions`,
+        // `ships` and `boats`), the marker layers `layer_551c` and
+        // `layer_5520`, `self.viewpoint` and `ANIMDAT1.DAT`/`ANIMDAT4.DAT`
+        // in `self.tables`; 1110:723c (not saved) isn't in the world yet.
     }
 }
 
