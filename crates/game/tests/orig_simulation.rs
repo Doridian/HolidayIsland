@@ -330,7 +330,7 @@ fn people_from_the_map() {
         return;
     }
     let tables = tables();
-    let mut came = 0;
+    let mut changed = 0;
     for file in ["MAPS/TUTORIAL.MAP".to_owned()]
         .into_iter()
         .chain(SCENARIO_FILES.iter().map(|f| format!("SZENARIO/{f}")))
@@ -358,13 +358,19 @@ fn people_from_the_map() {
                 assert_eq!(saved, view_square(e, l), "{file}");
             }
         }
-        let before = world.people.records.iter().filter(|p| p.kind() != 0).count();
+        let before = world.people.records.clone();
         for _ in 0..TICKS {
             world.tick();
         }
-        let after = world.people.records.iter().filter(|p| p.kind() != 0).count();
-        came += after.saturating_sub(before);
+        // People came, moved and left (people_tick, 1090:5293).
+        changed += before
+            .iter()
+            .zip(&world.people.records)
+            .filter(|(a, b)| a.kind() != b.kind() || a.pos() != b.pos())
+            .count();
         assert!(world.people.ships <= 10 && world.people.boats <= 10, "{file}");
+        assert_eq!(count(&world, SHIP), world.people.ships, "{file}");
+        assert_eq!(count(&world, BOAT), world.people.boats, "{file}");
     }
-    assert!(came > 0);
+    assert!(changed > 0);
 }

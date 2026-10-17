@@ -27,7 +27,7 @@ to scroll while the mouse is held on a scroll bar arrow (step 6).
 | 6 | Scrolls the view by the timer's `Tag`: 1–4 `scroll_ns` by −1, −16, 16, 1; 5–8 `scroll_wo` by −1, −18, 18, 1 | 1020:0cf7, 1020:147f | | view |
 | 7 | During an earthquake (`1110:0087` = 1): moves the form by `Random(7) - 3` in x and y; on the first tick of each hour also `quake_damage` | inline; 10a0:0d1c | 192 | view; world |
 | 8 | With the TV (`fernseher`) visible: its tick, which plays the news film and closes it after 3 s (`GetTickCount`) | 1048:1b3e | 1107 | view |
-| 9 | Without animations (`1110:0054` = 0) just refreshes `Hauptbild`. With them: `people_tick`, and with `1110:0056` the rest of the animation group, [below](#animations-step-9) | 1090:5293 | ~3850 | world and view |
+| 9 | Without animations (`1110:0054` = 0) just refreshes `Hauptbild`. With them: `people_tick`, and with `1110:0056` the rest of the animation group (new people, drawing them), [below](#animations-step-9) | 1090:5293 | ~3850 | world and view |
 
 ### The clock (step 4)
 
@@ -290,16 +290,18 @@ of 0x28 bytes at `*1110:6fd6` (saved, unit 1088:8a07), using
 `ANIMDAT*.DAT`, described in [people.md](people.md). They walk, enter
 buildings and are counted, so they are part of the world, although the
 original lets the player switch them off (`1110:0054`, `0055`, `0056`).
-Adding and removing them is ported in
-[`game::people`](../crates/game/src/people.rs); `people_tick` isn't.
+Adding, removing and moving them is ported in
+[`game::people`](../crates/game/src/people.rs) and
+[`game::people::movement`](../crates/game/src/people/movement.rs), drawing
+them in [`game::darstellung`](../crates/game/src/darstellung.rs).
 
 | Routine | Address | Size | Side |
 |---|---|---|---|
-| `people_tick`: counts down `1110:723c[1..42]`, then for each entity 0x24..0x640: 1098:109f (not a function in Ghidra yet) and `person_step` (1090:2ce5, 9498 bytes), and with `1110:0055` the movement along `ANIMDAT2` paths | 1090:5293 | ~3850 | world |
+| `people_tick`: counts down `1110:723c[1..42]` (how long each sound still plays: the view's), then for each record 0x24..0x640 `person_animate` (1098:109f, about 10 KB), `person_step` (1090:2ce5, 9498 bytes, the planes) and with `1110:0055` the walkers along their `ANIMDAT2` paths ([people.md](people.md#moving-10905293)); `Random`s for the helicopter, the surfers' and harbour ships' ways and the walkers' turns and sounds | 1090:5293 | ~3850 | world |
 | `spawn_people`: new ships and boats, and people at the buildings the player sees, `Random` ([people.md](people.md#new-people-10902373)) | 1090:2373 | 2220 | world |
-| Erase the sprites | 1088:385d | 103 | view |
+| Collect the people in view, put back what was under them and keep what's under them now | 1088:385d (1088:3496) | 103 | view |
 | With a building tool (`1110:6056` in 6..21): the tool's preview, before and after | 1090:124f, 1090:155b | 780, 731 | view |
-| Draw the sprites | 1088:38c4 (1088:3a19, 4285) | 219 | view |
+| Draw the people, and what's in front of them over them ([people.md](people.md#drawing-them-1088385d)) | 1088:38c4 (1088:3a19, 4285) | 219 | view |
 | `Hauptbild.Refresh`, then more drawing | 1090:1836, 1090:1919 | 227, 256 | view |
 
 ### The buildings' tick (1078:0002)
@@ -355,6 +357,7 @@ What the driver and the ported parts use, all saved in the map file:
 | `*1110:6f24+0x7f+p` | Player `p` is out | `*1110:6f24` |
 | `*1110:6fd6`, `*1110:6fda`, `*1110:6fde`, `*1110:6fe2`, `1110:3c2e`, `1110:6ff4`, `1110:6fee`, `1110:6ff0` | The people and their tables, [people.md](people.md) | same (unit 1088:8a07) |
 | `1110:007c`, `1110:5530`, `1110:5534` | The human's view as the people code reads it | same |
+| `1110:723c` | How long each sound still plays (`array[1..42]`), the view's | not saved |
 | `1110:4a06` | `RandSeed`: **not** saved; `Randomize` (1108:1e21) seeds it from the DOS clock when the game's data is loaded (1030:38a3) | |
 
 ## The date (1030:000d..)
@@ -628,9 +631,10 @@ types), the buildings' records (`register_building`,
 `unregister_building`, `find_record`), `demolish` with the road pieces,
 `building_slice` with `send_person`, the flood's
 demolition and its people, `replace_building`, the news' random text,
-and adding and removing the people ([people.md](people.md):
-`spawn_people`, `send_person`, `add_person` and the removal helpers;
-their records and tables are loaded from the map). The tables the
+and the people ([people.md](people.md): `people_tick` with
+`person_animate` and `person_step`, `spawn_people`, `send_person`,
+`add_person` and the removal helpers; their records and tables are
+loaded from the map). The tables the
 simulation reads (`HAUSNR.DAT`, `HAUSDATA.DAT`, `HAUSPREI.DAT`,
 `GROUNDNR.DAT`, `ANIMDAT1.DAT`, `ANIMDAT4.DAT` and `DARSTELL.DAT`'s
 `AnsichtFormkorrektur`) are in `World::tables`, loaded from the CD by
@@ -643,17 +647,17 @@ that changed (`redraw`; the view redraws the whole island for them rather
 than the columns 1050:21f9 picks, and has no overview map yet), a flood
 (`redraw_all`), the news (`messages`), a started auction (`auction`), the
 people's sounds (`sounds`, not played yet) and the end of the game
-(`game_over`); finished buildings are in `redraw`.
+(`game_over`); finished buildings are in `redraw`. The people's pictures
+are in their records, which the view draws over the island after each
+tick (`Hauptschirm::show_people`, 1088:385d, 1088:38c4).
 The view draws the date and money on the info bar when they change; the
 news, the TV, auctions, the status bar timeout, tooltips, scrolling by
 the timer, music and the shaking aren't ported.
 
 Stubs (named after the table above, each with its address and a TODO):
-`settlement_step`, `people_tick` (the movement: 1090:5293 and
-`person_step`, 1090:2ce5; the data it needs is in `World::people`,
-`World::viewpoint`, the marker layers and `World::tables`), and inside
-the ported routines `oil_slick_start`, `oil_slick_end` and
-`make_available` (which doesn't touch the building sites). 1088:7fb1,
+`settlement_step`, and inside the ported routines `oil_slick_start`,
+`oil_slick_end` and `make_available` (which doesn't touch the building
+sites). 1088:7fb1,
 which runs `spawn_people` again after the player scrolls or turns the
 view, isn't ported. Demolishing refreshes the money menu (1070:2617) in the original,
 which the port leaves to the view. Where a stub
@@ -669,8 +673,10 @@ the original's once it runs.
 - `1110:0070` stops all money changes; nothing found sets it. `1110:133c`,
   which a scenario sets on easy, is unknown.
 - `settlement_step`'s individual steps still need mapping before they
-  can be ported. Without `people_tick` nobody moves or leaves, so few new
-  people come (most kinds don't when one is at the door already).
+  can be ported.
+- The sounds' countdown `1110:723c` (people_tick's first loop) stops a
+  sound from playing again while it still plays; the port leaves it to
+  the view, which doesn't play the sounds yet.
 - The people code reads the human's view (`World::viewpoint`): where
   people appear, their pictures, and the sounds' `Random`s. 1088:7fb1
   also runs `spawn_people` from the UI. Both need a multiplayer answer

@@ -2,10 +2,13 @@
 
 Everything that walks, drives, flies or floats on the island, and the
 money rising from a square, is a record in one table. Adding and
-removing people is ported in [`game::people`](../crates/game/src/people.rs);
-the per-tick movement (`people_tick`, 1090:5293, and `person_step`,
-1090:2ce5) isn't yet. [simulation.md](simulation.md#animations-step-9)
-has where they run in the timer.
+removing people is ported in [`game::people`](../crates/game/src/people.rs),
+the per-tick movement ([below](#moving-10905293)) in
+[`game::people::movement`](../crates/game/src/people/movement.rs), and
+drawing them ([below](#drawing-them-1088385d)) in
+[`game::darstellung`](../crates/game/src/darstellung.rs).
+[simulation.md](simulation.md#animations-step-9) has where they run in
+the timer.
 
 ## The records (`*1110:6fd6`)
 
@@ -18,7 +21,7 @@ has where they run in the timer.
 | `*1110:6fd6` | The records, 0xfa28 bytes |
 | `*1110:6fda` | `ANIMDAT2.DAT`, the walkers' paths: 40 groups of 47 rows of 4 bytes (x, y, facing, what happens there) |
 | `*1110:6fde` | `NEINTRAG.DAT`, 101 rows of 4 bytes |
-| `*1110:6fe2` | `ANIMDAT3.DAT`, the planes' tracks: 16 groups of 31 rows of 3 `Integer`s (x, y, ?) |
+| `*1110:6fe2` | `ANIMDAT3.DAT`, the planes' tracks: 16 groups of 31 rows of 3 `Integer`s (x, y, the way it faces); each group's length is in `1110:3620` |
 | `1110:6ff4` | The last record in use of the general range |
 | `1110:6fee`, `6ff0` | How many ships (kind 2) and boats (kind 3) are on the sea; the maps' counts match their records |
 
@@ -45,15 +48,14 @@ A record (the names in the port in brackets):
 | `+4`, `+6` | The picture's offset in pixels (`offset`) |
 | `+8` | Heading or route (`heading`): 2 for a walker, 0x19 or 0x1f for a plane, `Random(8)` for the helicopter |
 | `+0xa` | The picture, an `ANIMDAT1.DAT` row (`sprite`) |
-| `+0x14`–`+0x16` | Flags (`flags`); `+0x15` 0 lets a plane be cleared off a demolished building, `+0x16` is cleared and set for most kinds by 1088:7ee3 and 1088:7f4a |
+| `+0xc`–`+0x13` | The view's: the picture's rectangle on the screen (x, y, width, height), 1088:3496 |
+| `+0x14`–`+0x16` | Flags (`flags`); `+0x14` is cleared by the drawing; `+0x15` is 1 for a plane in the air (it isn't covered by the buildings in front and stays when a building is demolished) and 0 on the ground; `+0x16` 1 is drawn, cleared and set for most kinds by 1088:7ee3 and 1088:7f4a |
 | `+0x17` | The kind, 0 for a free record (`kind`) |
-| `+0x18` | A walker's `ANIMDAT2.DAT` path, a ship's animation phase (`path`) |
-| `+0x1a` | `Longint`: a walker's step along its path, a plane's along its track; a countdown for most others; the money's amount (`step`) |
-| `+0x1e`, `+0x20` | Where it's going; for a taxiing plane the runway and a lane (`target`) |
-| `+0x22`, `+0x24` | Where it's from: a surfer's beach, a walker's square, a ship's map corner (`home`) |
-| `+0x26` | 0xdc (220) for a new plane: its height? (`word_26`) |
-
-`+0xc`–`+0x13` aren't written by anything ported.
+| `+0x18` | A walker's `ANIMDAT2.DAT` path, a plane's `ANIMDAT3.DAT` track, the frame of everyone animated in place, a harbour ship's wait (`path`) |
+| `+0x1a` | `Longint`: a walker's step along its path, a plane's row on its track, a ship's or surfer's on its `ANIMDAT4.DAT` route; the time (in frames) for those animated in place; the money's amount (`step`) |
+| `+0x1e`, `+0x20` | Where it's going; for a taxiing plane the squares left and the steps to the next; the helicopter's state and laps left (`target`) |
+| `+0x22`, `+0x24` | Where it's from: a surfer's beach, a walker's square, a ship's map corner, a plane's runway (its `layer_551c` is 0 while the runway is taken); the helicopter's tracks per lap and count (`home`) |
+| `+0x26` | A plane's or the helicopter's height (220 in the air); a harbour ship's squares of detour (`word_26`) |
 
 The two marker layers `*1110:551c` and `*1110:5520` (255 = nothing) say
 what's on a square for the people: ships, boats, surfers and oil mark
@@ -70,8 +72,8 @@ From the buildings that send them (`HAUSNAME.TXT`'s names):
 | 2, 3 | Ships and boats on the open sea ([`spawn_people`](#new-people-10902373)) |
 | 4 | From the tennis court (7) |
 | 6 | Records 0–0x23 |
-| 7, 8, 9 | Planes for the airports (0x28–0x33), from the map's corner nearest to their approach, from a height of 220; second halves 10, 11, 12 |
-| 0x11–0x16 | Walkers along `ANIMDAT2.DAT` paths, their path by the road piece they start on |
+| 7, 8, 9 | Planes for the airports (0x28–0x33), from the map's corner nearest to their approach, at a height of 220; they land, park and take off again ([below](#the-planes-10902ce5)); second halves (the shadow?) 10, 11, 12 |
+| 0x11–0x16 | "Walkers": the cars and bikes on the roads, along `ANIMDAT2.DAT` paths, their path by the road piece they start on |
 | 0x19 | Leaves, with one of two sounds |
 | 0x1a, 0x1b | From the power station (0x20) and the sewage works (0x21) |
 | 0x1c–0x1f | From the zoo (0x45), `Random(4)` |
@@ -84,7 +86,7 @@ From the buildings that send them (`HAUSNAME.TXT`'s names):
 | 0x2b–0x2d | Oil (the oil slick, 10a0:074d, not ported) |
 | 0x2e | The sightseeing helicopter (`H-Rundflüge`, 0x17), when the square's `551c` is free |
 | 0x33 | Boats at the Bigport's jetties (0x68–0x6b) |
-| 0x35–0x3a | Planes taxiing at the airports, on a runway (`1110:6fcc`) |
+| 0x35–0x3a | Planes taxiing along an airport's runway (`1110:6fcc`), a square at a time |
 | 0x41 | Spectators at Miss Holiday Island's stage (0x7b, 0x7c) |
 | 0x47–0x4c | From the minigolf (0x41), `Random(6)` |
 | 0x4d–0x50 | Spectators at a full tennis court (0x70) |
@@ -171,11 +173,135 @@ the harbours only if nobody is on the square.
   rings (1010:20e0: columns, then rows), `Random(2)` for the kind, and the
   beach counts each that came.
 
+## Moving (1090:5293)
+
+`people_tick` first counts down `1110:723c[1..42]`, how long each sound
+still plays (`play_sound`, 10a0:30b6, plays a sound only at 0 and sets
+its time from `1110:3dce`): that's the view's, and the port leaves it to
+whoever plays `Tick::sounds`. Then for each record from 0x24 to 0x640:
+`person_animate` (1098:109f), `person_step` (1090:2ce5) and, while
+people move (`1110:0055`), a walker's step. Nothing here draws; the sounds
+play where the player sees the square (1050:245b), and the walkers' one
+`Random(100)` (and `Random(3)` for some) only then.
+
+### The animations (1098:109f)
+
+While people move, by kind:
+
+- Most of those at the buildings' doors (0x1a–0x1f, 0x26–0x29,
+  0x30–0x34, 0x3b–0x45, 0x47–0x50): the frame `+0x18` counts up; once it
+  reaches the time `+0x1a` they leave, else the picture is the frame (or
+  half of it, or the frame mod 2, 8 or 10) on from the kind's first. The
+  zoo's 0x1d makes a sound on its first frame, the minigolfers on their
+  ninth; 0x1a and 0x34 move their picture on one frame.
+- Ships (2), boats (3) and kind 4 rock until their time is up (ships
+  live 700 ticks and more, boats 255) and take one off the count; every 28
+  frames a ship drifts a square up the screen (`1110:3cd4` by the view's
+  rotation) if that's open sea, with a sound, else it leaves.
+- Surfers (0x20, 0x21) and harbour ships (0x22–0x24) ride `ANIMDAT4.DAT`
+  routes (`+8` the route, `+0x1a` the row; 16 rows a square, then they move
+  by `1110:3660`, their marker with them). At a route's centre row (31,
+  15) they turn towards their target (`1110:3792`) and start the next
+  route at `1110:3c64`. A surfer at its target, or with no open sea ahead,
+  picks a new target within 5 squares (1098:03b3: 21 tries of two
+  `Random(5)`s) and leaves if it finds none. A harbour ship sails from its
+  corner to the harbour, waits 100 ticks there with a sound, turns away
+  from the harbour (1098:0002) and sails back to the corner, where it
+  leaves; one blocked by another takes a detour (1098:04f9, `Random(8)`
+  twice and `Random(50)`).
+- The helicopter (0x2e) by its state `+0x1e`: 3 waits 20 ticks, 0 climbs
+  to 220 with a sound and draws its laps (`Random(5) + 3`), 2 flies its
+  tracks round, a turn (`+8`) after each of them, 1 lands, 4 waits 20 ticks
+  and leaves; 1088:75de places it.
+- Taxiing planes (0x35–0x3a) roll a step every three ticks (four the
+  first time), a square every four steps (0x35, 0x36), two (0x37, 0x38) or
+  each (0x39, 0x3a), until the runway's squares (`+0x1e`) are done.
+
+Whether or not people move, the money rises a pixel a tick and goes at
+0, the oil cycles its frames, and kinds 0x19, 0x25, 0x2a and 0x46 count
+their frames and leave.
+
+### The planes (1090:2ce5)
+
+Only while people move. A plane (7, 8, 9) flies `ANIMDAT3.DAT` tracks
+(`+0x18`, its rows `+0x1a`, `1110:3620` their lengths and start rows):
+past a track's last row it moves a square (`1110:3660`). Its state `+8`:
+
+- 0x19 and 0x1f: from the corner towards the runway (`+0x1e`), turning at
+  each centre row; there, if it's its airport's approach (1090:2c1f) and
+  the runway is free (`layer_551c` at `+0x22` 255), it takes the runway
+  (0) and comes down (0x1a, 0x20); if it's taken it flies a holding circle
+  (0..=0x18, 0x24..=0x3c, the tracks from `1110:3778`) and tries again at
+  its end; off its airport it leaves (0x1e, to the nearest corner, where
+  it's gone).
+- 0x1a and 0x20 come down 3 a tick to the square's height (with a sound);
+  within a track, off an airport it's gone (someone leaves, 0x19); on the
+  runway's parts (`1110:36a0` columns 2, 7) it rolls (0x1c, 0x21), or with
+  soft soap on the runway (sabotage 5, 10a0:0ec8) skids (0x3d, 0x3e).
+- 0x1c and 0x21 roll to the end of their track, then park (0x1b, 0x23)
+  for 100 ticks, then take off (0x1d, 0x22, to the nearest corner).
+- 0x1d and 0x22 climb 3 a tick from the runway's last parts (columns 3,
+  8; freeing the runway, with a sound) up to 220, then leave (0x1e).
+- 0x3d and 0x3e: at the end of the track the soft soap ends (10a0:0e17),
+  the runway is freed, and the plane crashes into the square past the
+  runway: someone leaves and the square is demolished (1078:280b).
+
+Then its picture: its track turned by the view (`1110:3430`), lifted by
+its height over the view's corner and the form, and its second half's.
+
+### The walkers
+
+While people move, a walker's step `+0x1a` counts up along its
+`ANIMDAT2.DAT` path, and the row's fourth byte says what happens:
+
+- 0, 10–13: it just moves (1088:4c55 places it).
+- 1, a junction: a path without road ahead (1088:4e18) turns off
+  (0..3, 0xc..0x17 to 0x18..0x27); then it claims the square ahead
+  (1088:5f3e: the path `NEINTRAG.DAT` gives for that road piece, in the
+  first free marker layer) unless someone's in the way there (1088:5386:
+  a marker not of a path it may join, 1088:4f4f), when it waits a step
+  (and makes a sound where seen, 1088:68f1, which also sends it away one
+  time in a hundred).
+- 2–9, a crossing: on the right road pieces, with the way free, it may
+  turn onto another path (1088:6769, `Random(100)` < 60 or < 50).
+- 255, the end of a square: by the row's third byte, 0–3 it goes on to
+  the next square in that direction with the path `NEINTRAG.DAT` gives,
+  or where the road ends it's gone (someone leaves, 0x19); 4–0x13 it goes
+  on with another path within the square (a turn).
+
+## Drawing them (1088:385d)
+
+The clock's tick draws the people after `spawn_people`, only while new
+people come (`1110:0056`), all in the view: 1088:385d takes the records
+from 0x24 on that are drawn (`+0x16` = 1) and seen (1050:245b), works out
+where each picture goes (1088:30ba: the square's column pair and half
+row from the view's origin, rotation and parity, plus the offset, lifted
+by the highest corner for those at the buildings, else by the view's
+corner and the form) and keeps what's under it (1088:3496); 1088:3727
+sorts them by their picture's top, the planes 2000 and their second
+halves 1000 lower. 1088:38c4 draws them (1088:3a19): the `ANIMDAT1.DAT`
+row's mask (columns 4, 5) with `SRCAND`, the picture (2, 3) with
+`SRCINVERT`, both from bitmap column 10 and height × width columns 0, 1;
+the money is its amount and the currency in the font's colour 1. Then,
+for those on the ground (`+0x15` = 0), what's in front of them is drawn
+over them, cut to the picture: the foundations of the three squares in
+front (`1110:37a2`, not for kind 0x3b) and the buildings of 29 squares in
+front, but those whose `HAUSPOS.DAT` row's last column is 1 (or 2, for
+walkers). The port draws the island first and the people over it,
+instead of keeping what's under them.
+
 ## Open questions
 
-- What records 0–0x23 (kind 6), `NEINTRAG.DAT`, `1110:3c2e`, the flags
-  and `+0x26` are; whether 0x35–0x3a are planes taxiing, and 7–9 planes
-  landing (the height of 220 and the airports suggest it).
+- What records 0–0x23 (kind 6) and `+0x14` are; what the planes' second
+  halves are (a shadow on the ground, it seems).
+- Who sends the walkers out: nothing ported adds kinds 0x11–0x16 (1088:7a14,
+  which runs from the view, may).
+- 1098:0002 returns an undefined value when a harbour ship's square has no
+  harbour next to it; the port keeps the ship's heading (it leaves anyway).
+- The harbour ships' second detour (1098:04f9) checks the ship's own square
+  five times rather than the squares ahead; one with `+0x26` left marks the
+  square ahead without going there. Both are ported as they are.
+- 1090:2c1f takes a plane's second approach if either coordinate matches.
 - The world reads the human's view in several places, and 1088:7fb1 runs
   `spawn_people` from the UI. For several players these need an answer.
 - 1088:0324 reads its tables past their ends for building types that

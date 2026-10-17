@@ -17,11 +17,13 @@
 //! rows); those depend on the human's view ([`Viewpoint`]), which is why
 //! the world keeps a copy of it.
 //!
-//! The per-tick movement (`people_tick`, 1090:5293, and `person_step`,
-//! 1090:2ce5) isn't ported yet.
+//! The per-tick movement (`people_tick`, 1090:5293, with `person_animate`,
+//! 1098:109f, and `person_step`, 1090:2ce5) is in [`movement`].
 
 // The map's `i` and `j`, and the record's number `n`, as everywhere else.
 #![allow(clippy::many_single_char_names)]
+
+mod movement;
 
 use std::sync::Arc;
 
@@ -400,6 +402,49 @@ impl Viewpoint {
     }
 }
 
+/// Whether a view sees `(i, j)` on the main screen: the square's column
+/// and half row, from the view's origin and rotation, against the 20
+/// columns and the rows the square's height leaves (1050:21b7). The world
+/// asks it of the human's view ([`World::viewpoint`]), the view of its own
+/// camera. // 1050:245b
+#[must_use]
+pub fn sees(v: &Viewpoint, island: &crate::world::Island, (i, j): Pos) -> bool {
+    let (di, dj) = (i.wrapping_sub(v.origin.0), j.wrapping_sub(v.origin.1));
+    let p = v.parity;
+    let (column_low, column, row_low, row_high) = match v.rotation {
+        0 => {
+            let a = di.wrapping_sub(dj).wrapping_add(p);
+            let r = di.wrapping_add(dj).wrapping_add(1);
+            (a.wrapping_sub(1), a, r, r)
+        }
+        2 => {
+            let t = di.wrapping_sub(dj).wrapping_add(p);
+            let r = 0x1a_i16.wrapping_sub(di.wrapping_add(dj).wrapping_add(1));
+            (0x13_i16.wrapping_sub(t), 0x13_i16.wrapping_sub(t.wrapping_sub(1)), r, r)
+        }
+        1 => {
+            let a = di.wrapping_add(dj);
+            let t = di.wrapping_sub(dj).wrapping_add(p).wrapping_sub(1).wrapping_neg();
+            (a.wrapping_sub(1), a, t.wrapping_add(0x13), t.wrapping_add(0x12))
+        }
+        3 => {
+            let t = di.wrapping_add(dj);
+            let e = di.wrapping_sub(dj).wrapping_add(p);
+            (
+                0x19_i16.wrapping_sub(t),
+                0x19_i16.wrapping_sub(t.wrapping_sub(1)),
+                e,
+                e.wrapping_sub(1),
+            )
+        }
+        // The original's locals are undefined then.
+        _ => return false,
+    };
+    let h = i16::from(island.highest_corner((i, j)));
+    // 1050:21b7
+    column_low < 20 && column >= 0 && h * 9 / 32 < row_low && row_high <= h * 9 / 32 + 0x2a
+}
+
 /// The squares [`World::spawn_people`] looks at, relative to the view's
 /// origin: 11 rows of 61, `[e][l] = ((l + 1) div 2 + e, l div 2 - e)`.
 /// The original fills the table at `1110:5536` this way when the game's
@@ -511,11 +556,6 @@ const APPROACHES: [[i16; 9]; 12] = [
 ];
 /// The first building type of [`APPROACHES`].
 const FIRST_AIRPORT: u8 = 0x28;
-
-/// The helicopter's first track step by its route (`Random(8)`): the second word
-/// of each of the first eight 4-byte entries at `1110:3620`.
-/// // 1110:3622 + 4 · route
-const HELICOPTER_STEPS: [i16; 8] = [4, 8, 4, 8, 3, 7, 3, 7];
 
 /// A plane's or walker's looks by rotation, by the way it faces
 /// (`ANIMDAT4.DAT`'s third column, `ANIMDAT2.DAT`'s third byte).
@@ -748,46 +788,10 @@ impl World {
             && self.island.layer_5520.get(pos).unwrap_or(FREE) == FREE
     }
 
-    /// Whether the player sees `(i, j)` on the main screen: the square's
-    /// column and half row, from the view's origin and rotation, against
-    /// the 20 columns and the rows the square's height leaves (1050:21b7).
+    /// Whether the player sees `(i, j)` on the main screen ([`sees`]).
     /// Marked: player 1's view. // 1050:245b
-    fn visible(&self, (i, j): Pos) -> bool {
-        let v = self.viewpoint;
-        let (di, dj) = (i.wrapping_sub(v.origin.0), j.wrapping_sub(v.origin.1));
-        let p = v.parity;
-        let (column_low, column, row_low, row_high) = match v.rotation {
-            0 => {
-                let a = di.wrapping_sub(dj).wrapping_add(p);
-                let r = di.wrapping_add(dj).wrapping_add(1);
-                (a.wrapping_sub(1), a, r, r)
-            }
-            2 => {
-                let t = di.wrapping_sub(dj).wrapping_add(p);
-                let r = 0x1a_i16.wrapping_sub(di.wrapping_add(dj).wrapping_add(1));
-                (0x13_i16.wrapping_sub(t), 0x13_i16.wrapping_sub(t.wrapping_sub(1)), r, r)
-            }
-            1 => {
-                let a = di.wrapping_add(dj);
-                let t = di.wrapping_sub(dj).wrapping_add(p).wrapping_sub(1).wrapping_neg();
-                (a.wrapping_sub(1), a, t.wrapping_add(0x13), t.wrapping_add(0x12))
-            }
-            3 => {
-                let t = di.wrapping_add(dj);
-                let e = di.wrapping_sub(dj).wrapping_add(p);
-                (
-                    0x19_i16.wrapping_sub(t),
-                    0x19_i16.wrapping_sub(t.wrapping_sub(1)),
-                    e,
-                    e.wrapping_sub(1),
-                )
-            }
-            // The original's locals are undefined then.
-            _ => return false,
-        };
-        let h = i16::from(self.island.highest_corner((i, j)));
-        // 1050:21b7
-        column_low < 20 && column >= 0 && h * 9 / 32 < row_low && row_high <= h * 9 / 32 + 0x2a
+    fn visible(&self, pos: Pos) -> bool {
+        sees(&self.viewpoint, &self.island, pos)
     }
 
     /// A sound from `pos`, if the player sees it. The original plays it
@@ -936,11 +940,11 @@ impl World {
         p.set_flags([1, 1, 1]);
         p.set_heading(route);
         p.set_path(0x14);
+        // Its first step: 1110:3622 + 4 · route.
         let step = usize::try_from(route)
             .ok()
-            .and_then(|r| HELICOPTER_STEPS.get(r))
-            .copied()
-            .unwrap_or(0);
+            .and_then(|r| movement::TRACK_ENDS.get(r))
+            .map_or(0, |e| e.1);
         p.set_step(i32::from(step));
         p.set_sprite(0x198);
         p.set_word_26(0);

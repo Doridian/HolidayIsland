@@ -292,15 +292,33 @@
 1088:2c3b func remove_first_at_home  # (i, j): like remove_people_at, but the first one only
 1088:2d2a func remove_people_at  # (i, j): the walkers (0x11..0x16) and surfers (0x20, 0x21) whose home (+0x22, +0x24) is the square leave; whether there were any
 1088:2df2 func remove_person  # (n): the record leaves: planes with their second half, walkers and surfers off their home's count in 551c, others clear 551c and 5520 on their square
+1088:3083 func add_drawn_person  # view: (n): appends n and its key to 1110:7000
+1088:30ba func person_screen_pos  # view: (n, var x, var y): person n's picture on Hauptbild from the view's origin, rotation and parity
+1088:3496 func save_under_person  # view: (n): keeps what's under person n's picture (1110:6002), its rectangle in +0xc..+0x12; the sort key, +2000 planes, +1000 their second halves
+1088:3727 func sort_people  # view: bubble sort of 1110:7000 by key
+1088:385d func collect_people  # view: the people to draw (+0x16 = 1, seen, 0x24..0x640): 1088:3496 each, then 1088:3727; 1110:6ffe the count
+1088:38c4 func draw_people  # view: draws the sorted people, 1088:3a19(n, i, j, +0x15 = 0, 5, 2, 1); game::darstellung::draw_people
+1088:3a19 func draw_person  # view: (n, i, j, cover, 5, source, first): one person's ANIMDAT1 picture (SRCAND, SRCINVERT; the money as text), then the foundations and buildings in front (1110:37a2) cut to it
 1088:4ae2 func person_at  # (n, kind, i, j): someone of kind on the square (walkers 0x11..0x16: a marker layer taken)
 1088:4b93 func anyone_at  # (i, j): anyone in 0x2f..1110:6ff4 on the square
 1088:4bfa func form_look  # (i, j): ansicht_formkorrektur[view_rotation, form]
+1088:4c27 func view_corner_or_zero  # (i, j): ground_corner_height (1050:075e) on the map, else 0
 1088:4c55 func place_walker  # (n): a walker's sprite and offset from its ANIMDAT2 path, by view_rotation
+1088:4e18 func road_ahead  # (n, d): road ahead of walker n in direction d: ground 10..0x3a, or building 11 or 0x34
+1088:4f4f func walker_may_join  # (p1..p6, n, d): one marker layer free ahead and the other one of the six paths
+1088:5386 func walker_blocked  # (n, d): whether someone is in walker n's way in direction d (1110:3c2e): a marker layer taken ahead, not by a path it may join (1088:4f4f); game::people::movement
+1088:571e func walker_free_square  # (n): walker n frees its square in 551c and 5520
 1088:5841 func free_path_square  # (n): a walker frees the square its path step leads to in 551c and 5520
+1088:5e73 func walker_mark_square  # (n): walker n marks its square with its path, in the first free layer
+1088:5f3e func walker_claim_ahead  # (d, n): walker n claims the square ahead for NEINTRAG.DAT's path there, frees its own
+1088:6769 func turn_walker  # (d, path, n): walker n turns onto path at a crossing: Random(100) < 60 for 5/7/9/11 without road ahead, < 50 alone on its square with road
+1088:68f1 func walker_sound  # (n): a waiting walker the player sees: Random(100) = 1 it leaves; a sound by its kind, 0x15/0x16 by Random(3)
 1088:6975 func remove_people_from  # (j, i): the people on the square and in its building leave
 1088:6bac func remove_workers  # (building, i, j): the builders (kind 0x26) in the area leave
 1088:6c5a func people_map_changed  # clears +0x17 of people records 0..0x23 and 1110:6fce, 1110:6ff2
 1088:6c8b func people_map_changed2  # the same as people_map_changed
+1088:6cba func place_harbour_ship  # (n): a harbour ship's sprite (0x133, 0x13b, 0x143 + look) and offset from its ANIMDAT4 route
+1088:6ee7 func place_surfer  # (n): a surfer's sprite (0x123 / 299 + look) and offset from its ANIMDAT4 route
 1088:75de func place_plane  # (n): a plane's sprites and offsets for both halves from ANIMDAT4 and ANIMDAT3, by view_rotation
 1088:7ee3 func people_flag16_clear  # +0x16 := 0 for 0x2f..1110:6ff4 but kinds 6, 0x2a, 0x46, 1, 0x19, 0x25, 0x2b..0x2d
 1088:7f4a func people_flag16_set  # the same with +0x16 := 1
@@ -311,13 +329,25 @@
 1088:8a07 func load_people  # loads them, unit of load_map; game::world
 1090:1a25 func send_person  # (j, i): by the building there, someone of its kind if none is at its door (1088:0324), some kinds by Random; Ghidra missed this function
 1090:2373 func spawn_people  # boats and ships on random open sea, then the squares of 1110:5536 from the view origin; game::people
-1090:2ce5 func person_step
-1090:5293 func people_tick  # the people and vehicles at *1110:6fd6, records 0x24..0x640; about 3850 bytes, Ghidra sees 123
+1090:2c1f func plane_on_approach  # (n): the plane's +0x22 square is one of its airport's approaches (1110:36a0; the second if either coordinate matches)
+1090:2ce5 func person_step  # (n): the planes (kinds 7, 8, 9): approach, holding circle, landing, parking, take-off, by +8; game::people::movement
+1090:5293 func people_tick  # counts down 1110:723c (sounds), then for records 0x24..0x640: 1098:109f, 1090:2ce5 and with 1110:0055 the walkers along ANIMDAT2; about 3850 bytes, Ghidra sees 123; game::people::movement
+1098:0002 func ship_heading  # (n): 2 with a harbour (0x58..0x6b) at i +- 1, 0 at j +- 1; else n leaves (and the result is undefined)
 1098:00ef func nearest_corner  # (i, j): the map corner (1110:3ce4) nearest by Manhattan distance, the first of equals
+1098:01c0 func open_sea  # (n, i, j): open sea: flat water, marker 255, no building
+1098:0217 func ship_blocked  # (n, heading): the way ahead isn't open sea (marker included); heading outside 0..7 removes n
+1098:02c3 func ship_blocked_unmarked  # (n, heading): the same without the marker
+1098:0357 func open_sea_ahead  # (n, heading): open sea ahead (1098:01c0)
+1098:03b3 func pick_sea_target  # (tries, n, size): up to tries+1 random sea targets (Random(size) for i, then j) around n; n leaves after the last
+1098:0497 func wrap_heading  # (heading): back into 0..7
+1098:04ca func off_inner  # (j, i): off the map's inner squares 1..249
+1098:04f9 func ship_detour  # (n): a blocked harbour ship's detour: Random(8) row of 1110:3c74, ten squares of water ahead (+0x26 := 9); else Random(8) again, own square checked five times (+0x26 := 4); else it leaves; then Random(50) = 1 it leaves
 1098:0745 func turn_taxiing_35  # (n): a taxiing plane's (kind 0x35) offset by view_rotation and its runway +0x20
 1098:0a14 func turn_taxiing_36  # kind 0x36
 1098:0ce3 func turn_taxiing_37  # kind 0x37
 1098:0e6d func turn_taxiing_38  # kind 0x38
+1098:109f func person_animate  # (n): one record's animation while 1110:0055 (ships, boats, door animations, surfers, harbour ships, helicopter, taxiing planes); then always the money, oil, 0x19, 0x25, 0x2a, 0x46; about 10 KB, Ghidra missed it; game::people::movement
+10a0:0002 func same_square  # (i1, j1, i2, j2): the same square
 10a0:0026 func replace_building  # (building, i, j): the area gets the type, its record (1078:169a) too; full championship (1110:1418): +0xc := min(plot+0xee, capacity), +0x15 its percent; empty (1110:1438): both 0; for 0x6f/0x79/0x7a the spectators leave; game::sabotage
 10a0:02ad func start_championship
 10a0:0691 func make_available  # (building, kind): kind 0: the build menu (1018:23f8) and the computer players (10a8:0523) get the type, some with the next ones of its group; 1: the menu only; 2..7: 10a8:2cc1
@@ -328,6 +358,8 @@
 10a0:0d09 func quake_start  # damage 0, insured := 1110:0072
 10a0:0d1c func quake_damage
 10a0:0ddc func quake_end  # same as flood_end
+10a0:0e17 func end_soft_soap  # (i, j): the soft soap (kind 5) there ends: its countdown := 1
+10a0:0ec8 func sabotage_at  # (kind, i, j): sabotage of kind on the building there (its first square unless in 1110:1358), any slot
 10a0:10c6 func send_surfers  # (i, j): five tries, Random(2): a surfer (people kind 0x20 or 0x21) from there, counted in *1110:551c
 10a0:117e func effects_tick  # once a day: the five sabotage slots *1110:705a and three championships *1110:705e count down and act; game::sabotage
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
@@ -472,16 +504,25 @@
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
 1110:1572 data hauptschirm_layout_table  # 11 x (hidden, left, top, width, height)
 1110:174b data month_lengths  # month lengths, array[0..3, 1..12] of Byte read at 174b + 12 * (year mod 4) + month
+1110:33c0 data taxiing_sprites  # array[0..3, 0..5] of Integer: the taxiing planes' (0x35..0x3a) first sprite by rotation
 1110:33f0 data people_looks  # array[0..3, 0..7] of Integer: a facing as seen from each rotation
 1110:3430 data plane_tracks  # array[0..3, 0..15] of Integer: the ANIMDAT3 track of a plane route by rotation
 1110:34b0 data people_doors  # array[0..3, 1..3] of (i, j): a building's door from its first square by rotation
 1110:34e0 data path_turns  # array[0..3, 0..39] of Integer: the ANIMDAT2 path of a walker path by rotation
-1110:3620 data animdat3_last_rows  # 16 x 4 bytes, first word = last row per ANIMDAT3 group; uninitialized, filled before load_animdat by unknown code
+1110:3620 data track_ends  # array[0..15] of (last row, first row) Integers: the ANIMDAT3 tracks (and the helicopter's); initialised data (Ghidra's view of DGROUP is wrong)
+1110:3660 data vehicle_moves  # array[0..15] of (di, dj): a vehicle's move at the end of a track or route
 1110:36a0 data airport_approaches  # array[0x28..0x33] of 9 Integers: an airport's two approaches (offsets) and its planes' heading (+8)
+1110:3778 data plane_circle  # array[0..24] of Byte: a plane's track on each step of its holding circle (also read as 1110:3754 + state for states 0x24..0x3c)
+1110:3792 data turn_towards  # array[0..15] of Byte: the heading towards a target by 1 (lower i), 2 (higher i), 4 (lower j), 8 (higher j); 255 there
+1110:37a2 data people_in_front  # array[0..3, 0..29] of (di, dj, columns, half rows): the squares in front of a person, which may cover it (1088:3a19)
 1110:3bb2 data ship_sprites  # ship and boat sprites less 0x18
 1110:3c2e data people_directions  # ten Integers, saved with the people
 1110:3c42 data stage_spectators_flag  # set when stage spectators (kind 0x41) come, cleared by 1088:0002
+1110:3c64 data route_starts  # array[0..7] of Integer: the ANIMDAT4 row a heading starts at
+1110:3c74 data ship_detours  # array[0..7, 0..5] of Integer: a harbour ship's detour turns
+1110:3cd4 data ship_drift  # array[0..3] of (di, dj): a ship's drift by the view's rotation (up the screen)
 1110:3ce4 data map_corners  # array[0..3] of (i, j): (0, 0), (0, 250), (250, 0), (250, 250)
+1110:3dce data sound_lengths  # array[1..42] of Integer: how long each sound plays, in ticks
 1110:4a06 data rand_seed  # RandSeed (Longint)
 1110:4a82 data module_handle  # entry quits when GetModuleUsage of it is above 1 (a second copy)
 1110:4a84 data accounting_step
@@ -632,6 +673,7 @@
 1110:70ee data compbau | pointer32  # 13 x 7 bytes from COMPBAU.DAT
 1110:722e data wasnunform  # TWasNunForm (VMT 1040:33e9), created while starting a game
 1110:723a data uebersichtsmap2
+1110:723c data sound_busy  # array[1..42] of Integer from 1110:723e: ticks each sound still plays; play_sound (10a0:30b6) only plays at 0 and sets it from 1110:3dce, people_tick counts it down; not saved, the view's
 1110:7342 data helpform
 1110:7346 data waehrungsfaktor
 1110:734a data fehler_texts | pointer32  # far pointer to the table loaded from the file of that name

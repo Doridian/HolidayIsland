@@ -44,11 +44,12 @@ which reproduces those RTL routines. Things the loaders have in common:
   return an error instead.
 - The directories are `SETUP.DAT`'s base path plus `Data\` and `Texte\`
   (1000:17bc).
+- `ANIMDAT3.DAT`'s group sizes aren't in the file: they're the first words
+  of the table at `1110:3620` (initialised data; Ghidra shows it wrong), 7,
+  15, 7, 15, 7, 15, 7, 15, 7, 14, 7, 7, 14, 7, 14, 14 last rows. The parser
+  takes them as an argument.
 
 Still open:
-- `ANIMDAT3.DAT`'s group sizes come from uninitialized memory at 1110:3620
-  that something fills before the loader runs; the parser takes them as an
-  argument.
 - `HAUPTSCH.TXT` isn't named anywhere in the EXE and may be unused.
 - `SETUP.DAT` (written by the installer) only picks the directories and
   the sound/video quality: `formats::setup`, see [startup.md](startup.md).

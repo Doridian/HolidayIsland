@@ -169,6 +169,10 @@ pub struct Hauptschirm {
     /// The date and player 1's money the info bar shows, once drawn.
     info_shown: Option<(Date, i32)>,
     bitmaps: Vec<Surface>,
+    /// The island without the people, which [`Hauptschirm::show_people`]
+    /// draws over it into [`Hauptschirm::map`]. The original keeps what's
+    /// under each picture instead (1088:3496).
+    island: Surface,
     pub title: Surface,
     pub info: Surface,
     pub buttons: Surface,
@@ -236,6 +240,7 @@ impl Hauptschirm {
             info: image("InfoImage"),
             buttons: image("ButtonImage"),
             map: image("Hauptbild"),
+            island: image("Hauptbild"),
             ns_image: image("NSScrollbild"),
             wo_image: image("WOScrollbild"),
             status: image("Statusimage"),
@@ -366,9 +371,31 @@ impl Hauptschirm {
         img.blit(x, 0, scroll, Rect::new(20, 0, 20, 16), Rop::Invert, all);
     }
 
-    /// Redraws the island. // 1050:2700
+    /// Redraws the island, without the people. // 1050:2700
     pub fn paint_map(&mut self, world: &World, tiles: &Tiles) {
-        darstellung::draw_view(&mut self.map, world, tiles, &self.camera);
+        darstellung::draw_view(&mut self.island, world, tiles, &self.camera);
+        copy(&mut self.map, &self.island);
+    }
+
+    /// The island with the people and vehicles on it, as the clock's tick
+    /// draws them after it moved them (1020:1e9b): only with the
+    /// animations on and new people coming (`1110:0054`, `1110:0056`); the
+    /// money rising from a square is its amount and the currency in
+    /// colour 1. // 1088:385d, 1088:38c4
+    pub fn show_people(&mut self, world: &World, tiles: &Tiles, font: &Font, texts: &InfoTexts) {
+        copy(&mut self.map, &self.island);
+        if !(world.options.animations && world.options.people_spawn) {
+            return;
+        }
+        let mut money = |dst: &mut Surface, amount: i32, at: (i32, i32)| {
+            // 1088:3a19: format_money, ' ' (1088:3a17), the currency.
+            let mut text = format_money(amount, texts.currency_factor, texts.land);
+            text.push(b' ');
+            text.extend_from_slice(&texts.currency);
+            text.truncate(255);
+            font.draw(dst, &text, at, 100, Align::Left, 1); // 1030:23d3
+        };
+        darstellung::draw_people(&mut self.map, world, tiles, &self.camera, &mut money);
     }
 
     /// Redraws the squares the simulation changed, and says whether there

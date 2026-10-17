@@ -42,12 +42,13 @@ fn data_tables() {
         [0, 0, 2, 3]
     );
     assert_eq!(data::animdat4(&read("DATA/ANIMDAT4.DAT").unwrap()).unwrap().len(), 8);
-    // The group sizes from the file's own notes; the game's come from memory.
-    let mut last_row = [-1; data::ANIMDAT3_GROUPS];
-    last_row[..2].copy_from_slice(&[7, 15]);
+    // The groups' last rows, the first words of 1110:3620's entries.
+    let last_row = [7, 15, 7, 15, 7, 15, 7, 15, 7, 14, 7, 7, 14, 7, 14, 14];
     let animdat3 = data::animdat3(&read("DATA/ANIMDAT3.DAT").unwrap(), &last_row).unwrap();
     assert_eq!(animdat3[0][0], [47, 23, 0]);
     assert_eq!(animdat3[1][0], [31, 31, 1]);
+    // Each track passes the square's centre, where the planes turn.
+    assert!(animdat3.iter().all(|g| g.iter().any(|r| r[..2] == [31, 15])));
     for name in ["FILENAME", "FILMNAME", "SOUNNAME"] {
         let names = data::message_media_names(&read(&format!("DATA/{name}.DAT")).unwrap());
         assert_eq!(names.len(), data::MESSAGES);

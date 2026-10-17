@@ -21,7 +21,7 @@ use formats::data::Darstell;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
-use crate::world::{Island, NO_BUILDING, PALM, Pos, World};
+use crate::world::{Island, NO_BUILDING, PALM, Pos, World, on_map};
 
 /// The bitmaps the island is drawn from, from `GRAFIK`, with their index:
 /// the device contexts `1030:1418` keeps in the word array at `1110:5fc0`.
@@ -68,7 +68,7 @@ const HALF_WIDTH: [i32; 2] = [32, 30];
 pub(crate) const GROUND_ROWS: [u8; 10] = [0, 19, 38, 38, 57, 57, 0, 0, 0, 76];
 /// How far each form lifts its tile, beyond the height of the corner it's
 /// measured from. // 1110:00ac
-const FORM_LIFT: [i32; 19] = [9, -9, -9, 9, 9, 0, -9, 0, 18, 0, -18, 0, 9, 0, -9, 0, 0, 0, 0];
+pub(crate) const FORM_LIFT: [i32; 19] = [9, -9, -9, 9, 9, 0, -9, 0, 18, 0, -18, 0, 9, 0, -9, 0, 0, 0, 0];
 /// A flat square: buildings on it get no foundation.
 const FLAT: u8 = 16;
 /// The foundation under buildings on a slope, in `gfxhaus1.BMP`: the
@@ -80,6 +80,9 @@ const FOUNDATION: Tile = Tile {
     mask: (124, 70),
 };
 const FOUNDATION_DROP: i32 = 16;
+/// The foundation's width, where the people's drawing cuts it to a
+/// picture. // 1110:120e
+const FOUNDATION_WIDTH: i32 = 62;
 /// The sea outside the map: row 54 of `GFXPOS.DAT`. // 1050:0e68 (gfxpos+0x28a)
 const SEA: usize = 54;
 /// How the parts of the 2×2 building type 11 turn with the view.
@@ -239,7 +242,7 @@ impl Camera {
 /// The height the ground tile at `(i, j)` is measured from: one of the
 /// square's corners, which one depending on the view. 0 off the map's top
 /// or left edge. // 1050:075e
-fn ground_height(island: &Island, view: usize, (i, j): Pos) -> u8 {
+pub(crate) fn ground_height(island: &Island, view: usize, (i, j): Pos) -> u8 {
     let corner = match view {
         0 => (i, j),
         1 => (i - 1, j),
@@ -690,6 +693,382 @@ fn draw_tall_building(c: &mut Column, island: &Island, view: usize, pos: Pos, y:
     }
 }
 
+/// The people's records the drawing goes through, from the money on.
+const FIRST_DRAWN: i16 = 0x24;
+
+/// The kinds standing at a building whose picture stands on the
+/// square's highest corner, not on the view's corner and form.
+/// // 1088:3496, 1088:3a19
+fn on_building(kind: u8) -> bool {
+    matches!(kind, 0x1a..=0x1f | 0x26..=0x29 | 0x2e..=0x34 | 0x3b..=0x45 | 0x47..=0x50)
+}
+
+/// The squares in front of a person, which may cover it, by the view's
+/// rotation: `(di, dj)` on the map and `(columns, half rows)` on the
+/// screen from the person's square. The first three get their
+/// foundation redrawn over the person, the 29 from the second on their
+/// building. // 1110:37a2
+#[rustfmt::skip]
+const IN_FRONT: [[[i16; 4]; 30]; 4] = [
+    [
+        [0, 0, -1, 0], [0, 1, -2, 1], [1, 0, 0, 1], [1, 1, -1, 2], [1, 2, -2, 3], [2, 1, 0, 3],
+        [2, 2, -1, 4], [2, 3, -2, 5], [3, 2, 0, 5], [3, 3, -1, 6], [3, 4, -2, 7], [4, 3, 0, 7],
+        [4, 4, -1, 8], [4, 5, -2, 9], [5, 4, 0, 9], [5, 5, -1, 10], [5, 6, -2, 11], [6, 5, 0, 11],
+        [6, 6, -1, 12], [7, 7, -1, 14], [-1, 1, -3, 0], [1, -1, 1, 0], [0, 2, -3, 2], [2, 0, 1, 2],
+        [1, 3, -3, 4], [3, 1, 1, 4], [2, 4, -3, 6], [4, 2, 1, 6], [3, 5, -3, 8], [5, 3, 1, 8],
+    ],
+    [
+        [0, 0, -1, 0], [-1, 0, -2, 1], [0, 1, 0, 1], [-1, 1, -1, 2], [-2, 1, -2, 3], [-1, 2, 0, 3],
+        [-2, 2, -1, 4], [-3, 2, -2, 5], [-2, 3, 0, 5], [-3, 3, -1, 6], [-4, 3, -2, 7], [-3, 4, 0, 7],
+        [-4, 4, -1, 8], [-5, 4, -2, 9], [-4, 5, 0, 9], [-5, 5, -1, 10], [-6, 5, -2, 11], [-5, 6, 0, 11],
+        [-6, 6, -1, 12], [-7, 7, -1, 14], [-1, -1, -3, 0], [1, 1, 1, 0], [-2, 0, -3, 2], [0, 2, 1, 2],
+        [-3, 1, -3, 4], [-1, 3, 1, 4], [-4, 2, -3, 6], [-2, 4, 1, 6], [-5, 3, -3, 8], [-3, 5, 1, 8],
+    ],
+    [
+        [0, 0, -1, 0], [0, -1, -2, 1], [-1, 0, 0, 1], [-1, -1, -1, 2], [-1, -2, -2, 3], [-2, -1, 0, 3],
+        [-2, -2, -1, 4], [-2, -3, -2, 5], [-3, -2, 0, 5], [-3, -3, -1, 6], [-3, -4, -2, 7], [-4, -3, 0, 7],
+        [-4, -4, -1, 8], [-4, -5, -2, 9], [-5, -4, 0, 9], [-5, -5, -1, 10], [-5, -6, -2, 11], [-6, -5, 0, 11],
+        [-6, -6, -1, 12], [-7, -7, -1, 14], [1, -1, -3, 0], [-1, 1, 1, 0], [0, -2, -3, 2], [-2, 0, 1, 2],
+        [-1, -3, -3, 4], [-3, -1, 1, 4], [-2, -4, -3, 6], [-4, -2, 1, 6], [-3, -5, -3, 8], [-5, -3, 1, 8],
+    ],
+    [
+        [0, 0, -1, 0], [1, 0, -2, 1], [0, -1, 0, 1], [1, -1, -1, 2], [2, -1, -2, 3], [1, -2, 0, 3],
+        [2, -2, -1, 4], [3, -2, -2, 5], [2, -3, 0, 5], [3, -3, -1, 6], [4, -3, -2, 7], [3, -4, 0, 7],
+        [4, -4, -1, 8], [5, -4, -2, 9], [4, -5, 0, 9], [5, -5, -1, 10], [6, -5, -2, 11], [5, -6, 0, 11],
+        [6, -6, -1, 12], [7, -7, -1, 14], [1, 1, -3, 0], [-1, -1, 1, 0], [2, 0, -3, 2], [0, -2, 1, 2],
+        [3, -1, -3, 4], [1, -3, 1, 4], [4, -2, -3, 6], [2, -4, 1, 6], [5, -3, -3, 8], [3, -5, 1, 8],
+    ],
+];
+
+/// Where a person's picture goes in the view, and the square's column
+/// pair and half row it's drawn from. // 1088:30ba
+struct Placed {
+    x: i32,
+    y: i32,
+    column: i32,
+    half: i32,
+}
+
+/// The column pair, half row and pixel position of record `p`'s picture
+/// (`lift` above the half row), from `cam`. // 1088:30ba
+// The original's `(n + 1000) div 2 - 500`, a floored half.
+#[allow(clippy::manual_midpoint)]
+fn place_person(p: &crate::people::Person, cam: &Camera, lift: i32) -> Placed {
+    let (i, j) = p.pos();
+    let (di, dj) = (
+        i32::from(i) - i32::from(cam.origin.0),
+        i32::from(j) - i32::from(cam.origin.1),
+    );
+    let parity = i32::from(cam.parity);
+    let (ox, oy) = (i32::from(p.offset().0), i32::from(p.offset().1));
+    let pairs = |n: i32| (n + 1000) / 2 - 500;
+    let (column, half, dx, dy) = match cam.view() {
+        0 => {
+            let half = di + dj;
+            (pairs(di - dj), half, (half & 1) * 32 + parity * 32, 0)
+        }
+        2 => {
+            let half = 0x1a - (di + dj);
+            (10 - pairs(di - dj), half, -(half & 1) * 32 - parity * 32, 0)
+        }
+        3 => {
+            let half = di - dj;
+            (0xd - pairs(di + dj), half, -(half & 1) * 32, parity * 16)
+        }
+        _ => {
+            let half = 0x13 - (di - dj);
+            (pairs(di + dj), half, (1 - (half & 1)) * 32, (1 - parity) * 16)
+        }
+    };
+    Placed {
+        x: ox + column * 64 + dx - 32,
+        y: oy + half * 16 - 0x19 - lift + dy,
+        column,
+        half,
+    }
+}
+
+/// A rectangle of a bitmap drawn over a person's picture, cut to it.
+struct Cover {
+    bitmap: usize,
+    /// Where on the screen, and the size.
+    at: (i32, i32),
+    size: (i32, i32),
+    picture: (i32, i32),
+    mask: (i32, i32),
+}
+
+/// Draws the money rising from a square: the amount, and where.
+pub type MoneyText<'a> = dyn FnMut(&mut Surface, i32, (i32, i32)) + 'a;
+
+/// The people and vehicles the player sees, drawn over the island. The
+/// money rising from a square is a text, which `money` draws (the amount
+/// and where). // 1088:385d, 1088:38c4
+///
+/// The original keeps what's under each picture (1088:3496) to put it
+/// back on the next tick; the caller draws the island first instead. It
+/// also clears the records' `+0x14` here, which the view leaves alone.
+pub fn draw_people(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera, money: &mut MoneyText) {
+    let island = &world.island;
+    let t = &world.tables;
+    let view = cam.view();
+    let viewpoint = crate::people::Viewpoint {
+        rotation: cam.view,
+        origin: cam.origin,
+        parity: cam.parity,
+    };
+    // 1088:385d: the ones on screen, where their pictures go and the order
+    // to draw them in (lower first, planes and their second halves last).
+    let mut shown = Vec::new();
+    for n in FIRST_DRAWN..=crate::people::LAST {
+        let Some(p) = world.people.get(n) else {
+            continue;
+        };
+        if p.kind() == 0 || p.flags()[2] != 1 || !crate::people::sees(&viewpoint, island, p.pos()) {
+            continue;
+        }
+        let pos = p.pos();
+        let form = usize::from(dt_form(tiles, view, island, pos));
+        let lift = if on_building(p.kind()) {
+            height_px(island.highest_corner(pos))
+        } else {
+            let corner = if on_map(pos) {
+                ground_height(island, view, pos)
+            } else {
+                0
+            }; // 1088:4c27
+            (i32::from(corner) - 1) * STEP + FORM_LIFT.get(form).copied().unwrap_or(0)
+        };
+        let placed = place_person(p, cam, lift); // 1088:30ba
+        let key = placed.y
+            + match p.kind() {
+                7..=9 | 0x2e => 2000,
+                10..=12 | 0x2f => 1000,
+                _ => 0,
+            };
+        shown.push((key, n, placed));
+    }
+    // 1088:3727's bubble sort keeps equals in order, as a stable sort does.
+    shown.sort_by_key(|s| s.0);
+    for (_, n, placed) in shown {
+        let Some(p) = world.people.get(n) else {
+            continue;
+        };
+        if p.kind() == crate::people::MONEY {
+            money(dst, p.step(), (placed.x, placed.y));
+            continue;
+        }
+        // 1088:3a19 with source 2: the picture from ANIMDAT1.DAT.
+        let sprite = p.sprite();
+        let size = (i32::from(t.animdat1(sprite, 1)), i32::from(t.animdat1(sprite, 0)));
+        let bitmap = usize::try_from(t.animdat1(sprite, 10)).unwrap_or(BITMAPS);
+        let picture = (i32::from(t.animdat1(sprite, 2)), i32::from(t.animdat1(sprite, 3)));
+        let mask = (i32::from(t.animdat1(sprite, 4)), i32::from(t.animdat1(sprite, 5)));
+        let at = (placed.x, placed.y);
+        draw_masked(dst, tiles, bitmap, at, size, picture, mask);
+        if p.flags()[1] == 0 {
+            for cover in covers(world, tiles, cam, p, &placed, at, size) {
+                draw_masked(
+                    dst,
+                    tiles,
+                    cover.bitmap,
+                    cover.at,
+                    cover.size,
+                    cover.picture,
+                    cover.mask,
+                );
+            }
+        }
+    }
+}
+
+/// A square's form as `view` turns it (1088:4bfa), flat off the map's
+/// inner squares.
+fn dt_form(tiles: &Tiles, view: usize, island: &Island, (i, j): Pos) -> u8 {
+    let form = if (1..=249).contains(&i) && (1..=249).contains(&j) {
+        island.forms.at((i, j))
+    } else {
+        FLAT
+    };
+    tiles.darstell.form_korrektur[view]
+        .get(usize::from(form))
+        .copied()
+        .unwrap_or(0)
+}
+
+/// A picture's mask (`SRCAND`), then the picture (`SRCINVERT`).
+fn draw_masked(
+    dst: &mut Surface,
+    tiles: &Tiles,
+    bitmap: usize,
+    at: (i32, i32),
+    (w, h): (i32, i32),
+    picture: (i32, i32),
+    mask: (i32, i32),
+) {
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    let Some(src) = tiles.bitmaps.get(bitmap).and_then(Option::as_ref) else {
+        return;
+    };
+    let clip = dst.bounds();
+    dst.blit(at.0, at.1, src, Rect::new(mask.0, mask.1, w, h), Rop::And, clip);
+    dst.blit(
+        at.0,
+        at.1,
+        src,
+        Rect::new(picture.0, picture.1, w, h),
+        Rop::Invert,
+        clip,
+    );
+}
+
+/// What of the squares in front of person `p` (whose picture is `size`
+/// at `at`) covers it: the foundations of the first three on a slope (not
+/// for kind 0x3b), then the buildings of the 29 from the second, cut to
+/// the picture. A building whose `HAUSPOS.DAT` row's last column is 1
+/// never covers anyone, one with 2 no walkers. // 1088:3a19
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)] // One routine of the original's.
+fn covers(
+    world: &World,
+    tiles: &Tiles,
+    cam: &Camera,
+    p: &crate::people::Person,
+    placed: &Placed,
+    (sx, sy): (i32, i32),
+    (sw, sh): (i32, i32),
+) -> Vec<Cover> {
+    let island = &world.island;
+    let view = cam.view();
+    let parity = i32::from(cam.parity);
+    let (i, j) = p.pos();
+    let mut out = Vec::new();
+    // The column's left edge and the half row of the square `k` in front.
+    let corner = |k: usize, left: i32| {
+        let e = IN_FRONT[view][k];
+        let (dc, dh) = (i32::from(e[2]), i32::from(e[3]));
+        let half = placed.half;
+        let odd = half & 1;
+        let (x, y) = match view {
+            0 => ((dc + odd) * 32 + parity * 32, (dh + half) * 16),
+            2 => ((dc - odd) * 32 - parity * 32, (dh + half) * 16),
+            3 => ((dc - odd) * 32, parity * 16 + (dh + half) * 16),
+            _ => ((dc + (1 - odd)) * 32, (1 - parity) * 16 + (dh + half) * 16),
+        };
+        (placed.column * 64 + x + left, y)
+    };
+    // The square `k` in front, if it's on the map's inner squares and has a
+    // building: its HAUSPOS.DAT row, the turned type and the highest corner.
+    let square = |k: usize| {
+        let e = IN_FRONT[view][k];
+        let pos = (i.wrapping_add(e[0]), j.wrapping_add(e[1]));
+        if !(1..0xfa).contains(&pos.0) || !(1..0xfa).contains(&pos.1) {
+            return None;
+        }
+        let building = island.buildings.at(pos);
+        if building >= 0xfe {
+            return None;
+        }
+        let (turned, building) = turn_building(tiles, island.parts.at(pos), building, view); // 1050:0997
+        let row = tiles.hausnr(building, 2) + i16::from(turned).checked_rem(tiles.parts(building)).unwrap_or(0);
+        let row = usize::try_from(row).ok().filter(|&r| r < tiles.hauspos.len())?;
+        Some((pos, row, building))
+    };
+    if p.kind() != 0x3b {
+        for k in 0..=2 {
+            let Some((pos, row, _)) = square(k) else {
+                continue;
+            };
+            // The form as it is (1000:3e8d), not as the view turns it.
+            if island.forms.at(pos) == FLAT || tiles.hauspos[row][9] != 1 {
+                continue;
+            }
+            let (x, y) = corner(k, 0);
+            let rise = (i32::from(island.highest_corner(pos)) - 1) * STEP - FOUNDATION_DROP;
+            let top = y - rise - 0x19;
+            let (w, h) = (FOUNDATION_WIDTH, FOUNDATION.height);
+            if !(top < sh + sy && x < sx + sw && sx < x + w) {
+                continue;
+            }
+            let mut c = Cover {
+                bitmap: HAUS1,
+                at: (x, top),
+                size: (w, h),
+                picture: FOUNDATION.picture,
+                mask: FOUNDATION.mask,
+            };
+            if sx < x {
+                c.size.0 = sw - (x - sx);
+            } else {
+                let cut = sx - x;
+                c.picture.0 += cut;
+                c.mask.0 += cut;
+                c.size.0 = if x + w < sx + sw { w - cut } else { sw };
+                c.at.0 = sx;
+            }
+            if sy < top {
+                c.size.1 = sh - (top - sy);
+            } else {
+                let cut = sy - top;
+                c.size.1 = sh;
+                c.picture.1 += cut;
+                c.mask.1 += cut;
+                c.at.1 = sy;
+            }
+            out.push(c);
+        }
+    }
+    for k in 1..=0x1d {
+        let Some((pos, row, building)) = square(k) else {
+            continue;
+        };
+        let hp = &tiles.hauspos[row];
+        if hp[11] == 1 || (crate::people::WALKERS.contains(&p.kind()) && hp[11] == 2) {
+            continue;
+        }
+        let sprite = Sprite::new(hp);
+        let (x, y) = corner(k, sprite.left);
+        let rise = (i32::from(island.highest_corner(pos)) - 1) * STEP + sprite.rise;
+        let top = y - rise - 0x19;
+        let (w, h) = (sprite.width, sprite.tile.height);
+        if !(top < sh + sy && x < sx + sw && sx < x + w) {
+            continue;
+        }
+        let mut c = Cover {
+            bitmap: usize::try_from(tiles.hausnr(building, 7)).unwrap_or(BITMAPS),
+            at: (x, top),
+            size: (w, h),
+            picture: sprite.tile.picture,
+            mask: sprite.tile.mask,
+        };
+        if sx < x {
+            if sx + sw <= x + w {
+                c.size.0 = sw - (x - sx);
+            }
+        } else {
+            let cut = sx - x;
+            c.picture.0 += cut;
+            c.mask.0 += cut;
+            c.size.0 = if x + w < sx + sw { w - cut } else { sw };
+            c.at.0 = sx;
+        }
+        if sy < top {
+            if sy + sh <= top + h {
+                c.size.1 = sh - (top - sy);
+            }
+        } else {
+            let cut = sy - top;
+            c.picture.1 += cut;
+            c.mask.1 += cut;
+            c.size.1 = if top + h < sy + sh { h - cut } else { sh };
+            c.at.1 = sy;
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn height_px(h: u8) -> i32 {
     i32::from(h) * STEP
 }
@@ -726,5 +1105,33 @@ mod tests {
         assert_eq!(turn_group(0x78, 3), 0x77);
         assert_eq!(turn_group(0x6c, 3), 0x6c);
         assert_eq!(turn_group(0x40, 1), 0x40);
+    }
+
+    #[test]
+    fn where_people_go() {
+        let mut p = crate::people::Person::default();
+        p.set_pos((25, 23));
+        p.set_offset((10, 4));
+        let cam = Camera {
+            view: 0,
+            origin: (20, 20),
+            parity: 0,
+            owner_pointers: false,
+            occupancy_pointers: false,
+        };
+        // Two columns right (di - dj = 2), eight half rows down.
+        let placed = place_person(&p, &cam, 9);
+        assert_eq!((placed.column, placed.half), (1, 8));
+        assert_eq!((placed.x, placed.y), (10 + 64 - 32, 4 + 8 * 16 - 0x19 - 9));
+        // One column pair left, on an odd half row: half a pair on, as the
+        // other parity is.
+        p.set_pos((25, 24));
+        let odd = place_person(&p, &cam, 9);
+        let other = place_person(&p, &Camera { parity: 1, ..cam }, 9);
+        assert_eq!(odd.x, placed.x - 64 + 32);
+        assert_eq!(other.x, odd.x + 32);
+        // Turned round, the same square is further down the other way.
+        let turned = place_person(&p, &Camera { view: 2, ..cam }, 9);
+        assert_eq!(turned.half, 0x1a - 9);
     }
 }

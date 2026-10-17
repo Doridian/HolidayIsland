@@ -1,8 +1,9 @@
 //! Starts a game on the tutorial island and each scenario, and draws the
 //! main screen. Skipped when `orig/` isn't there. With `ISLAND_PPM=path` it
 //! writes the tutorial's main screen to `path`, and each scenario's next
-//! to it (`path` with `-geld` and so on before the extension), and the
-//! first scenario after two years of palm growth (`-palms`).
+//! to it (`path` with `-geld` and so on before the extension), the
+//! first scenario after two years of palm growth (`-palms`), and the
+//! people and vehicles on the fourth after some ticks (`-people`).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,13 +11,13 @@ use std::sync::Arc;
 use formats::bmp::Bitmap;
 use formats::data::{
     animdat1, animdat4, darstell, flusspos, fontdat, gfxpos, groundnr, grounpos, hausdata, hausnr, hauspos, hausprei,
-    sonstige, straspos,
+    modatyp, monate, sonstige, straspos,
 };
 use formats::dfm::Object;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
 use game::darstellung::{BITMAP_FILES, Camera, Tiles};
-use game::hauptschirm::{self, Hauptschirm, KeyResult, LAYOUT};
+use game::hauptschirm::{self, Hauptschirm, InfoTexts, KeyResult, LAYOUT};
 use game::hintergrund::{Island, SCENARIO_FILES, load_world, new_island};
 use game::startform::Settings;
 use game::text::Font;
@@ -68,11 +69,14 @@ fn tiles() -> Tiles {
 }
 
 fn main_screen(map: &SaveGame) -> Hauptschirm {
+    let d = map.field("1110:5530").unwrap();
+    let word = |at: usize| i16::from_le_bytes([d[at], d[at + 1]]);
+    main_screen_at(map, (word(0), word(2)))
+}
+
+/// The main screen looking at the map from `origin`.
+fn main_screen_at(map: &SaveGame, origin: (i16, i16)) -> Hauptschirm {
     let byte = |dest| map.field(dest).unwrap()[0];
-    let word = |dest, at: usize| {
-        let d = map.field(dest).unwrap();
-        i16::from_le_bytes([d[at], d[at + 1]])
-    };
     let camera = Camera {
         view: byte("1110:007c"),
         origin: (0, 0),
@@ -90,13 +94,7 @@ fn main_screen(map: &SaveGame) -> Hauptschirm {
         .iter()
         .map(|f| Surface::from_bitmap(&bitmap(f)))
         .collect();
-    Hauptschirm::new(
-        camera,
-        (word("1110:5530", 0), word("1110:5530", 2)),
-        bitmaps,
-        &font,
-        title,
-    )
+    Hauptschirm::new(camera, origin, bitmaps, &font, title)
 }
 
 /// The main screen as `THauptschirm`'s form shows it, laid out by
@@ -287,4 +285,82 @@ fn compose_map(map: &Surface, h: &Hauptschirm, palette: &Palette) -> Surface {
     let mut h = h.clone();
     h.map = map.clone();
     compose(&h, palette)
+}
+
+/// The tables the simulation reads from `DATA\`.
+fn world_tables() -> Arc<Tables> {
+    Arc::new(Tables {
+        hausnr: hausnr(&read("DATA/HAUSNR.DAT")).unwrap(),
+        hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
+        hausprei: hausprei(&read("DATA/HAUSPREI.DAT")).unwrap(),
+        groundnr: groundnr(&read("DATA/GROUNDNR.DAT")).unwrap(),
+        animdat1: animdat1(&read("DATA/ANIMDAT1.DAT")).unwrap(),
+        animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
+        form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
+    })
+}
+
+#[test]
+fn people_on_the_island() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tiles = tiles();
+    let palette = bitmap("GFXGROUN.BMP").palette;
+    // Luxus, with its harbours, airports and guests.
+    let file = SCENARIO_FILES[3];
+    let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+    let settings = Settings {
+        scenario: 4,
+        ..Settings::default()
+    };
+    let mut world = load_world(&map, &settings, true).unwrap();
+    world.tables = world_tables();
+    world.random = Random::new(0x5eed);
+    let font = Font::new(
+        &bitmap("FONT.BMP"),
+        &fontdat(&read("DATA/FONTDAT1.DAT")).unwrap(),
+        &fontdat(&read("DATA/FONTDAT2.DAT")).unwrap(),
+    );
+    let sonstige = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
+    let texts = InfoTexts {
+        months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
+        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        currency_factor: sonstige.waehrungsfaktor,
+        currency: sonstige.texts[5].clone(),
+    };
+    // Over the town in the south west, with its harbour and its guests.
+    let mut h = main_screen_at(&map, (90, 185));
+    h.paint_map(&world, &tiles);
+    let mut sounds = 0;
+    for _ in 0..1500 {
+        world.set_viewpoint(h.viewpoint());
+        let tick = world.tick();
+        sounds += tick.sounds.len();
+        h.redraw_squares(&tick.redraw, &world, &tiles);
+    }
+    h.show_people(&world, &tiles, &font, &texts);
+    // Someone is in view, drawn over the island.
+    let seen: Vec<_> = (0x24..=game::people::LAST)
+        .filter_map(|n| world.people.get(n))
+        .filter(|p| p.kind() != 0 && game::people::sees(&h.viewpoint(), &world.island, p.pos()))
+        .map(game::people::Person::kind)
+        .collect();
+    assert_ne!(seen, []);
+    let mut bare = h.clone();
+    bare.paint_map(&world, &tiles);
+    assert_ne!(h.map, bare.map, "{seen:?}");
+    assert!(sounds > 0);
+    if let Some(out) = std::env::var_os("ISLAND_PPM").map(PathBuf::from) {
+        write_ppm(&with_suffix(&out, "people"), &compose(&h, &palette), &palette);
+        write_ppm(&with_suffix(&out, "people-bare"), &compose(&bare, &palette), &palette);
+        // Turned once: the people turn with the island.
+        h.key_down(0x2d, ShiftState::default(), &world, &tiles);
+        world.set_viewpoint(h.viewpoint());
+        world.tick();
+        h.paint_map(&world, &tiles);
+        h.show_people(&world, &tiles, &font, &texts);
+        write_ppm(&with_suffix(&out, "people-view1"), &compose(&h, &palette), &palette);
+    }
 }

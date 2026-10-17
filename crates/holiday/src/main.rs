@@ -132,6 +132,12 @@ impl Game {
             }
             ticked = true;
         }
+        if ticked {
+            // 1088:385d, 1088:38c4: the people where they moved to.
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            changed = true;
+        }
         let info = ticked && self.screen.show_info(&self.world, &self.font, &self.info);
         changed || info
     }
@@ -290,6 +296,8 @@ impl App for Holiday {
                         let shift = self.buttons | self.keys;
                         if game.screen.key_down(key, shift, &game.world, &game.tiles) == hauptschirm::KeyResult::Redrawn
                         {
+                            game.screen
+                                .show_people(&game.world, &game.tiles, &game.font, &game.info);
                             self.repaint();
                         }
                     }

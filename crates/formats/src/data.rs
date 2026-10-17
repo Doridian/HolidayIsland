@@ -335,8 +335,8 @@ const ANIMDAT3_ROWS: usize = 31;
 /// none if `last_row[i]` is negative. // 1088:80a7, into 1110:6fe2
 ///
 /// The original takes `last_row` from the first word of each 4-byte entry at
-/// 1110:3620, which is uninitialized data. What fills it before the loader
-/// runs isn't known yet.
+/// 1110:3620 (initialised data: 7, 15, 7, 15, 7, 15, 7, 15, 7, 14, 7, 7, 14,
+/// 7, 14, 14; the second words are the rows a plane starts each group at).
 ///
 /// # Errors
 /// If the file is short, a cell isn't a number, or a group is longer than

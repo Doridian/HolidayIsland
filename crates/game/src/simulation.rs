@@ -158,7 +158,7 @@ impl World {
             self.quake_damage(&mut tick);
         }
         if self.options.animations {
-            self.people_tick();
+            self.people_tick(&mut tick); // 1090:5293
             if self.options.people_spawn {
                 self.spawn_people(&mut tick); // 1090:2373
             }
@@ -197,19 +197,6 @@ impl World {
     fn settlement_step(&mut self, step: i32) {
         // TODO: port 1008:1bf7, step by step.
         let _ = step;
-    }
-
-    /// The people and vehicles move ([`crate::people`]): counts down
-    /// `1110:723c[1..42]`, then for each record 0x24..=0x640 1098:109f and
-    /// `person_step` (1090:2ce5, 9498 bytes), and while people move the
-    /// walkers' steps along their paths (1088:4c55, 1088:4e18, 1088:571e).
-    /// // 1090:5293, about 3850 bytes
-    fn people_tick(&mut self) {
-        // TODO: port 1090:5293 and 1090:2ce5. They read and write
-        // `self.people` (the records, `paths`, `tracks`, `directions`,
-        // `ships` and `boats`), the marker layers `layer_551c` and
-        // `layer_5520`, `self.viewpoint` and `ANIMDAT1.DAT`/`ANIMDAT4.DAT`
-        // in `self.tables`; 1110:723c (not saved) isn't in the world yet.
     }
 }
 
