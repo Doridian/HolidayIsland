@@ -145,6 +145,13 @@ enhancements! {
     /// (`docs/layout.md`, "Stacking").
     WindowStacking = "window_stacking",
         "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top";
+    /// On a screen bigger than 640 × 480 the main screen fills it and its
+    /// map view shows more of the island, with the scroll bars' ends, the
+    /// overview map's frame and the mouse following the bigger view; the
+    /// world still sees the original's view in its middle
+    /// (`docs/layout.md`, "`big_map`").
+    BigMap = "big_map",
+        "A bigger screen shows more island: the main screen fills it and its map view grows";
 }
 
 /// Every enhancement's [`Info`], the world's first.

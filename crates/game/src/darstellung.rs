@@ -61,6 +61,95 @@ const STEP: i32 = 9;
 pub const VIEW_WIDTH: i32 = 624;
 pub const VIEW_HEIGHT: i32 = 405;
 
+/// The size of the map view a camera draws: the drawing area in pixels and
+/// the columns and half rows it covers. The original's is [`ViewSize::ORIGINAL`]
+/// at every screen size: the 20 columns are hard-coded in `draw_view`
+/// (1050:2700, `PUSH 0x13`), in `in_view` (1050:21b7, `column_low <= 0x13`)
+/// and in the scrolling's strips (1050:0144, `PUSH 0x14`), and the 27 half
+/// rows in `draw_columns` (1050:0e68, `0x1a`) and `in_view`'s `+ 0x2a` (27
+/// and the 15 squares below for tall buildings). The port's `big_map`
+/// enhancement draws a bigger one ([`ViewSize::for_image`],
+/// `docs/layout.md`, "`big_map`").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ViewSize {
+    /// The drawing area, one pixel taller than `Hauptbild` as in the
+    /// original.
+    pub width: i32,
+    pub height: i32,
+    pub columns: i16,
+    pub half_rows: i16,
+}
+
+impl ViewSize {
+    /// The original's: 624 × 405, 20 columns, 27 half rows.
+    pub const ORIGINAL: ViewSize = ViewSize {
+        width: VIEW_WIDTH,
+        height: VIEW_HEIGHT,
+        columns: COLUMNS,
+        half_rows: HALF_ROWS,
+    };
+
+    /// `big_map`'s view for a `Hauptbild` of `width` × `height`: enough
+    /// columns and half rows to cover it, at least the original's, and
+    /// more by a multiple of four of each, so that the original's view
+    /// sits in the middle by an even number of columns and half rows
+    /// ([`ViewSize::core_offset`]). An even shift keeps the scroll
+    /// position's parity, so the bigger camera is the original's exactly,
+    /// moved (`crate::hauptschirm`).
+    #[must_use]
+    pub fn for_image(width: i32, height: i32) -> ViewSize {
+        let height = height + 1;
+        // Each extra block of four is two on either side.
+        let grow = |needed: i32, original: i16| -> i16 {
+            let extra = (needed - i32::from(original)).max(0);
+            original + i16::try_from((extra + 3) / 4 * 4).unwrap_or(0)
+        };
+        let columns = (width + COLUMN_WIDTH - 1) / COLUMN_WIDTH;
+        // The original's 27 for 405: the rows the height cuts, and one.
+        let half_rows = (height + HALF_ROW - 1) / HALF_ROW + 1;
+        ViewSize {
+            width,
+            height,
+            columns: grow(columns, COLUMNS),
+            half_rows: grow(half_rows, HALF_ROWS),
+        }
+    }
+
+    /// Where the original's 20 × 27 view lies in this one: the columns
+    /// and half rows left of and above it.
+    #[must_use]
+    pub fn core_offset(self) -> (i16, i16) {
+        ((self.columns - COLUMNS) / 2, (self.half_rows - HALF_ROWS) / 2)
+    }
+
+    /// Whether it's bigger than the original's.
+    #[must_use]
+    pub fn is_big(self) -> bool {
+        self != ViewSize::ORIGINAL
+    }
+}
+
+/// Entry `n` of one of `DARSTELL.DAT`'s 20-column tables, which grow by
+/// the same step every two columns; past the 20th (`big_map` only) it
+/// goes on that way.
+fn column_entry(table: &[i16; 20], n: usize) -> i16 {
+    if let Some(&v) = table.get(n) {
+        return v;
+    }
+    let base = 18 + n % 2;
+    let steps = i16::try_from((n - base) / 2).unwrap_or(0);
+    table[base] + steps * (table[base] - table[base - 2])
+}
+
+/// Where column `col` of the view starts on the map, from its origin
+/// (`AnsichtSpaltenxKorrektur`, `AnsichtSpaltenykorrektur`).
+fn column_start(dt: &Darstell, view: usize, parity: usize, col: usize) -> (i16, i16) {
+    (
+        column_entry(&dt.spalten_x_korrektur[view][parity], col),
+        column_entry(&dt.spalten_y_korrektur[view][parity], col),
+    )
+}
+
 /// How wide the left and right half of a diamond are. // 1110:1a8a
 const HALF_WIDTH: [i32; 2] = [32, 30];
 /// The first `GROUNDNR.DAT` row of each kind of ground; each has one row per
@@ -410,13 +499,28 @@ fn to_i32(n: usize) -> i32 {
 /// The column's squares are drawn top to bottom until a step draws
 /// nothing (its ground is below the bottom), then the 15 squares below
 /// that once more for the buildings tall enough to reach into the view.
-#[allow(clippy::too_many_lines)]
 pub fn draw_columns(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera, first: i16, last: i16, rows: i16) {
+    draw_columns_in(dst, world, tiles, cam, &ViewSize::ORIGINAL, first, last, rows);
+}
+
+/// [`draw_columns`] for a view of `size` (the original's, or `big_map`'s).
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+fn draw_columns_in(
+    dst: &mut Surface,
+    world: &World,
+    tiles: &Tiles,
+    cam: &Camera,
+    size: &ViewSize,
+    first: i16,
+    last: i16,
+    rows: i16,
+) {
     let island = &world.island;
     let dt = &tiles.darstell;
     let view = cam.view();
     let rows = i32::from(rows);
-    let bottom = if rows < 0 { -HALF_ROW * rows } else { VIEW_HEIGHT };
+    let view_height = size.height;
+    let bottom = if rows < 0 { -HALF_ROW * rows } else { view_height };
     let start_row: usize = if rows < 1 {
         0
     } else {
@@ -428,8 +532,8 @@ pub fn draw_columns(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camer
     // BLACKNESS over the band.
     let band = match rows {
         ..0 => Rect::new(left, 0, width, bottom),
-        0 => Rect::new(left, 0, width, VIEW_HEIGHT),
-        _ => Rect::new(left, start_y, width, VIEW_HEIGHT - start_y),
+        0 => Rect::new(left, 0, width, view_height),
+        _ => Rect::new(left, start_y, width, view_height - start_y),
     };
     let all = dst.bounds();
     dst.fill_rect(band, all, 0);
@@ -445,12 +549,11 @@ pub fn draw_columns(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camer
         masked: false,
     };
     for col in first..=last {
-        let ci = usize::try_from(col).unwrap_or(0).min(19);
+        let ci = usize::try_from(col).unwrap_or(0);
         let mut y = start_y - HALF_ROW; // 1110:66b2
-        let mut i =
-            dt.spalten_x_korrektur[view][parity][ci] + cam.origin.0 + dt.zeilen_x_korrektur[view][parity][start_row];
-        let mut j =
-            dt.spalten_y_korrektur[view][parity][ci] + cam.origin.1 + dt.zeilen_y_korrektur[view][parity][start_row];
+        let (si, sj) = column_start(dt, view, parity, ci);
+        let mut i = si + cam.origin.0 + dt.zeilen_x_korrektur[view][parity][start_row];
+        let mut j = sj + cam.origin.1 + dt.zeilen_y_korrektur[view][parity][start_row];
         c.half = (1 - parity + start_row) % 2;
         c.masked = false;
         let step = |i: &mut i16, j: &mut i16, y: &mut i32, half: &mut usize| {
@@ -495,7 +598,33 @@ pub fn draw_columns(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camer
 
 /// Draws the whole view. // 1050:2700
 pub fn draw_view(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera) {
-    draw_columns(dst, world, tiles, cam, 0, COLUMNS - 1, 0);
+    draw_view_in(dst, world, tiles, cam, &ViewSize::ORIGINAL);
+}
+
+/// Draws the whole of a view of `size`: the original's 20 columns
+/// (1050:2700), or `big_map`'s.
+pub fn draw_view_in(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera, size: &ViewSize) {
+    draw_columns_in(dst, world, tiles, cam, size, 0, size.columns - 1, 0);
+}
+
+/// The map square at the top of column `col` of the view of `cam`, and
+/// the one `half_rows` steps down it, as the drawing walks them
+/// (1050:0e68).
+#[must_use]
+pub fn view_square(tiles: &Tiles, cam: &Camera, col: i16, half_rows: i16) -> Pos {
+    let dt = &tiles.darstell;
+    let view = cam.view();
+    let parity = usize::try_from((col % 2 + cam.parity).rem_euclid(2)).unwrap_or(0);
+    let (si, sj) = column_start(dt, view, parity, usize::try_from(col).unwrap_or(0));
+    let mut i = si + cam.origin.0 + dt.zeilen_x_korrektur[view][parity][0];
+    let mut j = sj + cam.origin.1 + dt.zeilen_y_korrektur[view][parity][0];
+    let mut half = 1 - parity;
+    for _ in 0..half_rows {
+        i += dt.extratab_x_korrektur[view][half];
+        j += dt.extratab_y_korrektur[view][half];
+        half = 1 - half;
+    }
+    (i, j)
 }
 
 /// One step down a column on the map: the square's ground, the foundation
@@ -809,6 +938,20 @@ pub type MoneyText<'a> = dyn FnMut(&mut Surface, i32, (i32, i32)) + 'a;
 /// back on the next tick; the caller draws the island first instead. It
 /// also clears the records' `+0x14` here, which the view leaves alone.
 pub fn draw_people(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera, money: &mut MoneyText) {
+    draw_people_in(dst, world, tiles, cam, &ViewSize::ORIGINAL, money);
+}
+
+/// [`draw_people`] for a view of `size`: the people that view sees
+/// ([`crate::people::sees_in`]). With `big_map` that's more than the
+/// world's [`crate::people::sees`], which stays the original's.
+pub fn draw_people_in(
+    dst: &mut Surface,
+    world: &World,
+    tiles: &Tiles,
+    cam: &Camera,
+    size: &ViewSize,
+    money: &mut MoneyText,
+) {
     let island = &world.island;
     let t = &world.tables;
     let view = cam.view();
@@ -824,7 +967,10 @@ pub fn draw_people(dst: &mut Surface, world: &World, tiles: &Tiles, cam: &Camera
         let Some(p) = world.people.get(n) else {
             continue;
         };
-        if p.kind() == 0 || p.flags()[2] != 1 || !crate::people::sees(&viewpoint, island, p.pos()) {
+        if p.kind() == 0
+            || p.flags()[2] != 1
+            || !crate::people::sees_in(&viewpoint, island, p.pos(), size.columns, size.half_rows)
+        {
             continue;
         }
         let pos = p.pos();
@@ -1101,15 +1247,26 @@ fn pick_ground(world: &World, tiles: &Tiles, view: usize, (i, j): Pos) -> (i32, 
 #[must_use]
 #[allow(clippy::many_single_char_names)] // The original's x, y, i, j and h.
 pub fn square_at(world: &World, tiles: &Tiles, cam: &Camera, x: i32, y: i32) -> Pos {
+    square_at_in(world, tiles, cam, &ViewSize::ORIGINAL, x, y)
+}
+
+/// [`square_at`] in a view of `size`: the point is kept within that
+/// `Hauptbild`, which the original reads (its `Width` and `Height`), so
+/// `big_map`'s picking follows its bigger view.
+/// // 1018:39c2
+#[must_use]
+#[allow(clippy::many_single_char_names)] // The original's x, y, i, j and h.
+pub fn square_at_in(world: &World, tiles: &Tiles, cam: &Camera, size: &ViewSize, x: i32, y: i32) -> Pos {
     let dt = &tiles.darstell;
     let view = cam.view();
-    let x = x.clamp(0, VIEW_WIDTH);
-    let y = y.clamp(0, VIEW_HEIGHT - 1);
-    let col = usize::try_from(x / COLUMN_WIDTH).unwrap_or(0).min(19);
+    let x = x.clamp(0, size.width);
+    let y = y.clamp(0, size.height - 1);
+    let col = usize::try_from(x / COLUMN_WIDTH).unwrap_or(0);
     let mut half = usize::try_from((x / COLUMN_WIDTH % 2 + i32::from(cam.parity)).rem_euclid(2)).unwrap_or(0);
     let mut top = -HALF_ROW;
-    let mut i = dt.spalten_x_korrektur[view][half][col] + cam.origin.0 + dt.zeilen_x_korrektur[view][half][0];
-    let mut j = dt.spalten_y_korrektur[view][half][col] + cam.origin.1 + dt.zeilen_y_korrektur[view][half][0];
+    let (si, sj) = column_start(dt, view, half, col);
+    let mut i = si + cam.origin.0 + dt.zeilen_x_korrektur[view][half][0];
+    let mut j = sj + cam.origin.1 + dt.zeilen_y_korrektur[view][half][0];
     // The original walks on until it finds one; the heights bound it.
     for _ in 0..1000 {
         half = 1 - half;
@@ -1257,6 +1414,24 @@ impl Tiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bigger_views() {
+        // The tables go on by the same step every two columns.
+        let t: [i16; 20] = std::array::from_fn(|n| i16::try_from(10 - n / 2).unwrap());
+        assert_eq!(column_entry(&t, 19), 1);
+        assert_eq!(
+            (column_entry(&t, 20), column_entry(&t, 21), column_entry(&t, 22)),
+            (0, 0, -1)
+        );
+        let v = ViewSize::for_image(1008, 693);
+        assert_eq!((v.width, v.height, v.columns, v.half_rows), (1008, 694, 32, 47));
+        assert_eq!(v.core_offset(), (6, 10));
+        assert!(v.is_big() && !ViewSize::ORIGINAL.is_big());
+        // Just past the original's: four more of each.
+        let v = ViewSize::for_image(634, 420);
+        assert_eq!((v.columns, v.half_rows), (20, 31));
+    }
 
     #[test]
     fn turning_parts() {

@@ -148,6 +148,10 @@ pub(crate) struct Stack {
     pub enhanced: bool,
     /// The order before the press the mouse is in, until it comes up.
     pub before_press: Option<Vec<Win>>,
+    /// `big_map`'s main screen fills the screen: it lies right over the
+    /// background, under every other window, like a desktop, in either
+    /// stacking. Raised over the others it would hide them all.
+    pub main_desktop: bool,
 }
 
 impl Stack {
@@ -157,6 +161,7 @@ impl Stack {
             shown: Vec::new(),
             before_press: None,
             enhanced: enhancements.has(Enhancement::WindowStacking),
+            main_desktop: false,
         }
     }
 
@@ -168,6 +173,18 @@ impl Stack {
 
     /// The tier `w` is in: a higher tier lies over a lower one.
     fn tier(&self, w: Win, infobox_modal: bool) -> u8 {
+        if self.main_desktop {
+            return match w {
+                Win::Background => 0,
+                Win::Main => 1,
+                w => 2 + self.form_tier(w, infobox_modal),
+            };
+        }
+        self.form_tier(w, infobox_modal)
+    }
+
+    /// [`Stack::tier`] without `big_map`'s desktop.
+    fn form_tier(&self, w: Win, infobox_modal: bool) -> u8 {
         if self.enhanced {
             match w {
                 Win::Background => 0,
@@ -206,6 +223,11 @@ impl Stack {
             }
         }
         self.shown = now;
+    }
+
+    /// Whether `w` was shown at the last [`Stack::sync`].
+    pub fn was_shown(&self, w: Win) -> bool {
+        self.shown.contains(&w)
     }
 
     /// A loaded game is shown (`game_show_state`, 1010:26fa, ends with
@@ -304,5 +326,23 @@ mod tests {
         assert!(
             s.order(true).iter().position(|&w| w == Win::Infobox) > s.order(true).iter().position(|&w| w == Win::Main)
         );
+    }
+
+    #[test]
+    fn big_map_desktop() {
+        for enhanced in [false, true] {
+            let mut s = stack(enhanced);
+            s.main_desktop = true;
+            let shown = [Win::Background, Win::Main, Win::Money, Win::Tv];
+            s.sync(|w| shown.contains(&w));
+            // A press on the main screen, a form closing or a press on
+            // the background leave it under the forms, over the
+            // background.
+            s.raise(Win::Main);
+            s.sync(|w| shown[..3].contains(&w));
+            s.background_pressed(true, false, false);
+            assert_eq!(s.order(false)[..2], [Win::Background, Win::Main]);
+            assert!(above(&s, Win::Money, Win::Main));
+        }
     }
 }

@@ -12,12 +12,20 @@
 //! bar) and `ns` (north–south, the right one), in the map's own diagonal
 //! coordinates. The camera's origin on the map is worked out from them
 //! (1020:0697).
+//!
+//! With the `big_map` enhancement and a screen bigger than 640×480 the
+//! form fills the screen instead ([`Hauptschirm::place`]) and its map
+//! view grows. The scroll position, the camera ([`Hauptschirm::camera`])
+//! and what the world sees ([`Hauptschirm::viewpoint`]) stay those of the
+//! original's 20 × 27 view, which lies in the middle of the bigger one;
+//! the island is drawn with a bigger camera around it
+//! ([`Hauptschirm::drawn_camera`]). `docs/layout.md`, "`big_map`".
 
 use formats::data::Land;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
-use crate::darstellung::{self, Camera, Tiles, VIEW_HEIGHT, VIEW_WIDTH};
+use crate::darstellung::{self, Camera, Tiles, VIEW_HEIGHT, VIEW_WIDTH, ViewSize};
 use crate::monate::Date;
 use crate::money::format_money;
 use crate::people::Viewpoint;
@@ -48,6 +56,37 @@ pub const LAYOUT: [(&str, Rect); 10] = [
     ("CloseBild", Rect::new(0, 0, 16, 16)),          // 1020:2501
     ("Kleinbild", Rect::new(624, 0, 16, 16)),        // 1020:2501
 ];
+
+/// The images' bounds in a form `width` × `height` (`big_map`): as
+/// [`LAYOUT`], with what's at the right and bottom edges moved there and
+/// the bars and the island stretched between. The status bar keeps its
+/// width. `layout_for(WIDTH, HEIGHT)` is [`LAYOUT`].
+#[must_use]
+pub fn layout_for(width: i32, height: i32) -> [(&'static str, Rect); 10] {
+    let (w, h) = (width, height);
+    [
+        ("Ueberschriftbild", Rect::new(16, 0, w - 32, 16)),
+        ("InfoImage", Rect::new(0, 16, w, 18)),
+        ("ButtonImage", Rect::new(0, 34, w, 25)),
+        ("Hauptbild", Rect::new(0, 59, w - 16, h - 75)),
+        ("NSScrollbild", Rect::new(w - 16, 59, 16, h - 75)),
+        ("Statusimage", Rect::new(0, h - 16, 219, 16)),
+        ("WOScrollbild", Rect::new(219, h - 16, w - 16 - 219, 16)),
+        ("eckimage", Rect::new(w - 16, h - 16, 16, 16)),
+        ("CloseBild", Rect::new(0, 0, 16, 16)),
+        ("Kleinbild", Rect::new(w - 16, 0, 16, 16)),
+    ]
+}
+
+/// The smallest screen `big_map` grows the main screen on: anything
+/// bigger than the original's smallest, 640 × 480, either way.
+pub const BIG_FROM: (i32, i32) = (640, 480);
+/// `buttoff.bmp`'s wooden piece between the button groups (the one at
+/// 75), which fills a wider button bar right of the last button.
+const BAR_GAP: Rect = Rect::new(75, 0, 13, BUTTON_SIZE);
+/// How much of a scroll bar's trough stays at each end (the arrows and a
+/// little more) when `big_map` stretches it.
+const TROUGH_END: i32 = 32;
 
 /// The bitmaps the frame is drawn from, from `GRAFIK`, in the order
 /// [`Hauptschirm::new`] takes them.
@@ -196,6 +235,9 @@ pub struct InfoTexts {
 /// The main screen's state and images.
 #[derive(Debug, Clone)]
 pub struct Hauptschirm {
+    /// The camera of the original's 20 × 27 view: what a map file saves
+    /// and the world sees. With `big_map` the island is drawn with
+    /// [`Hauptschirm::drawn_camera`].
     pub camera: Camera,
     /// +0x408
     wo: i16,
@@ -239,10 +281,88 @@ pub struct Hauptschirm {
     /// The last press on the title bar was a double click, which leaves
     /// the form rolled up to its title bar. // +0x1da
     pub rolled_up: bool,
+    /// The `big_map` enhancement is on: [`Hauptschirm::place`] lets the
+    /// form fill a screen bigger than [`BIG_FROM`].
+    pub big_map: bool,
+    /// The form's size: [`WIDTH`] × [`HEIGHT`], or with `big_map` the
+    /// screen's.
+    width: i32,
+    full_height: i32,
+    /// The images' bounds at that size ([`layout_for`]).
+    rects: [(&'static str, Rect); 10],
+    /// The map view `Hauptbild` shows.
+    view_size: ViewSize,
+    /// The bars' backgrounds at the form's width and height: the info
+    /// bar's, the scroll bars' troughs.
+    info_bar: Surface,
+    ns_trough: Surface,
+    wo_trough: Surface,
+    /// The font and the game's name, for the title bar.
+    font: Font,
+    title_text: Vec<u8>,
 }
 
-fn image(name: &str) -> Surface {
-    let r = LAYOUT
+/// `src` repeated over a `width` × `height` surface.
+fn tiled(src: &Surface, width: i32, height: i32) -> Surface {
+    let mut dst = Surface::new(
+        usize::try_from(width).unwrap_or(0),
+        usize::try_from(height).unwrap_or(0),
+        0,
+    );
+    let all = dst.bounds();
+    let (sw, sh) = (src.bounds().width().max(1), src.bounds().height().max(1));
+    for y in (0..height).step_by(usize::try_from(sh).unwrap_or(1)) {
+        for x in (0..width).step_by(usize::try_from(sw).unwrap_or(1)) {
+            dst.blit(x, y, src, src.bounds(), Rop::Copy, all);
+        }
+    }
+    dst
+}
+
+/// A scroll bar's trough `length` long (across if `across`, else down)
+/// from `src`, which the original shows from its start, `original` long:
+/// that as it is if it's no longer, else its ends ([`TROUGH_END`]) at
+/// the ends and its middle repeated between (`big_map`).
+fn trough(src: &Surface, length: i32, original: i32, across: bool) -> Surface {
+    let thickness = if across {
+        src.bounds().height()
+    } else {
+        src.bounds().width()
+    };
+    let (w, h) = if across {
+        (length, thickness)
+    } else {
+        (thickness, length)
+    };
+    let mut dst = Surface::new(usize::try_from(w).unwrap_or(0), usize::try_from(h).unwrap_or(0), 0);
+    let all = dst.bounds();
+    // A piece of the source along the bar, `from`..`from + n`, to `at`.
+    let mut piece = |from: i32, n: i32, at: i32| {
+        let (from_rect, x, y) = if across {
+            (Rect::new(from, 0, n, thickness), at, 0)
+        } else {
+            (Rect::new(0, from, thickness, n), 0, at)
+        };
+        dst.blit(x, y, src, from_rect, Rop::Copy, all);
+    };
+    if length <= original {
+        piece(0, length, 0);
+        return dst;
+    }
+    let middle = (original - 2 * TROUGH_END).max(1);
+    piece(0, TROUGH_END, 0);
+    let mut at = TROUGH_END;
+    while at < length - TROUGH_END {
+        let n = middle.min(length - TROUGH_END - at);
+        piece(TROUGH_END, n, at);
+        at += n;
+    }
+    piece(original - TROUGH_END, TROUGH_END, length - TROUGH_END);
+    dst
+}
+
+fn image(rects: &[(&str, Rect); 10], name: &str) -> Surface {
+    let r = rects
         .iter()
         .find(|(n, _)| *n == name)
         .map_or(Rect::default(), |(_, r)| *r);
@@ -315,6 +435,10 @@ impl Hauptschirm {
 
     fn build(camera: Camera, origin: Option<Pos>, bitmaps: Vec<Surface>, font: &Font, title: &[u8]) -> Self {
         assert_eq!(bitmaps.len(), BITMAP_FILES.len(), "one bitmap per file");
+        let image = |name| image(&LAYOUT, name);
+        let info_bar = bitmaps[INFO].clone();
+        let ns_trough = trough(&bitmaps[SCRONOSU], LAYOUT[4].1.height(), LAYOUT[4].1.height(), false);
+        let wo_trough = trough(&bitmaps[SCROWEOS], LAYOUT[6].1.width(), LAYOUT[6].1.width(), true);
         let mut h = Hauptschirm {
             camera,
             wo: START_WO,
@@ -352,6 +476,16 @@ impl Hauptschirm {
             height: HEIGHT,
             grab: (0, 0),
             rolled_up: false,
+            big_map: false,
+            width: WIDTH,
+            full_height: HEIGHT,
+            rects: LAYOUT,
+            view_size: ViewSize::ORIGINAL,
+            info_bar,
+            ns_trough,
+            wo_trough,
+            font: font.clone(),
+            title_text: title.to_vec(),
         };
         // 1020:1e4f: the game's name over the title bar.
         let width = LAYOUT[0].1.width();
@@ -367,7 +501,7 @@ impl Hauptschirm {
     /// The images that don't show the game's state.
     fn paint_frame(&mut self) {
         let b = &self.bitmaps;
-        copy(&mut self.info, &b[INFO]); // 1030:213f
+        copy(&mut self.info, &self.info_bar); // 1030:213f
         copy(&mut self.status, &b[STATUS]); // 1030:21a8
         // 1010:2af5: every button up, from buttoff.bmp (1050:0074).
         let all = self.buttons.bounds();
@@ -384,6 +518,18 @@ impl Hauptschirm {
             let all = dst.bounds();
             dst.draw(0, 0, &b[index], all);
         }
+        self.fill_button_bar();
+    }
+
+    /// `big_map`'s wider button bar: the wooden piece between the button
+    /// groups over the rest, right of the last button.
+    fn fill_button_bar(&mut self) {
+        let all = self.buttons.bounds();
+        let mut x = WIDTH;
+        while x < all.width() {
+            self.buttons.blit(x, 0, &self.bitmaps[BUTTOFF], BAR_GAP, Rop::Copy, all);
+            x += BAR_GAP.width();
+        }
     }
 
     /// Puts the info bar's background back from `x` on, `width` wide.
@@ -391,7 +537,7 @@ impl Hauptschirm {
     fn restore_info_bar(&mut self, x: i32, width: i32) {
         let all = self.info.bounds();
         let from = Rect::new(x, 0, width, all.height());
-        self.info.blit(x, 0, &self.bitmaps[INFO], from, Rop::Copy, all);
+        self.info.blit(x, 0, &self.info_bar, from, Rop::Copy, all);
     }
 
     /// Shows the world's date and player 1's money on the info bar if they
@@ -417,10 +563,12 @@ impl Hauptschirm {
             font.draw(&mut self.info, &text, (4, 1), 120, Align::Right, colour);
         }
         if shown.is_none_or(|(d, _)| d != date) {
-            // 1030:0148, 1030:228d
+            // 1030:0148, 1030:228d; with `big_map` at the wider bar's
+            // right end.
             let text = date.text(&texts.months, texts.land);
-            self.restore_info_bar(400, 640);
-            font.draw(&mut self.info, &text, (450, 1), 182, Align::Right, 10);
+            let right = self.width - WIDTH;
+            self.restore_info_bar(400 + right, 640);
+            font.draw(&mut self.info, &text, (450 + right, 1), 182, Align::Right, 10);
         }
         self.info_shown = Some((date, money));
         true
@@ -458,25 +606,27 @@ impl Hauptschirm {
         let ((i, j), parity) = self.origin();
         self.camera.origin = (i, j);
         self.camera.parity = parity;
+        // The bars' ends, which are the original's `NS_MAX` and `WO_MAX`;
+        // `big_map`'s bars are shorter by the bigger view's margins.
         let (ns, wo) = match self.camera.view & 3 {
             0 => (self.ns, self.wo),
-            1 => (self.ns_bar.max - self.wo, self.ns),
-            2 => (self.ns_bar.max - self.ns, self.wo_bar.max - self.wo),
-            _ => (self.wo, self.wo_bar.max - self.ns),
+            1 => (NS_MAX - self.wo, self.ns),
+            2 => (NS_MAX - self.ns, WO_MAX - self.wo),
+            _ => (self.wo, WO_MAX - self.ns),
         };
         self.ns_bar.position = ns;
         self.wo_bar.position = wo;
         // 1020:0c8b, 1020:0bf4: the trough, then the thumb.
         let scroll = &self.bitmaps[SCROLL1];
         let img = &mut self.ns_image;
-        copy(img, &self.bitmaps[SCRONOSU]);
+        copy(img, &self.ns_trough);
         let y = self.ns_bar.thumb(i32::try_from(img.height).unwrap_or(0));
         let all = img.bounds();
         img.blit(0, y, scroll, Rect::new(0, 16, 16, 20), Rop::And, all);
         img.blit(0, y, scroll, Rect::new(16, 16, 16, 20), Rop::Invert, all);
         // 1020:1413, 1020:137c
         let img = &mut self.wo_image;
-        copy(img, &self.bitmaps[SCROWEOS]);
+        copy(img, &self.wo_trough);
         let x = self.wo_bar.thumb(i32::try_from(img.width).unwrap_or(0));
         let all = img.bounds();
         img.blit(x, 0, scroll, Rect::new(0, 0, 20, 16), Rop::And, all);
@@ -555,14 +705,15 @@ impl Hauptschirm {
     /// by the distance from the middle in half rows of 18 and columns of
     /// 32 pixels. // 1020:1984
     pub fn right_click(&mut self, x: i32, y: i32, world: &World, tiles: &Tiles) {
-        let (w, h) = (LAYOUT[3].1.width(), LAYOUT[3].1.height());
+        let (w, h) = (self.rects[3].1.width(), self.rects[3].1.height());
         let short = |n: i32| i16::try_from(n).unwrap_or(0);
         self.scroll(short((y - h / 2) / 0x12), short((x - w / 2) / 0x20), world, tiles);
     }
 
     /// Redraws the island, without the people. // 1050:2700
     pub fn paint_map(&mut self, world: &World, tiles: &Tiles) {
-        darstellung::draw_view(&mut self.island, world, tiles, &self.camera);
+        let cam = self.drawn_camera();
+        darstellung::draw_view_in(&mut self.island, world, tiles, &cam, &self.view_size);
         copy(&mut self.map, &self.island);
     }
 
@@ -584,7 +735,8 @@ impl Hauptschirm {
             text.truncate(255);
             font.draw(dst, &text, at, 100, Align::Left, 1); // 1030:23d3
         };
-        darstellung::draw_people(&mut self.map, world, tiles, &self.camera, &mut money);
+        let cam = self.drawn_camera();
+        darstellung::draw_people_in(&mut self.map, world, tiles, &cam, &self.view_size, &mut money);
     }
 
     /// Redraws the squares the simulation changed, and says whether there
@@ -689,10 +841,180 @@ impl Hauptschirm {
         (self.wo, self.ns)
     }
 
-    /// The camera the island is drawn with.
+    /// The camera of the original's view, which a map file saves; the
+    /// island is drawn with [`Hauptschirm::drawn_camera`], which is the
+    /// same without `big_map`.
     #[must_use]
     pub fn camera(&self) -> Camera {
         self.camera
+    }
+
+    /// The camera `Hauptbild` is drawn and picked with: the original's,
+    /// or with `big_map`'s bigger view the one whose view has the
+    /// original's in its middle. That's the scroll position moved up
+    /// and left by [`ViewSize::core_offset`] on the screen, the way
+    /// [`Hauptschirm::scroll`] turns a move on the screen into the map's
+    /// directions, without the bars' ends; the offset is even, so its
+    /// origin and parity come out as the original's would there.
+    #[must_use]
+    pub fn drawn_camera(&self) -> Camera {
+        if !self.view_size.is_big() {
+            return self.camera;
+        }
+        let (dc, dr) = self.view_size.core_offset();
+        let (wo, ns) = (self.wo, self.ns);
+        let (wo, ns) = match self.camera.view & 3 {
+            0 => (wo - dc, ns - dr),
+            1 => (wo + dr, ns - dc),
+            2 => (wo + dc, ns + dr),
+            _ => (wo - dr, ns + dc),
+        };
+        let (origin, parity) = scroll_origin(wo, ns, self.keep_origin);
+        Camera {
+            origin,
+            parity,
+            ..self.camera
+        }
+    }
+
+    /// The map view `Hauptbild` shows: the original's, or `big_map`'s.
+    #[must_use]
+    pub fn view_size(&self) -> ViewSize {
+        self.view_size
+    }
+
+    /// The images' bounds in the form now: [`LAYOUT`], or with `big_map`
+    /// [`layout_for`] its size.
+    #[must_use]
+    pub fn rects(&self) -> &[(&'static str, Rect); 10] {
+        &self.rects
+    }
+
+    /// `Hauptbild`'s bounds in the form.
+    #[must_use]
+    pub fn hauptbild(&self) -> Rect {
+        self.rects[3].1
+    }
+
+    /// The form's full size (not rolled up).
+    #[must_use]
+    pub fn size(&self) -> (i32, i32) {
+        (self.width, self.full_height)
+    }
+
+    /// Where `big_map`'s bigger view lies on the overview map's picture
+    /// (`crate::uebersichtsmap`, a square `(i, j)` at `((i - j + 250) · 2,
+    /// i + j)`): the box its corners' squares span, with the original's
+    /// frame one pixel to the left (10b8:1349). None for the original's
+    /// view, whose frame is the overview's own picture.
+    #[must_use]
+    pub fn overview_frame(&self, tiles: &Tiles) -> Option<Rect> {
+        if !self.view_size.is_big() {
+            return None;
+        }
+        let cam = self.drawn_camera();
+        let size = self.view_size;
+        // The columns and half rows the drawing area shows.
+        let cols = i16::try_from(size.width / darstellung::COLUMN_WIDTH).unwrap_or(0);
+        let rows = i16::try_from(size.height / darstellung::HALF_ROW).unwrap_or(0);
+        let at = |(i, j): Pos| ((i32::from(i) - i32::from(j) + 250) * 2, i32::from(i) + i32::from(j));
+        let corners =
+            [(0, 0), (cols, 0), (0, rows), (cols, rows)].map(|(c, r)| at(darstellung::view_square(tiles, &cam, c, r)));
+        let left = corners.iter().map(|c| c.0).min().unwrap_or(0) - 1;
+        let right = corners.iter().map(|c| c.0).max().unwrap_or(0) - 1;
+        let top = corners.iter().map(|c| c.1).min().unwrap_or(0);
+        let bottom = corners.iter().map(|c| c.1).max().unwrap_or(0);
+        Some(Rect::new(left, top, right - left, bottom - top))
+    }
+
+    /// `big_map`'s scroll bars: the original's ranges less the bigger
+    /// view's margins at both ends, so that the bigger view stays on the
+    /// map as the original's does at the original's ends. Without it, 0 to
+    /// [`NS_MAX`] and [`WO_MAX`] as `hauptschirm_init` sets them
+    /// (1020:2501).
+    fn set_bar_ranges(&mut self) {
+        let (dc, dr) = self.view_size.core_offset();
+        let (dc, dr) = (dc.min(WO_MAX / 2), dr.min(NS_MAX / 2));
+        self.ns_bar.min = dr;
+        self.ns_bar.max = NS_MAX - dr;
+        self.wo_bar.min = dc;
+        self.wo_bar.max = WO_MAX - dc;
+    }
+
+    /// The form `width` × `height` (`big_map`; the original's is always
+    /// [`WIDTH`] × [`HEIGHT`]): the images at [`layout_for`]'s bounds, the
+    /// bars stretched, the frame and the bars drawn again, and a map view
+    /// that covers `Hauptbild` ([`ViewSize::for_image`]). The scroll
+    /// position stays, past the new bars' ends too until the next scroll.
+    /// Whether the size changed; then the caller draws the island and the
+    /// people again.
+    fn set_size(&mut self, width: i32, height: i32) -> bool {
+        if (width, height) == (self.width, self.full_height) {
+            return false;
+        }
+        let original = (width, height) == (WIDTH, HEIGHT);
+        self.width = width;
+        self.full_height = height;
+        self.rects = if original { LAYOUT } else { layout_for(width, height) };
+        let rects = self.rects;
+        let image = |name| image(&rects, name);
+        let bild = self.hauptbild();
+        self.view_size = if original {
+            ViewSize::ORIGINAL
+        } else {
+            ViewSize::for_image(bild.width(), bild.height())
+        };
+        self.title = tiled(&self.bitmaps[MENULEI], rects[0].1.width(), rects[0].1.height());
+        self.font.draw(
+            &mut self.title,
+            &self.title_text,
+            (0, 1),
+            rects[0].1.width(),
+            Align::Center,
+            1,
+        );
+        self.info_bar = tiled(&self.bitmaps[INFO], width, rects[1].1.height());
+        self.ns_trough = trough(
+            &self.bitmaps[SCRONOSU],
+            rects[4].1.height(),
+            LAYOUT[4].1.height(),
+            false,
+        );
+        self.wo_trough = trough(&self.bitmaps[SCROWEOS], rects[6].1.width(), LAYOUT[6].1.width(), true);
+        self.info = image("InfoImage");
+        self.buttons = image("ButtonImage");
+        self.map = image("Hauptbild");
+        self.island = image("Hauptbild");
+        self.ns_image = image("NSScrollbild");
+        self.wo_image = image("WOScrollbild");
+        self.status = image("Statusimage");
+        self.paint_frame();
+        self.info_shown = None;
+        self.status_timeout = 0;
+        self.set_bar_ranges();
+        self.update_bars();
+        true
+    }
+
+    /// Lays the form out for the `screen` the game lays out for on a
+    /// `desktop` (the window): with `big_map` and a desktop bigger than
+    /// [`BIG_FROM`] it fills the desktop at 0, 0, else it's the original's
+    /// ([`Hauptschirm::layout`]). Whether its size changed, which the
+    /// caller follows by drawing the island, the people and the buttons
+    /// again.
+    pub fn place(&mut self, screen: (i32, i32), desktop: (i32, i32)) -> bool {
+        if self.big_map && (desktop.0 > BIG_FROM.0 || desktop.1 > BIG_FROM.1) {
+            let changed = self.set_size(desktop.0, desktop.1);
+            (self.left, self.top) = (0, 0);
+            self.height = self.full_height;
+            self.rolled_up = false;
+            changed
+        } else {
+            // BUG(original): the main screen and its map view are 640 × 479 and 20 × 27 on every screen; a bigger one shows more background, not more island.
+            let changed = self.set_size(WIDTH, HEIGHT);
+            self.layout(screen);
+            changed
+        }
     }
 
     /// The form's top left on a `width` × `height` screen: centred, with
@@ -716,7 +1038,14 @@ impl Hauptschirm {
     /// The form's bounds on the screen.
     #[must_use]
     pub fn bounds(&self) -> Rect {
-        Rect::new(self.left, self.top, WIDTH, self.height)
+        Rect::new(self.left, self.top, self.width, self.height)
+    }
+
+    /// The form fills the screen (`big_map`), so its title bar doesn't
+    /// drag it: a press leaves it where it is, a double click rolls it up
+    /// to its title bar and the next press unrolls it.
+    fn filled(&self) -> bool {
+        self.width != WIDTH || self.full_height != HEIGHT
     }
 
     /// `UeberschriftbildMouseDown`: the press is kept from the form's top
@@ -725,6 +1054,10 @@ impl Hauptschirm {
     /// // 1020:1b8e
     pub fn title_mouse_down(&mut self, shift: ShiftState, cursor: (i32, i32)) {
         self.rolled_up = shift.contains(ShiftState::DOUBLE);
+        if self.filled() {
+            self.height = if self.rolled_up { TITLE_HEIGHT } else { self.full_height };
+            return;
+        }
         self.grab = (cursor.0 - self.left, cursor.1 - self.top);
         self.height = TITLE_HEIGHT;
     }
@@ -734,7 +1067,7 @@ impl Hauptschirm {
     /// by its width and its height then. Whether it moved. // 1020:1bd9
     pub fn title_mouse_move(&mut self, shift: ShiftState, cursor: (i32, i32), screen: (i32, i32)) -> bool {
         // BUG(original): nothing says the press was on the title bar, so a left drag that started off every form and comes over it moves the form by the last grab.
-        if !shift.contains(ShiftState::LEFT) {
+        if !shift.contains(ShiftState::LEFT) || self.filled() {
             return false;
         }
         self.left = (cursor.0 - self.grab.0).max(0).min(screen.0 - WIDTH);
@@ -746,7 +1079,7 @@ impl Hauptschirm {
     /// the press was a double click. // 1020:1c58
     pub fn title_mouse_up(&mut self) {
         if !self.rolled_up {
-            self.height = HEIGHT;
+            self.height = self.full_height;
         }
     }
 
@@ -796,5 +1129,22 @@ mod tests {
         assert_eq!(bar.thumb(404), 16);
         let end = Bar { position: 476, ..bar };
         assert_eq!(end.thumb(404), 404 - 19 - 16);
+    }
+
+    #[test]
+    fn big_layouts() {
+        assert_eq!(layout_for(WIDTH, HEIGHT), LAYOUT);
+        assert_eq!(ViewSize::for_image(624, 404), ViewSize::ORIGINAL);
+        let r = layout_for(1024, 768);
+        assert_eq!(r[3].1, Rect::new(0, 59, 1008, 693));
+        assert_eq!(r[7].1, Rect::new(1008, 752, 16, 16));
+        // A trough no longer than the original's is the original's start.
+        let src = Surface {
+            width: 6,
+            height: 1,
+            pixels: vec![1, 2, 3, 4, 5, 6],
+        };
+        assert_eq!(trough(&src, 5, 5, true).pixels, [1, 2, 3, 4, 5]);
+        assert_eq!(tiled(&src, 8, 1).pixels, [1, 2, 3, 4, 5, 6, 1, 2]);
     }
 }

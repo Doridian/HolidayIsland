@@ -36,8 +36,9 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   they ask for a fix. None is built yet.
 - **View enhancements** (`enhance::Enhancement`, a set is
   `enhance::Enhancements`) change one player's screen, sound or input.
-  They are that player's settings. The first is `window_stacking`
-  ([layout.md](layout.md#stacking)).
+  They are that player's settings: `window_stacking`
+  ([layout.md](layout.md#stacking)) and `big_map`
+  ([layout.md](layout.md#big_map-enhancement)).
 - Each has a stable key, a one-line description and is on by default.
   `enhance::Config::resolve` works them out: everything on, or off with
   the master switch, then each per-key override in order. The player
@@ -248,6 +249,8 @@ The widgets' are described in
 | DFMs, Windows | The `fsStayOnTop` forms (TV, compass, info box, auction, pause, options, quit question, high scores, file menu, tooltip) always lie over the others, wherever those are clicked: the end form can lie under the TV and compass, and the TV over the island can't be put behind the main screen ([layout.md](layout.md#stacking)) | `window_stacking` |
 | 1070:2bd7, 10b8:3fa2, 1018:2c96, 1038:1f0a, 1048:085a, 1028:056f, 1040:3bac, 1060:0e80, 1068:0194, 1010:2819 | Closing the money menu, overview map, build menu, info box, TV, auction, pause, options or end form ("Weiterspielen"), and loading a game from the file menu, raise the main screen over the other forms that aren't `fsStayOnTop`, which then lie hidden under it where they overlap it ([layout.md](layout.md#stacking)) | `window_stacking` |
 | 1000:2241, 1010:2a5a | A press on the background raises `THintergrund` over the main screen and the other forms that aren't `fsStayOnTop`; its `OnActivate` raises them back in `window_forms`' order, the main screen on top, but not while the info box or the end form is shown, which leaves them hidden behind the background until one is raised ([layout.md](layout.md#stacking)) | `window_stacking` |
+| 1020:1ce9, 1110:1572, 1050:2700, 1050:21b7 | The main screen and its map view are 640 × 479 and 20 columns by 27 half rows on every screen: a bigger desktop shows more background around them, not more island ([layout.md](layout.md#the-main-screen)) | `big_map` |
+| 10b8:1349, 1110:3d80 | The overview map's frame for the main screen's view is a 40 × 25 box in every rotation; turned a quarter that view covers about 50 × 20 of the map ([overview-map.md](overview-map.md#the-frame)) | yes (`big_map` draws its own frame, the right shape, only for its bigger view) |
 | 1018:2fa2 | The build menu's first position is `(screen_height - 480) div 2 + 59`, one row above the island (the main screen is 479 high, centred with `div 2` of each half) | yes |
 | 1110:54fc users | The sabotage window and the file menu open where the DFM put them (300, 167 and 305, 139), so on a desktop bigger than 640×480 they aren't over the centred main screen ([layout.md](layout.md#the-other-forms)) | yes |
 

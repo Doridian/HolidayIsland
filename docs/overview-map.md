@@ -84,6 +84,15 @@ an offset for the rotation (`1110:3d80`: 40 × 40 for rotations 0 and 2,
 (10b8:1485, drawing the area under it again) and puts it back (10b8:1349).
 The port keeps `MapBild` without the frame and adds it on top.
 
+The frame's box is 40 × 25 in every rotation, which is what the main
+screen's 20 columns and 27 half rows cover of the map turned 0 or 2;
+turned a quarter (1 or 3) they cover about 50 × 20 of it, so there the
+box is too narrow and too high ([original-bugs.md](original-bugs.md#ui-quirks)).
+With the port's `big_map` and a bigger main view the frame is drawn
+instead as a box around what that view covers, with `UeRecht.BMP`'s
+mark for the screen's bottom edge beside it
+([layout.md](layout.md#big_map-enhancement)).
+
 ### The mouse and keys
 
 - `MapBild`: exactly `[ssLeft]` puts the main screen's scroll position at

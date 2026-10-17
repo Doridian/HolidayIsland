@@ -8,7 +8,9 @@ screen. A bigger desktop doesn't show more island; it shows more of the
 background picture, and leaves room around the main screen for the
 floating forms, which are placed against the screen's edges or its centre.
 Nothing is hidden or resized at any size; only the background and title
-pictures depend on it.
+pictures depend on it. The port's `big_map` enhancement changes that:
+the main screen fills a bigger screen and shows more island
+([below](#big_map-enhancement)).
 
 ## The screen size
 
@@ -73,7 +75,8 @@ table's bounds; `hauptschirm_show` (1020:283b) sets its height to 479.
 The map view, the scroll bars' ranges (`NS_MAX` 476, `WO_MAX` 481), the
 drawing's 20 columns and 27 half rows (`darstellung::COLUMNS`,
 `HALF_ROWS`, `VIEW_WIDTH`/`VIEW_HEIGHT` 624×405 at `1110:12bc`) and the
-button bar are the same at every screen size.
+button bar are the same at every screen size. Where the code has the
+view's size, see [`big_map`](#big_map-enhancement).
 
 | Screen | Main screen's top left |
 |---|---|
@@ -289,10 +292,115 @@ already a multiplayer issue
 ([original-bugs.md](original-bugs.md#design-issues-for-multiplayer));
 the window's size isn't one.
 
-Were the map view ever made bigger than the original's (a possible port
-extension, not done), the world's grid and `sees` would have to stay the
-original's size and the view draw more around them; the people outside
-that area are only drawn, never simulated differently.
+`big_map`'s bigger map view ([below](#big_map-enhancement)) keeps it
+that way: the world's viewpoint, grid and `sees` stay those of the
+original's 20 × 27 view, which lies in the middle of the bigger one; the
+people around it are only drawn.
+
+## `big_map` (enhancement)
+
+On by default ([original-bugs.md](original-bugs.md#options)). With it
+off, everything is as above. With it on and a desktop (the window, not
+the snapped screen size) bigger than 640×480 either way
+(`hauptschirm::BIG_FROM`), the main screen fills the desktop at 0, 0
+and its map view shows as much of the island as fits. At 640×480 it's
+the original's main screen, which fills that screen anyway. Filling the
+whole screen, rather than leaving a margin, is a choice: the forms float
+over the main screen at every size in the original too (at 640×480 all
+of them do), and a margin wide enough for the money menu or the
+overview map would leave little island on 800×600.
+
+### Where the original has the view's size
+
+The routines that read the map view's size, and what they read:
+
+| Where | What | With `big_map` |
+|---|---|---|
+| `1110:1572` (1020:1ce9, 1020:1c79, 1020:283b) | The layout table: the form 640 × 479 and its images' bounds | `hauptschirm::layout_for`: the right and bottom edges' images move there, the bars and `Hauptbild` stretch between; `layout_for(640, 479)` is the table |
+| 1050:2700 (`draw_view`) | `PUSH 0x13`: columns 0 to 19 | `darstellung::draw_view_in` draws `ViewSize::columns` |
+| 1050:0e68 (`draw_columns`) | The bottom from `view_height` (`1110:12be`, 405); `0x1a - rows` for the scrolling's bands | The view's height; the bands aren't used by the port |
+| `1110:12bc`, `1110:12be` | `view_width`, `view_height`, 624 × 405, set by `init_game_defaults` | `ViewSize::width`, `height` |
+| `DARSTELL.DAT` | 20 entries per column table (`AnsichtSpaltenxKorrektur`, ...) | Each table steps the same every two columns; past the 20th it goes on that way (`darstellung::column_entry`) |
+| 1050:21b7 (`in_view`), 1050:245b, 1050:21f9 | `column_low <= 0x13` and `row_high <= h · 9 div 32 + 0x2a` (27 half rows and 15 for tall buildings); the rotations' `0x13`, `0x1a`, `0x19` | `people::sees_in` with the view's columns and half rows, for drawing the people only; the rotations' constants are where the tables start, which the bigger camera shares |
+| 1088:30ba | The people's columns and half rows from the origin (`0x1a`, `0x13`, 10, `0xd`) | The same: they come from the tables' start |
+| 1050:0144 | The scrolling's strips: `PUSH 0x14` columns, `0x12`, `view_width`/`view_height` | Not ported (the port draws the whole view) |
+| 1018:39c2 (`square_at`) | `Hauptbild`'s `Width` and `Height` | Follows by itself: `darstellung::square_at_in` with the view's size |
+| 1020:1984 (right click) | `Hauptbild`'s `Width div 2`, `Height div 2` | Follows by itself |
+| 1020:2501 | The scroll bars' ranges, 0..476 and 0..481 | Less the bigger view's margins (below) |
+| 1020:0787 (`jump_to`), 10b8:4079, 10b8:37f5 | The view's middle as 10 columns and 13 half rows from its origin; the overview's click offsets | The same: they're about the original's view, which stays in the middle |
+| 10b8:1349, `1110:3d80` | The overview's frame, a picture 40 × 25 | A box the bigger view's size |
+| 1030:2bdc, `1110:5536`, 1090:2373 | The 11 × 61 squares from the view's origin where people appear | The world's: unchanged |
+
+### The view
+
+`darstellung::ViewSize` is the drawing area and its columns and half
+rows. For a `Hauptbild` of `w` × `h` (`ViewSize::for_image`) it covers
+`w` × `h + 1` pixels (the original's one extra row) with at least 20
+columns and 27 half rows, more by a multiple of four of each; the
+original's 20 × 27 view (the core) then lies in its middle, offset by an
+even number of columns and half rows (`ViewSize::core_offset`). On
+1024×768 that's 32 columns by 47 half rows, the core 6 columns and 10
+half rows in; on 1280×1024, 40 × 63, 10 and 18 in.
+
+The scroll position, the camera (`Hauptschirm::camera`), what a map
+file saves and what the world sees (`Hauptschirm::viewpoint`) stay the
+core's. The island is drawn and picked with a second camera
+(`Hauptschirm::drawn_camera`): the scroll position moved up and left by
+the offset, the way a scroll turns a move on the screen into the map's
+directions for the rotation (1020:07dc), without the bars' ends. The
+offset is even, so the parity and the turned origin's rounding (1020:06f1)
+come out as the original's would there, and the core's part of the
+bigger view is the original's view pixel for pixel, square for square
+under the mouse, in every rotation (the test below checks both). So a
+right click, the TV's and the buildings' overview's jumps and the
+overview map's clicks centre on the same squares as in the original.
+
+- **Scroll bars**: the core's ranges shrink by the offset at each end
+  (`ns` from `dr` to `476 - dr`, `wo` from `dc` to `481 - dc`, in the
+  bars' screen-turned terms), so the bigger view reaches the map's edges
+  where the original's does. The bars' troughs stretch (their ends kept,
+  the middle repeated); the thumbs travel the longer bars.
+- **The people**: drawn with `sees_in` for the bigger view, so the
+  people around the core show. The world's `sees` (sounds, which squares
+  get spectators, builders, ...) and the 11 × 61 squares where people
+  appear stay the core's, so the world doesn't see the window: two games
+  from one world, with and without `big_map`, tick the same.
+- **The tools**: `Tools::view` is the view's size; the caller passes the
+  drawn camera, so the pointer, the build cursor and the clicks pick the
+  square under the mouse in the bigger view.
+- **The overview map's frame**: a box around the squares at the bigger
+  view's corners (`Hauptschirm::overview_frame`), outlined in the frame
+  picture's colour, with the picture's mark for the screen's bottom edge
+  beside it (`Uebersichtsmap::set_big_frame`). Without the bigger view
+  it's the original's picture.
+- **The bars**: the title bar's grass, the info bar's planks repeat;
+  the date goes to the info bar's right end; the button bar keeps its 23
+  buttons at the left and is filled with the wooden piece between its
+  groups; the status bar keeps its 219 pixels, the lower scroll bar
+  takes the rest.
+- **Dragging**: the title bar doesn't move a main screen that fills the
+  screen; a double click still rolls it up to its title bar, and the
+  next press unrolls it.
+- **Stacking**: the main screen that fills the screen lies right over
+  the background and under every form, in both stackings
+  (`Stack::main_desktop`): raised, it would hide them all.
+- **The forms at the top edge** (the money menu, the compass, the
+  options, the overview map) are moved just below the main screen's
+  button bar (59 pixels down) when they open over it, so the title, info
+  and button bars stay free.
+- **Resizing** lays the main screen out again (`Hauptschirm::place`):
+  it fills the new desktop, or becomes the original's at 640×480. The
+  other forms move as they would with the original's main screen
+  centred, and are kept on the screen. The scroll position stays, past
+  the new bars' ends too until the next scroll, so a resize never moves
+  what the world sees.
+
+The tests (`crates/holiday/src/main.rs`): `big_map` (1024×768 and
+1280×1024, on and off: the layout, the core pixel for pixel and square
+for square in each rotation, the overview's frame, the scroll bars'
+ends; with `HOLIDAY_PNG` set to a directory it writes
+`bigmap-WxH-on.png` and `-off.png` there), `big_map_world_is_the_same`,
+`big_map_resize`, and `stacking::tests::big_map_desktop`.
 
 ## The port
 
@@ -349,7 +457,8 @@ the game, `Holiday::layout` runs again, which:
 
 The world isn't touched, nor is the scroll position: the map view has the
 same size at every screen size, so it keeps showing the same part of the
-island. A form pushed against an edge by a smaller window stays there when
+island. With `big_map` the main screen fills the new size instead
+([above](#big_map-enhancement)). A form pushed against an edge by a smaller window stays there when
 the window grows again.
 
 The tests (`crates/holiday/src/main.rs`): `layouts` draws the main screen
@@ -361,8 +470,6 @@ size); `dragging_the_main_screen`.
 
 ## Not done
 
-- A bigger map view for bigger windows ("more island"): the original has
-  none, so it would be a port extension; see above for what it would need.
 - Applying the saved windows of a map file (1010:08d7) when a game is
   loaded.
 - `TCreditform` (1030:3c42), the options' "INFO".

@@ -310,6 +310,8 @@ struct Game {
     /// The screen size the game lays out for (`screen_width`,
     /// `screen_height`, `hintergrund::screen_size`).
     size: (i32, i32),
+    /// The desktop (the window), which `big_map`'s main screen fills.
+    desktop: (i32, i32),
 }
 
 impl Game {
@@ -339,6 +341,7 @@ impl Game {
             changed |= self.screen.status_tick(&self.font);
             changed |= self.forms_clock_tick();
             // The original's people code reads the player's view.
+            // The original's 20 × 27 view's, with `big_map` too.
             self.world.set_viewpoint(self.screen.viewpoint());
             let t = self.world.tick();
             changed |= self.show(&t);
@@ -357,7 +360,7 @@ impl Game {
                 .show_people(&self.world, &self.tiles, &self.font, &self.info);
             // 1090:124f, 1090:155b: the tool's pictures, with the people.
             if self.world.options.animations && self.world.options.people_spawn {
-                let cam = self.screen.camera();
+                let cam = self.screen.drawn_camera();
                 let mouse = self.hauptbild_mouse();
                 self.tools.preview(&self.world, &self.tiles, &cam, mouse);
                 self.tools
@@ -393,14 +396,31 @@ impl Game {
     /// loading a game keeps the saved windows on it
     /// (`savegame::keep_on_screen`, 1010:08d7), and off the top and left
     /// edges too.
-    fn resize(&mut self, size: (i32, i32)) {
-        if size == self.size {
+    ///
+    /// With `big_map` the main screen fills a `desktop` bigger than
+    /// 640×480 instead (`Hauptschirm::place`), and the other forms move
+    /// as they would with the original's main screen centred.
+    fn resize(&mut self, size: (i32, i32), desktop: (i32, i32)) {
+        if size == self.size && (desktop == self.desktop || !self.screen.big_map) {
+            self.desktop = desktop;
             return;
         }
+        let old = self.size;
         self.size = size;
+        self.desktop = desktop;
         let (left, top) = (self.screen.left, self.screen.top);
-        self.screen.layout(size);
-        let delta = (self.screen.left - left, self.screen.top - top);
+        let filled_before = self.screen.size() != (hauptschirm::WIDTH, hauptschirm::HEIGHT);
+        self.place_main();
+        let filled = self.screen.size() != (hauptschirm::WIDTH, hauptschirm::HEIGHT);
+        let delta = if filled || filled_before {
+            let (was, now) = (
+                Hauptschirm::position(old.0, old.1),
+                Hauptschirm::position(size.0, size.1),
+            );
+            (now.0 - was.0, now.1 - was.1)
+        } else {
+            (self.screen.left - left, self.screen.top - top)
+        };
         let follow = |bounds: Rect, l: &mut i32, t: &mut i32| {
             let moved = Rect::new(
                 bounds.left + delta.0,
@@ -424,9 +444,36 @@ impl Game {
         self.forms.follow(follow);
     }
 
+    /// Lays the main screen out for the screen and the desktop
+    /// (`Hauptschirm::place`); when that changed its size (`big_map`),
+    /// the tools pick in its new view, and the island, the people, the
+    /// buttons and the info bar are drawn again. The overview map's frame
+    /// follows.
+    fn place_main(&mut self) {
+        let changed = self.screen.place(self.size, self.desktop);
+        self.stack.main_desktop = self.screen.size() != (hauptschirm::WIDTH, hauptschirm::HEIGHT);
+        if changed {
+            self.tools.view = self.screen.view_size();
+            self.screen.paint_map(&self.world, &self.tiles);
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            self.screen.draw_buttons(&self.tools.down);
+            self.screen.show_info(&self.world, &self.font, &self.info);
+        }
+        self.main_view_changed();
+    }
+
+    /// The player's view enhancements for this game: the stacking, and
+    /// `big_map`'s main screen.
+    fn set_view_enhancements(&mut self, view: enhance::Enhancements) {
+        self.stack = Stack::new(view);
+        self.screen.big_map = view.has(enhance::Enhancement::BigMap);
+        self.place_main();
+    }
+
     /// The mouse in `Hauptbild`'s coordinates.
     fn hauptbild_mouse(&self) -> (i32, i32) {
-        let bild = hauptschirm::LAYOUT[3].1;
+        let bild = self.screen.hauptbild();
         (
             self.mouse.0 - self.screen.left - bild.left,
             self.mouse.1 - self.screen.top - bild.top,
@@ -516,6 +563,10 @@ impl Game {
             }
             .camera(&self.world);
             self.screen.show_loaded(camera, &self.world, &self.tiles);
+            if self.screen.view_size().is_big() {
+                // `big_map`'s frame on the overview map.
+                self.main_view_changed();
+            }
             // The tools and the build menu from the file (1018:2a17).
             let rest = self.view_rest.clone();
             self.tools
@@ -702,6 +753,7 @@ impl Game {
     /// (`ButtonImage`'s `OnClick`, 1020:1946) or the island (`Hauptbild`,
     /// 1020:1984, 1020:1b31). Whether the screen changed, and whether the
     /// file menu's button was clicked.
+    #[allow(clippy::too_many_lines)] // Each image's handlers, as the original's.
     fn main_mouse(&mut self, input: Input, shift: ShiftState, buttons_up: bool) -> (bool, bool) {
         let (Input::MouseMove { x: sx, y: sy }
         | Input::MouseDown { x: sx, y: sy, .. }
@@ -712,8 +764,9 @@ impl Game {
         let main = self.screen.bounds();
         let (fx, fy) = (sx - main.left, sy - main.top);
         // While it's rolled up to its title bar only that part is there.
+        let rects = *self.screen.rects();
         let target = self.captured.or_else(|| {
-            hauptschirm::LAYOUT
+            rects
                 .iter()
                 .filter(|_| (0..main.height()).contains(&fy))
                 .find(|(_, r)| (r.left..r.right).contains(&fx) && (r.top..r.bottom).contains(&fy))
@@ -722,7 +775,7 @@ impl Game {
         let Some(target) = target else {
             return (false, false);
         };
-        let bounds = hauptschirm::LAYOUT
+        let bounds = rects
             .iter()
             .find(|(n, _)| *n == target)
             .map_or(Rect::default(), |(_, r)| *r);
@@ -774,7 +827,7 @@ impl Game {
                         .show_people(&self.world, &self.tiles, &self.font, &self.info);
                     self.main_view_changed();
                 } else {
-                    let cam = self.screen.camera();
+                    let cam = self.screen.drawn_camera();
                     let actions = self.tools.press(x, y, shift, &self.world, &self.tiles, &cam);
                     self.tool_actions(actions);
                     self.take_info_box();
@@ -892,6 +945,11 @@ impl Game {
                 }
                 Win::Main => {
                     self.form.components[0].bounds = self.screen.bounds();
+                    for (name, bounds) in *self.screen.rects() {
+                        if let Some(c) = self.form.component_mut(name) {
+                            c.bounds = bounds;
+                        }
+                    }
                     for (name, image) in self.screen.images() {
                         if let Some(c) = self.form.component_mut(name)
                             && let Kind::Image { picture } = &mut c.kind
@@ -1074,7 +1132,7 @@ impl Holiday {
             load.place(self.size);
         }
         if let Some(game) = &mut self.game {
-            game.resize(self.size);
+            game.resize(self.size, self.desktop);
         }
         self.set_picture(self.picture);
     }
@@ -1525,6 +1583,12 @@ impl Holiday {
             }
             None => {}
         }
+        // `big_map`'s main screen fills the desktop, which can be a
+        // little bigger or smaller than the screen size.
+        let (size, desktop) = (self.size, self.desktop);
+        if let Some(game) = &mut self.game {
+            game.resize(size, desktop);
+        }
         self.repaint();
     }
 
@@ -1971,7 +2035,7 @@ fn load_game(
         sound,
         size,
     );
-    game.stack = Stack::new(config.view);
+    game.set_view_enhancements(config.view);
     game
 }
 
@@ -1996,7 +2060,7 @@ fn start_game(
     // the player's.
     start.0.fixes = config.fixes;
     let mut game = make_game(dir, exe, start, options, high, sound, size);
-    game.stack = Stack::new(config.view);
+    game.set_view_enhancements(config.view);
     game
 }
 
@@ -2120,6 +2184,7 @@ fn make_game(
         view_rest,
         sound: Rc::clone(sound),
         size,
+        desktop: size,
     }
 }
 
@@ -2656,7 +2721,7 @@ mod tests {
         let _ = game.show(&tick);
         game.click_button(4);
         game.click_button(5);
-        let corner = hauptschirm::LAYOUT[7].1;
+        let corner = game.screen.rects()[7].1;
         let at = (game.screen.left + corner.left + 8, game.screen.top + corner.top + 8);
         let press = Input::MouseDown {
             x: at.0,
@@ -2808,7 +2873,10 @@ mod tests {
     fn window_stacking() {
         let Some(dir) = game_dir() else { return };
         for enhanced in [false, true] {
-            let config = if enhanced { Config::default() } else { Config::ORIGINAL };
+            // `big_map`'s main screen would fill the screen and lie under
+            // every form (`big_map`).
+            let mut config = if enhanced { Config::default() } else { Config::ORIGINAL };
+            config.view.set(enhance::Enhancement::BigMap, false);
             let mut h = holiday_in_a_game(&dir, (800, 600), config);
             let game = h.game.as_mut().unwrap();
             let tv = game.forms.tv.bounds();
@@ -2821,7 +2889,9 @@ mod tests {
             assert_eq!(game.window_at(money_corner.0, money_corner.1), Win::Money);
             // A spot on the status bar or the title bar no form covers.
             let (l, t) = (game.screen.left, game.screen.top);
-            let at = hauptschirm::LAYOUT
+            let at = game
+                .screen
+                .rects()
                 .iter()
                 .filter(|(name, _)| ["Statusimage", "Ueberschriftbild"].contains(name))
                 .map(|&(_, r)| r)
@@ -2870,6 +2940,270 @@ mod tests {
                     game.press_window(Win::Background) || game.window_at(money_corner.0, money_corner.1) == Win::Main
                 );
                 assert_eq!(game.window_at(money_corner.0, money_corner.1), Win::Main);
+            }
+        }
+    }
+
+    /// The CRC-32 of a PNG chunk.
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = !0_u32;
+        for &byte in data {
+            crc ^= u32::from(byte);
+            for _ in 0..8 {
+                crc = if crc & 1 == 0 {
+                    crc >> 1
+                } else {
+                    0xedb8_8320 ^ (crc >> 1)
+                };
+            }
+        }
+        !crc
+    }
+
+    /// A PNG chunk of `kind` with `data`.
+    fn png_chunk(png: &mut Vec<u8>, kind: [u8; 4], data: &[u8]) {
+        png.extend(u32::try_from(data.len()).unwrap().to_be_bytes());
+        let mut body = kind.to_vec();
+        body.extend_from_slice(data);
+        png.extend_from_slice(&body);
+        png.extend(crc32(&body).to_be_bytes());
+    }
+
+    /// Writes the framebuffer as `name.png` into `HOLIDAY_PNG`, if set:
+    /// an uncompressed PNG (stored deflate blocks), which needs no crate.
+    fn write_png(holiday: &Holiday, name: &str) {
+        let Some(out) = std::env::var_os("HOLIDAY_PNG") else {
+            return;
+        };
+        let screen = &holiday.screen;
+        let mut raw = Vec::with_capacity((screen.width * 3 + 1) * screen.height);
+        for row in screen.pixels.chunks(screen.width) {
+            raw.push(0);
+            for &i in row {
+                raw.extend_from_slice(&holiday.rgb[usize::from(i)]);
+            }
+        }
+        let mut zlib = vec![0x78, 0x01];
+        let blocks: Vec<&[u8]> = raw.chunks(0xffff).collect();
+        for (k, block) in blocks.iter().enumerate() {
+            zlib.push(u8::from(k + 1 == blocks.len()));
+            let len = u16::try_from(block.len()).unwrap();
+            zlib.extend(len.to_le_bytes());
+            zlib.extend((!len).to_le_bytes());
+            zlib.extend_from_slice(block);
+        }
+        let (mut sum1, mut sum2) = (1_u32, 0_u32);
+        for &byte in &raw {
+            sum1 = (sum1 + u32::from(byte)) % 65521;
+            sum2 = (sum2 + sum1) % 65521;
+        }
+        zlib.extend(((sum2 << 16) | sum1).to_be_bytes());
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut ihdr = Vec::new();
+        ihdr.extend(u32::try_from(screen.width).unwrap().to_be_bytes());
+        ihdr.extend(u32::try_from(screen.height).unwrap().to_be_bytes());
+        ihdr.extend([8, 2, 0, 0, 0]);
+        png_chunk(&mut png, *b"IHDR", &ihdr);
+        png_chunk(&mut png, *b"IDAT", &zlib);
+        png_chunk(&mut png, *b"IEND", &[]);
+        let dir = PathBuf::from(out);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{name}.png")), png).unwrap();
+    }
+
+    /// The original's config with only `big_map` on.
+    fn big_map_only() -> Config {
+        let mut c = Config::ORIGINAL;
+        c.view.set(enhance::Enhancement::BigMap, true);
+        c
+    }
+
+    /// The box the squares at the corners of a view `cols` × `rows`
+    /// span on the overview map's picture.
+    fn overview_box(tiles: &Tiles, cam: &Camera, cols: i16, rows: i16) -> (i32, i32) {
+        let at = |(i, j): (i16, i16)| ((i32::from(i) - i32::from(j)) * 2, i32::from(i) + i32::from(j));
+        let c =
+            [(0, 0), (cols, 0), (0, rows), (cols, rows)].map(|(c, r)| at(darstellung::view_square(tiles, cam, c, r)));
+        let w = c.iter().map(|p| p.0).max().unwrap() - c.iter().map(|p| p.0).min().unwrap();
+        let h = c.iter().map(|p| p.1).max().unwrap() - c.iter().map(|p| p.1).min().unwrap();
+        (w, h)
+    }
+
+    /// `big_map` on 1024×768 and 1280×1024, on and off: off, the
+    /// original's main screen, centred; on, one filling the screen whose
+    /// map view has the original's in its middle, square for square and
+    /// almost pixel for pixel in every rotation, with the same scroll
+    /// position, camera and viewpoint for the world; the scroll bars'
+    /// ends, the overview map's frame and the mouse follow the bigger
+    /// view. With `HOLIDAY_PNG` set, each screen goes there as
+    /// `bigmap-WxH-on.png` and `-off.png`.
+    #[test]
+    fn big_map() {
+        let Some(dir) = game_dir() else { return };
+        for size in [(1024, 768), (1280, 1024)] {
+            let mut off_h = holiday_in_a_game(&dir, size, Config::ORIGINAL);
+            let mut on_h = holiday_in_a_game(&dir, size, big_map_only());
+            write_png(&off_h, &format!("bigmap-{}x{}-off", size.0, size.1));
+            write_png(&on_h, &format!("bigmap-{}x{}-on", size.0, size.1));
+            let off = off_h.game.as_mut().unwrap();
+            let on = on_h.game.as_mut().unwrap();
+            let (left, top) = Hauptschirm::position(size.0, size.1);
+            assert_eq!(off.screen.bounds(), Rect::new(left, top, 640, 479));
+            assert_eq!(off.screen.view_size(), darstellung::ViewSize::ORIGINAL);
+            assert_eq!(on.screen.bounds(), Rect::new(0, 0, size.0, size.1));
+            let view = on.screen.view_size();
+            let bild = on.screen.hauptbild();
+            assert_eq!(bild, Rect::new(0, 59, size.0 - 16, size.1 - 75));
+            assert!(
+                i32::from(view.columns) * 32 >= bild.width() && view.half_rows > 27,
+                "{view:?}"
+            );
+            assert_eq!(on.tools.view, view);
+            // The world sees the same either way.
+            assert_eq!(on.screen.scroll_position(), off.screen.scroll_position());
+            assert_eq!(on.screen.camera(), off.screen.camera());
+            assert_eq!(on.screen.viewpoint(), off.screen.viewpoint());
+            assert!(on.forms.overview.visible());
+            assert!(on.screen.overview_frame(&on.tiles).is_some());
+            assert!(off.screen.overview_frame(&off.tiles).is_none());
+            let (dc, dr) = view.core_offset();
+            let (dx, dy) = (i32::from(dc) * 32, i32::from(dr) * 16);
+            for rotation in 0..4 {
+                for g in [&mut *off, &mut *on] {
+                    g.screen.set_view(rotation, &g.world, &g.tiles);
+                }
+                // The original's view lies in the middle of the bigger one.
+                let small = off.screen.camera();
+                let big = on.screen.drawn_camera();
+                assert_eq!(on.screen.camera(), small);
+                for y in (0..404).step_by(7) {
+                    for x in (0..624).step_by(11) {
+                        assert_eq!(
+                            darstellung::square_at(&off.world, &off.tiles, &small, x, y),
+                            darstellung::square_at_in(&on.world, &on.tiles, &big, &view, x + dx, y + dy),
+                            "rotation {rotation} at {x}, {y}"
+                        );
+                    }
+                }
+                // Drawn alike, pixel for pixel.
+                let (a, b) = (&off.screen.map, &on.screen.map);
+                let mut differ = 0;
+                for y in 0..404 {
+                    for x in 0..624 {
+                        let p = a.pixels[y * a.width + x];
+                        let q =
+                            b.pixels[(y + usize::try_from(dy).unwrap()) * b.width + x + usize::try_from(dx).unwrap()];
+                        differ += usize::from(p != q);
+                    }
+                }
+                assert_eq!(differ, 0, "rotation {rotation}: pixels differ");
+                // The bigger view's frame on the overview map covers what
+                // it shows; turned a quarter that's wider than high.
+                let frame = on.screen.overview_frame(&on.tiles).unwrap();
+                let (cols, rows) = (
+                    i16::try_from(bild.width() / 32).unwrap(),
+                    i16::try_from(bild.height() / 16).unwrap(),
+                );
+                let (w, h) = overview_box(&on.tiles, &big, cols, rows);
+                assert_eq!((frame.width(), frame.height()), (w, h));
+                if rotation % 2 == 1 {
+                    assert!(w > 2 * h);
+                }
+            }
+            // The original's overview frame is 40 × 25 in every rotation
+            // (`uebersichtsmap`'s quirk), but its view turned a quarter
+            // spans 50 × 20 of the map.
+            assert_eq!(overview_box(&off.tiles, &off.screen.camera(), 19, 25), (50, 20));
+            off.screen.set_view(0, &off.world, &off.tiles);
+            assert_eq!(overview_box(&off.tiles, &off.screen.camera(), 19, 25), (40, 25));
+            // The scroll bars end where the bigger view reaches the
+            // original's ends.
+            on.screen.set_view(0, &on.world, &on.tiles);
+            on.screen.scroll(-1000, -1000, &on.world, &on.tiles);
+            assert_eq!(on.screen.scroll_position(), (dc, dr));
+            on.screen.scroll(1000, 1000, &on.world, &on.tiles);
+            assert_eq!(on.screen.scroll_position(), (481 - dc, 476 - dr));
+            // A right click in the middle of the island stays.
+            let before = on.screen.scroll_position();
+            on.screen.scroll(-100, -100, &on.world, &on.tiles);
+            let before = (before, on.screen.scroll_position());
+            on.screen
+                .right_click(bild.width() / 2, bild.height() / 2, &on.world, &on.tiles);
+            assert_eq!(on.screen.scroll_position(), before.1);
+        }
+    }
+
+    /// With `big_map` the world ticks the same whatever the window's
+    /// size: two games from one world, one on 1280×1024 with the bigger
+    /// view, one with the original's, stay equal.
+    #[test]
+    fn big_map_world_is_the_same() {
+        let Some(dir) = game_dir() else { return };
+        let exe = read(&dir, "HOLIDAY.EXE");
+        let settings = Settings {
+            scenario: 1,
+            ..Settings::default()
+        };
+        let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let game = |size, config: &Config| {
+            let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+            start_game(
+                &dir,
+                &exe,
+                &settings,
+                true,
+                Options::default(),
+                high,
+                &sound,
+                size,
+                config,
+            )
+        };
+        let mut off = game((800, 600), &Config::ORIGINAL);
+        let mut on = game((1280, 1024), &big_map_only());
+        assert!(on.screen.view_size().is_big());
+        on.world = off.world.clone();
+        for g in [&mut off, &mut on] {
+            g.world.clock.paused = false;
+            g.screen.scroll(3, -4, &g.world, &g.tiles);
+        }
+        for _ in 0..200 {
+            let _ = off.update(Duration::from_millis(u64::from(TICK_MS)));
+            let _ = on.update(Duration::from_millis(u64::from(TICK_MS)));
+        }
+        assert!(on.world == off.world, "the world doesn't see big_map");
+    }
+
+    /// Resizing with `big_map`: the main screen fills each new size, and
+    /// goes back to the original's at 640×480; the world, the scroll
+    /// position and the camera stay, and every form stays on the screen.
+    #[test]
+    fn big_map_resize() {
+        let Some(dir) = game_dir() else { return };
+        let mut h = holiday_in_a_game(&dir, (1024, 768), big_map_only());
+        let game = h.game.as_ref().unwrap();
+        let world = game.world.clone();
+        let scroll = game.screen.scroll_position();
+        let camera = game.screen.camera();
+        for (w, hh) in [(1280, 1024), (640, 480), (1366, 700), (790, 590), (1024, 768)] {
+            h.resize(w, hh);
+            let game = h.game.as_ref().unwrap();
+            assert!(game.world == world, "the world doesn't see the window");
+            assert_eq!(game.screen.scroll_position(), scroll);
+            assert_eq!(game.screen.camera(), camera);
+            if (w, hh) == (640, 480) {
+                assert_eq!(game.screen.bounds(), Rect::new(0, 1, 640, 479));
+                assert!(!game.screen.view_size().is_big());
+            } else {
+                assert_eq!(game.screen.bounds(), Rect::new(0, 0, h.desktop.0, h.desktop.1));
+                assert_eq!(game.tools.view, game.screen.view_size());
+            }
+            for (name, r) in shown_forms(game) {
+                assert!(
+                    r.left >= 0 && r.top >= 0 && r.right <= h.size.0 && r.bottom <= h.size.1,
+                    "{name} {r:?} on {:?}",
+                    h.size
+                );
             }
         }
     }

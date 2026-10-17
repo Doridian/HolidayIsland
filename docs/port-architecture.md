@@ -131,14 +131,17 @@ files, storage, clock), so they run headless in tests.
   the window's client area, divided by the UI scale, as that desktop. Resizing
   the window resizes the indexed framebuffer and re-runs the game's layout
   ([layout.md](layout.md)), so a bigger window shows more of the desktop
-  rather than bigger pixels. As in the original, that means more room
-  around the main screen, not more island: the main screen is 640×479 at
-  every size, centred, and the floating forms are placed against the
-  screen's edges and centre; only the background picture changes (and
-  there's none for sizes other than 640×480, 800×600, 1024×768, 1152×870
-  and 1280×1024). A bigger map view would be a port extension; it isn't
-  built. The UI scale is an integer (1–4, automatic from the display's
-  DPI by default, as in Afterlife), and the GPU scales the framebuffer up
+  rather than bigger pixels. In the original that means more room around
+  the main screen, not more island: the main screen is 640×479 at every
+  size, centred, and the floating forms are placed against the screen's
+  edges and centre; only the background picture changes (and there's
+  none for sizes other than 640×480, 800×600, 1024×768, 1152×870 and
+  1280×1024). The port's `big_map` enhancement (on by default) shows more
+  island instead: the main screen fills a screen bigger than 640×480 and
+  its map view grows, while the world still sees the original's view in
+  its middle ([layout.md](layout.md#big_map-enhancement)). The UI scale
+  is an integer (1–4, automatic from the display's DPI by default, as in
+  Afterlife), and the GPU scales the framebuffer up
   by it with nearest-neighbour filtering. Sizes below 640×480 get
   letterboxed. The original lays out once at startup; the port lays out
   again on every resize, a port extension

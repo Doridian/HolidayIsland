@@ -461,7 +461,24 @@ impl Viewpoint {
 /// asks it of the human's view ([`World::viewpoint`]), the view of its own
 /// camera. // 1050:245b
 #[must_use]
-pub fn sees(v: &Viewpoint, island: &crate::world::Island, (i, j): Pos) -> bool {
+pub fn sees(v: &Viewpoint, island: &crate::world::Island, pos: Pos) -> bool {
+    sees_in(
+        v,
+        island,
+        pos,
+        crate::darstellung::COLUMNS,
+        crate::darstellung::HALF_ROWS,
+    )
+}
+
+/// [`sees`] for a view `columns` wide and `half_rows` high: the original's
+/// 20 and 27 (1050:21b7 has `column_low <= 0x13` and `+ 0x2a`, 27 and the
+/// 15 squares tall buildings reach up from below), or `big_map`'s bigger
+/// view, which only the view's drawing asks about. The rotations' other
+/// constants are where `DARSTELL.DAT`'s tables start, which a bigger
+/// view's camera shares. // 1050:245b, 1050:21b7
+#[must_use]
+pub fn sees_in(v: &Viewpoint, island: &crate::world::Island, (i, j): Pos, columns: i16, half_rows: i16) -> bool {
     let (di, dj) = (i.wrapping_sub(v.origin.0), j.wrapping_sub(v.origin.1));
     let p = v.parity;
     let (column_low, column, row_low, row_high) = match v.rotation {
@@ -495,7 +512,7 @@ pub fn sees(v: &Viewpoint, island: &crate::world::Island, (i, j): Pos) -> bool {
     };
     let h = i16::from(island.highest_corner((i, j)));
     // 1050:21b7
-    column_low < 20 && column >= 0 && h * 9 / 32 < row_low && row_high <= h * 9 / 32 + 0x2a
+    column_low < columns && column >= 0 && h * 9 / 32 < row_low && row_high <= h * 9 / 32 + half_rows + 15
 }
 
 /// The squares [`World::spawn_people`] looks at, relative to the view's

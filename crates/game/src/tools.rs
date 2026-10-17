@@ -25,7 +25,7 @@ use formats::data::Strings;
 
 use crate::baumenue::{Baumenue, Response};
 use crate::command::Action;
-use crate::darstellung::{self, Camera, Tiles, ToolSprite};
+use crate::darstellung::{self, Camera, Tiles, ToolSprite, ViewSize};
 use crate::hauptschirm::InfoTexts;
 use crate::infobox;
 use crate::roads::CROSSABLE;
@@ -123,6 +123,12 @@ pub struct Tools {
     /// What the pointer asks of the info box (`TInfobox2`), for the
     /// caller to take.
     pub info_box: Option<infobox::Request>,
+    /// The main screen's map view, which the mouse is picked in
+    /// (`Hauptbild`'s size, 1018:39c2): the original's, or `big_map`'s,
+    /// which the caller sets ([`crate::hauptschirm::Hauptschirm::view_size`])
+    /// and then passes the matching camera
+    /// ([`crate::hauptschirm::Hauptschirm::drawn_camera`]).
+    pub view: ViewSize,
 }
 
 /// One step towards `stop` along a line of squares (the road planner's
@@ -159,6 +165,7 @@ impl Tools {
             sabowin_focused: false,
             pointer_double: false,
             info_box: None,
+            view: ViewSize::ORIGINAL,
         }
     }
 
@@ -373,9 +380,9 @@ impl Tools {
             // and open. The square under the mouse (`cursor_square`), and
             // the mouse in the main screen's form.
             self.pointer_double = shift == double; // 1110:64b8
-            let main = crate::hauptschirm::LAYOUT[3].1; // Hauptbild
+            let main = crate::hauptschirm::LAYOUT[3].1; // Hauptbild, at 0, 59 with `big_map` too
             self.info_box = Some(infobox::Request::Show {
-                square: darstellung::square_at(world, tiles, cam, x, y), // 1018:3d8d
+                square: darstellung::square_at_in(world, tiles, cam, &self.view, x, y), // 1018:3d8d
                 mouse: (x + main.left, y + main.top),
                 modal: self.pointer_double,
             });
@@ -385,12 +392,12 @@ impl Tools {
         if shift != ShiftState::LEFT {
             return Vec::new();
         }
-        let at = darstellung::square_at(world, tiles, cam, x, y); // 1018:3d8d
+        let at = darstellung::square_at_in(world, tiles, cam, &self.view, x, y); // 1018:3d8d
         match self.tool {
             RAISE | LOWER => {
                 // 1018:3dad: the corner above the square 16 pixels up, by
                 // the view's rotation.
-                let (i, j) = darstellung::square_at(world, tiles, cam, x, y - 16);
+                let (i, j) = darstellung::square_at_in(world, tiles, cam, &self.view, x, y - 16);
                 let corner = match cam.view & 3 {
                     0 => (i, j),
                     1 => (i - 1, j),
@@ -472,7 +479,7 @@ impl Tools {
         };
         match self.tool {
             RAISE | LOWER => {
-                self.square = darstellung::square_at(world, tiles, cam, mouse.0, mouse.1 - 16); // 1018:3dad
+                self.square = darstellung::square_at_in(world, tiles, cam, &self.view, mouse.0, mouse.1 - 16); // 1018:3dad
                 let (first, offset) = if self.tool == RAISE {
                     RAISE_POINTER
                 } else {
@@ -487,7 +494,7 @@ impl Tools {
                 });
             }
             t if (DEMOLISH..POINTER).contains(&t) => {
-                self.square = darstellung::square_at(world, tiles, cam, mouse.0, mouse.1); // 1018:3d8d
+                self.square = darstellung::square_at_in(world, tiles, cam, &self.view, mouse.0, mouse.1); // 1018:3d8d
                 self.preview_squares(world, tiles, cam); // 1090:0014
                 if t == DEMOLISH || t == SABOTAGE {
                     let (first, offset) = if t == DEMOLISH {

@@ -471,6 +471,27 @@ impl Forms {
         follow(h.bounds(), &mut h.left, &mut h.top);
     }
 
+    /// `big_map`: the forms the original puts at the screen's top edge
+    /// (the money menu, 1070:2e6c; the compass, 1038:2c04; the options,
+    /// 1060:14f1; the overview map, 10b8:4538) go just below `bars` when
+    /// one of them opens over them, so the main screen's title, info and
+    /// button bars, which are at the top of the screen when it fills it,
+    /// stay free. Kept on a screen `size` high.
+    pub fn below_bars(&mut self, w: Win, bars: i32, size: (i32, i32)) {
+        let down = |r: Rect, top: &mut i32| {
+            if r.top < bars {
+                *top = bars.min(size.1 - r.height()).max(0);
+            }
+        };
+        match w {
+            Win::Money => down(self.money.bounds(), &mut self.money.top),
+            Win::Compass => down(self.compass.bounds(), &mut self.compass.top),
+            Win::Options => down(self.options.bounds(), &mut self.options.top),
+            Win::Overview => down(self.overview.bounds(), &mut self.overview.top),
+            _ => {}
+        }
+    }
+
     /// Paints the form `w` over the screen, if it's one of this
     /// module's and shown; the caller goes through them in the order
     /// they lie ([`crate::stacking::Stack::order`]).
@@ -673,6 +694,9 @@ impl Game {
     pub(crate) fn main_view_changed(&mut self) {
         let (wo, ns) = self.screen.scroll_position();
         let view = self.screen.camera().view;
+        // `big_map`'s bigger view has a frame of its own size.
+        let frame = self.screen.overview_frame(&self.tiles);
+        self.forms.overview.set_big_frame(frame);
         self.forms.overview.set_main_view(wo, ns, view);
         if self.forms.compass.visible() {
             self.forms.compass.update(view);
@@ -887,12 +911,8 @@ impl Game {
         if !self.forms.settings.button_help {
             return self.forms.help.hide();
         }
-        let main = Rect::new(
-            self.screen.left,
-            self.screen.top,
-            hauptschirm::WIDTH,
-            hauptschirm::HEIGHT,
-        );
+        let (width, height) = self.screen.size();
+        let main = Rect::new(self.screen.left, self.screen.top, width, height);
         // Not while the main screen is rolled up (`+0x1da`, 1020:2115).
         let ready = !self.forms.modal() && !self.screen.rolled_up;
         // The build menu and the sabotage window take the focus from the
@@ -1480,6 +1500,14 @@ impl Game {
     /// ([`crate::stacking::Stack::sync`]).
     pub(crate) fn sync_stack(&mut self) {
         let shown: Vec<Win> = crate::stacking::ALL.into_iter().filter(|&w| self.shown(w)).collect();
+        if self.stack.main_desktop {
+            // `big_map`'s main screen fills the screen: what opens at its
+            // top edge goes below its bars.
+            let bars = self.screen.hauptbild().top + self.screen.top;
+            for &w in shown.iter().filter(|&&w| !self.stack.was_shown(w)) {
+                self.forms.below_bars(w, bars, self.size);
+            }
+        }
         self.stack.sync(|w| shown.contains(&w));
     }
 

@@ -193,6 +193,19 @@ struct FrameShape {
     click: (i32, i32),
 }
 
+/// `big_map`'s frame's outline: the colour of the frame's outline in
+/// `UeRecht.BMP`'s pictures, over its mask's black.
+const BIG_FRAME_COLOUR: u8 = 16;
+/// `big_map`'s frame's mark for the screen's bottom edge, by rotation:
+/// the part of each [`FRAMES`] picture beside its box (mask, picture,
+/// size), below it, left of it, above it and right of it.
+const BIG_FRAME_MARKS: [[(i32, i32); 3]; 4] = [
+    [(0, 25), (40, 25), (40, 15)],
+    [(0, 130), (0, 155), (15, 25)],
+    [(0, 40), (40, 40), (40, 15)],
+    [(40, 80), (40, 105), (15, 25)],
+];
+
 const FRAMES: [FrameShape; 4] = [
     FrameShape {
         size: (40, 40),
@@ -416,6 +429,9 @@ pub struct Uebersichtsmap {
     /// The main screen's scroll position and rotation, which the frame
     /// shows.
     main_view: (i16, i16, u8),
+    /// `big_map`'s bigger main view on the map's picture
+    /// ([`Uebersichtsmap::set_big_frame`]), which the frame shows instead.
+    big_frame: Option<Rect>,
     /// The location map as last drawn, in [`mode::LOCATION`]: the port's
     /// stand-in for the redraws of 1030:185d (10b8:15c4), whose world
     /// routine gets no tick.
@@ -686,6 +702,7 @@ impl Uebersichtsmap {
             ns_timer: None,
             wo_timer: None,
             main_view,
+            big_frame: None,
             location_seen: Vec::new(),
             title: empty.clone(),
             toggle: empty.clone(),
@@ -1047,14 +1064,60 @@ impl Uebersichtsmap {
     fn compose(&mut self) {
         self.map.clone_from(&self.bare);
         let (wo, ns, rotation) = self.main_view;
-        let f = &FRAMES[usize::from(rotation & 3)];
         let (ox, oy) = self.origin();
+        if let Some(frame) = self.big_frame {
+            self.compose_big(frame, rotation, (ox, oy));
+            return;
+        }
+        // BUG(original): the frame is a 40 × 25 box in every rotation, but turned a quarter the main view covers about 50 × 20 of the map's pixels (25 half rows across, 19½ columns down).
+        let f = &FRAMES[usize::from(rotation & 3)];
         let x = i32::from(wo) * 2 - 1 - ox - f.offset.0;
         let y = i32::from(ns) - oy - f.offset.1;
         if let Some(b) = self.bitmaps.get(FRAME) {
             Self::blit(&mut self.map, b, f.mask, f.size, (x, y), Rop::And);
             Self::blit(&mut self.map, b, f.picture, f.size, (x, y), Rop::Invert);
         }
+    }
+
+    /// `big_map`'s frame: the bigger view's box `frame` on the map's
+    /// picture, outlined in the colour the original's frame picture has,
+    /// with the original's mark for the screen's bottom edge (the dotted
+    /// arrows of `UeRecht.BMP`) in the middle of that side.
+    fn compose_big(&mut self, frame: Rect, rotation: u8, (ox, oy): (i32, i32)) {
+        let r = Rect::new(frame.left - ox, frame.top - oy, frame.width(), frame.height());
+        let clip = self.map.bounds();
+        for edge in [
+            Rect::new(r.left, r.top, r.width(), 1),
+            Rect::new(r.left, r.bottom - 1, r.width(), 1),
+            Rect::new(r.left, r.top, 1, r.height()),
+            Rect::new(r.right - 1, r.top, 1, r.height()),
+        ] {
+            self.map.fill_rect(edge, clip, BIG_FRAME_COLOUR);
+        }
+        let [mask, picture, size] = BIG_FRAME_MARKS[usize::from(rotation & 3)];
+        let (cx, cy) = (r.left + r.width() / 2, r.top + r.height() / 2);
+        let at = match rotation & 3 {
+            0 => (cx - size.0 / 2, r.bottom),
+            1 => (r.left - size.0, cy - size.1 / 2),
+            2 => (cx - size.0 / 2, r.top - size.1),
+            _ => (r.right, cy - size.1 / 2),
+        };
+        if let Some(b) = self.bitmaps.get(FRAME) {
+            Self::blit(&mut self.map, b, mask, size, at, Rop::And);
+            Self::blit(&mut self.map, b, picture, size, at, Rop::Invert);
+        }
+    }
+
+    /// `big_map`: the main screen's bigger view is `frame` on the map's
+    /// picture (`Hauptschirm::overview_frame`), or none for the original's
+    /// view, whose frame is [`FRAMES`]'. Whether the map changed.
+    pub fn set_big_frame(&mut self, frame: Option<Rect>) -> bool {
+        if self.big_frame == frame {
+            return false;
+        }
+        self.big_frame = frame;
+        self.compose();
+        true
     }
 
     /// The main screen scrolled or turned: the frame moves there. The
