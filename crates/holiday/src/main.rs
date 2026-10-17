@@ -2288,7 +2288,13 @@ fn make_game(
     menu_form.components[0].visible = false;
     // The other forms, and what the map holds of them.
     let mut forms = Forms::load(dir, exe, &font, &info, options, high, &screen, size);
-    forms.overview.load(&view_rest); // 10b8:4f1c
+    // 10b8:50de, from `load_map` only: a generated island's overview map
+    // keeps what its constructor (10b8:4538) set, no button down and the
+    // land by heights, where the missing fields' zeros would put button 0
+    // down and draw a picture over the menu's left scroll arrow.
+    if origin.is_some() {
+        forms.overview.load(&view_rest);
+    }
     forms.overview.game_start(&world);
     forms.tv.load_fields(&view_rest);
     // 1010:0ac1: the TV closes, which lets the game go on.
@@ -3437,6 +3443,67 @@ mod tests {
             on.screen
                 .right_click(bild.width() / 2, bild.height() / 2, &on.world, &on.tiles);
             assert_eq!(on.screen.scroll_position(), before.1);
+        }
+    }
+
+    /// A generated island's overview map is the form as its constructor
+    /// left it (10b8:4538: no button down, the land alone, by heights):
+    /// there's no map to read its fields from (10b8:50de runs only from
+    /// `load_map`). Reading a map's missing fields as zeros put button 0
+    /// down, whose picture went over the menu's top left, the horizontal
+    /// scroll bar's left arrow. With `HOLIDAY_PPM` set, the overview goes
+    /// there as `overview-new-game-<size>-<config>.ppm`.
+    #[test]
+    fn new_games_overview_has_no_button_down() {
+        let Some(dir) = game_dir() else { return };
+        let exe = read(&dir, "HOLIDAY.EXE");
+        let menu = Surface::from_bitmap(&bitmap(&dir, "GRAFIK/UEBIGMEN.BMP"));
+        let palette = bitmap(&dir, "GRAFIK/BCK80X60.BMP").palette;
+        let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        for (size, config, name) in [
+            ((640, 480), Config::ORIGINAL, "original"),
+            ((640, 480), Config::default(), "enhanced"),
+            ((1280, 1024), Config::default(), "enhanced"),
+        ] {
+            let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+            let mut game = start_game(
+                &dir,
+                &exe,
+                &Settings::default(),
+                false,
+                Options::default(),
+                high,
+                &sound,
+                size,
+                &config,
+            );
+            game.click_button(5);
+            if let Some(out) = std::env::var_os("HOLIDAY_PPM") {
+                let mut screen = Surface::new(usize::try_from(size.0).unwrap(), usize::try_from(size.1).unwrap(), 0);
+                game.paint(&mut screen, &palette, None);
+                let b = game.forms.overview.bounds();
+                let mut ppm = format!("P6\n{} {}\n255\n", b.width(), b.height()).into_bytes();
+                for y in b.top..b.bottom {
+                    for x in b.left..b.right {
+                        let c = palette
+                            [usize::from(screen.pixel(usize::try_from(x).unwrap(), usize::try_from(y).unwrap()))];
+                        ppm.extend_from_slice(&[c.r, c.g, c.b]);
+                    }
+                }
+                let file = format!("overview-new-game-{}x{}-{name}.ppm", size.0, size.1);
+                std::fs::write(PathBuf::from(out).join(file), ppm).unwrap();
+            }
+            // The left arrow and the menu's wood below it, as the bitmap
+            // has them.
+            let o = &game.forms.overview;
+            assert!(o.visible() && !o.small());
+            assert_eq!((o.mode(), o.heights()), (game::uebersichtsmap::mode::TERRAIN, true));
+            for (x, y) in (0..32)
+                .flat_map(|y| (0..16).map(move |x| (x, y)))
+                .chain((16..32).flat_map(|x| (16..20).map(move |y| (x, y))))
+            {
+                assert_eq!(o.menu.pixel(x, y), menu.pixel(x, y), "{x}, {y} at {size:?} ({name})");
+            }
         }
     }
 

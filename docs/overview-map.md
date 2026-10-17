@@ -153,6 +153,9 @@ loaded game (`Tick::loaded`) is laid out and drawn again.
 the button down, the colouring, the part pressed, the window's size, the
 shading, the size, the flags, the window's origin, the grabs, the bars, the
 last right click's centre. The port's `save` and `load` keep them all.
+`load_map` (1048:2b8f) is the only caller of the loader (10b8:50de), so
+a generated island's form stays as its constructor left it: no button
+down, the land alone, by heights.
 
 ## The compass (`TKompassform`)
 
