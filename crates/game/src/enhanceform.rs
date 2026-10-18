@@ -270,6 +270,10 @@ pub struct Enhanceform {
     pub enhance: Enhancements,
     /// The language of its texts.
     language: Language,
+    /// Where in the form a drag by the title bar took hold, while it lasts.
+    grip: Option<(i32, i32)>,
+    /// The screen's size, which the form stays on while it's dragged.
+    screen: (i32, i32),
 }
 
 const CLOSE_BUTTON: usize = 0;
@@ -325,6 +329,8 @@ impl Enhanceform {
             view: Enhancements::ORIGINAL,
             notes: Notes::default(),
             hover: None,
+            grip: None,
+            screen: (WIDTH, HEIGHT),
             enhance: Enhancements::ORIGINAL,
             language,
         }
@@ -412,6 +418,8 @@ impl Enhanceform {
         self.panes = Self::panes(self.language);
         self.left = (screen.0 - WIDTH) / 2;
         self.top = (screen.1 - HEIGHT) / 2;
+        self.screen = screen;
+        self.grip = None;
         for p in &mut self.panes {
             for (row, key) in p.rows.iter_mut().zip(&p.keys) {
                 row.radio.on = match *key {
@@ -651,10 +659,12 @@ impl Enhanceform {
     }
 
     /// A press at `x`, `y` in the form, with the left button only: a
-    /// button goes down, a row's check box toggles, or a scroll bar is
-    /// pressed.
+    /// button goes down, a row's check box toggles, a scroll bar is
+    /// pressed, or the title bar right of the close button grabs the form
+    /// to drag it, as the options form's does (without rolling up).
     pub fn mouse_down(&mut self, x: i32, y: i32, shift: ShiftState) -> Response {
         let mut r = Response::default();
+        self.grip = None;
         if !shift.contains(ShiftState::LEFT) {
             return r;
         }
@@ -684,6 +694,9 @@ impl Enhanceform {
                 return r;
             }
         }
+        if (16..WIDTH).contains(&x) && (0..16).contains(&y) {
+            self.grip = Some((x, y));
+        }
         r
     }
 
@@ -691,6 +704,12 @@ impl Enhanceform {
     /// the row under it has its description shown.
     pub fn mouse_move(&mut self, x: i32, y: i32) -> Response {
         let mut r = Response::default();
+        if let Some((gx, gy)) = self.grip {
+            self.left = (self.left + x - gx).min(self.screen.0 - WIDTH).max(0);
+            self.top = (self.top + y - gy).min(self.screen.1 - HEIGHT).max(0);
+            r.refresh = true;
+            return r;
+        }
         for p in 0..self.panes.len() {
             let out = self.panes[p].bar.mouse_move(x, y);
             if out.handled {
@@ -712,6 +731,9 @@ impl Enhanceform {
     /// go.
     pub fn mouse_up(&mut self, x: i32, y: i32) -> Response {
         let mut r = Response::default();
+        if self.grip.take().is_some() {
+            return r;
+        }
         for n in 0..self.buttons.len() {
             let out = self.buttons[n].mouse_up(x, y);
             if !out.handled {
@@ -837,6 +859,23 @@ mod tests {
         // The first rows are shown, the rest hidden until scrolled to.
         assert!(f.row_of("site_effect").is_some() && f.row_of("window_stacking").is_some());
         assert!(f.row_of("tv_lights").is_none());
+    }
+
+    #[test]
+    fn drags_by_its_title_bar() {
+        let mut f = form();
+        let _ = f.mouse_down(100, 5, ShiftState::LEFT);
+        assert!(f.mouse_move(90, 25).refresh);
+        assert_eq!((f.left, f.top), (70, 80));
+        let _ = f.mouse_up(90, 25);
+        // Kept on the screen.
+        let _ = f.mouse_down(100, 5, ShiftState::LEFT);
+        let _ = f.mouse_move(900, 900);
+        assert_eq!((f.left, f.top), (800 - WIDTH, 600 - HEIGHT));
+        let _ = f.mouse_up(900, 900);
+        // Not by the close button, and not after the release.
+        let _ = f.mouse_move(0, 0);
+        assert_eq!((f.left, f.top), (800 - WIDTH, 600 - HEIGHT));
     }
 
     #[test]
