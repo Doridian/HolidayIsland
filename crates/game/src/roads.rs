@@ -45,7 +45,7 @@ const PIECES: [u8; 16] = [
 ];
 
 /// A flat square's form. // 1080:302a
-const FLAT: u8 = 16;
+pub(crate) const FLAT: u8 = 16;
 
 /// The river pieces a road can cross. // 1110:13f8 (`set of Byte`)
 pub(crate) const CROSSABLE: [u8; 4] = [59, 60, 61, 62];

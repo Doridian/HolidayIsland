@@ -328,8 +328,9 @@ impl World {
 
     /// The human's score, 0–100: the mean of their net worth in 90 000s,
     /// their last twelve months' guests in 1800s and their reputation, each
-    /// at most 100; lowered with `1110:133c` and on the easier levels (by
-    /// 10, 20 on easy, but never below half). // 1010:0faa
+    /// at most 100; lowered by 10 for a game played without disasters
+    /// ([`World::played_without_disasters`], `1110:133c`) and on the
+    /// easier levels (by 10, 20 on easy), but never below half. // 1010:0faa
     #[must_use]
     pub fn score(&self) -> i32 {
         let worth = (self.net_worth(1) / 90_000).clamp(0, 100);
@@ -337,7 +338,7 @@ impl World {
         let reputation = i32::from(self.reputation(1)).min(100);
         let mut score = (worth.wrapping_add(guests).wrapping_add(reputation) / 3).clamp(0, 100);
         let lower = |s: i32, by: i32| (s - by).max(0).max(s / 2);
-        if self.flag_133c {
+        if self.played_without_disasters {
             score = lower(score, 10);
         }
         match self.difficulty {

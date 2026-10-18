@@ -278,7 +278,8 @@ it ends without a score. Either way the original shows `schlussform`
   [settlement.md](settlement.md#the-books-tgeldmenuform-10701419)).
 - The score (1010:0faa): the mean of net worth div 90 000, the 12 months
   div 1800 and the reputation, each clamped to 0..100; then with
-  `1110:133c`, and again on easy (20) and normal (10), it drops by that
+  `1110:133c` (played without disasters: set on easy and by switching
+  them off on the options), and again on easy (20) and normal (10), it drops by that
   much but not below half.
 
 ### Earthquakes (10a0:0d1c)
@@ -373,7 +374,7 @@ has all that a saved game loses):
 | `1110:0057`, `1110:70c2` | The computer players play; their turns so far | same |
 | `1110:7062`..`1110:70f2`, `1110:6f28`, `1110:634c`, `1110:00a2` | The computer players' state, the bank's no, the human's road drag ([computer.md](computer.md#state)) | same (unit 10a8:32ec) |
 | `1110:1334`, `1110:64c2` | Renovation interval per player, `Renovierungskosten` | same |
-| `1110:006e`, `006f`, `0071`, `133c` | Scenario, cheated(?), won, the score's unknown flag | same |
+| `1110:006e`, `006f`, `0071`, `133c` | Scenario, cheated(?), won, played without disasters (the score's 10 points off) | same |
 | `*1110:6f24+0x7f+p` | Player `p` is out | `*1110:6f24` |
 | `*1110:6fd6`, `*1110:6fda`, `*1110:6fde`, `*1110:6fe2`, `1110:3c2e`, `1110:6ff4`, `1110:6fee`, `1110:6ff0` | The people and their tables, [people.md](people.md) | same (unit 1088:8a07) |
 | `1110:007c`, `1110:5530`, `1110:5534` | The human's view as the people code reads it | same |
@@ -563,11 +564,12 @@ opens, and then asks for the pause with a command. [fernseher.md](fernseher.md) 
 
 ## Events (1010:3084)
 
-Ported in [`game::events`](../crates/game/src/events.rs), except the
-callees named below. The events are 41 records of 0x34 bytes at
-`*1110:6536` (saved by unit 1010:3e8a): `EREIGNIS.DAT`'s twelve
-`Longint`s per row (1010:3ab4; starting scenario *n* reloads them from
-`EREIGNn.DAT`, 1010:36f8, not ported yet) and a 13th, `+0x30`, read as a
+Ported in [`game::events`](../crates/game/src/events.rs). The events are
+41 records of 0x34 bytes at `*1110:6536` (saved by unit 1010:3e8a):
+`EREIGNIS.DAT`'s twelve `Longint`s per row (1010:3ab4; starting scenario
+*n* reloads them from `EREIGNn.DAT`, 1010:36f8, which leaves the 13th as
+the scenario's map had it: `World::load_event_rows`,
+[startup.md](startup.md#a-scenarios-start)) and a 13th, `+0x30`, read as a
 square (`i`, `j` words). The columns:
 
 | Offset | Column | What |
@@ -625,12 +627,27 @@ square, `i` then `j` from 0 to 250: one at sea level (lowest corner
 below 2) whose building isn't in `1110:1358` is demolished for no one,
 player 1's counting half their price as damage; then, still at sea
 level, the people on it leave if `layer_551c` or `layer_5520` isn't 255
-there (`flood_people`, in `game::people`). Not ported yet: the oil slick (10a0:074d and 10a0:0915: a random
-sea square with up to 2000 `Random(250)`s and a random walk of oil, the
-location map × 50 % within 30 cells), the books, and `make_available`'s
-build menu (still a form's; the computer players' part is ported,
-[computer.md](computer.md#state)). While an oil slick
-would start, the port's random numbers part from the original's.
+there (`flood_people`, in `game::people`).
+
+The oil slick (10a0:074d) tries up to 1001 random squares (`Random(250)`
+for `i`, then `j`) for one of flat sea (ground 2, form 16; off the map
+counts) with sand (ground 0) two squares away in one of the four
+directions: a beach. From the first that is, the oil walks 51 steps
+(`Random(3) - 1` on `i`, then `j`): a step onto flat sea moves there, and
+if nobody is on the square, oil of a kind by `Random(3)` (0x2b–0x2d)
+comes (1088:0324: the oil marks its square in `layer_551c` and cycles
+its three frames, [people.md](people.md#the-kinds)). Where the walk ends
+is the slick's square (`1110:7056`) and the message's; with no beach
+found, it's the last try's square and there's no oil, but the rest
+happens all the same. The damage is a hundredth of the human's buildings'
+value (`assets`, 1008:0b0b), insured if they are now, and the location
+map goes to 50 % within 30 cells of the square (1030:185d). At its end
+(10a0:0915) the location map is divided back, an insured player 1 gets
+the damage (the books' "other"), and every oil record from 0x2f to
+`1110:6ff4` goes (1088:2df2) with its square's `layer_551c` freed. The
+walk can leave the map by its edge rows, where the original writes the
+oil's marker outside the layer
+([original-bugs.md](original-bugs.md#simulation-logic)).
 
 ## Random
 
@@ -653,8 +670,7 @@ computer players' turns ([computer.md](computer.md)) with the build check
 and new building sites, `construction_tick`, `year_end`, `january_second` with the scenarios' goals, the
 net worth and the score, `quake_damage`,
 `vegetation_tick` with the location map,
-`beach_life_tick`, `effects_tick`, `events_tick` (with stubs for the oil slick and new building
-types), the buildings' records (`register_building`,
+`beach_life_tick`, `effects_tick`, `events_tick` with the oil slick, the buildings' records (`register_building`,
 `unregister_building`, `find_record`), `demolish` with the road pieces,
 `building_slice` with `send_person`, the flood's
 demolition and its people, `replace_building`, the news' random text,
@@ -695,16 +711,15 @@ raising and lowering, demolishing, the road drag,
 (`World::apply`).
 `World::to_map` saves the world ([savegame.md](savegame.md)).
 
-Stubs (named after the table above, each with its address and a TODO):
-inside the ported routines `oil_slick_start`, `oil_slick_end`.
 Raising and lowering the land (`game::terrain`) and building roads
 (`game::roads`) are ported as world code the computers use
 ([computer.md](computer.md#levelling-and-roads)), and the human's tools
 call them through commands. `make_available` gives the type to the
 human's build menu (the world's lists, `game::build_menu`) and the
-computers. 1088:7fb1,
-which runs `spawn_people` again after the player scrolls or turns the
-view, isn't ported. The money menu's refresh (1070:2617) after a
+computers. `people_refresh` (1088:7fb1), which places the people for
+the view and runs `spawn_people` again after the player scrolls or turns
+the view, is the command `Action::ViewMoved`, which carries the view
+([people.md](people.md#after-the-view-moves-10887fb1)). The money menu's refresh (1070:2617) after a
 booking is `Tick::books`, and the year's total it works out while the
 menu is shown runs at the end of the tick or command
 ([geldmenu.md](geldmenu.md#world-and-view)). Where a stub
@@ -720,8 +735,7 @@ the original's once it runs.
   pauses the game (`1110:0067`) until its film ends, and the animation
   options (`1110:0054`..`0056`) decide whether people move at all. For
   multiplayer these need to become world state everyone agrees on.
-- `1110:0070` stops all money changes; nothing found sets it. `1110:133c`,
-  which a scenario sets on easy, is unknown.
+- `1110:0070` stops all money changes; nothing found sets it.
 - The computers' roads go by the ground the human's last road drag
   started on (`1110:704e`), and don't build while the human drags
   (`1110:634c`): the human's tool state in the world
@@ -730,9 +744,11 @@ the original's once it runs.
   sound from playing again while it still plays; the port leaves it to
   the view, which doesn't play the sounds yet.
 - The people code reads the human's view (`World::viewpoint`): where
-  people appear, their pictures, and the sounds' `Random`s. 1088:7fb1
-  also runs `spawn_people` from the UI. Both need a multiplayer answer
-  ([people.md](people.md)).
+  people appear, their pictures, and the sounds' `Random`s. The view
+  hands it over before each tick, and with `Action::ViewMoved` when it
+  scrolls or turns (1088:7fb1, which also runs `spawn_people`). With
+  several players the people would follow whoever moved last; that needs
+  a multiplayer answer ([people.md](people.md)).
 - The news (1048:0a54) pauses the game through the TV for the human
   player, depending on their options per kind of news; the archive also
   stores that player's view origin. Both need a multiplayer answer
@@ -767,13 +783,14 @@ the original's once it runs.
   ([geldmenu.md](geldmenu.md#world-and-view)).
 - The books' 0x6c–0x6e are the money menu's balance: the human's money,
   `-loan` and their difference whenever the total is worked out
-  (1070:2ab8), and after the loan buttons. What `1110:133c` and
-  `1110:006f` mean is open. The plots' `+0x352` is their area in land corners
+  (1070:2ab8), and after the loan buttons. What `1110:006f` means
+  is open. The plots' `+0x352` is their area in land corners
   (1068:25fd).
 - The high score entry also stores a floating-point value made by
   1100:1142/1100:1808 from `1110:0a02` (the date?); that's left to the
-  view. A scenario's `*1110:6f24+0x80` out flags come from its map; state
-  1500 may change them (not ported).
+  view. A scenario's `*1110:6f24+0x80` out flags are set by state 1500:
+  in for the scenario's players, out for the seats after them
+  ([startup.md](startup.md#a-scenarios-start)).
 - Renovations only charge player 1; computer players' buildings get
   renovated for free (their turns don't pay for it either). The
   settlement likewise charges only the human for advertising, insurance

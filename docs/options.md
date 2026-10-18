@@ -64,7 +64,7 @@ labels. The tracks' names are the form's own (1060:14a1..).
 | "Buttonhilfe" | `0060` | 1060:05b9 | F11 | view |
 | "Animationen" | `0055` | 1060:05cb: the people's `+0x16` cleared or set (1088:7ee3, 1088:7f4a), the island redrawn or `people_refresh` | F12 | world, `Action::SetOption` |
 | Speed, 80–99 | `0096` | 1060:0619: speed `:= 100 - position` | `-` `+` | world, `Action::Speed` |
-| "Katastrophen" | `0065` | 1060:0637: off also sets `1110:133c` | `K` | world, `Action::SetOption` |
+| "Katastrophen" | `0065` | 1060:0637: off also sets `1110:133c`, played without disasters (the score's 10 points off) | `K` | world, `Action::SetOption` |
 
 Presses (1060:2404), of any mouse button (with `enhance.mouse_buttons`
 the left one only), go to the widgets in the order the form makes them
@@ -149,6 +149,7 @@ a multiplayer game it would be the host's.
   (10a0:2f5e); the port starts them at 100.
 - The high scores are `Thighscoreform` ([endforms.md](endforms.md)).
 - After "Animationen" goes on, the original runs `people_refresh`
-  (1088:7fb1) from the view, which calls `spawn_people` with the world's
-  random numbers. The port only redraws, as after scrolling
-  ([people.md](people.md)).
+  (1088:7fb1) from the view, which places the people for the view and
+  calls `spawn_people` with the world's random numbers. The port runs it
+  in the world with `Action::SetOption`, for the view the world last
+  had ([people.md](people.md#after-the-view-moves-10887fb1)).

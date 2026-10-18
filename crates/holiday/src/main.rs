@@ -526,17 +526,20 @@ impl Game {
 
     /// After the main screen's view moved (`hauptschirm_scroll`,
     /// 1020:07dc, from the keys, a right click, the scroll bars or the
-    /// wheel) or turned (1010:254d): the people over the island again,
-    /// and the overview map's frame (`uebersichtsmap_draw_frame`, as
-    /// 1020:0cf7 does).
-    ///
-    /// TODO(1088:7fb1): 1020:07dc (and 1010:258c after a turn) ends with
-    /// `people_refresh`, which runs 1088:7a14 and `spawn_people` for the
-    /// new view: a change of the world made from the view, so it belongs
-    /// here as a command to the world once it's ported. The port leaves
-    /// it out for now (`docs/people.md`), so the random numbers part from
-    /// the original's after a scroll.
+    /// wheel) or turned (`set_view`, 1010:254d): both end in
+    /// `people_refresh` (1088:7fb1), which places the people for the new
+    /// view and spawns new ones where it looks. That changes the world, so
+    /// it's a command carrying the view ([`command::Action::ViewMoved`]),
+    /// applied at once as the original does it; then the people over the
+    /// island again, and the overview map's frame
+    /// (`uebersichtsmap_draw_frame`, as 1020:0cf7 does).
     fn view_moved(&mut self) {
+        // Single human: the original's player 1.
+        self.commands.push(Command {
+            player: 1,
+            action: command::Action::ViewMoved(self.screen.viewpoint()),
+        });
+        self.apply_commands();
         self.screen
             .show_people(&self.world, &self.tiles, &self.font, &self.info);
         self.main_view_changed();
@@ -2261,6 +2264,13 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
                 months: monate(&read(dir, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
                 land: modatyp(&read(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT").land as u8,
             };
+            // The rest of state 1500: the scenario's events, its build
+            // menu and the computers.
+            if scenario_page {
+                let events = hintergrund::scenario_events(world.scenario, |name| std::fs::read(dir.join(name)).ok())
+                    .unwrap_or_else(|e| panic!("{e}"));
+                hintergrund::start_scenario(&mut world, events.as_deref());
+            }
             *options = options.with_map(&map);
             // State 1500 for a scenario: the music and the speech on.
             options.music = true;
@@ -2933,6 +2943,91 @@ mod tests {
         assert!(!game.world.clock.paused, "the pause ends with the TV");
     }
 
+    /// A scenario's oil slick (10a0:074d): its message opens the TV, and
+    /// once the view is at the slick's square the oil lies on the sea,
+    /// placed again when the view turns (1088:7fb1). With `HOLIDAY_PNG`
+    /// set, the screens go there as `step3-oil-slick-message.png` and
+    /// `step3-oil-slick.png`. Skipped without the game's files in `orig/`.
+    #[test]
+    fn oil_slick_on_screen() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orig");
+        if !dir.join("GRAFIK").exists() {
+            eprintln!("skipping: {} not found", dir.display());
+            return;
+        }
+        let exe = read(&dir, "HOLIDAY.EXE");
+        let settings = Settings {
+            scenario: 2,
+            difficulty: 1,
+            ..Settings::default()
+        };
+        let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+        let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let mut game = start_game(
+            &dir,
+            &exe,
+            &settings,
+            true,
+            Options::default(),
+            high,
+            &sound,
+            SIZE,
+            &Config::ORIGINAL,
+        );
+        game.forms.settings.speech = false;
+        // Only the scenario's oil slick, tomorrow.
+        let days = game.world.days;
+        for e in &mut game.world.events {
+            if e.kind == 2 && e.start == 5 {
+                (e.chance, e.first_day, e.last_day) = (0x10000, days + 1, days + 1);
+            } else {
+                e.chance = 0;
+            }
+        }
+        for _ in 0..100_000 {
+            if game.world.oil_slick {
+                break;
+            }
+            game.world.clock.paused = false;
+            let t = game.world.tick();
+            let _ = game.show(&t);
+        }
+        assert!(game.world.oil_slick);
+        assert!(game.forms.tv.visible, "the message opens the TV");
+        let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
+        let rgb = background.palette.map(|c| [c.r, c.g, c.b]);
+        let mut screen = Surface::new(800, 600, 0);
+        game.paint(&mut screen, &background.palette, None);
+        write_surface_png(&screen, &rgb, "step3-oil-slick-message");
+
+        let r = game.forms.tv.close();
+        let _ = game.tv_response(r);
+        let slick = game.world.damage.slick;
+        game.screen
+            .jump_to((slick.0 - 4, slick.1 + 6), &game.world, &game.tiles);
+        game.view_moved();
+        assert_eq!(game.world.viewpoint, game.screen.viewpoint());
+        let oil: Vec<_> = game
+            .world
+            .people
+            .records
+            .iter()
+            .filter(|p| game::events::OIL.contains(&p.kind()))
+            .map(game::people::Person::pos)
+            .collect();
+        assert!(
+            oil.iter()
+                .any(|&p| game::people::sees(&game.world.viewpoint, &game.world.island, p))
+        );
+        let _ = game.update(Duration::from_millis(u64::from(TICK_MS) * 3));
+        let mut screen = Surface::new(800, 600, 0);
+        game.paint(&mut screen, &background.palette, None);
+        write_surface_png(&screen, &rgb, "step3-oil-slick");
+        // A turn places everyone again for the new rotation.
+        game.set_view(1);
+        assert_eq!(game.world.viewpoint.rotation, 1);
+    }
+
     /// The quit film (`ABEnde.avi`) plays in the end form's `Panel1`; a
     /// key skips it, and the game exits. Skipped without the game's files.
     #[test]
@@ -3274,15 +3369,19 @@ mod tests {
     /// Writes the framebuffer as `name.png` into `HOLIDAY_PNG`, if set:
     /// an uncompressed PNG (stored deflate blocks), which needs no crate.
     fn write_png(holiday: &Holiday, name: &str) {
+        write_surface_png(&holiday.screen, &holiday.rgb, name);
+    }
+
+    /// [`write_png`] for `screen` with the colours `rgb`.
+    fn write_surface_png(screen: &Surface, rgb: &[[u8; 3]; 256], name: &str) {
         let Some(out) = std::env::var_os("HOLIDAY_PNG") else {
             return;
         };
-        let screen = &holiday.screen;
         let mut raw = Vec::with_capacity((screen.width * 3 + 1) * screen.height);
         for row in screen.pixels.chunks(screen.width) {
             raw.push(0);
             for &i in row {
-                raw.extend_from_slice(&holiday.rgb[usize::from(i)]);
+                raw.extend_from_slice(&rgb[usize::from(i)]);
             }
         }
         let mut zlib = vec![0x78, 0x01];

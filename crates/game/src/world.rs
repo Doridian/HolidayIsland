@@ -1078,9 +1078,14 @@ pub struct World {
     pub cheated: bool,
     /// The scenario is won. // 1110:0071
     pub won: bool,
-    /// Not known yet: set on easy when a scenario starts, and by the
-    /// options (1060:0637); it lowers the score. // 1110:133c
-    pub flag_133c: bool,
+    /// The game went without disasters for a while, which costs 10 points
+    /// of the score ([`World::score`], 1010:0faa, its only reader). A
+    /// game starts with it where the difficulty switches disasters off,
+    /// on easy (1078:3271, and state 1500 for a scenario), and clears it
+    /// on the other levels; switching them off on the options form sets
+    /// it for good (1060:0637). Cleared on the way back to the start menu
+    /// (1010:0f96). // 1110:133c
+    pub played_without_disasters: bool,
     /// A block of per-player values, mostly not known yet; `+0x2f +
     /// player` is the player's reputation ([`World::reputation`]).
     /// // *1110:6f24, 0x88 bytes
@@ -1209,7 +1214,7 @@ impl Default for World {
             scenario: 0,
             cheated: false,
             won: false,
-            flag_133c: false,
+            played_without_disasters: false,
             player_block: vec![0; PLAYER_BLOCK_SIZE],
             sabotage: Default::default(),
             championships: Default::default(),
@@ -1549,7 +1554,7 @@ impl World {
             scenario: byte(save, "1110:006e")?,
             cheated: byte(save, "1110:006f")? != 0,
             won: byte(save, "1110:0071")? != 0,
-            flag_133c: byte(save, "1110:133c")? != 0,
+            played_without_disasters: byte(save, "1110:133c")? != 0,
             // Unit 1078:34ad.
             player_block: bytes::<PLAYER_BLOCK_SIZE>(save, "*1110:6f24")?.to_vec(),
             // Unit 10a0:23c9.

@@ -510,6 +510,45 @@ impl World {
         self.computer_turns = 0;
     }
 
+    /// A scenario's computer players find where they are on its island
+    /// (state 1500): each (2 to the last player) chooses a category next,
+    /// in its old area with roads to it, and works at its first building
+    /// (by `i`, then `j`, from 1 to 250). Then every square of one of
+    /// them with a road (ground 10 to 0x3a) is, one time in three
+    /// (`Random(3) = 1`), an end of its roads to go on from, in a
+    /// direction by `Random(4)` (1030:0caf). // 10a8:0002, 357 bytes
+    pub fn computers_find_themselves(&mut self) {
+        let last = self.player_count;
+        for p in 2..=last.min(8) {
+            let k = slot(p);
+            let c = &mut self.computers;
+            c.first_road[k] = 0;
+            c.build_state[k] = CHOOSE_CATEGORY;
+            c.new_area[k] = 0;
+            let first = (1..=250)
+                .flat_map(|i| (1..=250).map(move |j| (i, j)))
+                .find(|&pos| self.island.owners.at(pos) == p);
+            if let Some(pos) = first {
+                self.computers.site[k] = pos;
+            }
+        }
+        for i in 1..=250 {
+            for j in 1..=250 {
+                let owner = self.island.owners.at((i, j));
+                if owner >= 2
+                    && owner <= last
+                    && (10..=0x3a).contains(&self.island.ground.at((i, j)))
+                    && self.random.random(3) == 1
+                {
+                    let direction = self.random.random(4);
+                    if let Some(roads) = self.computers.roads.get_mut(slot(owner)) {
+                        roads.push(direction.to_le_bytes()[0], (i, j)); // 1030:0caf
+                    }
+                }
+            }
+        }
+    }
+
     /// What each player would pay at most in the auction of
     /// [`World::auction`]'s item at `price`, into
     /// [`Auction::limits`](crate::auction::Auction::limits), players 1 to 8

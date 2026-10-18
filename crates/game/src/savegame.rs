@@ -390,7 +390,7 @@ fn world_field(w: &World, dest: &str, n: usize) -> Option<Vec<u8>> {
             Vec::new()
         }
         // Unit 1010:0d4c.
-        "1110:133c" => flag(w.flag_133c),
+        "1110:133c" => flag(w.played_without_disasters),
         "1110:1479" => vec![w.player_count],
         "1110:1334" => w.renovation_years.to_vec(),
         "1110:64bf" => vec![w.max_location_effect],
@@ -693,7 +693,7 @@ pub fn differences(a: &World, b: &World) -> Vec<&'static str> {
     same!(scenario);
     same!(cheated);
     same!(won);
-    same!(flag_133c);
+    same!(played_without_disasters);
     same!(player_block);
     same!(sabotage);
     same!(championships);

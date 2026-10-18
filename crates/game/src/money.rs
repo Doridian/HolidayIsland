@@ -76,7 +76,7 @@ impl World {
     /// money and loans at `MODATYP.DAT`'s `Startgeld`; then the
     /// difficulty sets the debt limit (doubled on easy, halved on hard),
     /// the start money (half of it), the disasters (off on easy) and
-    /// `1110:133c` (on easy), and player 1 starts with that money as a
+    /// [`World::played_without_disasters`] (on easy), and player 1 starts with that money as a
     /// loan. Nobody has guests or was refused a loan. Then the economy's
     /// periods (`Random(2000) + 2000`, `Random(200) + 300`, 1078:075f),
     /// empty lists of building sites, houses and facilities, the island's
@@ -93,18 +93,18 @@ impl World {
                 f.max_debt = f.max_debt.wrapping_mul(2);
                 f.start_money = f.max_debt / 2;
                 self.disasters = false;
-                self.flag_133c = true;
+                self.played_without_disasters = true;
             }
             1 => {
                 f.start_money = f.max_debt / 2;
                 self.disasters = true;
-                self.flag_133c = false;
+                self.played_without_disasters = false;
             }
             2 => {
                 f.max_debt /= 2;
                 f.start_money = f.max_debt / 2;
                 self.disasters = true;
-                self.flag_133c = false;
+                self.played_without_disasters = false;
             }
             _ => {}
         }

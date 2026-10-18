@@ -1671,6 +1671,121 @@ fn set_flag_15(p: &mut Person, value: u8) {
     p.set_flags(flags);
 }
 
+/// Those at a building's first door whom 1088:7a14 moves when the view
+/// turns. // 1088:7a14
+const AT_DOOR_0: [u8; 14] = [
+    0x1a, 0x1b, 0x28, 0x31, 0x3b, 0x3f, 0x44, 0x45, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c,
+];
+/// Those at its second door. // 1088:7a14
+const AT_DOOR_1: [u8; 13] = [
+    0x1c, 0x1d, 0x1e, 0x1f, 0x32, 0x34, 0x3c, 0x3d, 0x40, 0x4d, 0x4e, 0x4f, 0x50,
+];
+/// Those at its third. // 1088:7a14
+const AT_DOOR_2: u8 = 0x3e;
+/// The tracks parked planes (0x1b, 0x23) look along. // 1088:70ab
+const PARKED_TRACKS: [(i16, i16); 2] = [(0x1b, 10), (0x23, 13)];
+
+/// 1088:7fb1, after the view moved.
+impl World {
+    /// The people after the human's view scrolled or turned, or people
+    /// started moving again (`people_refresh`, from 1020:07dc, 1010:258c
+    /// and 1060:05cb): everyone is placed again for the view's rotation
+    /// (1088:7a14), and while people are animated and new ones come
+    /// (`1110:0054`, `1110:0056`) [`World::spawn_people`] runs for the
+    /// view, as the clock's tick does; the original then draws them.
+    /// Marked: what the player sees decides where people come, and the
+    /// view asks for it ([`crate::command::Action::ViewMoved`]).
+    /// // 1088:7fb1, 181 bytes
+    pub(crate) fn people_refresh(&mut self, tick: &mut Tick) {
+        self.place_people_again(); // 1088:7a14
+        if self.options.animations && self.options.people_spawn {
+            self.spawn_people(tick); // 1090:2373
+        }
+    }
+
+    /// Everyone whose square or picture goes by the view's rotation gets
+    /// them again: planes their pictures (1088:70ab), walkers, surfers,
+    /// harbour ships and the helicopter their places, those at a
+    /// building's door, a jetty or the stage their square from the
+    /// building's first one, the pictures by the square's form (0x2a,
+    /// 0x46) and the taxiing planes' pictures. Nobody else, and no random
+    /// numbers. // 1088:7a14, 1231 bytes
+    fn place_people_again(&mut self) {
+        for n in 0..=LAST {
+            let kind = self.people.kind(n);
+            let pos = self.person(n).pos();
+            let square = match kind {
+                7..=9 => {
+                    self.turn_plane(n); // 1088:70ab
+                    None
+                }
+                0x11..=0x16 => {
+                    self.place_walker(n); // 1088:4c55
+                    None
+                }
+                0x20 | 0x21 => {
+                    self.place_surfer(n); // 1088:6ee7
+                    None
+                }
+                0x22..=0x24 => {
+                    self.place_harbour_ship(n); // 1088:6cba
+                    None
+                }
+                0x2a | 0x46 => {
+                    let sprite = i16::from(self.form_look(pos)) + 0x17c; // 1088:4bfa
+                    self.edit(n, |p| p.set_sprite(sprite));
+                    None
+                }
+                HELICOPTER => {
+                    self.place_plane(n); // 1088:75de
+                    None
+                }
+                0x33 => Some(self.place(super::At::Jetty, pos)),
+                0x35..=0x3a => {
+                    match kind {
+                        0x35 => self.turn_taxiing(n, &TAXIING_OFFSETS_35), // 1098:0745
+                        0x36 => self.turn_taxiing(n, &TAXIING_OFFSETS_36), // 1098:0a14
+                        0x37 => self.turn_taxiing(n, &TAXIING_OFFSETS_37), // 1098:0ce3
+                        0x38 => self.turn_taxiing(n, &TAXIING_OFFSETS_38), // 1098:0e6d
+                        _ => {}
+                    }
+                    let first = TAXIING_SPRITES[self.viewpoint.rotation()][usize::from(kind - 0x35)];
+                    self.edit(n, |p| p.set_sprite(first.wrapping_add(p.path())));
+                    None
+                }
+                0x41 => Some(self.place(super::At::Stage, pos)),
+                k if AT_DOOR_0.contains(&k) => Some(self.place(super::At::Door(0), pos)),
+                k if AT_DOOR_1.contains(&k) => Some(self.place(super::At::Door(1), pos)),
+                AT_DOOR_2 => Some(self.place(super::At::Door(2), pos)),
+                _ => None,
+            };
+            if let Some(square) = square {
+                self.edit(n, |p| p.set_pos(square));
+            }
+        }
+    }
+
+    /// A plane's picture and its second half's for the view's rotation:
+    /// by its track's row, or a parked plane (0x1b, 0x23) by its parking
+    /// track's first row. Nothing else of it moves. // 1088:70ab, 1331 bytes
+    fn turn_plane(&mut self, n: i16) {
+        let p = self.person(n);
+        let look_at = PARKED_TRACKS
+            .iter()
+            .find(|&&(state, _)| state == p.heading())
+            .map_or_else(
+                || self.people.track_word(p.path(), i32::from(row(&p)), 4),
+                |&(_, track)| self.people.track_word(track, 0, 4),
+            );
+        let look = at(&LOOKS[self.viewpoint.rotation()], look_at);
+        let base = (i16::from(p.kind()) - i16::from(PLANE)) * 8;
+        self.edit(n, |q| q.set_sprite(base.wrapping_add(0x6b).wrapping_add(look)));
+        self.edit(n + PLANE_HALF, |q| {
+            q.set_sprite(base.wrapping_add(0x83).wrapping_add(look));
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use vcl::random::Random;

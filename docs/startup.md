@@ -122,18 +122,55 @@ map file's view position into the main screen's scroll position
 
 A normal game's world is ported: the island (10b0:52d4) and what the
 game's data sets up around it in states 100 and 1220
-([island-generator.md](island-generator.md#the-rest-of-a-new-game)). Not
-ported yet: the progress window, a scenario's events
-(`EREIGNn.DAT`, 1010:36f8) and players' flags, and what
-`game_start_setup` does to the view. A scenario's start money is ported
-([simulation.md](simulation.md#money-107801e7)).
+([island-generator.md](island-generator.md#the-rest-of-a-new-game)), and
+a scenario's start ([below](#a-scenarios-start)). Not ported: the
+progress window.
+
+### A scenario's start
+
+State 1500 with `+0x191`, after `load_map` of the scenario's file, in
+the original's order (`hintergrund::load_world`, then
+`hintergrund::start_scenario` once the world has its tables and random
+numbers):
+
+1. Player 1's name (`1110:0a02`) and the colours from what state 1000
+   kept, and the difficulty (`1110:1330`; state 1000 also keeps
+   `1110:1332`, which nothing reads).
+2. By the difficulty: easy doubles `MaxSchulden`, hard halves it;
+   `Startgeld` becomes half of it; disasters off on easy, on otherwise;
+   `1110:133c`, played without disasters (the score's 10 points off),
+   on easy and off otherwise. The interest rate is 6, and player 1
+   starts with `Startgeld` as money and loan (`set_loan`).
+3. By the scenario: the number of computer players (the table above),
+   and its events from `EREIGNn.DAT` (1010:36f8: each record's twelve
+   values from its row, the 13th, the square, stays as the map had it;
+   the original stops the program if the file has fewer than 41 rows).
+   Scenarios 1, 4 and 6 also take twelve building types off the human's
+   build menu (1000:21a0, `hintergrund::SCENARIO_BANNED`: 0x6f, 0x71,
+   0x79, 0x7e, 0x25, 0x3c, 0x1e, 0x1d, 0x7d, 0x23, 0x6c, 0x6e, each with
+   1018:26b9); the three files have them all.
+4. The players in the game, 1 to the number of players, are in
+   (`*1110:6f24 + 0x7f + p` := 0), the seats after them out (1).
+5. The books' years, kinds 0x52 to 0x6b, start at 0 (1070:2653).
+6. The speech and the music on (the view's options).
+7. The computers find themselves (10a8:0002,
+   `World::computers_find_themselves`): each chooses a category next
+   (`*1110:70c6` := 0), in its old area (`70d2`, `70d6` := 0), working at
+   its first building (`*1110:70a2`, by `i`, then `j`, 1 to 250). Then
+   each square of a computer's with a road (ground 10 to 0x3a), one time
+   in three (`Random(3) = 1`), becomes an end of its roads to go on from
+   (`*1110:70e6`, 1030:0caf) in a direction by `Random(4)`.
+8. `game_start_setup` (1010:2820), the view's.
 
 ## Back to the start menu (1010:25dc)
 
 The other place that creates `TStartform`, from the file menu's "Neues
 Spiel". It saves the game to `Maps\Last.map`, hides the forms in
 `1110:646c` except 10 and 11, frees the game (1030:3974), reloads the data
-(1030:38a3), restarts `holiday.mid`, and shows a new `TStartform`, which
+(1030:38a3), puts the globals back (1048:2a05: 1000:1ea0, 1088:0002 and 1010:0f96,
+which clears `1110:1334`, `1110:133c`, played without disasters, and
+`1110:133e`), restarts `holiday.mid`, and shows
+a new `TStartform`, which
 `startform_init` sets from the globals the game left (`Settings::from_world`).
 The `holiday` binary saves `Last.map`, opens the sounds again, plays
 `holiday.mid` and shows a new start menu; the rest of the reload isn't

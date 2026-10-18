@@ -407,7 +407,7 @@ impl People {
     }
 
     /// The kind of record `n`, [`NOBODY`] past the records.
-    fn kind(&self, n: i16) -> u8 {
+    pub(crate) fn kind(&self, n: i16) -> u8 {
         self.get(n).map_or(NOBODY, Person::kind)
     }
 
@@ -674,7 +674,7 @@ const FLAT: u8 = 16;
 /// Water.
 const WATER: u8 = 2;
 /// The marker layers' value for nothing there.
-const FREE: u8 = 0xff;
+pub(crate) const FREE: u8 = 0xff;
 
 /// The corner of the map nearest to `(i, j)`, the first of equals.
 /// // 1098:00ef
@@ -896,7 +896,7 @@ impl World {
     }
 
     /// Whether anyone is on `pos`, in the general range. // 1088:4b93
-    fn anyone_at(&self, pos: Pos) -> bool {
+    pub(crate) fn anyone_at(&self, pos: Pos) -> bool {
         let mut found = false;
         if self.people.last > LAST_MONEY {
             for n in FIRST..=self.people.last {
@@ -2402,5 +2402,80 @@ mod tests {
         let p = w.people.records.iter().find(|p| p.kind() == SHIP).unwrap();
         assert_eq!(w.island.ground.at(p.pos()), WATER);
         assert_eq!(w.island.layer_551c.at(p.pos()), SHIP);
+    }
+
+    /// A record of `kind` at `pos`, as `n`.
+    fn put(w: &mut World, n: i16, kind: u8, pos: Pos) {
+        let p = w.people.get_mut(n).unwrap();
+        p.set_kind(kind);
+        p.set_pos(pos);
+    }
+
+    #[test]
+    fn people_refresh_turns_them() {
+        let mut w = world(0x14, 3, 3);
+        // Someone at the first door of the building at (20, 20), a
+        // taxiing plane, and a parked plane.
+        put(&mut w, FIRST, 0x28, (21, 21));
+        put(&mut w, FIRST + 1, 0x39, (40, 40));
+        w.people.get_mut(FIRST + 1).unwrap().set_path(2);
+        put(&mut w, FIRST_PLANE, PLANE, (30, 30));
+        w.people.get_mut(FIRST_PLANE).unwrap().set_heading(0x1b);
+        w.people.last = FIRST + 2;
+        w.options.animations = false;
+        let mut tick = Tick::default();
+        w.set_viewpoint(Viewpoint {
+            rotation: 1,
+            ..Viewpoint::default()
+        });
+        w.people_refresh(&mut tick);
+        assert_eq!(w.people.get(FIRST).unwrap().pos(), (20, 21));
+        assert_eq!(w.people.get(FIRST + 1).unwrap().sprite(), TAXIING_SPRITES[1][4] + 2);
+        let look = LOOKS[1][0];
+        assert_eq!(w.people.get(FIRST_PLANE).unwrap().sprite(), look + 0x6b);
+        assert_eq!(w.people.get(FIRST_PLANE + PLANE_HALF).unwrap().sprite(), look + 0x83);
+        // No new people without the animations: no random numbers.
+        assert_eq!(w.random, Random::new(7));
+        assert_eq!(tick, Tick::default());
+        // Back to the first rotation: the door's again.
+        w.set_viewpoint(Viewpoint::default());
+        w.people_refresh(&mut tick);
+        assert_eq!(w.people.get(FIRST).unwrap().pos(), (21, 21));
+    }
+
+    #[test]
+    fn view_moved_command() {
+        let mut w = world(0x14, 1, 1);
+        w.options = crate::simulation::Options {
+            animations: true,
+            people_move: true,
+            people_spawn: true,
+            ..w.options
+        };
+        put(&mut w, 3, 6, (5, 5));
+        let viewpoint = Viewpoint {
+            rotation: 0,
+            origin: (15, 15),
+            parity: 0,
+        };
+        let moved = |w: &mut World| {
+            w.apply(crate::command::Command {
+                player: 1,
+                action: crate::command::Action::ViewMoved(viewpoint),
+            })
+        };
+        // The tools' records go, and new people come for the view, which
+        // draws the boat's and the ship's random numbers.
+        moved(&mut w);
+        assert_eq!(w.viewpoint, viewpoint);
+        assert_eq!(w.people.kind(3), NOBODY);
+        assert_ne!(w.random, Random::new(7));
+        // The same view and random numbers give the same people.
+        let mut a = world(0x14, 1, 1);
+        a.options = w.options;
+        let mut b = a.clone();
+        moved(&mut a);
+        moved(&mut b);
+        assert_eq!(a, b);
     }
 }

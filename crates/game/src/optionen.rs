@@ -173,9 +173,12 @@ impl World {
                 self.options.people_move = on;
                 self.set_people_flag_16(on); // 1088:7f4a, 1088:7ee3
                 // The original then redraws the island without the people
-                // (off, 1050:2700), or runs 1088:7fb1 (on), which also
-                // calls `spawn_people` from the view; the port only
-                // redraws, as after scrolling (`docs/people.md`).
+                // (off, 1050:2700), or runs `people_refresh` (on), which
+                // places them for the view and spawns new ones there. The
+                // view the world has is the last one handed to it.
+                if on {
+                    self.people_refresh(tick); // 1088:7fb1
+                }
                 tick.redraw_all = true;
             }
             WorldOption::AuctionWaits => self.options.auction_waits = on, // 1060:05a7
@@ -185,7 +188,7 @@ impl World {
                 self.disasters = on;
                 if !on {
                     // BUG(original): switched off once, disasters lower the score for good, even after they're switched on again.
-                    self.flag_133c = true;
+                    self.played_without_disasters = true;
                 }
             }
         }

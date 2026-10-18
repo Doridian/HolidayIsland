@@ -121,6 +121,7 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 10a0:30b6 | `play_sound` doesn't check its number: one outside 1..42 reads past its tables | Ignores it |
 | 10b8:1e96, 10b8:25cb | The overview map's scroll bars divide by their range, 0 for a map window as big as the map (no layout of `UEBERMAP.DAT` has one) | Puts the thumb at the start |
 | People (1088:0324, 1088:2df2, 1088/1090/1098) | Some tables are read past their end, and markers are written outside their layers for a home of -1 or a square off the map ([people.md](people.md#open-questions)) | Reads 0 (or "free"), or skips the write |
+| 10a0:074d | The oil slick's random walk counts off the map as flat sea, so a slick by the map's edge goes off it, and its oil's markers (1088:0324) and their clearing at the end (10a0:0915) are written outside the marker layer | Writes no marker off the map ([simulation.md](simulation.md#events-10103084)) |
 | 1070:04d3, 1070:270f | A renovation interval past 5 (from a map) reads the money menu's arrows' tables and `RenovierungToText` past their end | Leaves the interval; shows no text |
 | Tables read for an index out of range: the month's length, a player's reputation (`*1110:6f24+0x2f`), player 0's advertising level and loan (1078:057a), kind 3's decay (step 0x52), the books (1070:1419) | Reads or writes the bytes next to the table | Reads 0 (31 for a month), writes nothing |
 | 1080:3216 `plan_road` | A bridge dragged from water along a row of water to the map's edge wraps its byte coordinate and loops for ever (the edge and off the map count as flat water), writing owners off the map | Stops after one round of the byte; writes nothing off the map |
@@ -330,7 +331,10 @@ state into the simulation. See the open questions in
   624×404 at every size, and the squares the people code looks at
   (`1110:5536`, 11 × 61 from the view's origin) and `people::sees` are
   fixed to it ([layout.md](layout.md#the-world-and-the-screen-size)), so
-  players with different window sizes don't diverge by that;
+  players with different window sizes don't diverge by that. A scroll or
+  turn places the people again and spawns new ones for the view
+  (1088:7fb1): the command `Action::ViewMoved` carries the viewpoint, so
+  every peer does the same, but the people follow whoever moved last;
 - the road drag state (`1110:634c`, `704e`), which the computers read
   ([player-tools.md](player-tools.md#world-and-view));
 - the build menu's lists, player 1's;

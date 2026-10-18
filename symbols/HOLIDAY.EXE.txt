@@ -5,6 +5,7 @@
 1000:0c6a func load_globals  # the first unit of load_map; formats::savegame::layout
 1000:17bc func init_paths  # reads SETUP.DAT (formats::setup) into the directory globals, then checks the CD for Modatyp.dat and 21 AVIs; halts with a message if either is missing
 1000:1ea0 func init_game_defaults  # guess: the defaults for a new game (island_shape 1, relief 2, land 2, rivers 5, player_colours 1..8, ...)
+1000:21a0 func scenario_ban_buildings  # scenarios 1, 4, 6: 1018:26b9 for 0x6f, 0x71, 0x79, 0x7e, 0x25, 0x3c, 0x1e, 0x1d, 0x7d, 0x23, 0x6c, 0x6e; game::hintergrund::start_scenario; Ghidra missed this function
 1000:2241 func hintergrund_formactivate  # THintergrund.FormActivate: raise_window_forms once the main screen has been shown (1110:00a0); docs/layout.md#stacking
 1000:2466 func hintergrund_timer  # THintergrund timer (+0x184) handler: the intro and game-start state machine on the timer's Tag, see docs/startup.md; Ghidra missed this function
 1000:3938 func hintergrund_skip_film  # FormKeyDown's part: Timer1.Interval := 1 (the next state comes at once), and in state 0x19a (sunflow.avi) or 0x459 (titel.avi) the film ends (0x1a4, 0x460); docs/films.md
@@ -60,6 +61,7 @@
 1010:064a func init_game_globals  # allocates the Klassenmischung/text buffers, loads MODATYP, fills window_forms
 1010:0799 func save_window_positions  # Top, Left, Width, Height, +0x29, +0x2a of the forms in 1110:646c but 2; 10 and 11 as zeros
 1010:08d7 func load_window_positions
+1010:0f96 func clear_game_flags  # 1110:1334, 1110:133c, 1110:133e := 0; from 1048:2a05 (back to the start menu)
 1010:0faa func score
 1010:1129 func plant_palm  # (j, i): counts it on the square's plot (+0x354), location effect, part := part * stages + 8, redraws; game::vegetation
 1010:11cd func place_beach_life  # (j, i, owner): building 36 with part Random(hausnr[36][0]); owner unused
@@ -813,7 +815,9 @@
 1088:6c8b func people_map_changed2  # the same as people_map_changed
 1088:6cba func place_harbour_ship  # (n): a harbour ship's sprite (0x133, 0x13b, 0x143 + look) and offset from its ANIMDAT4 route
 1088:6ee7 func place_surfer  # (n): a surfer's sprite (0x123 / 299 + look) and offset from its ANIMDAT4 route
+1088:70ab func turn_plane  # (n): a plane's sprites for view_rotation (parked 0x1b/0x23 by ANIMDAT3 track 10/13); game::people::movement
 1088:75de func place_plane  # (n): a plane's sprites and offsets for both halves from ANIMDAT4 and ANIMDAT3, by view_rotation
+1088:7a14 func place_people_again  # every record's square or sprite for view_rotation, by kind; from people_refresh
 1088:7ee3 func people_flag16_clear  # +0x16 := 0 for 0x2f..1110:6ff4 but kinds 6, 0x2a, 0x46, 1, 0x19, 0x25, 0x2b..0x2d
 1088:7f4a func people_flag16_set  # the same with +0x16 := 1
 1088:7fb1 func people_refresh  # 1088:7a14, then spawn_people and the drawing; after scrolling (1020:0a4c), turning (1010:258c) and the options (1060:05cb)
@@ -881,6 +885,7 @@
 10a0:2824 func sound_file_name  # (n, var name): sound_dir + the wave of play_sound's number n (1..42), literals at 10a0:25e9..27c6; game::sound::WAVE_FILES
 10a0:2f5e func init_sound  # with sound: the volumes from waveOutGetVolume / 655, WaveMixConfigureInit (mono, the INI's rate), WaveMixOpenWave of the 42 waves, WaveMixOpenChannel(0, WMIX_OPENALL), sound_activate; docs/sound.md
 10a0:30b6 func play_sound  # (n): WaveMixPlay of sound n if sound is on and it is not already playing
+10a8:0002 func computers_find_themselves  # state 1500 of a scenario: computers 2..player_count choose a category at their first building; their road squares (ground 10..0x3a) Random(3) = 1 into 1110:70e6 with Random(4); Ghidra missed this function
 10a8:0167 func computer_bid  # nested in 10a8:0221: price + (min(money - loan + MaxSchulden, 3 price) - price) * Random(1000) div 999, 0 below the price; game::computer
 10a8:0221 func computer_bid_for  # (player, price: Longint): the human's money; a computer's bid unless out, the owner of event 9's square, or (for other items) waiting for its first roads; game::computer
 10a8:0373 func computer_bids  # (price: Longint): every player's limit into 1110:654e+4(p-1) when the auction form opens (1028:0dde); game::computer
@@ -1241,6 +1246,7 @@
 1110:12be data view_height
 1110:12c0 data button_edges  # array[0..22] of (left, right: Integer): the button bar's buttons
 1110:1322 data load_map_name  # string: the file state 1500 loads from MAPS when hintergrund+0x190 is set, Last.map
+1110:133c data played_without_disasters  # byte: set on easy and by switching disasters off (1060:0637); the score's 10 points off (1010:0faa)
 1110:133e data view_keep_origin
 1110:1340 data record_kinds  # array[-1..11] of Byte really 1110:1341 array[0..10]: by HAUSDATA kind, 0 house, 1/2 facility, 3 none
 1110:134c data facility_classes  # array[2..10] of Byte (from 1110:134e): 0 1 3 4 5 10 2 6 6

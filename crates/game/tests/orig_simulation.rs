@@ -16,7 +16,7 @@ use game::command::{self, Command};
 use game::darstellung::Camera;
 use game::events::Event;
 use game::hauptschirm::{BITMAP_FILES, Hauptschirm, InfoTexts};
-use game::hintergrund::{SCENARIO_FILES, load_world};
+use game::hintergrund::{SCENARIO_FILES, load_world, scenario_events, start_scenario};
 use game::monate::Date;
 use game::people::{BOAT, SHIP, view_square};
 use game::simulation::Tick;
@@ -128,6 +128,11 @@ fn deterministic() {
     for (name, mut world) in worlds {
         world.random = Random::new(0x1234_5678);
         world.tables = Arc::clone(&tables);
+        // The rest of a scenario's start (state 1500).
+        if world.scenario != 0 {
+            let events = scenario_events(world.scenario, |name| Some(read(name))).unwrap();
+            start_scenario(&mut world, events.as_deref());
+        }
         let start = world.date;
         assert!(world.clock.speed > 0, "{name}: speed {}", world.clock.speed);
         assert!((1..=12).contains(&start.month) && start.day >= 1, "{name}: {start:?}");

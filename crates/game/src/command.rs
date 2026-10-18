@@ -6,7 +6,8 @@
 //! (building, raising and lowering the land, demolishing, the road and
 //! sabotage, `docs/player-tools.md`), the options form's world options
 //! and speed, the money menu, the info box's and the buildings'
-//! overview's buttons, the overview map's new people and the TV's pause and speaker.
+//! overview's buttons, the overview map's new people, the TV's pause and speaker, and the main
+//! screen's view moving, which places the people for it.
 
 use std::sync::Arc;
 
@@ -95,6 +96,17 @@ pub enum Action {
     /// original has no fixes. In a multiplayer game it would be the
     /// host's.
     SetFix(crate::enhance::Fix, bool),
+    /// The human's view scrolled (`hauptschirm_scroll`, 1020:07dc) or
+    /// turned (`set_view`, 1010:254d) and now looks at the viewpoint, the
+    /// original's 20 × 27 view (with `big_map` too, the middle of the
+    /// bigger one): both clear the records 0–0x23 (1088:6c8b), the world
+    /// takes the view as the one the people code reads
+    /// ([`World::set_viewpoint`]), and the people are placed again for it
+    /// and new ones come where it looks (`people_refresh`, 1088:7fb1).
+    /// The view data travels with the command, so every peer places and
+    /// spawns the same people. Marked: it's the one human's view; with
+    /// several the people would follow whoever moved last.
+    ViewMoved(crate::people::Viewpoint),
 }
 
 /// The sound of a tool that did its work. // 1028:3b7c, 1028:3cb1
@@ -140,6 +152,11 @@ impl World {
             Action::TvPause(on) => self.tv_pause(on),
             Action::Speaker(s) => self.set_speaker(s),
             Action::SetFix(fix, on) => self.fixes.set(fix, on),
+            Action::ViewMoved(viewpoint) => {
+                self.people_map_changed(); // 1088:6c8b
+                self.set_viewpoint(viewpoint);
+                self.people_refresh(&mut tick); // 1088:7fb1
+            }
         }
         self.geldmenu_refresh(&tick); // 1070:2617
         tick

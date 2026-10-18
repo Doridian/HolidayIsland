@@ -83,7 +83,7 @@ From the buildings that send them (`HAUSNAME.TXT`'s names):
 | 0x26 | Builders on a building site (31) |
 | 0x27–0x29, 0x30–0x32, 0x34, 0x3b–0x40, 0x42–0x45 | At the doors of the Haifischbar (0x14), Spielhalle (0x48), Juwelier (0x39), the parks (0x57, 0x4e, 0x50), Wasserpark (0x46), Disco (0x4a), Paradieso (0x37), Treppina (0x26), Queen's Hotel (0x38), Wellenbad (0x40), Bananorama (0x27), Beachvolleyball (0x3a), Bolzplatz (6), Casino (0x49, `Random(2)`) |
 | 0x2a, 0x46 | A picture by the square's form (`AnsichtFormkorrektur`); not sent by anything ported |
-| 0x2b–0x2d | Oil (the oil slick, 10a0:074d, not ported) |
+| 0x2b–0x2d | Oil, from the oil slick (10a0:074d, [simulation.md](simulation.md#events-10103084)), `Random(3)` |
 | 0x2e | The sightseeing helicopter (`H-Rundflüge`, 0x17), when the square's `551c` is free |
 | 0x33 | Boats at the Bigport's jetties (0x68–0x6b) |
 | 0x35–0x3a | Planes taxiing along an airport's runway (`1110:6fcc`), a square at a time |
@@ -142,13 +142,43 @@ map), which the view sets before each tick; sounds go to the view in
    sound (`Random(500) = 1` and seen, then `Random(2)`), and the Bigport's
    first squares a jetty boat (`Random(10) = 1`).
 
-The view also calls it: 1088:7fb1, after scrolling, turning the view and
-the options, runs 1088:7a14 and `spawn_people` with the drawing. The port
-leaves that out, so the random numbers part from the original's after
-those. Every scroll of the main screen (`hauptschirm_scroll`, 1020:07dc:
-the keys, a right click, the scroll bars and their held repeat, the
-wheel) and every turn ends in `Game::view_moved`, which is where it goes
-(a `TODO(1088:7fb1)` there).
+The view also calls it, through `people_refresh` ([below](#after-the-view-moves-10887fb1)).
+
+## After the view moves (1088:7fb1)
+
+`people_refresh` (181 bytes) runs at the end of every scroll of the main
+screen (`hauptschirm_scroll`, 1020:07dc: the keys, a right click, the
+scroll bars and their held repeat, the wheel) and of a turn (`set_view`,
+1010:254d), both of which first clear records 0–0x23 with 1088:6c8b
+(the same as 1088:6c5a), and when the options switch people moving on (1060:05cb). It
+places everyone again for the view's rotation (1088:7a14, 1231 bytes,
+records 0 to 0x640, no random numbers):
+
+| Kinds | Placed again |
+|---|---|
+| 7, 8, 9 | The plane's picture and its second half's (1088:70ab): by the look of its track's row, a parked one (0x1b, 0x23) by the first row of track 10 or 13 |
+| 0x11–0x16 | The walker's picture and offset (1088:4c55) |
+| 0x1a, 0x1b, 0x28, 0x31, 0x3b, 0x3f, 0x44, 0x45, 0x47–0x4c | The square: the building's first square plus its first door (`1110:34b0`) |
+| 0x1c–0x1f, 0x32, 0x34, 0x3c, 0x3d, 0x40, 0x4d–0x50 | Its second door |
+| 0x3e | Its third door |
+| 0x20, 0x21 / 0x22–0x24 | The surfer's / harbour ship's picture and offset (1088:6ee7, 1088:6cba) |
+| 0x2a, 0x46 | The picture by the square's form (1088:4bfa) |
+| 0x2e | The helicopter (1088:75de) |
+| 0x33 | The square: the jetty's offset (`1110:31e0`) |
+| 0x35–0x38 | The taxiing plane's offset (1098:0745...) and picture (`1110:3356` + `+0x18`) |
+| 0x39, 0x3a | The picture |
+| 0x41 | The square: the stage's offset (`1110:3a58`) |
+
+Then, while people are animated and new ones come (`1110:0054`,
+`1110:0056`), `spawn_people` for the new view, and the drawing (the
+people and the tool's pictures). The port makes it a command,
+`Action::ViewMoved(viewpoint)`, which `Game::view_moved` hands the
+world at once, as the original does it: the world clears the records
+0–0x23, takes the view's `Viewpoint` (the original's 20 × 27 view, with
+`big_map` the middle of the bigger one) and runs `people_refresh`. The view data travels with the command, so a
+replay or another peer places and spawns the same people. Switching
+people moving on (`Action::SetOption`) runs it with the view the world
+last had.
 
 ## Sending someone out (1090:1a25)
 
@@ -309,8 +339,8 @@ instead of keeping what's under them.
   pictures: the pointer and the squares a building or road would take
   (1090:124f, [player-tools.md](player-tools.md)), which the port keeps
   in the view.
-- Who sends the walkers out: nothing ported adds kinds 0x11–0x16 (1088:7a14,
-  which runs from the view, may).
+- Who sends the walkers out: nothing ported adds kinds 0x11–0x16
+  (1088:7a14 only places them again).
 - 1098:0002 returns an undefined value when a harbour ship's square has no
   harbour next to it; the port keeps the ship's heading (it leaves anyway).
 - The harbour ships' second detour (1098:04f9) checks the ship's own square
@@ -321,7 +351,9 @@ instead of keeping what's under them.
 - 1090:2c1f takes a plane's second approach if either coordinate matches
   (`fix.plane_approach`: both).
 - The world reads the human's view in several places, and 1088:7fb1 runs
-  `spawn_people` from the UI. For several players these need an answer.
+  `spawn_people` for the view that moved (`Action::ViewMoved`). With
+  several players the people would be placed for whoever moved last;
+  that needs an answer.
 - 1088:0324 reads its tables past their ends for building types that
   don't send that kind (nothing ported does that); the port says 0.
 - Walkers' and surfers' homes can be -1 (a beach already taken), and the

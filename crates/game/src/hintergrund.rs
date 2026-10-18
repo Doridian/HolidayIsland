@@ -3,8 +3,9 @@
 //! (`docs/startup.md`). What's ported is the choice of the island, the
 //! part of loading a map file that the world needs, a new game's world
 //! (the island made from the start menu's settings and everything the
-//! game's data sets up around it) and a saved game's
-//! ([`load_saved_game`], `docs/savegame.md`).
+//! game's data sets up around it), a scenario's ([`load_world`] and
+//! [`start_scenario`]) and a saved game's ([`load_saved_game`],
+//! `docs/savegame.md`).
 
 use std::sync::Arc;
 
@@ -171,14 +172,21 @@ pub fn new_island(settings: &Settings, scenario_page: bool) -> Island {
 /// The world after state 1500 has loaded `map`. For a scenario
 /// (`scenario_page`), state 1000 saved the start menu's name, colours and
 /// difficulty, and they replace the scenario's; then the difficulty sets
-/// the start money and the scenario the number of computer players.
-/// // 1000:2466
+/// the start money and the scenario the number of computer players, who
+/// are in the game and the seats after them out
+/// (`*1110:6f24 + 0x7f + p`), and the books' years start empty
+/// (1070:2653). [`start_scenario`] does the rest of state 1500, which
+/// needs the game's tables and random numbers. // 1000:2466
 ///
 /// # Errors
 /// If the map lacks a field the world needs.
 pub fn load_world(map: &SaveGame, settings: &Settings, scenario_page: bool) -> Result<World, world::Error> {
     let mut world = World::from_map(map)?;
     if scenario_page {
+        // sys_pstr_store(0xff, 1110:0a02, 1110:6356): player 1's name.
+        if let Some(name) = world.player_names.get_mut(1) {
+            name.clone_from(&settings.name);
+        }
         // FUN_1108_148c(8, 0x74, 0x634e): player_colours := the copy.
         world.player_colours = settings.colours;
         world.difficulty = settings.difficulty;
@@ -189,33 +197,101 @@ pub fn load_world(map: &SaveGame, settings: &Settings, scenario_page: bool) -> R
         {
             world.player_count = n + 1;
         }
-        // TODO: the scenario's events (`EREIGNn.DAT`, 1010:36f8), the
-        // players' flags at `*1110:6f24+0x80` and the rest of state 1500.
+        // The players in the game and the empty seats.
+        for p in 1..=8 {
+            world.set_player_out(p, u8::from(p > world.player_count));
+        }
+        clear_book_years(&mut world); // 1070:2653
     }
     Ok(world)
 }
 
+/// The building types scenarios 1, 4 and 6 take off the build menu: the
+/// player can't build them there. // 1000:21a0
+pub const SCENARIO_BANNED: [u8; 12] = [0x6f, 0x71, 0x79, 0x7e, 0x25, 0x3c, 0x1e, 0x1d, 0x7d, 0x23, 0x6c, 0x6e];
+
+/// The scenarios whose build menu goes without [`SCENARIO_BANNED`].
+/// // 1000:2466, state 1500
+const BANNING_SCENARIOS: [u8; 3] = [1, 4, 6];
+
+/// The rest of state 1500 for a scenario, once the world has its tables
+/// and its random numbers: the scenario's events (`events`, the rows of
+/// its `EREIGNn.DAT`, [`scenario_events`]) replace the map's, scenarios
+/// 1, 4 and 6 take [`SCENARIO_BANNED`] off the build menu (1000:21a0),
+/// and the computer players find where they are (10a8:0002). The
+/// original then sets the speech and the music on, the view's options.
+/// // 1000:2466
+pub fn start_scenario(world: &mut World, events: Option<&[[i32; 12]]>) {
+    if let Some(rows) = events {
+        world.load_event_rows(rows); // 1010:36f8
+    }
+    if BANNING_SCENARIOS.contains(&world.scenario) {
+        for building in SCENARIO_BANNED {
+            world.remove_from_build_menu(building); // 1018:26b9
+        }
+    }
+    world.computers_find_themselves(); // 10a8:0002
+}
+
+/// The rows of scenario `scenario`'s events, `DATA\EREIGNn.DAT`
+/// ([`SCENARIO_EVENTS`]), from `read` by their path on the CD; `None` for
+/// a number that isn't a scenario's. // 1000:2466, 1010:36f8
+///
+/// # Errors
+/// If the file is missing or doesn't parse.
+pub fn scenario_events(
+    scenario: u8,
+    read: impl Fn(&str) -> Option<Vec<u8>>,
+) -> Result<Option<Vec<[i32; 12]>>, LoadError> {
+    let Some(name) = usize::from(scenario)
+        .checked_sub(1)
+        .and_then(|i| SCENARIO_EVENTS.get(i))
+    else {
+        return Ok(None);
+    };
+    let path = format!("DATA/{}", name.to_ascii_uppercase());
+    let data = read(&path).ok_or_else(|| LoadError(format!("{path} not found")))?;
+    data::ereignis(&data)
+        .map(Some)
+        .map_err(|e| LoadError(format!("{path}: {e}")))
+}
+
+/// The books' years, last year's and this one's with their totals
+/// (kinds 0x52 to 0x6b), start at 0. // 1070:2653
+fn clear_book_years(world: &mut World) {
+    for kind in 0x52..=0x6b_u8 {
+        if let Some(v) = world.books.year.get_mut(usize::from(kind - world::FIRST_BOOK)) {
+            *v = 0;
+        }
+    }
+}
+
 /// A scenario's start money by difficulty: the debt limit doubles on easy
 /// and halves on hard, and the human starts with half of it, as a loan at
-/// 6 percent. Disasters are off on easy. // 1000:2466, state 1500
+/// 6 percent. Disasters are off on easy, which counts as playing without
+/// them ([`World::played_without_disasters`]). // 1000:2466, state 1500
 fn start_money(world: &mut World) {
     let f = &mut world.finances;
     match world.difficulty {
         0 => {
             f.max_debt = f.max_debt.wrapping_mul(2);
             world.disasters = false;
+            world.played_without_disasters = true;
         }
-        1 => world.disasters = true,
+        1 => {
+            world.disasters = true;
+            world.played_without_disasters = false;
+        }
         2 => {
             f.max_debt /= 2;
             world.disasters = true;
+            world.played_without_disasters = false;
         }
         _ => {}
     }
     if (0..=2).contains(&world.difficulty) {
         f.start_money = f.max_debt / 2;
     }
-    // TODO: 1110:133c is set on easy and cleared otherwise; not known yet.
     f.interest_rate = 6;
     f.money[0] = f.start_money;
     world.set_loan(1, world.finances.start_money);

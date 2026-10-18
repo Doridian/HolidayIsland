@@ -77,6 +77,16 @@ impl Event {
         }
         Event::parse(&r)
     }
+
+    /// The event with its 12 values from a row of an events file, and
+    /// the 13th, [`Event::pos`], as it was. // 1010:36f8
+    #[must_use]
+    pub fn with_row(self, row: &[i32; 12]) -> Self {
+        Event {
+            pos: self.pos,
+            ..Event::from_row(row)
+        }
+    }
 }
 
 /// The low word of a `Longint`, where the original reads a `Longint`
@@ -120,6 +130,17 @@ pub const UNSHAKEN: [u8; 3] = [12, 36, 255];
 const QUAKE_SQUARES: usize = 100;
 
 impl World {
+    /// A scenario's events file (`EREIGNn.DAT`) over the events: each
+    /// record's 12 values from its row, in order; the 13th
+    /// ([`Event::pos`], from the map) stays. The original reads 41 rows
+    /// (and stops the program if the file has fewer); the port reads
+    /// those there are. // 1010:36f8
+    pub fn load_event_rows(&mut self, rows: &[[i32; 12]]) {
+        for (e, row) in self.events.iter_mut().zip(rows) {
+            *e = e.with_row(row);
+        }
+    }
+
     /// Counts the day ([`World::days`]) and goes through the events. One
     /// that isn't running starts on a day in its window with its chance
     /// (`Random(65000)`, drawn only in the window), which then becomes 0,
@@ -199,7 +220,7 @@ impl World {
                         }
                         5 => {
                             self.oil_slick = true;
-                            pos = self.oil_slick_start(); // 10a0:074d
+                            pos = Some(self.oil_slick_start(tick)); // 10a0:074d
                         }
                         _ => {}
                     }
@@ -263,7 +284,7 @@ impl World {
                         }
                         5 => {
                             self.oil_slick = false;
-                            self.oil_slick_end(); // 10a0:0915
+                            self.oil_slick_end(tick); // 10a0:0915
                         }
                         _ => {}
                     }
@@ -345,24 +366,96 @@ impl World {
     }
 }
 
-/// The parts of the events that aren't ported yet.
-#[allow(clippy::unused_self)]
+/// How many spots an oil slick tries, less one. // 10a0:074d
+const OIL_TRIES: i16 = 1000;
+/// The steps of the oil's random walk, less one. // 10a0:074d
+const OIL_STEPS: i16 = 0x32;
+/// The oil's three kinds of people, by `Random(3)`. // 10a0:074d
+pub const OIL: [u8; 3] = [0x2b, 0x2c, 0x2d];
+/// The location map around the slick: × 50 % within 30 cells.
+/// // 10a0:074d, 10a0:0915
+const OIL_LOCATION: (i32, i32) = (50, 30);
+
 impl World {
-    /// An oil slick begins: 1000 tries at a random spot (`Random(250)`
-    /// twice) of the sea next to land, then 51 steps of a random walk
-    /// (`Random(3)`s) leaving oil (1088:0324), and the location map × 50 %
-    /// in a radius of 30 around it. Returns where, for the message.
+    /// An oil slick begins. Up to 1001 tries at a random square
+    /// (`Random(250)` for `i`, then `j`) of flat sea with sand (ground 0)
+    /// two squares off on a side, a beach; from the first that is, 51
+    /// steps of a random walk (`Random(3) - 1` on `i`, then `j`) over flat
+    /// sea, each to a square nobody is on leaving oil of a kind by
+    /// `Random(3)` (1088:0324).
+    /// Where the walk ends (or the last try, if none was right) is the
+    /// slick's square and the message's. The damage is a hundredth of the
+    /// human's buildings' value (1008:0b0b), insured if they are now, and
+    /// the location map goes down to 50 % within 30 cells around the
+    /// square (1030:185d). Single human: the damage is player 1's.
     /// // 10a0:074d, 456 bytes
-    fn oil_slick_start(&mut self) -> Option<Pos> {
-        // TODO: port 10a0:074d with the people (the oil is three of their
-        // kinds). Until then it draws none of its random numbers.
-        None
+    fn oil_slick_start(&mut self, tick: &mut Tick) -> Pos {
+        let mut pos: Pos;
+        let mut tries: i16 = 0;
+        loop {
+            let i = self.random.random(250).cast_signed();
+            let j = self.random.random(250).cast_signed();
+            pos = (i, j);
+            if self.oil_start_square(pos) {
+                tries = OIL_TRIES;
+                for _ in 0..=OIL_STEPS {
+                    let ni = pos.0.wrapping_add(self.random.random(3).cast_signed()).wrapping_sub(1);
+                    let nj = pos.1.wrapping_add(self.random.random(3).cast_signed()).wrapping_sub(1);
+                    let next = (ni, nj);
+                    if self.ground_or_water(next) == 2 && self.form_or_flat(next) == crate::roads::FLAT {
+                        pos = next;
+                        if !self.anyone_at(next) {
+                            let kind = self.random.random(3);
+                            // BUG(original): the walk can leave the map by its edge rows, and the oil there is written outside the marker layer; the port writes no marker (`set_marker`).
+                            self.add_person(OIL[usize::from(kind)], next, tick);
+                        }
+                    }
+                }
+            }
+            if tries == OIL_TRIES {
+                break;
+            }
+            tries += 1;
+        }
+        self.damage.slick = pos;
+        self.damage.insured = self.insured;
+        self.damage.amount = self.assets(1) / 100; // 1008:0b0b
+        let (value, radius) = OIL_LOCATION;
+        self.change_location(pos, value, radius, false); // 1030:185d
+        pos
     }
 
-    /// The oil slick ends: the location map back, the damage back if
-    /// insured, the oil gone. // 10a0:0915, 213 bytes
-    fn oil_slick_end(&mut self) {
-        // TODO: port with 10a0:074d.
+    /// Whether an oil slick may start on `pos`: flat sea with sand (ground
+    /// 0) two squares off in one of the four directions. // 10a0:074d
+    fn oil_start_square(&self, (i, j): Pos) -> bool {
+        self.ground_or_water((i, j)) == 2
+            && self.form_or_flat((i, j)) == crate::roads::FLAT
+            && [(2, 0), (-2, 0), (0, 2), (0, -2)]
+                .iter()
+                .any(|&(di, dj)| self.ground_or_water((i.wrapping_add(di), j.wrapping_add(dj))) == 0)
+    }
+
+    /// The oil slick ends: the location map around its square back
+    /// (1030:185d), an insured player gets the damage back, in the books'
+    /// "other", and the oil goes (1088:2df2), its squares' markers free.
+    /// Single human: the insurance is player 1's. // 10a0:0915, 213 bytes
+    fn oil_slick_end(&mut self, tick: &mut Tick) {
+        let (value, radius) = OIL_LOCATION;
+        self.change_location(self.damage.slick, value, radius, true); // 1030:185d
+        self.disaster_end(tick);
+        let last = self.people.last;
+        if last <= crate::people::LAST_MONEY {
+            return;
+        }
+        for n in crate::people::FIRST..=last {
+            if OIL.contains(&self.people.kind(n)) {
+                self.remove_person(n); // 1088:2df2
+                let pos = self.people.get(n).map(crate::people::Person::pos);
+                if let Some(pos) = pos {
+                    self.set_marker(pos, crate::people::FREE);
+                }
+            }
+        }
     }
 }
 
@@ -632,6 +725,147 @@ mod tests {
         let tick = day(&mut w);
         assert_eq!(tick.messages, []);
         assert!(!tick.redraw_all);
+    }
+
+    /// A sea of flat water with an island of sand at 60..190.
+    fn sea() -> World {
+        let mut island = crate::world::Island::empty();
+        for i in 0..=250 {
+            for j in 0..=250 {
+                island.forms.set((i, j), crate::roads::FLAT);
+                let land = (60..190).contains(&i) && (60..190).contains(&j);
+                island.ground.set((i, j), if land { 0 } else { 2 });
+            }
+        }
+        island.location = crate::world::LocationMap::filled(100);
+        let mut w = World {
+            island,
+            random: Random::new(31),
+            ..World::default()
+        };
+        w.people.last = crate::people::FIRST;
+        w
+    }
+
+    fn oil(w: &World) -> Vec<Pos> {
+        (crate::people::FIRST..=w.people.last)
+            .filter_map(|n| w.people.get(n))
+            .filter(|p| OIL.contains(&p.kind()))
+            .map(crate::people::Person::pos)
+            .collect()
+    }
+
+    #[test]
+    fn oil_slick() {
+        let mut w = sea();
+        w.insured = true;
+        let mut tick = Tick::default();
+        let pos = w.oil_slick_start(&mut tick);
+        // The first try next to the island is the start: count the random
+        // numbers up to it.
+        let mut r = Random::new(31);
+        let start = loop {
+            let at = (r.random(250).cast_signed(), r.random(250).cast_signed());
+            if w.oil_start_square(at) {
+                break at;
+            }
+        };
+        let near = |v: i16| (58..60).contains(&v) || (190..192).contains(&v);
+        assert!(near(start.0) || near(start.1), "{start:?}");
+        let spots = oil(&w);
+        assert_ne!(spots, Vec::<Pos>::new());
+        assert!(spots.len() <= 51);
+        for &at in &spots {
+            assert_eq!(w.island.ground.at(at), 2);
+            assert!(OIL.contains(&w.island.layer_551c.at(at)));
+            assert!((at.0 - start.0).abs() <= 51 && (at.1 - start.1).abs() <= 51);
+        }
+        // Nobody twice on a square.
+        let mut sorted = spots.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), spots.len());
+        assert_eq!(w.damage.slick, pos);
+        assert!(w.damage.insured);
+        assert_eq!(w.damage.amount, 0);
+        assert_eq!(w.location_at(pos), 50);
+        assert!(w.location_at((pos.0 + 40, pos.1)) < 100 || w.location_at((pos.0 - 40, pos.1)) < 100);
+        assert_eq!(
+            w.location_at((pos.0 + 80, pos.1 + 80))
+                .max(w.location_at((pos.0 - 80, pos.1 - 80))),
+            100
+        );
+
+        w.damage.amount = 300;
+        let mut tick = Tick::default();
+        w.oil_slick_end(&mut tick);
+        assert_eq!(oil(&w), []);
+        for at in spots {
+            assert_eq!(w.island.layer_551c.at(at), 0xff);
+        }
+        assert_eq!(w.location_at(pos), 100);
+        assert_eq!(w.finances.money[0], 300);
+        assert_eq!(w.book_value(crate::accounts::BOOK_OTHER), 300);
+        assert!(tick.books);
+    }
+
+    #[test]
+    fn oil_slick_event() {
+        let slick = Event {
+            start: 5,
+            end: 40,
+            ..event(2)
+        };
+        let mut w = sea();
+        w.events = vec![slick];
+        w.days = 2;
+        let tick = day(&mut w);
+        assert!(w.oil_slick);
+        assert_eq!(tick.messages[0].number, 5);
+        assert_eq!(tick.messages[0].pos, Some(w.damage.slick));
+        assert_ne!(oil(&w), Vec::<Pos>::new());
+        for _ in 0..2 {
+            day(&mut w);
+        }
+        let tick = day(&mut w);
+        assert!(!w.oil_slick);
+        assert_eq!(tick.messages[0].number, 40);
+        assert_eq!(oil(&w), []);
+    }
+
+    #[test]
+    fn oil_slick_nowhere() {
+        // No sea next to land: 1001 tries, then the last one's square,
+        // with no oil.
+        let mut w = sea();
+        for i in 60..190 {
+            for j in 60..190 {
+                w.island.ground.set((i, j), 2);
+            }
+        }
+        let pos = w.oil_slick_start(&mut Tick::default());
+        let mut r = Random::new(31);
+        let mut last = (0, 0);
+        for _ in 0..=OIL_TRIES {
+            last = (r.random(250).cast_signed(), r.random(250).cast_signed());
+        }
+        assert_eq!(pos, last);
+        assert_eq!(w.random, r);
+        assert_eq!(oil(&w), []);
+    }
+
+    #[test]
+    fn scenario_rows() {
+        let mut w = world(vec![event(1); 2]);
+        w.load_event_rows(&[[7; 12]]);
+        assert_eq!(
+            w.events[0],
+            Event {
+                pos: (30, 40),
+                ..Event::from_row(&[7; 12])
+            }
+        );
+        assert_eq!(w.events[1], event(1));
     }
 
     #[test]

@@ -223,7 +223,7 @@ fn options_change_the_world() {
     }
     assert!(redraw);
     assert_eq!(world.clock.speed, 1);
-    assert!(!world.options.people_move && !world.disasters && world.flag_133c);
+    assert!(!world.options.people_move && !world.disasters && world.played_without_disasters);
     assert_eq!(world.options.auction_waits, !waits);
     let last = world.people.last;
     assert!(last >= FIRST);

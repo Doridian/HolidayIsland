@@ -174,9 +174,10 @@ turned (1020:05a7).
 
 The step, like every scroll, goes through 1020:07dc, which starts with
 `people_map_changed2` (1088:6c8b) and ends with `people_refresh`
-(1088:7fb1), which spawns people for the new view. The port leaves the
-latter out for now (`Game::view_moved`, where it will go;
-[people.md](people.md)). The port's timer step comes before the world's
+(1088:7fb1), which places the people for the new view and spawns new
+ones there: in the port the command `Action::ViewMoved` from
+`Game::view_moved` ([people.md](people.md#after-the-view-moves-10887fb1)).
+The port's timer step comes before the world's
 tick rather than in its middle, so the tick's building slice sees the new
 view a tick early.
 
