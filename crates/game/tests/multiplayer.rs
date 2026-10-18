@@ -92,10 +92,12 @@ fn scenario(fixes: Fixes) -> World {
     panic!("no scenario with three players");
 }
 
-/// A peer: its world, and the view of each of its clients.
+/// A peer: its world, the view of each of its clients, and the most
+/// people a view of it has had.
 struct Peer {
     world: World,
     views: Vec<(ViewPeople, Looking)>,
+    most_people: usize,
 }
 
 fn looking(origin: (i16, i16), rotation: u8) -> Looking {
@@ -124,6 +126,7 @@ impl Peer {
         for (view, look) in &mut self.views {
             view.tick(&self.world, look);
             let _ = view.hear(&self.world, &t, look);
+            self.most_people = self.most_people.max(view.count());
         }
     }
 }
@@ -190,10 +193,12 @@ fn clients_share_one_world() {
                     },
                 ),
             ],
+            most_people: 0,
         },
         Peer {
             world,
             views: vec![(ViewPeople::new(3), looking((30, 150), 1))],
+            most_people: 0,
         },
     ];
     // The host seats the others: the fixes several humans need go on.
@@ -266,7 +271,7 @@ fn clients_share_one_world() {
     );
     assert_eq!(seat_2(&peers[0].world), played);
     // The views had people of their own.
-    assert!(peers.iter().flat_map(|p| &p.views).any(|(v, _)| v.count() > 0));
+    assert!(peers.iter().any(|p| p.most_people > 0));
 }
 
 /// A save of a game with several clients keeps them, and its news point
@@ -830,4 +835,268 @@ fn every_clients_view_saved_and_only_the_host_loads() {
     let t = peers.step(&[from(HOST, Action::Load(Arc::clone(&map)))], 0);
     assert!(t[0].loaded);
     assert!(!peers.world().road_dragging);
+}
+
+// Phase 3: the scenarios' goals and losses for each human seat, the net
+// worth news and a human seat's property.
+
+/// The next tick is the 2nd of January of `year`: the scenario's check.
+fn to_january_second(w: &mut World, year: u16) {
+    w.date = game::monate::Date { day: 1, month: 1, year };
+    w.accounting.last_day = 1;
+    w.accounting.step = 4;
+    w.clock.hour_ticks = u16::try_from(w.clock.speed - 1).unwrap();
+    w.clock.day_ticks = 6;
+}
+
+/// The next tick is the month's step 0x64: the bankruptcies and the net
+/// worth news.
+fn to_step_0x64(w: &mut World) {
+    // Past the month's first day, which starts the steps again.
+    w.date.day = 2;
+    w.accounting.step = 0x63;
+    w.accounting.last_day = 2;
+    w.clock.hour_ticks = u16::try_from(w.clock.speed - 1).unwrap();
+}
+
+/// The events of `EREIGNIS.DAT` that matter here: 10, a bankrupt
+/// player's property (kind 3, message 22, the auction of item 0x16 five
+/// days on), and 12, 16 and 18, the net worth news (kind 4, message 45),
+/// still waiting (chance 1).
+fn events() -> Vec<game::events::Event> {
+    let mut events = vec![game::events::Event::default(); game::events::EVENTS];
+    events[10] = game::events::Event {
+        last_day: 1_000_000,
+        duration: 5,
+        start: 22,
+        end: 42,
+        kind: 3,
+        ..game::events::Event::default()
+    };
+    for n in [12, 16, 18] {
+        events[n] = game::events::Event {
+            chance: 1,
+            last_day: 1_000_000,
+            start: 45,
+            kind: 4,
+            ..game::events::Event::default()
+        };
+    }
+    events
+}
+
+/// Decision 9 in the scenarios: a goal a seat reaches is that seat's.
+/// Scenario 1 (50 000 000 net worth) won by seat 2 ends the game for
+/// everyone with seat 2's results, and seat 1, still in, has lost. With
+/// one human only player 1's net worth counts, as the original.
+#[test]
+fn a_seats_own_goal_wins_the_scenario() {
+    let mut peers = small();
+    peers.each(|w| {
+        w.scenario = 1;
+        w.finances.money = [1000, 50_000_000, 50_000_000, 0, 0, 0, 0, 0];
+        to_january_second(w, 2001);
+    });
+    let t = peers.step(&[], 1);
+    let over = t[0].game_over.expect("over");
+    assert!(over.won && over.seat == 2);
+    assert!(over.score.is_some());
+    let two = t[0].results_for(2).unwrap();
+    assert!(two.won && two.net_worth == 50_000_000);
+    let one = t[0].results_for(1).unwrap();
+    assert!(!one.won && one.score.is_none());
+    assert!(peers.world().won);
+    // Computer seat 3's money wins nothing.
+    assert!(t[0].results_for(3).is_none_or(|r| r.seat != 3));
+
+    let mut alone = World {
+        player_count: 4,
+        computers_play: false,
+        scenario: 1,
+        ..World::default()
+    };
+    alone.options.animations = false;
+    alone.finances.money = [1000, 50_000_000, 0, 0, 0, 0, 0, 0];
+    to_january_second(&mut alone, 2001);
+    let t = alone.tick();
+    assert!(t.game_over.is_none() && t.seat_results.is_empty());
+    alone.finances.money[0] = 50_000_000;
+    to_january_second(&mut alone, 2002);
+    let t = alone.tick();
+    assert_eq!(t.game_over.map(|g| (g.seat, g.won)), Some((1, true)));
+}
+
+/// A scenario lost by a year (1, 2017): every human seat still in loses
+/// then, and is out; the game ends lost for all.
+#[test]
+fn the_scenarios_last_year_ends_it_for_all() {
+    let mut peers = small();
+    peers.each(|w| {
+        w.scenario = 1;
+        to_january_second(w, 2016);
+    });
+    let t = peers.step(&[], 1);
+    assert!(t[0].game_over.is_none() && t[0].seat_results.is_empty());
+    peers.each(|w| to_january_second(w, 2017));
+    let t = peers.step(&[], 1);
+    let over = t[0].game_over.expect("over");
+    assert!(!over.won && over.seat == 0);
+    for seat in [1, 2] {
+        let r = t[0].results_for(seat).unwrap();
+        assert!(!r.won && r.seat == seat);
+        assert!(peers.world().spectates(seat));
+    }
+}
+
+/// The later build's scenarios 10 and 12 (and the tutorial's 7) are lost
+/// by bankruptcy: every human seat is checked, not only player 1. A
+/// bankrupt human seat's property is auctioned as a computer's: event 10
+/// with 3/5 of its buildings' value plus 1000 and the seat, and five days
+/// on the auction of item 0x16, for the other seats and the computers.
+#[test]
+fn a_bankrupt_seats_property_is_auctioned() {
+    for scenario in [7, 10, 12] {
+        let mut peers = small();
+        peers.each(|w| {
+            w.scenario = scenario;
+            w.events = events();
+            w.finances.max_debt = 1000;
+            w.finances.money = [0, -5000, 0, 0, 0, 0, 0, 0];
+            w.book_for(2, 0x5e, -1);
+            // Before the tutorial's 2001.
+            to_january_second(w, 1999);
+        });
+        let t = peers.step(&[], 1);
+        let w = peers.world();
+        assert_eq!(w.player_out(2), 1, "scenario {scenario}");
+        assert!(w.spectates(2) && !w.spectates(1));
+        assert!(t[0].game_over.is_none());
+        assert!(!t[0].results_for(2).unwrap().won);
+        let e = w.events[10];
+        assert_eq!((e.chance, e.arg, e.value), (0x3fffc, 2, 1000));
+        assert_eq!(e.pos, game::news::NOWHERE);
+    }
+    // The auction comes for it, with the other human seat's form.
+    let mut peers = small();
+    peers.each(|w| {
+        w.scenario = 10;
+        w.events = events();
+        w.finances.max_debt = 1000;
+        w.finances.money = [0, -5000, 0, 0, 0, 0, 0, 0];
+        w.book_for(2, 0x5e, -1);
+        to_january_second(w, 2003);
+    });
+    peers.step(&[], 1);
+    let mut opened = false;
+    for _ in 0..20_000 {
+        peers.step(&[], 1);
+        if peers.world().auction.open {
+            opened = true;
+            break;
+        }
+    }
+    let w = peers.world();
+    assert!(opened, "the auction opens");
+    assert_eq!(w.auction.item, auction::PROPERTY_SALE);
+    assert_eq!(w.auction_seats(), 1, "seat 1's form, not the bankrupt seat 2's");
+}
+
+/// Monopolus (3) with several humans: a seat wins when every other seat,
+/// human or computer, is out. Its human seats go bankrupt too (the
+/// original's player 1 doesn't there), before the goal is checked: seat
+/// 2 goes out and seat 1, the last one in, wins the same day.
+#[test]
+fn monopolus_is_won_by_the_last_seat_in() {
+    let mut peers = small();
+    peers.each(|w| {
+        w.scenario = 3;
+        w.events = events();
+        for p in 3..=8 {
+            w.set_player_out(p, 1);
+        }
+        w.finances.max_debt = 1000;
+        to_january_second(w, 2003);
+    });
+    // Seat 2 is in: nobody has won.
+    let t = peers.step(&[], 1);
+    assert!(t[0].game_over.is_none());
+    peers.each(|w| {
+        w.finances.money = [0, -5000, 0, 0, 0, 0, 0, 0];
+        w.book_for(2, 0x5e, -1);
+        to_january_second(w, 2004);
+    });
+    let t = peers.step(&[], 1);
+    let w = peers.world();
+    assert_eq!(w.player_out(2), 1);
+    assert_eq!(w.events[10].arg, 2);
+    let over = t[0].game_over.expect("over");
+    assert!(over.won && over.seat == 1);
+    assert!(!t[0].results_for(2).unwrap().won);
+    assert!(t[0].results_for(1).unwrap().won);
+}
+
+/// The net worth news (events 12, 16 and 18) for each human seat: seat
+/// 1 by the original's events, seat 2 by its own, posted at once and at
+/// no square, one a month, each once. A scenario whose events file
+/// hasn't them gives seat 2 none either; with one human seat 2's net
+/// worth brings nothing.
+#[test]
+fn each_seat_gets_the_net_worth_news() {
+    let mut peers = small();
+    peers.each(|w| {
+        w.events = events();
+        w.finances.money = [200_000, 2_000_000, 2_000_000, 0, 0, 0, 0, 0];
+        to_step_0x64(w);
+    });
+    let news = |t: &[game::simulation::Tick]| -> Vec<(i16, i16, i32)> {
+        t.iter()
+            .flat_map(|t| &t.messages)
+            .map(|m| (m.number, m.a, m.x))
+            .collect()
+    };
+    let t = peers.step(&[], 1);
+    let w = peers.world();
+    // Seat 1's is the original's event, which comes the next day.
+    assert_eq!((w.events[12].chance, w.events[12].arg), (0x3fffc, 1));
+    assert_eq!(news(&t), vec![(45, 2, 100_000)]);
+    assert_eq!(w.slots(2).unwrap().worth_news, 1);
+    assert_eq!(
+        w.news.entries[usize::try_from(w.news.last).unwrap()].pos,
+        game::news::NOWHERE
+    );
+    // A month on: seat 2's next one, 1 000 000; seat 1 has had 100 000
+    // and isn't past 1 000 000.
+    peers.each(to_step_0x64);
+    let t = peers.step(&[], 1);
+    assert_eq!(news(&t), vec![(45, 2, 1_000_000)]);
+    assert_eq!(peers.world().slots(2).unwrap().worth_news, 3);
+    peers.each(to_step_0x64);
+    let t = peers.step(&[], 1);
+    assert_eq!(news(&t), vec![]);
+
+    // An events file without them (scenario 6's: chance 0).
+    let mut peers = small();
+    peers.each(|w| {
+        w.events = events();
+        for n in [12, 16, 18] {
+            w.events[n].chance = 0;
+        }
+        w.finances.money = [0, 2_000_000, 0, 0, 0, 0, 0, 0];
+        to_step_0x64(w);
+    });
+    let t = peers.step(&[], 1);
+    assert_eq!(news(&t), vec![]);
+
+    let mut alone = World {
+        player_count: 4,
+        computers_play: false,
+        events: events(),
+        ..World::default()
+    };
+    alone.options.animations = false;
+    alone.finances.money = [0, 2_000_000, 0, 0, 0, 0, 0, 0];
+    to_step_0x64(&mut alone);
+    let t = alone.tick();
+    assert_eq!(t.messages.len(), 0);
+    assert!(alone.slots(2).unwrap().worth_news == 0 && alone.events[12].chance == 1);
 }

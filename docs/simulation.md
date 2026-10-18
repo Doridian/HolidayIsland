@@ -259,18 +259,41 @@ the high scores with the net worth. Otherwise, if it's lost (1008:042b),
 it ends without a score. Either way the original shows `schlussform`
 (1068:1016); the port hands that to the view in `Tick::game_over`.
 
-With more than one human client a normal game (scenario 0) checks each
-human seat as the original checks player 1 (decision 9,
-`World::january_second_seats`): in 2056 every seat still in has won,
-and the first of them ends the game for everyone (`Tick::game_over`,
-with its results; every seat's own in `Tick::seat_results`); before
-that each seat that's bankrupt, by player 1's rule with its own books,
-is out, gets its loss, and its clients spectate. The game goes on while
-any human seat is in, and ends lost for all when none is. The month's
-bankruptcy (settlement step 0x64) leaves the human seats to this check.
-Nothing stops the clock (decision 8). The scenarios 1 to 13 still check
-player 1 only: phase 3 (their goals and losses read player 1, and
-Monopolus needs players 2–8 out).
+With more than one human client every scenario checks each human seat
+as the original checks player 1 (decision 9,
+`World::january_second_seats`), by the seat's own goal
+(`World::scenario_won_by`, the table's "player 1" read as the seat).
+When seats still in have reached their goals, the first of them ends the
+game for everyone (`Tick::game_over`, with its results): they have won
+and the other seats still in have lost (each seat's own results in
+`Tick::seat_results`). Else, in a scenario lost by bankruptcy (0, 7,
+10, 12) each seat that's bankrupt, by player 1's rule with its own
+books, is out, gets its loss, its property is auctioned as a
+computer's (event 10, `World::auction_property`), and its clients
+spectate; in a scenario lost by a year, that year every seat still in
+loses and is out. The game goes on while any human seat is in, and ends
+lost for all when none is. The month's bankruptcy (settlement step
+0x64) leaves the human seats to this check. Nothing stops the clock
+(decision 8). The per-seat readings:
+
+- 1, 2, 4, 5, 9, 11, 13: the seat's own net worth, guests, luxury
+  guests, surf school visitors, campers, full wonders, or houses' guests
+  on every plot.
+- 0, 10, 12: the year, the same for every seat: every seat still in
+  wins together, the lowest-numbered one's results end the game.
+- 6: the seat's own guests, and the island's plots' quality, which is
+  everyone's.
+- 7 (the tutorial): from 2001 every seat still in, or a seat whose own
+  net worth reaches 1 000 000.
+- 8: the islands joined is the whole island's, with no owner: every
+  seat still in wins as they're joined, whoever joined them (the most
+  faithful reading; the original's player 1 wins it the same way,
+  whoever built the bridges).
+- 3 (Monopolus): every other seat, human or computer, is out; a human
+  seat is out only by bankruptcy, which the original never checks for
+  player 1 there, so with several humans Monopolus' human seats go
+  bankrupt by player 1's rule, before the goal is checked, so the last
+  seat in wins the same day.
 
 | Scenario | Won when | Lost when |
 |---|---|---|

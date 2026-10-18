@@ -170,6 +170,29 @@ pub fn rem(a: i32, b: i32) -> i32 {
     if b == 0 { 0 } else { a.wrapping_rem(b) }
 }
 
+/// The net worth events of step 0x64 and the net worth each comes past:
+/// events 12, 16 and 18 at 100 000, 1 000 000 and 10 000 000.
+pub const WORTH_EVENTS: [(usize, i32); 3] = [(12, 100_000), (16, 1_000_000), (18, 10_000_000)];
+
+/// Which of [`WORTH_EVENTS`] a player whose net worth is `worth` gets
+/// this month, if any: past 100 000 the first, if it's `ready`; else
+/// past 1 000 000 the second, if it's ready; else past 10 000 000 the
+/// third, if it's ready. // settlement step 0x64
+fn worth_event(worth: i32, ready: impl Fn(usize) -> bool) -> Option<usize> {
+    if worth > WORTH_EVENTS[0].1 {
+        if ready(0) {
+            return Some(0);
+        } else if worth > WORTH_EVENTS[1].1 {
+            if ready(1) {
+                return Some(1);
+            } else if worth > WORTH_EVENTS[2].1 && ready(2) {
+                return Some(2);
+            }
+        }
+    }
+    None
+}
+
 /// The settlement's tables (`ABRECHNE.DAT` and `MODATYP.DAT`, saved with
 /// the map) and the month's sums.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -540,7 +563,7 @@ impl World {
             0x58 => self.count_player_places(),
             0x5a => self.rate_player_prices(),
             0x5c => self.rate_reputations(),
-            0x64 => self.check_bankruptcies(),
+            0x64 => self.check_bankruptcies(tick),
             0x78 => self.send_rentals(tick),
             0x82 => self.computer_rents(),
             0x84 => self.computer_prices(),
@@ -1478,26 +1501,24 @@ impl World {
     }
 
     /// Step 0x64: a computer player who has gone bankrupt is out, and
-    /// event 10 (an auction of their property, it seems) comes for 3/5
-    /// of their buildings' value plus 1000. Unless the human cheated or
-    /// the money is frozen, their net worth passing 100 000, 1 000 000 or
-    /// 10 000 000 brings events 12, 16 or 18 (one a month, the first that
-    /// hasn't come yet). The events point at the human's view, with
-    /// `fix.view_news` at no square ([`crate::news::NOWHERE`]).
-    fn check_bankruptcies(&mut self) {
-        // BUG(original): the events point at the human's view origin (1110:5530), which several players don't share (fix.view_news: at no square).
-        let here = if self.fixes.has(crate::enhance::Fix::ViewNews) {
-            crate::news::NOWHERE
-        } else {
-            self.viewpoint.origin
-        };
+    /// its property is auctioned ([`World::auction_property`]). Unless the
+    /// human cheated or the money is frozen, their net worth passing
+    /// 100 000, 1 000 000 or 10 000 000 brings events 12, 16 or 18 (one a
+    /// month, the first that hasn't come yet). The events point at the
+    /// human's view, with `fix.view_news` at no square
+    /// ([`crate::news::NOWHERE`]).
+    ///
+    /// Single human: player 1's net worth. With several humans each other
+    /// human seat that's in gets the news as player 1 does
+    /// ([`World::worth_news_seats`]).
+    fn check_bankruptcies(&mut self, tick: &mut Tick) {
+        let here = self.event_square();
         // Single human: players 2 and up are the computers. A human seat
         // is checked on the 2nd of January instead, as player 1
         // ([`World::january_second`]).
         for p in 2..=self.player_count {
             if !self.is_human(p) && self.bankrupt(p) && self.player_out(p) == 0 {
-                let amount = div(self.assets(p), 5).wrapping_mul(3).wrapping_add(1000);
-                self.schedule_event(10, amount, i32::from(p), here);
+                self.auction_property(p);
                 self.set_player_out(p, 1);
             }
         }
@@ -1505,17 +1526,83 @@ impl World {
             return;
         }
         let worth = self.net_worth(1);
-        let ready = |w: &World, n: usize| w.events.get(n).is_some_and(|e| e.chance == 1);
-        if worth > 100_000 {
-            if ready(self, 12) {
-                self.schedule_event(12, 100_000, 1, here);
-            } else if worth > 1_000_000 {
-                if ready(self, 16) {
-                    self.schedule_event(16, 1_000_000, 1, here);
-                } else if worth > 10_000_000 && ready(self, 18) {
-                    self.schedule_event(18, 10_000_000, 1, here);
-                }
+        let ready = |i: usize| self.events.get(WORTH_EVENTS[i].0).is_some_and(|e| e.chance == 1);
+        // With several humans seat 1 may be out, a spectator's: no news.
+        if let Some(i) = worth_event(worth, ready)
+            && !self.spectates(1)
+        {
+            let (n, value) = WORTH_EVENTS[i];
+            self.schedule_event(n, value, 1, here);
+        }
+        // BUG(original): only player 1's net worth brings the news (design issue for multiplayer: each human seat's).
+        if self.seats.multiplayer() {
+            self.worth_news_seats(tick);
+        }
+    }
+
+    /// Where the events of step 0x64 point: the human's view origin, or
+    /// with `fix.view_news` no square.
+    fn event_square(&self) -> Pos {
+        // BUG(original): the events point at the human's view origin (1110:5530), which several players don't share (fix.view_news: at no square).
+        if self.fixes.has(Fix::ViewNews) {
+            crate::news::NOWHERE
+        } else {
+            self.viewpoint.origin
+        }
+    }
+
+    /// Player `p` is bankrupt: event 10, an auction of their property,
+    /// is made certain for 3/5 of their buildings' value plus 1000, with
+    /// the player. The original's computers' (step 0x64); with several
+    /// humans a human seat's too, as it goes out on the 2nd of January
+    /// ([`World::january_second`]).
+    pub(crate) fn auction_property(&mut self, p: u8) {
+        // BUG(original): one record for event 10: a second bankruptcy before the first's auction has ended takes it over, so the first one's property is never auctioned (with several humans more players go out, on the 2nd of January too).
+        let here = self.event_square();
+        let amount = div(self.assets(p), 5).wrapping_mul(3).wrapping_add(1000);
+        self.schedule_event(10, amount, i32::from(p), here);
+    }
+
+    /// The net worth news of step 0x64 for each human seat of 2 to 8
+    /// that's in, with several humans: as player 1's, the first of events
+    /// 12, 16 and 18 its net worth has passed and it hasn't had
+    /// ([`crate::seats::SeatSlots::worth_news`]), one a month. The
+    /// original's events come once in a game, player 1's, so the seat's
+    /// news is posted at once, as the event's own message (kind 4: its
+    /// start message with the player and the amount, at no square), and
+    /// only in a game whose events file has the event (still waiting, or
+    /// gone to player 1).
+    fn worth_news_seats(&mut self, tick: &mut Tick) {
+        let seats: Vec<u8> = self
+            .human_seats()
+            .filter(|&p| p != 1 && self.player_out(p) == 0)
+            .collect();
+        for p in seats {
+            let worth = self.net_worth(p);
+            let had = self.slots(p).map_or(0, |s| s.worth_news);
+            let ready = |i: usize| {
+                had & (1 << i) == 0
+                    && self
+                        .events
+                        .get(WORTH_EVENTS[i].0)
+                        .is_some_and(|e| e.chance == 1 || e.arg != 0)
+            };
+            let Some(i) = worth_event(worth, ready) else {
+                continue;
+            };
+            let (n, value) = WORTH_EVENTS[i];
+            if let Some(s) = self.slots_mut(p) {
+                s.worth_news |= 1 << i;
             }
+            let number = self.events.get(n).map_or(0, |e| crate::events::low_word(e.start));
+            let message = crate::news::Message {
+                number,
+                a: i16::from(p),
+                x: value,
+                pos: None,
+                ..crate::news::Message::default()
+            };
+            self.post_message(message, tick); // 1010:3084, kind 4
         }
     }
 

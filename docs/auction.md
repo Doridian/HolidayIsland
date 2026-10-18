@@ -227,6 +227,9 @@ world ticks, so no client's dialog holds the world.
 - The winner's books are their seat's ([port-architecture.md](port-architecture.md#seats-and-clients)),
   and a prize goes onto a human seat's own build menu, not as a
   computer's order (`make_available`).
+- A human seat that goes bankrupt (on the 2nd of January, decision 9)
+  has its property auctioned as a computer's: event 10, item 0x16
+  (`World::auction_property`); it has no form for it, being out.
 - With `fix.saved_state` the port's chunk keeps the seats' auction
   (`state.auction.seats`).
 

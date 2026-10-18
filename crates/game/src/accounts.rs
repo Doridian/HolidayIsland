@@ -64,6 +64,17 @@ const NO_MONEY: i32 = 99_999_999;
 /// The building type scenario 5 counts. // 1008:00a2
 const SCENARIO_5_BUILDING: u8 = 0x6d;
 
+/// How a scenario is lost. // 1008:042b, en 1008:075f
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Loss {
+    /// The human goes bankrupt, and is out.
+    Bankrupt,
+    /// The year comes.
+    Year(u16),
+    /// Never (a scenario the original has no case for).
+    Never,
+}
+
 impl World {
     /// The new year: the books' year ends (1070:269d), every player's
     /// buildings are renovated if the year is a multiple of their interval
@@ -147,15 +158,14 @@ impl World {
     /// (`schlussform`, 1068:1016) from [`Tick::game_over`]. // 1008:0512
     ///
     /// Single human: the original checks player 1. With several human
-    /// seats a normal game (scenario 0) checks each of them as it does
-    /// player 1 ([`World::january_second_seats`]); scenarios 1 to 13
-    /// still check player 1 only.
+    /// seats every scenario checks each of them as it does player 1
+    /// ([`World::january_second_seats`]).
     pub(crate) fn january_second(&mut self, tick: &mut Tick) {
         if self.won {
             return;
         }
-        // BUG(original): only player 1 wins, loses and goes bankrupt (design issue for multiplayer: each human seat in the normal game, decision 9; scenarios 1 to 13 are phase 3).
-        if self.scenario == 0 && self.seats.multiplayer() {
+        // BUG(original): only player 1 wins, loses and goes bankrupt (design issue for multiplayer: each human seat, decision 9).
+        if self.seats.multiplayer() {
             self.january_second_seats(tick);
             return;
         }
@@ -179,46 +189,56 @@ impl World {
         }
     }
 
-    /// The normal game's check with several human seats (decision 9):
-    /// each seat a human plays is checked as the original checks player 1
-    /// (1008:0297, 1008:042b). In 2056 every seat still in has won: the
-    /// first of them ends the game for everyone ([`Tick::game_over`],
-    /// with its results), and every seat gets its own
-    /// ([`Tick::seat_results`]). Else a seat that's bankrupt
-    /// ([`World::bankrupt`], with player 1's rule of last year's books)
-    /// is out, its results lost, and its clients spectate
-    /// ([`World::spectates`]); the game goes on while any human seat is
-    /// in, and ends lost for everyone when none is. A cheat anywhere
-    /// takes everyone's score ([`World::cheated`], decision 10). The
-    /// clock goes on after the end (decision 8). // 1008:0512
+    /// The check with several human seats (decision 9): each seat a human
+    /// plays is checked as the original checks player 1 (1008:0297,
+    /// 1008:042b), by the scenario's goal for that seat
+    /// ([`World::scenario_won_by`]). When seats that are still in have
+    /// reached it, the first of them ends the game for everyone
+    /// ([`Tick::game_over`], with its results); they have won and the
+    /// other seats still in have lost ([`Tick::seat_results`]). Else, in
+    /// a scenario lost by bankruptcy (the normal game, 7, 10 and 12) a
+    /// seat that's bankrupt ([`World::bankrupt`], with player 1's rule of
+    /// last year's books) is out, its results lost, its property
+    /// auctioned as a computer's ([`World::auction_property`]) and its
+    /// clients spectate ([`World::spectates`]); in one lost by a year,
+    /// that year every seat still in has lost and is out. The game goes
+    /// on while any human seat is in, and ends lost for everyone when
+    /// none is. A cheat anywhere takes everyone's score
+    /// ([`World::cheated`], decision 10). The clock goes on after the end
+    /// (decision 8). // 1008:0512
+    ///
+    /// Monopolus (3) is won by the seat that's the last one in, so its
+    /// human seats go bankrupt too, which the original's player 1 doesn't
+    /// there, and before the goal is checked, so the last seat standing
+    /// wins the same day.
     fn january_second_seats(&mut self, tick: &mut Tick) {
         let seats: Vec<u8> = self.human_seats().collect();
-        let fair = !self.cheated && !self.finances.frozen;
-        let result = |w: &World, seat: u8, won: bool| GameOver {
-            seat,
-            won,
-            score: (won && fair).then(|| w.score_of(seat)), // 1010:0faa
-            net_worth: w.net_worth(seat),
-        };
-        // A normal game is won in 2056.
-        if self.date.year == 0x808 {
-            let winners: Vec<u8> = seats.iter().copied().filter(|&p| self.player_out(p) == 0).collect();
-            if let Some(&first) = winners.first() {
-                self.won = true;
-                for &p in &winners {
-                    tick.seat_results.push(result(self, p, true));
-                }
-                tick.game_over = Some(result(self, first, true));
-                return;
-            }
-        }
         let mut went_out = false;
-        for &p in &seats {
-            if self.bankrupt(p) {
-                self.set_player_out(p, 1);
-                went_out = true;
-                tick.seat_results.push(result(self, p, false));
+        if self.scenario == 3 {
+            went_out = self.seats_go_bankrupt(&seats, tick);
+        }
+        let in_game: Vec<u8> = seats.iter().copied().filter(|&p| self.player_out(p) == 0).collect();
+        let winners: Vec<u8> = in_game.iter().copied().filter(|&p| self.scenario_won_by(p)).collect();
+        if let Some(&first) = winners.first() {
+            self.won = true;
+            for &p in &in_game {
+                let r = self.seat_result(p, winners.contains(&p));
+                tick.seat_results.push(r);
             }
+            tick.game_over = Some(self.seat_result(first, true));
+            return;
+        }
+        match self.scenario_loss() {
+            Loss::Bankrupt => went_out |= self.seats_go_bankrupt(&seats, tick),
+            Loss::Year(year) if self.date.year == year => {
+                for &p in &in_game {
+                    self.set_player_out(p, 1);
+                    let r = self.seat_result(p, false);
+                    tick.seat_results.push(r);
+                    went_out = true;
+                }
+            }
+            Loss::Year(_) | Loss::Never => {}
         }
         if went_out && seats.iter().all(|&p| self.player_out(p) != 0) {
             tick.game_over = Some(GameOver {
@@ -230,34 +250,73 @@ impl World {
         }
     }
 
+    /// Each of `seats` that's bankrupt goes out with its loss, and its
+    /// property is auctioned as a computer's: whether any went out.
+    fn seats_go_bankrupt(&mut self, seats: &[u8], tick: &mut Tick) -> bool {
+        let mut went_out = false;
+        for &p in seats {
+            if self.bankrupt(p) {
+                self.auction_property(p);
+                self.set_player_out(p, 1);
+                went_out = true;
+                let r = self.seat_result(p, false);
+                tick.seat_results.push(r);
+            }
+        }
+        went_out
+    }
+
+    /// Seat `seat`'s results with several humans: won, with its score if
+    /// nobody cheated and the money isn't frozen, or lost. // 1010:0faa
+    fn seat_result(&self, seat: u8, won: bool) -> GameOver {
+        let fair = !self.cheated && !self.finances.frozen;
+        GameOver {
+            seat,
+            won,
+            score: (won && fair).then(|| self.score_of(seat)),
+            net_worth: self.net_worth(seat),
+        }
+    }
+
     /// Whether the human (marked: player 1) has reached the scenario's
     /// goal. // 1008:0297, en 1008:0555
     fn scenario_won(&self) -> bool {
+        self.scenario_won_by(1)
+    }
+
+    /// Whether the human in seat `player` has reached the scenario's goal,
+    /// as the original asks it of player 1. A goal of the whole island
+    /// (the normal game's, 7's, 10's and 12's year, 6's plots, 8's joined
+    /// islands) is every seat's at once; Monopolus (3) asks that every
+    /// other player is out. Single human: player 1's. // 1008:0297, en 1008:0555
+    #[must_use]
+    pub fn scenario_won_by(&self, player: u8) -> bool {
         match self.scenario {
             // A normal game is won in 2056.
             0 => self.date.year == 0x808,
-            1 => self.net_worth(1) >= 50_000_000,
-            2 => self.guests_last_months(1) >= 120_000,
-            // Monopolus: everyone else is out.
-            3 => self.player_out(1) == 0 && (2..=8).all(|p| self.player_out(p) != 0),
-            4 => self.luxury_guests(1) >= 4000,
-            5 => self.facility_sum(1) >= 4000,
-            6 => self.guests_last_months(1) >= 12_000 && self.plot_average() > 0x46,
+            1 => self.net_worth(player) >= 50_000_000,
+            2 => self.guests_last_months(player) >= 120_000,
+            // Monopolus: everyone else is out (the original's 2 to 8 for
+            // player 1).
+            3 => self.player_out(player) == 0 && (1..=8).filter(|&p| p != player).all(|p| self.player_out(p) != 0),
+            4 => self.luxury_guests(player) >= 4000,
+            5 => self.facility_sum(player) >= 4000,
+            6 => self.guests_last_months(player) >= 12_000 && self.plot_average() > 0x46,
             // The tutorial's number, not a scenario on the start menu.
-            7 => self.date.year >= 2001 || self.net_worth(1) >= 1_000_000,
+            7 => self.date.year >= 2001 || self.net_worth(player) >= 1_000_000,
             // The later build's scenarios (`UPGRADE\`), en 1008:0555:
             // the islands joined into one,
             8 => self.islands_joined(),
             // 5000 campers,
-            9 => self.camp_site_guests(1) >= 5000,
+            9 => self.camp_site_guests(player) >= 5000,
             // B&B only: the year 2021,
             10 => self.date.year == 2021,
             // the wonders 80 % full,
-            11 => self.wonders_full(1),
+            11 => self.wonders_full(player),
             // hurry up: the year 2001,
             12 => self.date.year == 2001,
             // and the most guests on every island.
-            13 => self.most_guests_everywhere(),
+            13 => self.most_guests_everywhere(player),
             // BUG(original): an unset result for another scenario; the port says false.
             _ => false,
         }
@@ -293,15 +352,15 @@ impl World {
             > 8
     }
 
-    /// Whether on every plot the human's (marked: player 1's) houses have
-    /// more guests than half of the plot's (`+0xee` div 2), scenario 13.
-    /// The houses' guests are added up by the plot of their square, in a
-    /// table of 3001; the plots are looked at in their list's order until
-    /// one fails. // en 1008:03fc
-    fn most_guests_everywhere(&self) -> bool {
+    /// Whether on every plot `player`'s houses (the original's: player
+    /// 1's, the human's) have more guests than half of the plot's (`+0xee`
+    /// div 2), scenario 13. The houses' guests are added up by the plot of
+    /// their square, in a table of 3001; the plots are looked at in their
+    /// list's order until one fails. // en 1008:03fc
+    fn most_guests_everywhere(&self, player: u8) -> bool {
         let mut sums = vec![0i32; 3001];
         for h in &self.houses {
-            if self.island.owners.get(h.pos()) == Some(1)
+            if self.island.owners.get(h.pos()) == Some(player)
                 && let Some(s) = sums.get_mut(usize::from(self.island.plot_at(h.pos())))
             {
                 *s = s.wrapping_add(i32::from(h.guests()));
@@ -322,24 +381,33 @@ impl World {
     /// (which also marks them out), or the scenario's last year has come.
     /// // 1008:042b, en 1008:075f
     fn scenario_lost(&mut self) -> bool {
-        match self.scenario {
-            // The normal game, the tutorial's 7 and the later build's 10
-            // and 12 (en 1008:075f).
-            0 | 7 | 10 | 12 => {
+        match self.scenario_loss() {
+            Loss::Bankrupt => {
                 let lost = self.bankrupt(1);
                 if lost {
                     self.set_player_out(1, 1);
                 }
                 lost
             }
-            1 | 2 | 3 | 6 => self.date.year == 2017,
-            4 => self.date.year == 2027,
-            5 => self.date.year == 2007,
+            Loss::Year(year) => self.date.year == year,
+            Loss::Never => false,
+        }
+    }
+
+    /// How the scenario is lost. // 1008:042b, en 1008:075f
+    fn scenario_loss(&self) -> Loss {
+        match self.scenario {
+            // The normal game, the tutorial's 7 and the later build's 10
+            // and 12 (en 1008:075f).
+            0 | 7 | 10 | 12 => Loss::Bankrupt,
+            1 | 2 | 3 | 6 => Loss::Year(2017),
+            4 => Loss::Year(2027),
+            5 => Loss::Year(2007),
             // The later build's scenarios, en 1008:075f.
-            8 => self.date.year == 2016,
-            9 => self.date.year == 2011,
-            11 | 13 => self.date.year == 2026,
-            _ => false,
+            8 => Loss::Year(2016),
+            9 => Loss::Year(2011),
+            11 | 13 => Loss::Year(2026),
+            _ => Loss::Never,
         }
     }
 

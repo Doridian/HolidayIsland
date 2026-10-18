@@ -328,6 +328,10 @@ pub struct SeatSlots {
     /// from then on it has its own one-of-a-kind buildings and prizes,
     /// and what an event gives everyone. // *[1110:6516]
     pub build_menu: Option<Box<BuildMenu>>,
+    /// Which of the net worth news (events 12, 16 and 18,
+    /// [`crate::settlement::WORTH_EVENTS`]) the seat has had, a bit
+    /// each: seat 1's are the original's events, which come once a game.
+    pub worth_news: u8,
 }
 
 /// The prefix of the seat slots' lines in the port's chunk.
@@ -397,6 +401,11 @@ impl SeatSlots {
                     {
                         s.damage = amount;
                         s.damage_insured = insured;
+                    }
+                }
+                "worth_news" => {
+                    if let Ok(bits) = value.parse() {
+                        s.worth_news = bits;
                     }
                 }
                 "build_menu" => {
@@ -722,8 +731,9 @@ impl World {
 
     /// The port's chunk's lines for the seats' slots: `seat.<p>.books=`
     /// the 29 sums, `.insured=`, `.money_menu=`, `.drag=` on, ground,
-    /// form, `.damage=` amount, insured, and `.build_menu=` its three
-    /// fields' bytes in hex, each only when it isn't a new game's.
+    /// form, `.damage=` amount, insured, `.worth_news=` its bits and
+    /// `.build_menu=` its three fields' bytes in hex, each only when it
+    /// isn't a new game's.
     #[must_use]
     pub fn seat_lines(&self) -> Vec<(String, String)> {
         let mut out = Vec::new();
@@ -747,6 +757,9 @@ impl World {
             }
             if s.damage != 0 || s.damage_insured {
                 put("damage", format!("{},{}", s.damage, flag(s.damage_insured)));
+            }
+            if s.worth_news != 0 {
+                put("worth_news", s.worth_news.to_string());
             }
             if let Some(menu) = &s.build_menu {
                 let [counts, rows, lengths] = menu.bytes();
@@ -921,6 +934,7 @@ mod tests {
             s.damage = -77;
             s.damage_insured = true;
             s.money_menu_shown = true;
+            s.worth_news = 5;
         }
         // Seat 1's are the original's fields.
         assert!(!w.road_dragging && w.road_drag(3).on);

@@ -229,8 +229,8 @@ the end form and the high scores stop nothing: the view keeps ticking
 after the end of a game. A client's "OK" is their leaving
 (`SeatChange::Leave`): a computer plays their seat once its last client
 has gone. Each view shows its seat's results
-(`Tick::results_for`): the normal game ends for everyone when the first
-human seat wins (decision 9, [simulation.md](simulation.md#the-scenarios-end-10080512)),
+(`Tick::results_for`): every scenario ends for everyone when the first
+human seat reaches its goal, and the other seats still in lose (decision 9, [simulation.md](simulation.md#the-scenarios-end-10080512)),
 a seat that goes bankrupt gets its loss and spectates, and one human's
 cheat counts for everyone (decision 10). The high scores stay each
 view's file, entered from its seat's results.

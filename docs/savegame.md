@@ -95,8 +95,9 @@ seats until they rejoin, and they still count for the forced fixes.
 Then each of seats 2 to 8 whose slots (`seats::SeatSlots`, what the
 original keeps once for player 1) aren't a new game's:
 `seat.<p>.books=` the 29 sums, `.insured=1`, `.money_menu=1`, `.drag=`
-on, ground, form, `.damage=` amount, insured, and `.build_menu=` its
-three fields' bytes in hex (`World::seat_lines`; `SeatSlots::from_chunk`
+on, ground, form, `.damage=` amount, insured, `.worth_news=` the net
+worth news it has had (a bit each for events 12, 16 and 18), and
+`.build_menu=` its three fields' bytes in hex (`World::seat_lines`; `SeatSlots::from_chunk`
 reads them, and a file without them has none). Then
 `options.auction_timeout=` the host's auction timeout in ticks
 (`savegame::auction_timeout_in`; a file without it gets 300, or from the

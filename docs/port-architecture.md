@@ -314,15 +314,23 @@ whether each is connected (`World::seats`, in its hash).
   client that's `p == 1`. What the original keeps once, for player 1,
   each of seats 2 to 8 has again (`seats::SeatSlots`,
   `World::seat_slots`: the books' sums, the insurance, the money menu
-  shown, the road drag, the damage and a build menu, a copy of seat 1's
-  when a client first takes the seat); seat 1 keeps the original's
+  shown, the road drag, the damage, the net worth news it has had and a
+  build menu, a copy of seat 1's when a client first takes the seat);
+  seat 1 keeps the original's
   fields. Saved in the port's chunk (`seat.<p>.` lines) when they aren't
   a new game's. The views take a `seat` (the tools, the info box, the
   buildings' overview, the money menu, the auction form), 1 for the one
   human.
-- With several humans a seat that goes out (bankrupt) is a spectator's
-  (`World::spectates`): its clients keep their views and send no
-  commands but their own leaving, and the host's own commands.
+- A client who joins a computer's seat in the middle of a game takes it
+  as it is: the computer's money, loan, buildings and books stay, and
+  nothing is given or taken (the original's human gets half the
+  `Startgeld` as a loan only at a new game, 1078:3271). The same goes
+  the other way when the seat's last client leaves.
+- With several humans a seat that goes out (bankrupt, or in a
+  scenario's last year) is a spectator's (`World::spectates`): its
+  clients keep their views and send no commands but their own leaving,
+  and the host's own commands. A bankrupt human seat's property is
+  auctioned as a computer's (event 10).
 - With several humans no client's dialog stops the world: the host's
   pause is a command (`Action::Pause`, `Clock::stopped`), which stops
   every peer's world on the same tick; the other clients' pause forms,
@@ -351,7 +359,7 @@ only for one human, as the original.
 | 6 | The TV speaker's lights draw from the view's random numbers, not the world's `RandSeed`, and the auction doesn't wait for the speaker (`Action::Speaker`). Forced on | Built: `fix.tv_lights`, `fix.auction_speaker` |
 | 7 | The auction gets a multiplayer form: every seat bids, the world waits for them, with a timeout. Within a co-op seat any client's bid or pass counts for the seat | Built: every human seat has the form; with "Auktion wartet" the world waits until each has started or passed, at most the host's `Options::auction_timeout` ticks (default 300, 30 s; `Action::AuctionTimeout`, saved as `options.auction_timeout`), then the undecided count as passed; without it the auction starts at once. Any seat holding a button stops the computers' bids, and the item goes to the computers only when every human seat has passed (`Auction::started`, `passed`, `held_by`, `waiting`; [auction.md](auction.md#multiplayer)) |
 | 8 | The quit question, the end form and the high scores don't stop the clock | Built: with more than one human client they stop nothing, and the end of a game doesn't stop the world; quitting is the client's `SeatChange::Leave`, so a computer plays the seat once its last client has gone ([endforms.md](endforms.md#the-port)) |
-| 9 | Winning, losing and bankruptcy per seat (all of a co-op seat's clients win or lose together) | Built for the normal game (scenario 0): each human seat is checked as the original checks player 1 (`World::january_second_seats`); a bankrupt one is out and its clients spectate; the first winner ends the game for all (`Tick::game_over`, each seat's results in `Tick::seat_results`). Scenarios 1–13 still check player 1: phase 3 ([simulation.md](simulation.md#the-scenarios-end-10080512)) |
+| 9 | Winning, losing and bankruptcy per seat (all of a co-op seat's clients win or lose together) | Built for every scenario: each human seat is checked as the original checks player 1 (`World::january_second_seats`), by its own goal (`World::scenario_won_by`); a bankrupt one is out, its property auctioned as a computer's, and its clients spectate; the first winner ends the game for all and the other seats still in lose (`Tick::game_over`, each seat's results in `Tick::seat_results`); a scenario's last year ends it lost for all. Monopolus is won by the seat whose every other seat is out ([simulation.md](simulation.md#the-scenarios-end-10080512)) |
 | 10 | If any human cheats, the whole game counts as cheated | Built: the main screen's cheat is a command (`Action::Cheat`, 1020:3195, en 1020:3194) of any seat, and `1110:006f` is one flag for the game, which takes every seat's score |
 | 11 | The host (a client, in seat 1) owns the world's options: speed, pause, animations, "Auktion wartet", disasters and the fixes; the world ignores commands that change them from any other client, deterministically. Other humans take computer seats (2..=8), or join a seat for co-op. A computer plays a seat while all its clients are away, until one rejoins; quitting hands a seat over only when its last client leaves | Built (`World::apply_client`: the speed, the pause, `SetOption`, the auction timeout, `SetFix`, `Load`, `Seat`). The host's pause form stops the world for everyone (`Action::Pause`, `Clock::stopped`) |
 | 12 | Saves get a per-seat section (each seat's, and each client's, view) | Built: any client saves their own copy with their view in the original's fields; the seats' slots (`seat.<p>.`) are in the port's chunk, and with `World::to_map_with_views` every client's view (`view.<client>.`, `savegame::client_view`). Only the host loads in the middle of a game ([savegame.md](savegame.md#the-ports-chunk)) |
@@ -366,17 +374,25 @@ own road drag (`World::road_drag`). None of this needed a new fix: each
 is gated by more than one human client, or is the same as the original's
 with one.
 
-Still open, for phase 3: the scenarios 1–13's goals and losses
-(`World::scenario_won`, `scenario_lost`) read player 1; Monopolus (3)
-needs players 2–8 out, which a human seat only is when it goes out on
-the 2nd of January, and the tutorial's, 10's and 12's bankruptcy check
-player 1 only. The net worth events of settlement step 0x64 (12, 16, 18)
-are player 1's, and a bankrupt human seat's property isn't auctioned as
-a computer's is (event 10). A human seat that joins mid-game keeps the
-money its computer had (the original's human starts with half the
-`Startgeld` as a loan, 1078:3271). The high scores are each view's to
-enter, from its seat's results. The host's own quitting and the
-networking itself are phase 3.
+Built in phase 3: the scenarios 1–13 check each human seat as they
+check player 1 (decision 9; the per-scenario choices are in
+[simulation.md](simulation.md#the-scenarios-end-10080512)). Monopolus
+(3) is won by the seat whose every other seat, human or computer, is
+out, and with several humans its human seats go bankrupt (the
+original's player 1 doesn't there), before the goal is checked; the
+bankruptcy of the tutorial's 7, 10 and 12 is every human seat's. A
+bankrupt human seat's property is auctioned as a computer's (event 10,
+`World::auction_property`). The net worth news of settlement step 0x64
+(events 12, 16, 18) comes to each human seat that's in, seat 1 by the
+original's events and seats 2 to 8 by their own record
+(`SeatSlots::worth_news`), each once and at no square. With one human
+all of it is the original's.
+
+A human who takes a seat in the middle of a game takes the colour as
+its computer left it, money and loan too ([above](#seats-and-clients)).
+The high scores are each view's to enter, from its seat's results.
+
+Still open: the host's own quitting and the networking itself.
 
 ## Open questions
 
