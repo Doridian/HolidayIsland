@@ -112,7 +112,7 @@ const RENTALS: [(u8, [u8; 2], bool); 4] = [
 ];
 
 /// Where a plot record (`*1110:6f0c`) keeps the settlement's values.
-mod plot {
+pub(crate) mod plot {
     /// Its greenery, 0–100. // 1008:0f37
     pub const GREENERY: usize = 3;
     /// Its quality, 0–100 ([`crate::world::Plot::quality`]).

@@ -61,6 +61,9 @@ Needs Ghidra 12 at `/opt/ghidra` (or set `GHIDRA_INSTALL_DIR`) and Java 21+.
    (gitignored) with Ghidra's NE loader, auto-analyzes it (~15 s), creates
    functions for orphan code (`HolidayPost.java`) and applies
    `symbols/HOLIDAY.EXE.txt`. `--force` rebuilds it from scratch.
+   `--en` adds the later build (`orig-en/HOLIDAY.EXE`) as a second program,
+   `HOLIDAY_EN.EXE`, with `symbols/HOLIDAY_EN.EXE.txt`; query it with
+   `GH_PROGRAM=HOLIDAY_EN.EXE tools/gh ...` ([versions.md](versions.md)).
 3. Query it with `tools/gh` (`tools/gh --help`):
 
    ```

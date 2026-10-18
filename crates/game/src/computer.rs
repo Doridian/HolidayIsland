@@ -416,6 +416,16 @@ impl Computers {
         self.types.get(usize::from(category) * TYPE_ROW).copied().unwrap_or(0)
     }
 
+    /// Sets the count of `category`'s list of types to `count`, cutting
+    /// the list there (the types after it stay, unused). Scenario 10 of
+    /// the later build does it for category 10 (`crate::hintergrund::
+    /// start_scenario`). // en 10b0:0002
+    pub fn cut_type_list(&mut self, category: usize, count: u8) {
+        if let Some(c) = self.types.get_mut(category * TYPE_ROW) {
+            *c = count;
+        }
+    }
+
     /// Appends `building` to `category`'s list, not checking that it's
     /// full: past 40 it runs into the next row. // 10a8:0523
     fn add_type(&mut self, category: u8, building: u8, fixed: bool) {

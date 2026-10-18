@@ -925,22 +925,37 @@ pub struct Sonstige {
     /// `Waehrungsfaktor`, the currency factor. // 1110:7346
     pub waehrungsfaktor: i32,
     /// 24 labelled texts (`_TXTSpielname_`, `_TXTExitmenuueberschrift_`,
-    /// ...); the labels are skipped. // 1110:734e
+    /// ...), 25 in the later build's; the labels are skipped. // 1110:734e
     pub texts: Strings,
     /// 35 `string[30]`s after a heading. // 1110:737a
     pub short_texts: Strings,
 }
 
-/// Parses `SONSTIGE.TXT`. // 1020:3dc4
+/// The labelled texts of `TEXTE\SONSTIGE.TXT` (v1.0, 1020:3dc4) and of
+/// the later build's `UPGRADE\SONSTIGE.TXT`, which adds the file menu's
+/// `Löschen` (en 1010:3e42).
+pub const SONSTIGE_TEXTS: usize = 24;
+pub const SONSTIGE_TEXTS_UPGRADE: usize = 25;
+
+/// Parses `TEXTE\SONSTIGE.TXT`. // 1020:3dc4
 ///
 /// # Errors
 /// If the currency factor is malformed.
 pub fn sonstige(data: &[u8]) -> Result<Sonstige> {
+    sonstige_with(data, SONSTIGE_TEXTS)
+}
+
+/// Parses a `SONSTIGE.TXT` of `texts` labelled texts: 24 in `TEXTE\`,
+/// 25 in the later build's `UPGRADE\`. // 1020:3dc4, en 1010:3e42
+///
+/// # Errors
+/// If the currency factor is malformed.
+pub fn sonstige_with(data: &[u8], texts: usize) -> Result<Sonstige> {
     let mut f = TextReader::new(data);
     f.readln();
     let waehrungsfaktor = f.read_longint()?;
     f.readln();
-    let texts = (0..24)
+    let texts = (0..texts)
         .map(|_| {
             f.readln();
             f.read_line()
@@ -1031,13 +1046,26 @@ pub fn start_txt(data: &[u8]) -> Strings {
     (0..27).map(|_| f.read_line()).collect()
 }
 
+/// The lines of `TEXTE\SZENARIO.TXT`, and of the later build's
+/// `UPGRADE\SZENARIO.TXT`, which goes on with the six new scenarios.
+pub const SZENARIO_LINES: usize = 13;
+pub const SZENARIO_LINES_UPGRADE: usize = 25;
+
 /// `SZENARIO.TXT`: the six scenarios' names and descriptions, alternating,
 /// then the caption of the button that goes back to a normal game. Read by
 /// `startform_load_texts` after `START.TXT`. // 1058:1ed0
 #[must_use]
 pub fn szenario_txt(data: &[u8]) -> Strings {
+    szenario_txt_lines(data, SZENARIO_LINES)
+}
+
+/// `lines` lines of a `SZENARIO.TXT`: 13, or the later build's 25 (the
+/// caption, then the scenarios 8 to 13's names and descriptions).
+/// // 1058:1ed0, en 1058:2c38
+#[must_use]
+pub fn szenario_txt_lines(data: &[u8], lines: usize) -> Strings {
     let mut f = TextReader::new(data);
-    (0..13).map(|_| f.read_line()).collect()
+    (0..lines).map(|_| f.read_line()).collect()
 }
 
 /// `WASNUN.TXT`: 4 texts. Read by a form method at 1040:34af into Self+0x282.

@@ -2,7 +2,7 @@
 //! player's `*.map` files (`Last.map` too) all have this format.
 //!
 //! The file is a dump of the game's state. `load_map` (1048:2a19) reads a
-//! 6-byte version string (`1.000` as a `string[5]`, not checked), then calls
+//! 6-byte version string (`1.000` as a `string[5]`, the later build's `1.100`, not checked), then calls
 //! one routine per unit, each of which `BlockRead`s its globals one after the
 //! other. `save_map` (1048:2bae) writes them back in the same order. There
 //! are no tags or lengths, so the parser follows the same sequence of reads,
@@ -25,8 +25,13 @@ mod layout;
 
 use std::fmt;
 
-/// The version string at the start of every file: `string[5]` `1.000`.
-pub const VERSION: [u8; 6] = *b"\x051.000";
+/// The version string the port writes at the start of a file: the later
+/// build's `string[5]` `1.100` (en `1118:004e`). v1.0 writes
+/// [`VERSION_V10`]; neither build checks it on loading, and the format
+/// is the same (`docs/versions.md`).
+pub const VERSION: [u8; 6] = *b"\x051.100";
+/// v1.0's version string, `1.000` (`1110:004e`), also the scenarios'.
+pub const VERSION_V10: [u8; 6] = *b"\x051.000";
 
 /// Side length of the island's map layers: the 63001-byte blocks are
 /// 251 × 251 bytes.

@@ -18,6 +18,14 @@ for kept with no fix yet, or the key of the enhancement that fixes it
 (kept with that enhancement off). The crashes' table says what the port
 does instead ("Port today").
 
+The port follows the later build of the game, the English release's
+"Erweiterte Version" ([versions.md](versions.md)), and takes its fixes
+unconditionally. A row it fixed says "fixed by Sunflowers" with the
+later build's address (`en 1028:3620`); the row stays for v1.0, which
+the code no longer does. Every other row was checked against the later
+build and is still there; where the later build moved the bug (more
+scenarios, more tables) the row says so.
+
 ## Options
 
 Built in [`game::enhance`](../crates/game/src/enhance.rs):
@@ -72,7 +80,10 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   ```
 
   An unknown key in `settings.ini` is reported and skipped; on the
-  command line it stops the program with the list.
+  command line it stops the program with the list. A key the port
+  retired because the later build of the game fixes its bug itself
+  (`enhance::RETIRED`: `auction_enter_bid`) is skipped in either, and
+  in a saved game's chunk, so old files still load.
 - Adding one: a line in `Fix`'s or `Enhancement`'s list in
   `game::enhance`, a branch on it where the bug is kept (`world.fixes.has(..)`
   or the view's set), with the original's path marked `// BUG(original):`,
@@ -131,7 +142,7 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 10b0:2b9b | Returns an unset error for a corner not within 1..249 | Returns 0 (callers ignore it) |
 | 10b0:53fe | Leaves the reference height and corners unset for a direction past 3 (nothing passes one) | Returns false |
 | 1050:245b | Leaves its locals unset for a view rotation past 3 | Returns false |
-| 1008:0297, 10a8:173b | Return an unset byte for a scenario past 7, or a levelling state past the known ones | Return false |
+| 1008:0297, 10a8:173b | Return an unset byte for a scenario past 7 (the later build's `scenario_won`, en 1008:0555: past 13), or a levelling state past the known ones | Return false |
 | 10a0:03ca | Handing over a sold building reads outside the layer for a square off the map, reads a nil record for a site no record holds, and writes owners outside the layer for a building past the map's edge ([auction.md](auction.md)) | Does nothing, or skips the squares off the map |
 | 10b0:4d19 | A river that wanders in circles over land never reaches the sea or fails, and the generator never ends ([island-generator.md](island-generator.md#rivers)) | After 251 × 251 steps the river fails and is taken out |
 | 10b0:48d7 | A river's ways on the flat that tie all the way round their row and column (its distance wraps) are looked along for ever | Stops after one round of the distance, the open ways' last winning |
@@ -150,13 +161,13 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 1038:014b, 1038:0c00, 1080:02d9 | The info box's and the overview's price per visit and the overview's occupancy divide by the capacity, which can be 0 | Show 0 |
 | 1038:014b | A house, hotel or restaurant without a record reads its stars through a nil pointer | Shows 0 |
 | 1038:24d6 | Selling a building without a record schedules the sale at a nil pointer's square | Sells nothing |
-| 1080:202b | The overview's key Up with fewer than 12 buildings moves the list's top before its start, and its rows read from before the list | Leaves those rows empty |
+| 1080:202b | The overview's key Up with fewer than 12 buildings moves the list's top before its start, and its rows read from before the list | Fixed by Sunflowers in the later build (en 1088:2040): the top is 0 or more; the port does that |
 | Data files: `HAUSNAME.TXT` (1048:358f), `ANIMDAT2.DAT`, `ANIMDAT3.DAT` (1088:80a7), `NAMEN.TXT` (1010:0414), the high scores | A missing `***` end marker loops for ever; a group or list longer than its room overruns the next memory; a high score file of another size isn't checked | The file fails to load |
-| 1040:1bdf `add_highscore` | A won game of scenario 7 (past the six tables) writes its entry 67 bytes past the end of the high score table ([endforms.md](endforms.md)) | Writes nothing |
-| 1040:1d49 | Showing the high scores of a game past 6 reads the next ranks' tables and, for the last rank, past the end of the table | Shows the ones in the table, nothing past it |
-| 1068:1016 | A fairly won scenario past 6 sets no film, so the film player opens whatever file name it had | Shows the results at once |
+| 1040:1bdf `add_highscore` | A won game of scenario 7 (past the six tables) writes its entry 67 bytes past the end of the high score table ([endforms.md](endforms.md)) | Fixed by Sunflowers in the later build (en 1068:0495): fourteen tables, game 7's kept in memory and never saved; the port does that. Past 13 it writes past the table; the port writes nothing |
+| 1040:1d49 | Showing the high scores of a game past 6 reads the next ranks' tables and, for the last rank, past the end of the table | Fixed by Sunflowers in the later build up to 13 (en 1068:05ff, fourteen tables); past 13 the port shows nothing past the table |
+| 1068:1016 | A fairly won scenario past 6 sets no film, so the film player opens whatever file name it had (the later build, en 1070:128d: the tutorial's 7 and past 13) | Shows the results at once |
 | 10c8:1810 from 1000:2466, 1048:01bd, 1068:1016, 1068:0e68 | A film that doesn't open (a missing or broken file) raises an exception out of the handler; the TV's then never closes by itself ([films.md](films.md)) | Ends the film at once |
-| 1068:0288 | A scenario past 7 leaves the end form's reason text as it was | Leaves it empty |
+| 1068:0288 | A scenario past 7 leaves the end form's reason text as it was (the later build's `UPGRADE\SCHLUSS.TXT`, en 1070:0294: past 13) | Leaves it empty |
 
 ## Simulation logic
 
@@ -190,7 +201,7 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 1038:1a75 | The info box offers its buttons on squares of nobody (owner 0) too: the human renovates, re-prices or sells nobody's buildings and bribes on nobody's sites | `nobodys_buildings`: the buttons, and the commands, for the player's own only |
 | 1028:1973 | A computer bids when its limit is above the price, though its bid (5 % more) may be above its limit ([auction.md](auction.md#a-step-10281973)) | `auction_computer_limit` |
 | 1028:0c82 | Passing (or the close button) hands the item to a computer at a random raise, or to nobody, even when someone (the player too) leads; after the third call the close button gives the item away again before `Timer1` does | `auction_pass`: a leading bid stands when no computer takes the item; nothing once it's sold |
-| 1028:26e4 | Enter bids without checking the player's money, and even after the third call, when the mouse can't | `auction_enter_bid` |
+| 1028:26e4 | Enter bids without checking the player's money, and even after the third call, when the mouse can't | Fixed by Sunflowers in the later build (en 1028:3620): Enter does nothing at an auction; the port does that (the key `auction_enter_bid` is gone) |
 | 1028:08e7 | Player 8 gets nothing for an item (`make_available` has no case for 8); item 6 gives nothing but its message, and an unknown item nothing at all, for the price | `prize_player8` for player 8; item 6 and unknown items not fixed: nothing says what they should give |
 | 10a8:0167 | A computer's bid overflows when its range (what it can pay or three times the price, less the price) passes about 2 150 000, and wraps | `computer_bid_overflow` |
 | 10b0:3c5c | The atoll's small hills stray from the ring by `ATVariation2` but are centred by half of `ATVariation1` | `atoll_hills` |
@@ -265,6 +276,7 @@ The widgets' are described in
 | 1080:02d9 | The overview clears the place of the selected building's price with the background from row 0x43, not its own | `overview_list` |
 | 1080:1c3b | The overview's columns 299 and 300 belong to the list and the scroll bar | `overview_list`: to the bar |
 | 1080:202b | The overview's keys Up and Down draw the kind from the list's top first, then Up puts the selection in the top row (when it isn't the first) and Down in the bottom row past row 10 | `overview_list`: the list scrolls only as far as the selection needs |
+| 1080:202b, 1080:1c3b | The overview's Left and Right, and a click on another kind's picture, keep the selection (and Left and Right the list's top) of the kind before, so it can be past the new list's end; a click at x 283 picks kind 12, past the last | Fixed by Sunflowers in the later build (en 1088:2040, en 1088:1c3b): the new kind starts at its first building, and the pictures end at 282; the port does that |
 | 1038:24d6 | After a button's command the info box is drawn again but keeps its size | `infobox_size` |
 | 1048:1794 | The TV's button that went down is never cleared: a press elsewhere and a release on that button still clicks it | `tv_form` |
 | 1048:1794, 1048:26f6 | The TV's first button scrolls back to the view origin saved with the news, which 1020:0787 moves 10 rows on, so the view doesn't come back where it was | `tv_form` |

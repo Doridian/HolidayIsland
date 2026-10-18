@@ -11,6 +11,12 @@
 //! game's toolkit. Saving and loading come back as [`Action`]s: the
 //! caller writes and reads the files, and hands the list of saved games
 //! back with [`Dateimenue::set_games`].
+//!
+//! With the later build's `UPGRADE\` folder the form is its own
+//! (en 1040:077e, `docs/versions.md`): `UPGRADE\datwin1d.BMP` has a fifth
+//! button on the left, "Löschen" (`UPGRADE\SONSTIGE.TXT`'s 25th text),
+//! above "Neues Spiel", "Beenden" moves down one, and the table of
+//! rectangles has two more (en `1118:1812`, [`RECTS_UPGRADE`]).
 
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
@@ -69,6 +75,35 @@ pub const RECTS: [(i32, i32, i32, i32); 21] = [
     (106, 186, 183, 204), // 1110:18b2
 ];
 
+/// The later build's parts: as [`RECTS`] up to 12, then "Löschen" (13,
+/// 14), "Neues Spiel" (15, 16), "Beenden" (17, 18), "Abbruch" (19, 20)
+/// and "OK" (21, 22). // en 1118:1812
+pub const RECTS_UPGRADE: [(i32, i32, i32, i32); 23] = [
+    (0, 0, 201, 209),
+    (0, 0, 15, 15),
+    (16, 0, 201, 15),
+    (97, 46, 192, 146),
+    (130, 25, 157, 41),
+    (130, 25, 157, 41),
+    (130, 159, 157, 175),
+    (130, 159, 157, 175),
+    (8, 49, 85, 67),
+    (8, 49, 85, 67),
+    (8, 71, 85, 89),
+    (8, 71, 85, 89),
+    (8, 90, 88, 108),
+    (8, 114, 85, 132),
+    (8, 114, 85, 132),
+    (8, 136, 85, 154),
+    (8, 136, 85, 154),
+    (8, 158, 85, 176), // en 1118:18aa
+    (8, 158, 85, 176), // en 1118:18b2
+    (8, 186, 85, 204),
+    (8, 186, 85, 204),
+    (106, 186, 183, 204),
+    (106, 186, 183, 204),
+];
+
 /// The form's size: entry 0 of [`RECTS`] (1040:12be).
 pub const WIDTH: i32 = 202;
 pub const HEIGHT: i32 = 210;
@@ -77,22 +112,48 @@ const CLOSE: u8 = 1;
 const TITLE: u8 = 2;
 const LOAD: u8 = 9;
 const SAVE: u8 = 0xb;
-const NEW_GAME: u8 = 0xe;
-const QUIT: u8 = 0x10;
-const CANCEL: u8 = 0x12;
-const OK: u8 = 0x14;
 
-/// The buttons in the order a press tries them, and the text each draws
-/// with, by `SONSTIGE.TXT`'s texts: 7 "Laden", 8 "Speichern", 9 "Neues
-/// Spiel", 10 "Beenden", 4 "Abbruch", 3 "OK". // 1040:073c, 1040:04d9
-const BUTTONS: [(u8, Option<usize>); 7] = [
-    (CLOSE, None),
-    (CANCEL, Some(4)),
-    (OK, Some(3)),
-    (QUIT, Some(10)),
-    (LOAD, Some(7)),
-    (SAVE, Some(8)),
-    (NEW_GAME, Some(9)),
+/// What a button does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Close,
+    Load,
+    Save,
+    Delete,
+    NewGame,
+    Quit,
+    Cancel,
+    Ok,
+}
+
+/// A form's buttons: the part to hit (the one before is drawn), what
+/// it does and its text, by `SONSTIGE.TXT`'s texts, in the order a press
+/// tries them.
+type Buttons = &'static [(u8, Kind, Option<usize>)];
+
+/// v1.0's: 7 "Laden", 8 "Speichern", 9 "Neues Spiel", 10 "Beenden", 4
+/// "Abbruch", 3 "OK". // 1040:073c, 1040:04d9
+const BUTTONS: Buttons = &[
+    (CLOSE, Kind::Close, None),
+    (0x12, Kind::Cancel, Some(4)),
+    (0x14, Kind::Ok, Some(3)),
+    (0x10, Kind::Quit, Some(10)),
+    (LOAD, Kind::Load, Some(7)),
+    (SAVE, Kind::Save, Some(8)),
+    (0xe, Kind::NewGame, Some(9)),
+];
+
+/// The later build's, with "Löschen" (`UPGRADE\SONSTIGE.TXT`'s 25th
+/// text) and the ones below it moved. // en 1040:077e, en 1040:04d9
+const BUTTONS_UPGRADE: Buttons = &[
+    (CLOSE, Kind::Close, None),
+    (0x14, Kind::Cancel, Some(4)),
+    (0x16, Kind::Ok, Some(3)),
+    (0x12, Kind::Quit, Some(10)),
+    (LOAD, Kind::Load, Some(7)),
+    (SAVE, Kind::Save, Some(8)),
+    (0xe, Kind::Delete, Some(24)),
+    (0x10, Kind::NewGame, Some(9)),
 ];
 
 /// `VK_*` codes the form reads.
@@ -128,6 +189,11 @@ pub enum Action {
     /// "Beenden" (or `Q`): the menu hides and `TEndeform` asks whether to
     /// quit.
     Quit,
+    /// The later build's "Löschen" (or `D`) with a game selected: after a
+    /// question ("Wirklich loeschen?", by `land`) the file is erased from
+    /// `MAPS\` and the list filled again ([`Dateimenue::set_games`]).
+    /// // en 1040:110c
+    Delete(Vec<u8>),
 }
 
 /// What an event did.
@@ -184,6 +250,10 @@ pub struct Dateimenue {
     grab: (i32, i32),
     /// The player's view enhancements (`edit_field`, `modifier_clicks`).
     pub enhance: Enhancements,
+    /// The parts and the buttons: v1.0's, or the later build's with
+    /// `UPGRADE\` ([`Dateimenue::with_upgrade`]).
+    rects: &'static [(i32, i32, i32, i32)],
+    buttons: Buttons,
 }
 
 impl Dateimenue {
@@ -208,7 +278,29 @@ impl Dateimenue {
             mode: 2,
             grab: (0, 0),
             enhance: Enhancements::ORIGINAL,
+            rects: &RECTS,
+            buttons: BUTTONS,
         }
+    }
+
+    /// The later build's form, with `UPGRADE\`: the background (the
+    /// caller's `datwin1d.BMP` in place of `datwin1c.BMP`) has the button
+    /// "Löschen", whose text is the 25th of `texts`. // en 1040:159e
+    #[must_use]
+    pub fn with_upgrade(mut self) -> Self {
+        self.rects = &RECTS_UPGRADE;
+        self.buttons = BUTTONS_UPGRADE;
+        self
+    }
+
+    /// What button `id` does.
+    fn kind(&self, id: u8) -> Option<Kind> {
+        self.buttons.iter().find(|b| b.0 == id).map(|b| b.1)
+    }
+
+    /// Button `id`'s text.
+    fn button_text(&self, id: u8) -> Option<usize> {
+        self.buttons.iter().find(|b| b.0 == id).and_then(|b| b.2)
     }
 
     /// `FormShow`: the background with the title and the buttons' texts,
@@ -282,14 +374,14 @@ impl Dateimenue {
         self.texts.get(n).map_or(&[], |t| &t[..])
     }
 
-    /// The title and the buttons' texts, up. // 1040:11f2
+    /// The title and the buttons' texts, up. // 1040:11f2, en 1040:14bc
     fn draw_texts(&mut self) {
-        for (id, text) in BUTTONS {
+        for &(id, _, text) in self.buttons {
             if let Some(n) = text {
                 self.draw_text(id - 1, n, false);
             }
         }
-        let (l, t, r, _) = RECTS[usize::from(TITLE)];
+        let (l, t, r, _) = self.rect(TITLE);
         let title = self.text(6).to_vec();
         self.font
             .draw(&mut self.image, &title, (l, t + 1), r - l, Align::Center, 1);
@@ -298,7 +390,7 @@ impl Dateimenue {
     /// A button's text: pressed one pixel further right and down
     /// (1040:03e5), up (1040:0460).
     fn draw_text(&mut self, part: u8, n: usize, pressed: bool) {
-        let (l, t, r, _) = RECTS[usize::from(part)];
+        let (l, t, r, _) = self.rect(part);
         let shift = i32::from(pressed);
         let text = self.text(n).to_vec();
         self.font.draw(
@@ -315,15 +407,15 @@ impl Dateimenue {
     /// `datB1pr.bmp` for the others, with the text. // 1040:05a4
     fn draw_pressed(&mut self, id: u8) {
         let part = if id == CLOSE { CLOSE } else { id - 1 };
-        let (l, t, r, b) = RECTS[usize::from(part)];
+        let (l, t, r, b) = self.rect(part);
         let bitmap = if id == CLOSE { CLOSE_PRESSED } else { BUTTON_PRESSED };
         let clip = self.image.bounds();
         if let Some(src) = self.bitmaps.get(bitmap.0) {
             self.image
                 .blit(l, t, src, Rect::new(0, 0, r - l + 1, b - t + 1), Rop::Copy, clip);
         }
-        if let Some((_, Some(n))) = BUTTONS.iter().find(|b| b.0 == id) {
-            self.draw_text(part, *n, true);
+        if let Some(n) = self.button_text(id) {
+            self.draw_text(part, n, true);
         }
     }
 
@@ -331,21 +423,26 @@ impl Dateimenue {
     /// // 1040:04d9, 1040:0327
     fn draw_up(&mut self, id: u8) {
         let part = if id == CLOSE { CLOSE } else { id - 1 };
-        let (l, t, r, b) = RECTS[usize::from(part)];
+        let (l, t, r, b) = self.rect(part);
         let clip = self.image.bounds();
         if let Some(src) = self.bitmaps.get(BACKGROUND.0) {
             self.image
                 .blit(l, t, src, Rect::new(l, t, r - l + 1, b - t + 1), Rop::Copy, clip);
         }
-        if let Some((_, Some(n))) = BUTTONS.iter().find(|b| b.0 == id) {
-            self.draw_text(part, *n, false);
+        if let Some(n) = self.button_text(id) {
+            self.draw_text(part, n, false);
         }
+    }
+
+    /// Part `n`'s rectangle.
+    fn rect(&self, part: u8) -> (i32, i32, i32, i32) {
+        self.rects.get(usize::from(part)).copied().unwrap_or_default()
     }
 
     /// Whether `x`, `y` is in part `n`'s rectangle, edges included.
     /// // 1040:02da, 1030:1517
-    fn hit(part: u8, x: i32, y: i32) -> bool {
-        let (left, top, right, bottom) = RECTS[usize::from(part)];
+    fn hit(&self, part: u8, x: i32, y: i32) -> bool {
+        let (left, top, right, bottom) = self.rect(part);
         (left..=right).contains(&x) && (top..=bottom).contains(&y)
     }
 
@@ -363,13 +460,13 @@ impl Dateimenue {
         let fixed = self.enhance.has(Enhancement::EditField);
         let mut on_button = false;
         if left_button {
-            if let Some(&(id, _)) = BUTTONS.iter().find(|(id, _)| Self::hit(*id, x, y)) {
+            if let Some(&(id, _, _)) = self.buttons.iter().find(|b| self.hit(b.0, x, y)) {
                 self.pressed = id;
                 self.draw_pressed(id);
                 r.refresh = true;
                 r.sounds.push(Sound::Press);
                 on_button = true;
-            } else if Self::hit(TITLE, x, y) {
+            } else if self.hit(TITLE, x, y) {
                 self.pressed = TITLE;
                 self.grab = (x, y);
             }
@@ -443,16 +540,17 @@ impl Dateimenue {
                 self.draw_up(id);
                 r.refresh = true;
                 r.sounds.push(Sound::Release);
-                let on = Self::hit(id, x, y);
-                r.action = match id {
-                    CLOSE | CANCEL | OK if on => Some(Action::Close),
-                    QUIT if on => Some(Action::Quit),
-                    NEW_GAME if on => Some(Action::NewGame),
-                    LOAD => {
+                let on = self.hit(id, x, y);
+                r.action = match self.kind(id) {
+                    Some(Kind::Close | Kind::Cancel | Kind::Ok) if on => Some(Action::Close),
+                    Some(Kind::Quit) if on => Some(Action::Quit),
+                    Some(Kind::NewGame) if on => Some(Action::NewGame),
+                    Some(Kind::Delete) if on => self.delete(),
+                    Some(Kind::Load) => {
                         self.mode = 0;
                         if on { self.load() } else { None }
                     }
-                    SAVE => {
+                    Some(Kind::Save) => {
                         self.mode = 1;
                         if on { self.save(self.edit.focused) } else { None }
                     }
@@ -476,9 +574,10 @@ impl Dateimenue {
 
     /// `FormKeyDown`. The name field gets the key first. Without Ctrl and
     /// Alt: Escape and Space close the menu, Enter focuses the name, `L`
-    /// loads, `S` saves, `Q` quits, `N` starts a new game, and the arrows
-    /// move the list's selection (without putting the name in the field).
-    /// Alt+F4 closes the menu. // 1040:1572
+    /// loads, `S` saves, `Q` quits, `N` starts a new game, the later
+    /// build's `D` deletes, and the arrows move the list's selection
+    /// (without putting the name in the field). Alt+F4 closes the menu.
+    /// // 1040:1572, en 1040:1852
     pub fn key_down(&mut self, key: u16, shift: ShiftState) -> Response {
         let mut r = Response {
             refresh: true,
@@ -506,6 +605,7 @@ impl Dateimenue {
                 0x4c => self.load(),
                 0x53 => self.save(self.edit.focused),
                 0x51 => Some(Action::Quit),
+                0x44 if self.buttons.iter().any(|b| b.1 == Kind::Delete) => self.delete(),
                 0x4e => Some(Action::NewGame),
                 VK_UP => {
                     let l = &mut self.list;
@@ -535,6 +635,15 @@ impl Dateimenue {
             r.action = Some(Action::Close);
         }
         r
+    }
+
+    /// "Löschen": the selected game, if one is (the selection within the
+    /// list). // en 1040:110c
+    fn delete(&self) -> Option<Action> {
+        match self.load()? {
+            Action::Load(name) => Some(Action::Delete(name)),
+            _ => None,
+        }
     }
 
     /// "Laden": the selected game, if one is. // 1040:0f27

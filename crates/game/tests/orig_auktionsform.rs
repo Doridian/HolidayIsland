@@ -104,7 +104,7 @@ fn computers_and_the_human_bid() {
             {
                 let bid = Command {
                     player: 1,
-                    action: command::Action::Auction(auction::Action::Bid { checked: true }),
+                    action: command::Action::Auction(auction::Action::Bid),
                 };
                 changes.extend(w.apply(bid).auction_changes);
             }
@@ -196,10 +196,7 @@ fn paints_the_auction_form() {
     let down = form.mouse_down(x, y, ShiftState::LEFT, &w, &font, &info);
     assert_eq!(down, [auction::Action::Hold(true)]);
     let up = form.mouse_up(x, y, &w, &font);
-    assert_eq!(
-        up,
-        [auction::Action::Bid { checked: true }, auction::Action::Hold(false)]
-    );
+    assert_eq!(up, [auction::Action::Bid, auction::Action::Hold(false)]);
     for action in down.into_iter().chain(up) {
         let tick = w.apply(Command {
             player: 1,

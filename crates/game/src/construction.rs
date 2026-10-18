@@ -29,7 +29,7 @@ const CHAMPIONSHIPS: std::ops::RangeInclusive<u8> = 0x6f..=0x7c;
 
 /// The building types that raise their owner's reputation by 30 when
 /// they're finished. // 1110:1458 (`set of Byte`)
-const REPUTATION_BUILDINGS: [u8; 9] = [29, 30, 35, 37, 60, 108, 110, 125, 126];
+pub(crate) const REPUTATION_BUILDINGS: [u8; 9] = [29, 30, 35, 37, 60, 108, 110, 125, 126];
 
 /// The building types [`World::demolish`] doesn't take for buildings:
 /// the bridges (11 over a river, 52 over the sea), palms, beach life and

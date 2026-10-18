@@ -49,6 +49,7 @@ mod film;
 mod forms;
 mod sound;
 mod stacking;
+mod upgrade;
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -58,11 +59,10 @@ use std::time::{Duration, Instant};
 use formats::bmp::Bitmap;
 use formats::data::{
     animdat1, animdat4, auktion, auswahl, baumenu_dat, baumenu_txt, darstell, fehler, flusspos, fontdat, gfxpos,
-    groundnr, grounpos, hausdata, hausname, hausnr, hauspos, hausprei, message_media_names, modatyp, monate, sonstige,
-    start_txt, straspos, szenario_txt,
+    groundnr, grounpos, hausdata, hausname, hausnr, hauspos, message_media_names, modatyp, monate, start_txt, straspos,
+    szenario_txt, szenario_txt_lines,
 };
 use formats::dfm::Object;
-use formats::highscore::HighScores;
 use formats::ne::{RT_RCDATA, ResId, resources};
 use formats::savegame::SaveGame;
 use formats::setup;
@@ -76,6 +76,7 @@ use game::endeform;
 use game::enhance::{self, Config, Fix, Fixes};
 use game::enhanceform;
 use game::hauptschirm::{self, Axis, Hauptschirm, InfoTexts, KeyResult};
+use game::highscoreform::ScoreTable;
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
 use game::optionen::Settings as Options;
@@ -181,6 +182,16 @@ impl Saves {
     /// directory (the original writes the game's `SOUND\HIGHSCOR.WAV`).
     fn high_scores(&self) -> PathBuf {
         self.dir.with_file_name("HIGHSCOR.WAV")
+    }
+
+    /// Erases the player's game `name` (any case); the game's own `MAPS\`
+    /// isn't touched. The path erased, none if the player has no such
+    /// file. // en 1040:110c
+    fn delete(&self, name: &[u8]) -> std::io::Result<Option<PathBuf>> {
+        match self.find(name) {
+            Some(p) if p.starts_with(&self.dir) => std::fs::remove_file(&p).map(|()| Some(p)),
+            _ => Ok(None),
+        }
     }
 
     fn write(&self, name: &[u8], map: &SaveGame) -> std::io::Result<PathBuf> {
@@ -767,8 +778,8 @@ impl Game {
     fn open_auction(&mut self) {
         let item = usize::try_from(self.world.auction.item).ok();
         let picture = item.and_then(|n| self.pictures.get(n)).and_then(|name| {
-            let path = self.dir.join("GRAFIK").join(auktionsform::picture_file(name));
-            let bitmap = Bitmap::parse(&std::fs::read(path).ok()?).ok()?;
+            let path = format!("GRAFIK/{}", auktionsform::picture_file(name));
+            let bitmap = Bitmap::parse(&read_opt(&self.dir, &path)?).ok()?;
             Some(Surface::from_bitmap(&bitmap))
         });
         self.auction
@@ -949,6 +960,8 @@ impl Game {
             ) if (0..bounds.width()).contains(&x) && (0..bounds.height()).contains(&y) => {
                 match Hauptschirm::button_at(x, y) {
                     Some(hauptschirm::FILE_MENU_BUTTON) => return (true, true),
+                    // en 1018:363c: no button there in scenario 10.
+                    Some(b) if hauptschirm::button_blocked(self.world.scenario, b) => {}
                     Some(b) => self.click_button(b),
                     None => {}
                 }
@@ -1046,7 +1059,7 @@ impl Game {
         let mut key = Some(key);
         if self.tools.menu_focused {
             // `TBaumenue` has the focus. // 1018:3290
-            let response = self.tools.menu.key_down(key.unwrap_or(0));
+            let response = self.tools.menu.key_down(key.unwrap_or(0), self.world.scenario);
             key = self.menu_response(response);
         }
         if let Some(key) = key {
@@ -1546,9 +1559,17 @@ impl Holiday {
                     return;
                 }
                 Request::SaveHighScores => {
+                    // en 1068:1e08: the second file with `UPGRADE\`.
                     let path = self.saves.high_scores();
-                    if let Err(e) = std::fs::write(&path, game.forms.high.table.to_bytes()) {
-                        eprintln!("can't save {}: {e}", path.display());
+                    let table = &game.forms.high.table;
+                    let mut files = vec![(path.clone(), table.first_file())];
+                    if upgrade::present(&self.dir) {
+                        files.push((forms::second_high_scores(&path), table.second_file()));
+                    }
+                    for (path, scores) in files {
+                        if let Err(e) = std::fs::write(&path, scores.to_bytes()) {
+                            eprintln!("can't save {}: {e}", path.display());
+                        }
                     }
                 }
                 Request::Enhance(change) => self.enhance_changed(change),
@@ -1750,6 +1771,20 @@ impl Holiday {
             }
             // The message box (`MessageDlg`) isn't ported.
             Some(dateimenue::Action::InvalidName) => eprintln!("Dateiname ungültig"),
+            Some(dateimenue::Action::Delete(name)) => {
+                // en 1040:110c: the original asks first (`MessageDlg`,
+                // which isn't ported); the port only erases the player's
+                // own file, never the game's `MAPS\`.
+                match self.saves.delete(&name) {
+                    Ok(Some(path)) => println!("deleted {}", path.display()),
+                    Ok(None) => eprintln!("{}: not one of the player's games", String::from_utf8_lossy(&name)),
+                    Err(e) => eprintln!("can't delete {}: {e}", String::from_utf8_lossy(&name)),
+                }
+                let games = self.saves.games(self.enhance.view);
+                if let Some(game) = &mut self.game {
+                    game.file_menu.menu.set_games(games);
+                }
+            }
             Some(dateimenue::Action::NewGame) => self.back_to_start_menu(),
             Some(dateimenue::Action::Quit) => {
                 // 1040:0a4c: the menu hides and `TEndeform` asks.
@@ -2081,9 +2116,18 @@ impl App for Holiday {
     }
 }
 
+/// The game's file `name` (`DATA/HAUSDATA.DAT`), whatever the case of
+/// its letters: the German CD's names are upper case, the English
+/// install's mixed (`TEXTE/Hausname.txt`).
 fn read(dir: &Path, name: &str) -> Vec<u8> {
-    let path = dir.join(name);
-    std::fs::read(&path).unwrap_or_else(|e| panic!("can't read {}: {e}", path.display()))
+    read_opt(dir, name).unwrap_or_else(|| panic!("can't read {}", dir.join(name).display()))
+}
+
+/// [`read`], `None` for a file that isn't there.
+fn read_opt(dir: &Path, name: &str) -> Option<Vec<u8>> {
+    std::fs::read(dir.join(name))
+        .ok()
+        .or_else(|| std::fs::read(forms::find(dir, name)?).ok())
 }
 
 fn bitmap(dir: &Path, name: &str) -> Bitmap {
@@ -2116,12 +2160,26 @@ fn bitmaps(dir: &Path, files: &[&str]) -> Vec<Surface> {
 
 /// The start menu as `TStartform.Create` and `startform_init` make it,
 /// from the globals in `settings`. // 1058:27e6
+///
+/// With the later build's `UPGRADE\` folder its `SZENARIO.TXT` and
+/// bitmaps make the scenario page the later build's, with twelve
+/// scenarios. // en 1058:378f
 fn start_menu(dir: &Path, exe: &[u8], settings: Settings) -> StartMenu {
+    let mut images = bitmaps(dir, &startform::BITMAP_FILES);
+    let szenario = if upgrade::present(dir) {
+        images.extend(upgrade::bitmaps(dir, &startform::UPGRADE_BITMAP_FILES));
+        szenario_txt_lines(
+            &upgrade::file(dir, "SZENARIO.TXT", "TEXTE/SZENARIO.TXT"),
+            formats::data::SZENARIO_LINES_UPGRADE,
+        )
+    } else {
+        szenario_txt(&read(dir, "TEXTE/SZENARIO.TXT"))
+    };
     let menu = StartForm::new(
         font(dir),
-        bitmaps(dir, &startform::BITMAP_FILES),
+        images,
         &start_txt(&read(dir, "TEXTE/START.TXT")),
-        &szenario_txt(&read(dir, "TEXTE/SZENARIO.TXT")),
+        &szenario,
         settings,
     );
     StartMenu {
@@ -2134,7 +2192,7 @@ fn start_menu(dir: &Path, exe: &[u8], settings: Settings) -> StartMenu {
 /// `TLadenForm` as 1038:3b46 creates and shows it, with `games`: at the
 /// bottom of the `screen`, `Bild` filling it. // 1038:3b46
 fn load_menu(dir: &Path, exe: &[u8], games: Vec<Vec<u8>>, screen: (i32, i32)) -> LoadMenu {
-    let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+    let texts = upgrade::sonstige(dir);
     let load = texts.texts.get(7).cloned().unwrap_or_default();
     let menu = LadenForm::new(font(dir), bitmaps(dir, &ladenform::BITMAP_FILES), &load, games);
     let mut form = load_form(exe, "TLADENFORM");
@@ -2164,7 +2222,7 @@ impl LoadMenu {
 /// `TDateimenue` as `Application.CreateForm` makes it, hidden, at the
 /// DFM's position. // 1040:154d
 fn file_menu(dir: &Path, exe: &[u8]) -> FileMenu {
-    let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+    let texts = upgrade::sonstige(dir);
     // BUG(original): the DFM's place on the screen (305, 139), which isn't over the centred main screen on a desktop bigger than 640×480.
     let mut form = load_form(exe, "TDATEIMENUE");
     let at = form.components[0].bounds;
@@ -2172,13 +2230,18 @@ fn file_menu(dir: &Path, exe: &[u8]) -> FileMenu {
         image.bounds = Rect::new(0, 0, dateimenue::WIDTH, dateimenue::HEIGHT);
         image.visible = true;
     }
-    let menu = Dateimenue::new(
-        font(dir),
-        bitmaps(dir, &dateimenue::BITMAP_FILES),
-        texts.texts,
-        at.left,
-        at.top,
-    );
+    let mut images = bitmaps(dir, &dateimenue::BITMAP_FILES);
+    let upgrade = upgrade::present(dir);
+    if upgrade {
+        // en 1040:159e: `UPGRADE\datwin1d.BMP`, with "Löschen".
+        if let Some(background) = upgrade::bitmaps(dir, &["datwin1d.BMP"]).pop().filter(|b| b.width > 0) {
+            images[0] = background;
+        }
+    }
+    let mut menu = Dateimenue::new(font(dir), images, texts.texts, at.left, at.top);
+    if upgrade {
+        menu = menu.with_upgrade();
+    }
     FileMenu {
         menu,
         form,
@@ -2212,7 +2275,7 @@ fn world_tables(dir: &Path) -> Arc<Tables> {
     Arc::new(Tables {
         hausnr: hausnr(&read(dir, "DATA/HAUSNR.DAT")).expect("HAUSNR.DAT"),
         hausdata: hausdata(&read(dir, "DATA/HAUSDATA.DAT")).expect("HAUSDATA.DAT"),
-        hausprei: hausprei(&read(dir, "DATA/HAUSPREI.DAT")).expect("HAUSPREI.DAT"),
+        hausprei: hintergrund::hausprei_table(|name| read_opt(dir, name)).unwrap_or_else(|e| panic!("{e}")),
         groundnr: groundnr(&read(dir, "DATA/GROUNDNR.DAT")).expect("GROUNDNR.DAT"),
         animdat1: animdat1(&read(dir, "DATA/ANIMDAT1.DAT")).expect("ANIMDAT1.DAT"),
         animdat4: animdat4(&read(dir, "DATA/ANIMDAT4.DAT")).expect("ANIMDAT4.DAT"),
@@ -2251,8 +2314,7 @@ type Start = (World, Camera, Option<(i16, i16)>, Fields);
 fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &mut Options, fixes: Fixes) -> Start {
     let seed = seed();
     match hintergrund::new_island(settings, scenario_page) {
-        Island::Scenario(file) => {
-            let path = format!("SZENARIO/{}", file.to_ascii_uppercase());
+        Island::Scenario(path) => {
             let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
             let mut world =
                 hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
@@ -2267,7 +2329,7 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
             // The rest of state 1500: the scenario's events, its build
             // menu and the computers.
             if scenario_page {
-                let events = hintergrund::scenario_events(world.scenario, |name| std::fs::read(dir.join(name)).ok())
+                let events = hintergrund::scenario_events(world.scenario, |name| read_opt(dir, name))
                     .unwrap_or_else(|e| panic!("{e}"));
                 hintergrund::start_scenario(&mut world, events.as_deref());
             }
@@ -2283,8 +2345,7 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
             (world, camera, Some(camera.origin), view.unported)
         }
         Island::Generated => {
-            let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok())
-                .unwrap_or_else(|e| panic!("{e}"));
+            let data = hintergrund::GameData::load(|name| read_opt(dir, name)).unwrap_or_else(|e| panic!("{e}"));
             // States 100, 1210 and 1220.
             let world = hintergrund::new_world(settings, &data, seed, fixes);
             // The options as the initialised data has them (1000:1ea0).
@@ -2310,12 +2371,12 @@ fn load_game(
     map: &SaveGame,
     settings: &Settings,
     options: Options,
-    high: HighScores,
+    high: ScoreTable,
     sound: &sound::Shared,
     size: (i32, i32),
     config: &Config,
 ) -> Game {
-    let data = hintergrund::GameData::load(|name| std::fs::read(dir.join(name)).ok()).unwrap_or_else(|e| panic!("{e}"));
+    let data = hintergrund::GameData::load(|name| read_opt(dir, name)).unwrap_or_else(|e| panic!("{e}"));
     // The file's fixes; the player's for those it doesn't name (all of
     // them in an original file).
     let world = hintergrund::load_saved_game(map, settings, &data, seed(), config.fixes)
@@ -2346,7 +2407,7 @@ fn start_game(
     settings: &Settings,
     scenario_page: bool,
     mut options: Options,
-    high: HighScores,
+    high: ScoreTable,
     sound: &sound::Shared,
     size: (i32, i32),
     config: &Config,
@@ -2355,6 +2416,9 @@ fn start_game(
     // the player's, in place before the world is set up.
     let start = start_world(dir, settings, scenario_page, &mut options, config.fixes);
     let mut game = make_game(dir, exe, start, options, high, sound, size);
+    if scenario_page {
+        game.tools.menu.start_scenario(game.world.scenario); // en 1018:015f
+    }
     game.set_view_enhancements(config.view);
     game
 }
@@ -2367,7 +2431,7 @@ fn make_game(
     exe: &[u8],
     (world, camera, origin, view_rest): Start,
     mut options: Options,
-    high: HighScores,
+    high: ScoreTable,
     sound: &sound::Shared,
     size: (i32, i32),
 ) -> Game {
@@ -2380,7 +2444,7 @@ fn make_game(
         }
     }
     let font = font(dir);
-    let texts = sonstige(&read(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+    let texts = upgrade::sonstige(dir);
     let frame = bitmaps(dir, &hauptschirm::BITMAP_FILES);
     let title = texts.texts.first().cloned().unwrap_or_default();
     let mut screen = match origin {
@@ -2608,7 +2672,10 @@ fn args() -> Args {
         } else if let Some(e) = a.strip_prefix("--enhance=") {
             let (key, on) = e.split_once('=').unwrap_or((e, "on"));
             let on = platform::settings::switch(on).unwrap_or_else(|| fail("--enhance= takes KEY=on or KEY=off"));
-            if Config::default().is_on(key).is_none() {
+            if enhance::RETIRED.contains(&key) {
+                // The later build fixed its bug itself: always on now.
+                eprintln!("--enhance=: {key} is no longer a switch (the game's later build fixes it)");
+            } else if Config::default().is_on(key).is_none() {
                 fail(&format!(
                     "--enhance=: no enhancement {key}; there are:\n{}",
                     enhancement_list(&Config::default())
@@ -2622,9 +2689,7 @@ fn args() -> Args {
     // The installer's choices (`SETUP.DAT`, 1000:17bc), if there are
     // any; else the full quality: its fifth line for the sound, its
     // fourth for the films (`film_dir`, 1110:502a).
-    let installed = std::fs::read(dir.join("SETUP.DAT"))
-        .ok()
-        .map(|d| setup::Setup::parse(&d));
+    let installed = read_opt(&dir, "SETUP.DAT").map(|d| setup::Setup::parse(&d));
     let quality = quality.unwrap_or_else(|| installed.as_ref().map_or(setup::Sound::Hi, |s| s.sound));
     let films = films.unwrap_or_else(|| installed.as_ref().map_or(setup::Film::Hi, |s| s.film));
     let enhance = enhance_config(window.settings_file.as_deref(), original, &overrides);
@@ -2847,6 +2912,65 @@ mod tests {
                 ppm.extend_from_slice(&[c.r, c.g, c.b]);
             }
             std::fs::write(PathBuf::from(out).join("integrated.ppm"), ppm).unwrap();
+        }
+    }
+
+    /// The English release's folder (`orig-en/`), the later build's with
+    /// `UPGRADE\`: its mixed-case names are found, the start menu has the
+    /// twelve scenarios, scenario 10 (B&B only) starts from `UPGRADE\`
+    /// without the hotels' button, and the file menu has "Löschen". With
+    /// `HOLIDAY_PPM` set, the screen goes there as `versions-bbonly.ppm`.
+    /// Skipped without `orig-en/`.
+    #[test]
+    fn the_english_folder() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orig-en");
+        if !upgrade::present(&dir) {
+            eprintln!("skipping: no {}", dir.join("UPGRADE").display());
+            return;
+        }
+        let exe = read(&dir, "HOLIDAY.EXE");
+        // `TEXTE\Hausname.txt` in mixed case.
+        assert!(read_opt(&dir, "TEXTE/HAUSNAME.TXT").is_some());
+        let start = start_menu(&dir, &exe, Settings::default());
+        assert!(!start.menu.scenario_mode());
+        let settings = Settings {
+            scenario: 10,
+            ..Settings::default()
+        };
+        let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
+        let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let mut game = start_game(
+            &dir,
+            &exe,
+            &settings,
+            true,
+            Options::default(),
+            high,
+            &sound,
+            SIZE,
+            &Config::default(),
+        );
+        assert_eq!((game.world.scenario, game.world.player_count), (10, 8));
+        game.world.clock.paused = false;
+        let _ = game.update(Duration::from_millis(u64::from(TICK_MS) * 5));
+        // F2, the hotels, does nothing in scenario 10.
+        assert!(matches!(
+            game.screen
+                .key_down(0x71, ShiftState::default(), &game.world, &game.tiles),
+            KeyResult::Ignored
+        ));
+        let file = file_menu(&dir, &exe);
+        assert_eq!(file.menu.name(), b"");
+        let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
+        let mut screen = Surface::new(800, 600, 0);
+        game.paint(&mut screen, &background.palette, None);
+        if let Some(out) = std::env::var_os("HOLIDAY_PPM") {
+            let mut ppm = format!("P6\n{} {}\n255\n", screen.width, screen.height).into_bytes();
+            for &i in &screen.pixels {
+                let c = background.palette[usize::from(i)];
+                ppm.extend_from_slice(&[c.r, c.g, c.b]);
+            }
+            std::fs::write(PathBuf::from(out).join("versions-bbonly.ppm"), ppm).unwrap();
         }
     }
 
@@ -3518,7 +3642,7 @@ mod tests {
                 .tools
                 .click(game::tools::RAISE, &g.world, &g.font, &g.tiles, &g.info, view, SIZE);
             assert_eq!(g.tools.menu.sounds.contains(&0xe), sound);
-            let key = g.tools.menu.key_down(0x26);
+            let key = g.tools.menu.key_down(0x26, g.world.scenario);
             assert_eq!(key == baumenue::Response::MainScreenKey(0x26), !sound);
         }
 

@@ -65,7 +65,7 @@ fn load_waves(dir: &Path, sub: &str, auction_calls: bool) -> Vec<Option<Wave>> {
             let mut path = find(dir, sub, name);
             // BUG(original): the auctioneer's calls are looked for in `SOUND\`, but they're in `SPRADEUn\`.
             if auction_calls && !path.is_file() {
-                path = find(dir, "SPRADEU1", name);
+                path = find(dir, &speech_dir(dir, 1), name);
             }
             // A missing file is a null wave, which `WaveMixPlay`
             // refuses (the auctioneer's `zum1.wav` to `zum3.wav`).
@@ -77,14 +77,25 @@ fn load_waves(dir: &Path, sub: &str, auction_calls: bool) -> Vec<Option<Wave>> {
         .collect()
 }
 
-/// `name` in `dir`'s subdirectory `sub`, as the CD has it (upper case),
-/// else as given.
+/// `name` in `dir`'s subdirectory `sub`, whatever the case of the
+/// letters (the German CD's names are upper case, the English install's
+/// mixed: `Sprache1\`, `Abgeld.avi`), else as given.
 fn find(dir: &Path, sub: &str, name: &str) -> PathBuf {
     let upper = dir.join(sub).join(name.to_ascii_uppercase());
     if upper.is_file() {
-        upper
+        return upper;
+    }
+    crate::forms::find(dir, &format!("{sub}/{name}")).unwrap_or_else(|| dir.join(sub).join(name))
+}
+
+/// The speech folder `n` (1 to 3): `SPRADEUn\` as v1.0 names it, else
+/// `Sprache<n>\` as the later build does (`init_paths`, en 1000:196d).
+fn speech_dir(dir: &Path, n: u8) -> String {
+    let german = format!("SPRADEU{n}");
+    if crate::forms::find(dir, &german).is_some_and(|p| p.is_dir()) {
+        german
     } else {
-        dir.join(sub).join(name)
+        format!("SPRACHE{n}")
     }
 }
 
@@ -270,7 +281,7 @@ impl Sound {
                 Media::SoundVolume => self.set_wave_volume(settings.sound_volume),
                 Media::OpenSpeaker { dir, file } => {
                     let name = String::from_utf8_lossy(file).into_owned();
-                    let path = find(&self.dir, &format!("SPRADEU{dir}"), &name);
+                    let path = find(&self.dir, &speech_dir(&self.dir, *dir), &name);
                     let wav = std::fs::read(&path).ok().and_then(|b| {
                         WavFile::parse(&b)
                             .inspect_err(|e| eprintln!("{}: {e}", path.display()))

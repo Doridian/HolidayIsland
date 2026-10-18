@@ -209,7 +209,10 @@ fn draws_the_islands() {
             scenario: n,
             ..Settings::default()
         };
-        assert_eq!(new_island(&settings, true), Island::Scenario(file));
+        assert_eq!(
+            new_island(&settings, true),
+            Island::Scenario(format!("SZENARIO/{file}"))
+        );
         let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
         let world = load_world(&map, &settings, true).unwrap();
         let mut h = main_screen(&map);

@@ -1,0 +1,1605 @@
+# Symbols for HOLIDAY_EN.EXE: the English UK release's HOLIDAY.EXE (the later
+# "Erweiterte Version" build, 688,624 bytes, 36 segments; docs/versions.md).
+# Import it as a second program: copy orig-en/HOLIDAY.EXE to HOLIDAY_EN.EXE and
+# import that into ghidra/HolidayIsland.gpr (docs/versions.md#ghidra), then
+# GH_PROGRAM=HOLIDAY_EN.EXE tools/gh ...  DGROUP is segment 36 (selector 1118).
+# The names come from symbols/HOLIDAY.EXE.txt through the function match;
+# "de ADDR" is the German v1.0 address, "changed" marks a function whose code differs.
+1000:0342 func save_globals  # de 1000:032e
+1000:0c7e func load_globals  # de 1000:0c6a, changed
+1000:196d func init_paths  # de 1000:17bc, changed
+1000:22b4 func init_game_defaults  # de 1000:1ea0, changed
+1000:23ed func load_modatyp  # de 1010:000e
+1000:27f3 func load_modatyp_txt_and_namen  # de 1010:0414
+1000:2a29 func init_game_globals  # de 1010:064a
+1000:2b78 func save_window_positions  # de 1010:0799
+1000:2cb6 func load_window_positions  # de 1010:08d7
+1000:3375 func clear_game_flags  # de 1010:0f96
+1000:3389 func button_bar_down  # de 1010:2ac7
+1000:33a0 func button_bar_up  # de 1010:2ade
+1000:33b7 func draw_button_bar  # de 1010:2af5
+1000:340e func tool_button_down  # de 1010:2b4c
+1000:3422 func release_tool  # de 1010:2b60
+1000:3486 func pointer_instead_of  # de 1010:2bc4
+1000:34a3 func leave_tool  # de 1010:2be1
+1000:34e2 func buttonimage_click  # de 1010:2c20, changed
+1000:354d func button_bar_click  # de 1010:2c8b
+1000:386b func clear_651a  # de 1010:2fa9
+1000:3ad5 func hintergrund_formkeydown  # de 1000:3d0c
+1000:3b1d func marker_or_zero  # de 1000:3d54
+1000:3b67 func event_chance  # de 1000:3d9e
+1000:3b92 func building_or_none  # de 1000:3dc9
+1000:3bd6 func ground_or_water  # de 1000:3e0d
+1000:3c1a func highest_corner_or_zero  # de 1000:3e51
+1000:3c56 func form_or_flat  # de 1000:3e8d
+1000:3c9a func part_or_zero  # de 1000:3ed1
+1000:3cde func owner_or_zero  # de 1000:3f15, changed
+1000:3e00 func helpform_formcreate  # de 1040:3d02
+1000:3eaf func helpform_free  # de 1040:3db1
+1000:3ec5 func helpform_show  # de 1040:3dc7
+1000:3fab func helpform_hide  # de 1040:3ead
+1008:0002 func bankrupt  # de 1008:0002
+1008:0134 func camp_site_guests  # new: (player) the guests of the player's small camp sites (type 0); scenario 9 wins at 5000; docs/versions.md
+1008:0317 func islands_joined  # new: exactly one plot of more than 41 squares; scenario 8's win
+1008:036e func wonders_full  # new: (player) more than 8 of the player's facilities of the 1110:1458 types are 80 % full; scenario 11's win
+1008:03fc func most_guests_everywhere  # new: on every plot player 1's houses have more than half the plot's guests (+0xee div 2); scenario 13's win
+1008:0555 func scenario_won  # de 1008:0297, changed
+1008:075f func scenario_lost  # de 1008:042b, changed
+1008:08e0 func january_second  # de 1008:0512
+1008:09a7 func advertising_cost  # de 1008:05d9
+1008:09fa func insurance_cost  # de 1008:062c
+1008:0a2e func renovation_price  # de 1008:0660
+1008:0a84 func per_place  # de 1008:06b6
+1008:0ad7 func fair_price  # de 1008:0709
+1008:0b44 func price_rating  # de 1008:0776
+1008:0bf7 func fair_rent  # de 1008:0829
+1008:0c31 func rent_rating  # de 1008:0863
+1008:0cd5 func price_class  # de 1008:0907
+1008:0d4d func rent_class  # de 1008:097f
+1008:0d96 func clear_capacity_block  # de 1008:09c8
+1008:0e24 func building_value  # de 1008:0a56
+1008:0ed9 func assets  # de 1008:0b0b
+1008:103c func net_worth  # de 1008:0c6e
+1008:10de func factor_scale  # de 1008:0d10
+1008:11b7 func factor_weigh  # de 1008:0de9
+1008:126f func factor_approach  # de 1008:0ea1
+1008:1305 func rate_plot  # de 1008:0f37
+1008:19ab func send_rental_by_road  # de 1008:15dd
+1008:1a8c func send_rental_by_sea  # de 1008:16be
+1008:1b6d func is_beach_square  # de 1008:179f
+1008:1c16 func find_beach_square  # de 1008:1848
+1008:1db8 func add_beach_life  # de 1008:19ea
+1008:1e20 func remove_beach_life  # de 1008:1a52
+1008:1e4f func change_beach_life  # de 1008:1a81
+1008:1eb8 func beach_life_step  # de 1008:1aea
+1008:1f19 func beach_life_tick  # de 1008:1b4b
+1008:1fc5 func settlement_step  # de 1008:1bf7
+1008:5332 func year_end  # de 1008:4f64
+1008:55e0 func construction_tick  # de 1008:5212
+1008:56d5 func accounting_tick  # de 1008:5307
+1008:59bc func load_abrechne  # de 1008:55ee
+1010:01d5 func scenario_ban_wonders  # new: state 1500 for scenario 11: 1018:26ce for 0x6f, 0x71, 0x79
+1010:0201 func scenario_ban_buildings  # de 1000:21a0
+1010:02a2 func hintergrund_formactivate  # de 1000:2241
+1010:02b5 func hintergrund_restart  # new: with 1118:1320 set, hides the film panel and the background picture and starts the timer at state 0x6e
+1010:0591 func hintergrund_timer  # de 1000:2466, changed
+1010:1c3f func hintergrund_skip_film  # de 1000:3938
+1010:1cbe func hintergrund_film_panel_click  # de 1000:39b7
+1010:1d3d func hintergrund_backgroundimage_click  # de 1000:3a36
+1010:1e06 func score  # de 1010:0faa
+1010:1f85 func plant_palm  # de 1010:1129
+1010:2029 func place_beach_life  # de 1010:11cd
+1010:208b func clear_square  # de 1010:122f
+1010:20fa func vegetation_tick  # de 1010:129e
+1010:228e func ui_button_draw  # de 1010:1432
+1010:231d func ui_button_mouse_down  # de 1010:14c1
+1010:2353 func ui_button_mouse_up  # de 1010:14f7
+1010:2389 func ui_label_draw  # de 1010:152d
+1010:23ce func ui_radio_draw  # de 1010:1572
+1010:242e func ui_radio_selected  # de 1010:15d2
+1010:2446 func ui_checkbox_draw  # de 1010:15ea
+1010:24f9 func ui_checkbox_selected  # de 1010:169d
+1010:2511 func ui_scenario_box_draw  # new: VMT+0x14 of the start menu's twelve scenario boxes (en 1118:1da2..): the box, the text 5 pixels right of it, in the checked colour (+0x118) when ticked
+1010:25c4 func ui_radio_selected3  # new: radio_selected, then play_sound(9), as ui_radio_selected2
+1010:25dc func ui_radio_draw2  # de 1010:16b5
+1010:263c func ui_radio_selected2  # de 1010:1715
+1010:2656 func ui_edit_draw  # de 1010:172f
+1010:2717 func ui_scrollbar_arrow_pressed  # de 1010:17f0
+1010:272f func ui_scrollbar_stepped  # de 1010:1808
+1010:2747 func ui_scrollbar_paged  # de 1010:1820
+1010:275f func ui_listbox_draw  # de 1010:1838
+1010:2840 func ui_listbox_selected  # de 1010:1919
+1010:2858 func renovate_building  # de 1010:1931
+1010:2918 func bribe_builders  # de 1010:19f1
+1010:2a09 func raise_facility_price  # de 1010:1ae2
+1010:2bad func lower_facility_price  # de 1010:1c86
+1010:2c89 func raise_rent  # de 1010:1d62
+1010:2d2c func lower_rent  # de 1010:1e05
+1010:2dcc func markers_free  # de 1010:1ea5
+1010:2e21 func road_square_free  # de 1010:1efa
+1010:2e54 func open_sea  # de 1010:1f2d
+1010:2eb6 func find_road  # de 1010:1f8f
+1010:3007 func find_sea  # de 1010:20e0
+1010:314c func plot_table_add  # de 1010:2225
+1010:32fd func plot_table_clear  # de 1010:23d6
+1010:33ba func facility_class  # de 1010:2493
+1010:3474 func set_view  # de 1010:254d, changed
+1010:3582 func back_to_start_menu  # de 1010:25dc, changed
+1010:3744 func erase_scroll_thumbs  # de 1010:26ea
+1010:3754 func game_show_state  # de 1010:26fa
+1010:387a func game_start_setup  # de 1010:2820
+1010:39ca func disable_forms  # de 1010:2970
+1010:3a26 func enable_forms  # de 1010:29cc
+1010:3a66 func enable_forms  # de 1010:2a0c
+1010:3ab4 func raise_window_forms  # de 1010:2a5a
+1010:3b21 func set_music_volume  # de 1018:35f0
+1010:3baf func music_next_track  # de 1018:367e
+1010:3d0f func music_init_playlist  # de 1018:37de
+1010:3d45 func music_close  # de 1018:3814
+1010:3d81 func music_start  # de 1018:3850
+1010:3df6 func music_stop  # de 1018:38c5
+1010:3e42 func load_sonstige  # de 1020:3dc4
+1018:015f func baumenue_reset_scroll5  # new: state 1500 for scenario 12: the build menu's first row of submenu 5 := 0
+1018:0174 func baumenue_hit  # de 1018:015f
+1018:021d func baumenue_baumenuebildmousedown  # de 1018:0208
+1018:0476 func baumenue_baumenuebildmousemove  # de 1018:0461
+1018:04fc func baumenue_baumenuebildmouseup  # de 1018:04e7
+1018:0824 func baumenu_load_data  # de 1018:080f
+1018:0baf func baumenue_draw_building_part  # de 1018:0b9a
+1018:0e62 func baumenue_draw_building  # de 1018:0e4d
+1018:10be func baumenue_draw_picture_ground  # de 1018:10a9
+1018:11e3 func baumenue_restore_rect  # de 1018:11ce
+1018:1389 func baumenue_draw_rotate_button  # de 1018:1374
+1018:147d func baumenue_restore_area  # de 1018:1468
+1018:1517 func baumenue_text_in  # de 1018:1502
+1018:15f6 func baumenue_button_text  # de 1018:15e1, changed
+1018:16dd func baumenue_draw_item  # de 1018:16c8
+1018:192c func baumenue_draw_row  # de 1018:1917, changed
+1018:1a58 func baumenue_draw_list  # de 1018:1a43
+1018:1b73 func baumenue_draw_texts  # de 1018:1b5e
+1018:1d14 func baumenue_close_released  # de 1018:1cff
+1018:1d27 func baumenue_rotate_released  # de 1018:1d12
+1018:1d38 func baumenue_build_released  # de 1018:1d23
+1018:1d65 func baumenue_cancel_released  # de 1018:1d50
+1018:1d92 func baumenue_close_pressed  # de 1018:1d7d
+1018:1e82 func baumenue_rotate_pressed  # de 1018:1e6d
+1018:1f76 func baumenue_build_pressed  # de 1018:1f61
+1018:207e func baumenue_cancel_pressed  # de 1018:2069
+1018:2186 func baumenue_up_pressed  # de 1018:2171
+1018:227a func baumenue_up_released  # de 1018:2265
+1018:228d func baumenue_down_pressed  # de 1018:2278
+1018:2381 func baumenue_down_released  # de 1018:236c
+1018:2394 func baumenue_select_row  # de 1018:237f
+1018:240d func build_menu_add  # de 1018:23f8
+1018:26ce func build_menu_remove  # de 1018:26b9
+1018:2a0c func baumenue_view_turned  # de 1018:29f7
+1018:2a2c func baumenue_restore_menu  # de 1018:2a17
+1018:2b16 func baumenue_open  # de 1018:2b01
+1018:2c86 func baumenue_close  # de 1018:2c71
+1018:2fb7 func baumenue_create  # de 1018:2fa2
+1018:318a func baumenue_free_bitmaps  # de 1018:3175
+1018:3218 func baumenue_free  # de 1018:3203
+1018:32a5 func baumenue_formkeydown  # de 1018:3290, changed
+1018:338e func baumenue_save  # de 1018:3350
+1018:34de func baumenue_load  # de 1018:34a0
+1018:362e func button_under_mouse  # button_clicked := button_at_mouse (v1.0 had the loop here)
+1018:363c func button_at_mouse  # de 1018:394e, changed
+1018:369f func mouse_moved  # de 1018:399a
+1018:36b8 func mouse_square  # de 1018:39b3
+1018:36c7 func square_at  # de 1018:39c2
+1018:3a92 func cursor_square  # de 1018:3d8d
+1018:3ab2 func cursor_corner_square  # de 1018:3dad
+1018:3adb func save_mouse  # de 1018:3dd6
+1018:3b4b func load_mouse  # de 1018:3e46, changed
+1018:3bbb func lower_tool  # de 1028:3a68
+1018:3ccf func raise_tool  # de 1028:3b7c
+1018:3de3 func demolish_tool  # de 1028:3c90
+1018:3e04 func build_tool  # de 1028:3cb1
+1018:3e78 func build_tool_9  # de 1028:3d25
+1018:3e82 func build_tool_10  # de 1028:3d2f
+1018:3e8c func build_tool_11  # de 1028:3d39
+1018:3e96 func build_tool_12  # de 1028:3d43
+1018:3ea0 func build_tool_13  # de 1028:3d4d
+1018:3eaa func build_tool_14  # de 1028:3d57
+1018:3eb4 func build_tool_15  # de 1028:3d61
+1018:3ebe func build_tool_17  # de 1028:3d6b
+1018:3ec8 func build_tool_18  # de 1028:3d75
+1018:3ed2 func build_tool_19  # de 1028:3d7f
+1018:3edc func build_tool_20  # de 1028:3d89
+1018:3ee6 func sabotage_tool  # de 1028:3d93, changed
+1018:3f23 func tool_click  # de 1028:3dd0
+1020:0456 func hauptschirm_knob_click  # de 1020:0456
+1020:0480 func endeform_open  # de 1020:0480
+1020:04b0 func hauptschirm_draw_view  # de 1020:04b0
+1020:04bc func show_info_box  # de 1020:04bc
+1020:050b func hide_info_box  # de 1020:050b
+1020:0577 func endeform_open2  # de 1020:0577
+1020:05a7 func hauptschirm_update_scroll  # de 1020:05a7
+1020:067c func hauptschirm_erase_thumbs  # de 1020:067c
+1020:0697 func hauptschirm_origin_from_scroll  # de 1020:0697
+1020:06f1 func hauptschirm_origin_from_scroll_exact  # de 1020:06f1
+1020:074d func hauptschirm_scroll_from_origin  # de 1020:074d
+1020:0787 func hauptschirm_jump_to  # de 1020:0787
+1020:07dc func hauptschirm_scroll  # de 1020:07dc
+1020:0a55 func hauptschirm_place_ns_bar  # de 1020:0a55
+1020:0b0f func hauptschirm_set_ns_bar  # de 1020:0b0f
+1020:0b38 func hauptschirm_ns_thumb  # de 1020:0b38
+1020:0bf4 func hauptschirm_draw_ns_thumb  # de 1020:0bf4
+1020:0c8b func hauptschirm_erase_ns_thumb  # de 1020:0c8b
+1020:0cf7 func hauptschirm_scroll_ns  # de 1020:0cf7
+1020:0d92 func hauptschirm_nsscrollbild_mousedown  # de 1020:0d92
+1020:0fa2 func hauptschirm_nsscrollbild_mousemove  # de 1020:0fa2
+1020:10b6 func hauptschirm_nsscrollbild_mouseup  # de 1020:10b6
+1020:11dd func hauptschirm_place_wo_bar  # de 1020:11dd
+1020:1297 func hauptschirm_set_wo_bar  # de 1020:1297
+1020:12c0 func hauptschirm_wo_thumb  # de 1020:12c0
+1020:137c func hauptschirm_draw_wo_thumb  # de 1020:137c
+1020:1413 func hauptschirm_erase_wo_thumb  # de 1020:1413
+1020:147f func hauptschirm_scroll_wo  # de 1020:147f
+1020:151a func hauptschirm_woscrollbild_mousedown  # de 1020:151a
+1020:172a func hauptschirm_woscrollbild_mousemove  # de 1020:172a
+1020:181f func hauptschirm_woscrollbild_mouseup  # de 1020:181f
+1020:1946 func hauptschirm_buttonimage_click  # de 1020:1946
+1020:1952 func hauptschirm_buttonimage_mousemove  # de 1020:1952
+1020:1984 func hauptschirm_hauptbild_mousedown  # de 1020:1984
+1020:1ae6 func hauptschirm_hauptbild_mousemove  # de 1020:1ae6
+1020:1b31 func hauptschirm_hauptbild_mouseup  # de 1020:1b31
+1020:1b8e func hauptschirm_ueberschriftbild_mousedown  # de 1020:1b8e
+1020:1bd9 func hauptschirm_ueberschriftbild_mousemove  # de 1020:1bd9
+1020:1c58 func hauptschirm_ueberschriftbild_mouseup  # de 1020:1c58
+1020:1c79 func hauptschirm_place  # de 1020:1c79
+1020:1ce9 func hauptschirm_layout  # de 1020:1ce9
+1020:1df3 func hauptschirm_load_title  # de 1020:1df3
+1020:1e4f func hauptschirm_draw_title  # de 1020:1e4f
+1020:1e9b func hauptschirm_animationstimer_timer  # de 1020:1e9b
+1020:24a0 func hauptschirm_stop_clock  # de 1020:24a0
+1020:24b7 func hauptschirm_start_clock  # de 1020:24b7
+1020:2501 func hauptschirm_init  # de 1020:2501
+1020:283b func hauptschirm_show  # de 1020:283b
+1020:2866 func hauptschirm_formshow  # de 1020:2866
+1020:28bf func hauptschirm_formclose  # de 1020:28bf
+1020:2d31 func hauptschirm_key_turn  # de 1020:2d31
+1020:2d4c func hauptschirm_key_scroll  # de 1020:2d4c
+1020:2daa func hauptschirm_press_button  # de 1020:2daa
+1020:2e09 func hauptschirm_formkeydown  # de 1020:2e09, changed
+1020:31af func hauptschirm_eckimage_mousedown  # de 1020:3214
+1020:31e7 func hauptschirm_closebild_mousedown  # de 1020:324c
+1020:3221 func hauptschirm_closebild_mouseup  # de 1020:3286
+1020:325b func hauptschirm_kleinbild_mousedown  # de 1020:32c0
+1020:3295 func hauptschirm_kleinbild_mouseup  # de 1020:32fa, changed
+1020:3418 func endeform_hit  # de 1020:347d
+1020:3465 func endeform_restore_part  # de 1020:34ca
+1020:3523 func endeform_draw_text_pressed  # de 1020:3588
+1020:359e func endeform_draw_text  # de 1020:3603
+1020:3617 func endeform_draw_up  # de 1020:367c
+1020:3669 func endeform_draw_pressed  # de 1020:36ce
+1020:3778 func endeform_endeimagemousedown  # de 1020:37dd
+1020:386f func endeform_endeimagemousemove  # de 1020:38d4
+1020:38fa func endeform_endeimagemouseup  # de 1020:395f
+1020:3a48 func endeform_draw_texts  # de 1020:3aad
+1020:3afa func endeform_formshow  # de 1020:3b5f
+1020:3ca0 func endeform_formhide  # de 1020:3d05
+1020:3ccb func endeform_formkeydown  # de 1020:3d30, changed
+1028:0002 func schedule_event  # de 1010:3006, changed
+1028:0080 func events_tick  # de 1010:3084
+1028:06f4 func load_ereignis_file  # de 1010:36f8
+1028:0ab0 func load_ereignis  # de 1010:3ab4
+1028:1112 func auktion_hit  # de 1028:01d4
+1028:115f func auktion_animate  # de 1028:0221
+1028:13b4 func auktion_close  # de 1028:0476
+1028:14e1 func auktion_draw_price  # de 1028:05a3
+1028:17ea func start_auction  # de 1028:08ac
+1028:1825 func auktion_award  # de 1028:08e7
+1028:1bc0 func auktion_sell_to_computers  # de 1028:0c82
+1028:1d1c func auktion_open  # de 1028:0dde
+1028:252d func auktion_bid  # de 1028:15ef
+1028:284b func auktionsform_timer1timer  # de 1028:190d
+1028:287e func auktionsform_timer2timer  # de 1028:1940
+1028:28b1 func auktionsform_timer3timer  # de 1028:1973
+1028:2ab5 func auktionsform_leistemousedown  # de 1028:1b77
+1028:2b8b func auktionsform_leistemousemove  # de 1028:1c4d
+1028:2c1e func auktionsform_leistemouseup  # de 1028:1ce0
+1028:2d61 func auktionsform_knopfimagemousedown  # de 1028:1e23
+1028:3146 func auktionsform_knopfimagemouseup  # de 1028:2208
+1028:3387 func load_auktion  # de 1028:2449
+1028:3444 func auktion_load  # de 1028:2506
+1028:3532 func auktion_save  # de 1028:25f4, changed
+1028:3620 func auktionsform_formkeydown  # de 1028:26e4, changed
+1028:374a func wasnun_load_texts  # de 1040:34af
+1028:39e3 func wasnun_set_page  # de 1040:3748
+1028:3baa func wasnun_hide  # Hide, then 1028:39c7 (de 1040:390f)
+1028:3ce0 func pauseform_show  # de 1040:3a45
+1028:3e47 func pauseform_close  # de 1040:3bac
+1028:3e8f func pauseform_pausebild_click  # de 1040:3bf4
+1028:3ea0 func pauseform_form_key_down  # de 1040:3c05
+1030:01d9 func sabowin_hit  # de 1028:2ad7
+1030:0226 func sabowin_button_text_pressed  # de 1028:2b24
+1030:02a1 func sabowin_button_text  # de 1028:2b9f
+1030:031a func sabowin_draw_up  # de 1028:2c18
+1030:0364 func sabowin_draw_pressed  # de 1028:2c62
+1030:0469 func sabowin_saboimagemousedown  # de 1028:2d67
+1030:05ce func sabowin_saboimagemousemove  # de 1028:2ecc
+1030:0650 func sabowin_saboimagemouseup  # de 1028:2f4e
+1030:077b func sabowin_draw  # de 1028:3079
+1030:0ad2 func sabowin_erase_part  # de 1028:33d0
+1030:0cf0 func sabowin_formhide  # de 1028:35ee
+1030:0d21 func load_sabotage  # de 1028:361f
+1030:0ffa func free_sabotage  # de 1028:38f8
+1030:104e func sabowin_formkeydown  # de 1028:394c, changed
+1030:1175 func monate_create  # de 1030:000d
+1030:1253 func date_advance  # de 1030:00eb
+1030:12b0 func date_text  # de 1030:0148
+1030:14ea func date_day  # de 1030:0382
+1030:14ff func date_month  # de 1030:0397
+1030:15cd func facility_price_heading  # de 1030:0465, changed
+1030:164b func can_build  # de 1030:04e3
+1030:1c3a func byte_list_create  # de 1030:0ad2
+1030:1c5a func byte_list_push  # de 1030:0af2
+1030:1ca5 func byte_list_get  # de 1030:0b3d
+1030:1cde func byte_list_remove  # de 1030:0b76
+1030:1d69 func byte_list_count  # de 1030:0c01
+1030:1d80 func byte_list_clear  # de 1030:0c18
+1030:1daa func byte_list_save  # de 1030:0c42
+1030:1dca func byte_list_load  # de 1030:0c62
+1030:1dea func candidates_create  # de 1030:0c82
+1030:1e17 func candidates_push  # de 1030:0caf
+1030:1e88 func candidates_get  # de 1030:0d20
+1030:1ed9 func candidates_remove  # de 1030:0d71
+1030:1f33 func candidates_count  # de 1030:0dcb
+1030:1f7d func candidates_clear  # de 1030:0e15
+1030:1faa func candidates_free  # de 1030:0e42
+1030:1fd7 func candidates_save  # de 1030:0e6f
+1030:2013 func candidates_load  # de 1030:0eab
+1030:204f func longint_at_least_0  # de 1030:0ee7
+1030:2081 func max_longint  # de 1030:0f19
+1030:20bb func min_longint  # de 1030:0f53
+1030:211a func abs_difference  # de 1030:0fb2
+1030:2145 func group_digits  # de 1030:0fdd
+1030:21f3 func insert_decimal_marks  # de 1030:108b
+1030:2308 func format_money  # de 1030:11a0
+1030:2542 func format_decimal_money  # de 1030:13da
+1030:2580 func get_tile_dcs  # de 1030:1418
+1030:267f func point_in_rect  # de 1030:1517
+1030:26b4 func building_origin  # de 1030:154c
+1030:273a func is_road_on_plot  # de 1030:15d2
+1030:280a func is_road_of_plot  # de 1030:16a2
+1030:286e func road_distance  # de 1030:1706
+1030:2975 func location_at  # de 1030:180d
+1030:29c5 func change_location  # de 1030:185d
+1030:2c51 func change_location_quiet  # de 1030:1ae9
+1030:2e78 func add_location_effect  # de 1030:1d10
+1030:2f2e func remove_location_effect  # de 1030:1dc6
+1030:2fca func plot_at  # de 1030:1e62
+1030:30fb func on_map  # de 1030:1f93
+1030:312a func on_map_ji  # de 1030:1fc2
+1030:3143 func highest_corner  # de 1030:1fdb
+1030:31f5 func lowest_corner  # de 1030:208d
+1030:32a7 func draw_info_bar  # de 1030:213f
+1030:3310 func draw_status_bar  # de 1030:21a8
+1030:3379 func show_money  # de 1030:2211
+1030:33f5 func show_date  # de 1030:228d
+1030:3446 func show_status_message  # de 1030:22de
+1030:3495 func show_error_message  # de 1030:232d
+1030:34c2 func show_building_in_the_way  # de 1030:235a
+1030:353b func draw_text  # de 1030:23d3
+1030:3ada func load_fontdat  # de 1030:2972
+1030:3c81 func text_init  # de 1030:2b19
+1030:3ce6 func text_done  # de 1030:2b7e
+1038:014b func infobox_draw_line  # de 1038:014b
+1038:098d func infobox_draw_button  # de 1038:098d
+1038:0a44 func infobox_draw_button_pressed  # de 1038:0a44
+1038:0afe func infobox_show_button  # de 1038:0afe
+1038:0b40 func infobox_button_row_text  # de 1038:0b40
+1038:0c00 func infobox_button_row_value  # de 1038:0c00
+1038:0d3a func infobox_draw_button_row  # de 1038:0d3a
+1038:0e13 func infobox_load_data  # de 1038:0e13
+1038:17f3 func infobox_button_looks  # de 1038:17f3
+1038:1899 func infobox_gather  # de 1038:1899
+1038:1a75 func infobox_draw_rows  # de 1038:1a75
+1038:1b92 func infobox_draw  # de 1038:1b92
+1038:1ccf func infobox_layout  # de 1038:1ccf
+1038:1e83 func infobox_island_info  # de 1038:1e83
+1038:1eac func infobox_show  # de 1038:1eac
+1038:1ee0 func infobox_hide  # de 1038:1ee0
+1038:1f69 func infobox_init  # de 1038:1f69
+1038:2302 func infobox_free  # de 1038:2302
+1038:2478 func infobox_button_hit  # de 1038:2478
+1038:24d6 func infobox_click  # de 1038:24d6
+1038:2742 func infobox_infoimage_mousedown  # de 1038:2742
+1038:27b4 func infobox_infoimage_mouseup  # de 1038:27b4
+1038:284b func infobox_formkeydown  # de 1038:284b, changed
+1038:28bf func init_view_squares  # de 1030:2bdc
+1038:2b2b func load_tables  # de 1030:2e48
+1038:2d5d func load_game_bitmaps  # de 1030:307a
+1038:33c8 func load_game_rest  # de 1030:36e5
+1038:35bd func game_done  # de 1030:38da
+1038:35f1 func generate_island_busy  # de 1030:390e
+1038:3615 func load_game_data  # de 1030:3932
+1038:38f2 func creditform_button_click  # de 1030:3c0f
+1038:3925 func creditform_show  # de 1030:3c42
+1038:3b52 func creditform_close  # de 1030:3e6f
+1038:3ba7 func creditform_bild_mouse_down  # de 1030:3ec4
+1038:3c05 func creditform_bild_mouse_up  # de 1030:3f22
+1038:3c63 func creditform_form_close  # de 1030:3f80
+1040:0180 func dateimenue_list_click  # de 1040:0180
+1040:0192 func dateimenue_list_mouse_down  # de 1040:0192
+1040:0244 func dateimenue_up_click  # de 1040:0244
+1040:0286 func dateimenue_down_click  # de 1040:0286
+1040:02c8 func dateimenue_edit_click  # de 1040:02c8
+1040:02da func dateimenue_hit  # de 1040:02da
+1040:0327 func dateimenue_restore_part  # de 1040:0327
+1040:03e5 func dateimenue_draw_text_pressed  # de 1040:03e5
+1040:0460 func dateimenue_draw_text  # de 1040:0460
+1040:04d9 func dateimenue_draw_up  # de 1040:04d9, changed
+1040:05c3 func dateimenue_draw_pressed  # de 1040:05a4, changed
+1040:077e func dateimenue_dateimenuebildmousedown  # de 1040:073c, changed
+1040:0a45 func dateimenue_dateimenuebildmousemove  # de 1040:09ca
+1040:0ac7 func dateimenue_dateimenuebildmouseup  # de 1040:0a4c, changed
+1040:0d93 func dateimenue_editierfensterkeydown  # de 1040:0cd3
+1040:0dcf func valid_file_name  # de 1040:0d0f, changed
+1040:0eef func dateimenue_save  # de 1040:0e03, changed
+1040:104e func dateimenue_load  # de 1040:0f27, changed
+1040:110c func dateimenue_delete  # new: the file menu's Loeschen: asks (by land), erases MAPS\<name>.map, fills the list again
+1040:127a func dateimenue_clear_names  # de 1040:0fb0
+1040:1287 func dateimenue_free_names  # de 1040:0fbd
+1040:12c9 func dateimenue_add_name  # de 1040:0fff
+1040:1339 func dateimenue_name  # de 1040:106f
+1040:13af func dateimenue_find_games  # de 1040:10e5
+1040:143f func dateimenue_fill_list  # de 1040:1175
+1040:14bc func dateimenue_draw_texts  # de 1040:11f2, changed
+1040:159e func dateimenue_formshow  # de 1040:12be
+1040:1805 func dateimenue_formhide  # de 1040:1525
+1040:182d func dateimenue_reset  # de 1040:154d
+1040:1844 func dateimenue_map_load  # de 1040:1564
+1040:184b func dateimenue_map_save  # de 1040:156b
+1040:1852 func dateimenue_formkeydown  # de 1040:1572, changed
+1040:1b62 func kompass_south_click  # de 1038:29e3
+1040:1bc0 func kompass_east_click  # de 1038:2a41
+1040:1c1e func kompass_north_click  # de 1038:2a9f
+1040:1c7c func kompass_west_click  # de 1038:2afd
+1040:1cda func kompass_close_click  # de 1038:2b5b
+1040:1d83 func kompass_init  # de 1038:2c04
+1040:2236 func kompass_free  # de 1038:30b7
+1040:22ce func kompass_show  # de 1038:314f
+1040:23c2 func kompass_hide  # de 1038:3243
+1040:23d5 func kompass_update  # de 1038:3256
+1040:24a8 func kompass_bild_mousedown  # de 1038:3329
+1040:25ee func kompass_bild_mousemove  # de 1038:346f
+1040:267b func kompass_bild_mouseup  # de 1038:34fc
+1040:26d6 func kompass_formkeydown  # de 1038:3557, changed
+1040:2801 func ladenform_list_click  # de 1038:3682
+1040:2821 func ladenform_list_mouse_down  # de 1038:36a2
+1040:2854 func ladenform_up_click  # de 1038:36d5
+1040:28f5 func ladenform_down_click  # de 1038:3776
+1040:2996 func ladenform_close_click  # de 1038:3817
+1040:29b5 func ladenform_load_click  # de 1038:3836
+1040:29da func ladenform_free_names  # de 1038:385b
+1040:2a1c func ladenform_add_name  # de 1038:389d
+1040:2a8c func ladenform_name  # de 1038:390d
+1040:2b02 func ladenform_find_games  # de 1038:3983
+1040:2b92 func ladenform_fill_list  # de 1038:3a13
+1040:2c14 func ladenform_load  # de 1038:3a95
+1040:2cc5 func ladenform_init  # de 1038:3b46
+1040:2f79 func ladenform_close  # de 1038:3dfa
+1040:2fa3 func ladenform_bildmousedown  # de 1038:3e24
+1040:3074 func ladenform_bildmouseup  # de 1038:3ef5
+1040:311a func ladenform_formclose  # de 1038:3f9b, changed
+1040:3128 func set_sound_volume  # de 10a0:2453
+1040:3191 func set_speech_volume  # de 10a0:24bc
+1040:31ed func sound_deactivate  # de 10a0:2518
+1040:3224 func sound_activate  # de 10a0:254f
+1040:324c func sound_done  # de 10a0:2577, changed
+1040:34f9 func sound_file_name  # de 10a0:2824
+1040:3c33 func init_sound  # de 10a0:2f5e
+1040:3d8b func play_sound  # de 10a0:30b6
+1048:01bd func fernseher_play_film  # de 1048:01bd
+1048:034f func fernseher_stop_film  # de 1048:034f
+1048:03c5 func fernseher_message_text  # de 1048:03c5
+1048:077a func fernseher_hide  # de 1048:077a
+1048:087f func fernseher_draw_entry  # de 1048:087f
+1048:0a54 func post_message  # de 1048:0a54
+1048:12e9 func fernseher_show  # de 1048:12e9
+1048:1599 func fernseher_hit  # de 1048:1599
+1048:15e6 func fernseher_tvimage_mouse_down  # de 1048:15e6
+1048:1794 func fernseher_tvimage_mouse_up  # de 1048:1794
+1048:1939 func fernseher_tvleiimage_press  # de 1048:1939
+1048:1a4b func fernseher_tvleiimage_release  # de 1048:1a4b
+1048:1b3e func fernseher_tick  # de 1048:1b3e
+1048:1ffd func init_messages  # de 1048:1ffd
+1048:249d func done_messages  # de 1048:249d
+1048:2524 func save_news  # de 1048:2524
+1048:25ea func load_news  # de 1048:25ea
+1048:26b7 func fernseher_stop_media  # de 1048:26b7
+1048:26f6 func fernseher_form_key_down  # de 1048:26f6
+1048:286b func fernseher_tvimagemousedown  # de 1048:286b
+1048:287d func fernseher_tvimagemouseup  # de 1048:287d
+1048:288f func fernseher_tvleiimagemousedown  # de 1048:288f
+1048:2922 func fernseher_tvleiimagemouseup  # de 1048:2922
+1048:2955 func fernseher_tvleiimagemousemove  # de 1048:2955
+1048:29e2 func fernseher_form_hide  # de 1048:29e2
+1048:2a19 func load_map  # de 1048:2a19
+1048:2bae func save_map  # de 1048:2bae
+1048:2dff func load_hauspos  # de 1048:2dff
+1048:2ed8 func load_hausnr  # de 1048:2ed8
+1048:2fbd func load_grounpos  # de 1048:2fbd
+1048:3098 func load_groundnr  # de 1048:3098
+1048:3172 func load_gfxpos  # de 1048:3172
+1048:3256 func load_straspos  # de 1048:3256
+1048:3339 func load_flusspos  # de 1048:3339
+1048:341c func load_hauspreis  # de 1048:341c
+1048:34ee func load_hausdata  # de 1048:34ee
+1048:358f func load_hausname  # de 1048:358f
+1048:36b2 func load_auswahl  # de 1048:36b2
+1048:375e func load_sabotext  # de 1048:375e
+1048:387c func load_fehler  # de 1048:387c
+1050:0002 func draw_button_down  # de 1050:0002
+1050:0074 func draw_button_up  # de 1050:0074
+1050:0144 func scroll_view  # de 1050:0144
+1050:075e func ground_corner_height  # de 1050:075e
+1050:0811 func turn_part  # de 1050:0811
+1050:0997 func turn_building  # de 1050:0997
+1050:0e68 func draw_columns  # de 1050:0e68
+1050:21b7 func in_view  # de 1050:21b7
+1050:21f9 func redraw_area  # de 1050:21f9
+1050:245b func square_visible  # de 1050:245b
+1050:2697 func draw_bottom_rows  # de 1050:2697
+1050:26ae func draw_top_rows  # de 1050:26ae
+1050:26c8 func draw_column_range  # de 1050:26c8
+1050:2700 func draw_view  # de 1050:2700
+1050:271b func load_darstell  # de 1050:271b
+1058:014d func startform_relief_click  # de 1058:014d
+1058:015e func startform_land_click  # de 1058:015e
+1058:016f func startform_opponents_click  # de 1058:016f
+1058:01f8 func startform_rivers_click  # de 1058:01f8
+1058:0209 func startform_difficulty_click  # de 1058:0209
+1058:021a func startform_start_click  # de 1058:021a
+1058:02b0 func startform_version_click  # de 1058:02b0, changed
+1058:02cf func startform_mode_click  # de 1058:02cf, changed
+1058:0deb func startform_load_click  # de 1058:0c7d
+1058:0e29 func startform_close_click  # de 1058:0cbb
+1058:0e4b func startform_atoll_click  # de 1058:0cdd
+1058:0e91 func startform_island_group_click  # de 1058:0d23
+1058:0ed8 func startform_one_island_click  # de 1058:0d6a
+1058:0f1f func take_colour  # de 1058:0db1
+1058:0f5b func startform_colour1_click  # de 1058:0ded
+1058:1032 func startform_colour2_click  # de 1058:0ec4
+1058:1109 func startform_colour3_click  # de 1058:0f9b
+1058:11e0 func startform_colour4_click  # de 1058:1072
+1058:12b7 func startform_colour5_click  # de 1058:1149
+1058:138e func startform_colour6_click  # de 1058:1220
+1058:1465 func startform_colour7_click  # de 1058:12f7
+1058:153c func startform_colour8_click  # de 1058:13ce
+1058:1613 func startform_scenario1_click  # de 1058:14a5, changed
+1058:1782 func startform_scenario2_click  # de 1058:1584, changed
+1058:18f1 func startform_scenario3_click  # de 1058:1663, changed
+1058:1a60 func startform_scenario4_click  # de 1058:1742, changed
+1058:1bcf func startform_scenario5_click  # de 1058:1821, changed
+1058:1d3e func startform_scenario6_click  # de 1058:1900, changed
+1058:1ead func startform_scenario7_click  # new: scenario := 8, the other boxes off, the description
+1058:201c func startform_scenario8_click  # new: scenario := 9
+1058:218b func startform_scenario9_click  # new: scenario := 10
+1058:22fa func startform_scenario10_click  # new: scenario := 11
+1058:2469 func startform_scenario11_click  # new: scenario := 12
+1058:25d8 func startform_scenario12_click  # new: scenario := 13
+1058:2747 func startform_maperstbuttonclick  # de 1058:19df
+1058:2791 func startform_sprachbuttonclick  # de 1058:1a29
+1058:2798 func startform_show  # de 1058:1a30
+1058:2c38 func startform_load_texts  # de 1058:1ed0, changed
+1058:378f func startform_init  # de 1058:27e6, changed
+1058:4ce9 func startform_free_bitmaps  # de 1058:3b61, changed
+1058:4ea3 func startform_bildmousedown  # de 1058:3cfd, changed
+1058:53b3 func startform_bildmousemove  # de 1058:412f
+1058:547f func startform_bildmouseup  # de 1058:41fb
+1058:5605 func startform_formkeydown  # de 1058:4381
+1060:0163 func optionenform_ok_click  # de 1060:0163
+1060:0175 func optionenform_top_click  # de 1060:0175
+1060:01ab func optionenform_info_click  # de 1060:01ab
+1060:01dc func optionenform_music_click  # de 1060:01dc
+1060:01fa func optionenform_track_check  # de 1060:01fa
+1060:02b7 func optionenform_track_select  # de 1060:02b7
+1060:04e2 func optionenform_music_volume_click  # de 1060:04e2
+1060:04f9 func optionenform_sounds_click  # de 1060:04f9
+1060:050b func optionenform_sound_volume_click  # de 1060:050b
+1060:0522 func optionenform_speech_click  # de 1060:0522
+1060:0534 func optionenform_speech_volume_click  # de 1060:0534
+1060:05a7 func optionenform_auction_waits_click  # de 1060:05a7
+1060:05cb func optionenform_animations_click  # de 1060:05cb
+1060:0619 func optionen_set_speed  # de 1060:0619
+1060:0637 func optionenform_disasters_click  # de 1060:0637
+1060:0656 func optionenform_owner_pointers_click  # de 1060:0656
+1060:06ba func optionenform_occupancy_pointers_click  # de 1060:06ba
+1060:071e func optionenform_no_pointers_click  # de 1060:071e
+1060:0789 func optionenform_show  # de 1060:0789
+1060:0e80 func optionenform_close  # de 1060:0e80
+1060:0ed0 func optionen_load_texts  # de 1060:0ed0
+1060:14f1 func optionenform_create_widgets  # de 1060:14f1
+1060:231c func optionenform_free_bitmaps  # de 1060:231c
+1060:2404 func optionenform_bild_mouse_down  # de 1060:2404
+1060:29f0 func optionenform_bild_mouse_move  # de 1060:29f0
+1060:2b17 func optionenform_bild_mouse_up  # de 1060:2b17
+1060:2c72 func optionenform_form_key_down  # de 1060:2c72
+1060:33cb func optionenform_form_close  # de 1060:33cb
+1068:0109 func sort_highscores  # de 1040:1853
+1068:0412 func highscoreform_close  # de 1040:1b5c
+1068:045b func highscoreform_closebutton_click  # de 1040:1ba5
+1068:0478 func highscoreform_schliessen_click  # de 1040:1bc2
+1068:0495 func add_highscore  # de 1040:1bdf
+1068:055d func reset_highscores  # de 1040:1ca7
+1068:05ff func highscoreform_draw_table  # de 1040:1d49
+1068:07ee func highscoreform_box_game1_click  # de 1040:1f38, changed
+1068:0961 func highscoreform_box_game2_click  # de 1040:1ffd, changed
+1068:0ad4 func highscoreform_box_game3_click  # de 1040:20c2, changed
+1068:0c47 func highscoreform_box_game4_click  # de 1040:2187, changed
+1068:0dba func highscoreform_box_game5_click  # de 1040:224c, changed
+1068:0f2d func highscoreform_box_game6_click  # de 1040:2311, changed
+1068:10a0 func highscoreform_box_game0_click  # de 1040:23d6, changed
+1068:1213 func highscoreform_box_game7_click  # new
+1068:1386 func highscoreform_box_game8_click  # new
+1068:14f9 func highscoreform_box_game9_click  # new
+1068:166c func highscoreform_box_game10_click  # new
+1068:17df func highscoreform_box_game11_click  # new
+1068:1952 func highscoreform_box_game12_click  # new
+1068:1adf func load_highscores  # SOUND\highscor.wav into games 0..6, Upgrade\highsco2.wav slots 1..6 into games 8..13
+1068:1e08 func save_highscores  # the reverse; game 7 isn't saved
+1068:2117 func highscoreform_formshow  # de 1040:2579, changed
+1068:2493 func load_highscor_txt  # de 1040:284c, changed
+1068:29ac func highscoreform_init  # de 1040:2bf0, changed
+1068:319b func highscoreform_free_bitmaps  # de 1040:310a
+1068:31ed func highscoreform_free  # de 1040:315c, changed
+1068:3234 func highscoreform_create  # de 1040:3183, changed
+1068:328b func highscoreform_bildmousedown  # de 1040:31bc, changed
+1068:34f4 func highscoreform_bildmouseup  # de 1040:3347, changed
+1070:0180 func schlussform_weiterspielen_click  # de 1068:0180
+1070:01b3 func schlussform_highscore_click  # de 1068:01b3
+1070:01df func schlussform_beenden_click  # de 1068:01df
+1070:0201 func schlussform_neuesspiel_click  # de 1068:0201
+1070:0218 func schlussform_closebutton_click  # de 1068:0218
+1070:023a func schluss_skip_lines  # de 1068:023a, changed
+1070:0294 func schluss_load_texts  # de 1068:0288, changed
+1070:0b73 func schlussform_init  # de 1068:09a5
+1070:0fe8 func schlussform_free_bitmaps  # de 1068:0e1a
+1070:1036 func schlussform_play_quit_film  # de 1068:0e68
+1070:1120 func schlussform_show_quit  # de 1068:0f52, changed
+1070:128d func schlussform_show_end  # de 1068:1016, changed
+1070:16fa func schlussform_show_results  # de 1068:1340
+1070:194d func schlussform_close  # de 1068:1593
+1070:19cd func schlussform_bildmousedown  # de 1068:1613
+1070:1a9a func schlussform_bildmouseup  # de 1068:16e0
+1070:1b67 func schlussform_film_ended  # de 1068:17ad
+1070:1c39 func schlussform_timer1timer  # de 1068:187f
+1070:1d44 func schlussform_formkeydown  # de 1068:198a
+1070:1d55 func schlussform_panel1click  # de 1068:199b
+1070:1dc2 func new_house  # de 1068:1a08
+1070:1ef8 func new_facility  # de 1068:1b3e
+1070:2037 func add_building_site  # de 1068:1c7d
+1070:20bf func plot_add_house  # de 1068:1d05
+1070:210f func plot_add_facility  # de 1068:1d55
+1070:215f func plot_append_houses  # de 1068:1da5
+1070:21c3 func plot_append_facilities  # de 1068:1e09
+1070:2227 func remove_house  # de 1068:1e6d
+1070:239a func remove_facility  # de 1068:1fe0
+1070:250d func remove_building_site  # de 1068:2153
+1070:25fd func plot_remove_house  # de 1068:2243
+1070:26f6 func plot_remove_facility  # de 1068:233c
+1070:294b func find_plot  # de 1068:2591
+1070:29b7 func count_plot_squares  # de 1068:25fd
+1070:2a52 func new_plot  # de 1068:2698
+1070:2b5f func merge_plots  # de 1068:27a5
+1070:2de5 func remove_plot  # de 1068:2a2b
+1070:2f74 func create_plots  # de 1068:2bba
+1070:3103 func link_plots  # de 1068:2d49
+1070:31bf func load_houses  # de 1068:2e05
+1070:3276 func load_facilities  # de 1068:2ebc
+1070:332d func save_houses  # de 1068:2f73
+1070:339b func save_facilities  # de 1068:2fe1
+1070:3409 func load_building_sites  # de 1068:304f
+1070:348a func save_building_sites  # de 1068:30d0
+1070:34f8 func load_plots  # de 1068:313e
+1070:35fe func save_plots  # de 1068:3244
+1070:366f func load_lists  # de 1068:32b5
+1070:3699 func save_lists  # de 1068:32df
+1078:01e8 func geldmenuform_overview_click  # de 1070:01e8
+1078:01fc func geldmenuform_insurance_click  # de 1070:01fc
+1078:0294 func geldmenu_hit  # de 1070:0294
+1078:0300 func geldmenuform_bild_mouse_down  # de 1070:0300
+1078:04d3 func geldmenuform_bild_mouse_up  # de 1070:04d3
+1078:0820 func geldmenuform_ueberschrift_mouse_down  # de 1070:0820
+1078:08e0 func geldmenuform_ueberschrift_mouse_move  # de 1070:08e0
+1078:096d func geldmenuform_ueberschrift_mouse_up  # de 1070:096d
+1078:09f7 func geldmenuform_menu_mouse_down  # de 1070:09f7
+1078:0ad5 func geldmenuform_menu_mouse_move  # de 1070:0ad5
+1078:0add func geldmenuform_menu_mouse_up  # de 1070:0add
+1078:0b76 func geldmenu_image_of  # de 1070:0b76
+1078:0be5 func geldmenu_background_of  # de 1070:0be5
+1078:0c8b func geldmenu_image_dc  # de 1070:0c8b
+1078:0cbd func geldmenu_background_dc  # de 1070:0cbd
+1078:0cef func geldmenu_erase  # de 1070:0cef
+1078:0dea func geldmenu_put_text  # de 1070:0dea
+1078:1100 func geldmenu_draw_up  # de 1070:1100
+1078:1178 func geldmenu_draw_down  # de 1070:1178
+1078:1345 func guests_last_months  # de 1070:1345
+1078:13f1 func books_value  # de 1070:13f1
+1078:1419 func books_add  # de 1070:1419
+1078:1452 func geldmenu_year_total  # de 1070:1452
+1078:14b4 func geldmenu_chart_dot  # de 1070:14b4
+1078:151b func geldmenu_chart_line  # de 1070:151b
+1078:16b7 func geldmenu_draw_chart  # de 1070:16b7
+1078:1ba5 func geldmenu_hide_widgets  # de 1070:1ba5
+1078:1d1f func geldmenu_draw_widgets  # de 1070:1d1f
+1078:1eeb func geldmenu_draw_page  # de 1070:1eeb
+1078:1f3f func geldmenu_draw_title  # de 1070:1f3f
+1078:1f79 func geldmenu_draw_menu_bar  # de 1070:1f79
+1078:20e7 func geldmenu_set_page  # de 1070:20e7
+1078:210a func geldmenu_month_end  # de 1070:210a
+1078:2617 func geldmenu_refresh  # de 1070:2617
+1078:2630 func geldmenu_loaded  # de 1070:2630
+1078:2653 func books_clear_years  # de 1070:2653
+1078:269d func books_close_year  # de 1070:269d
+1078:270f func geldmenu_draw_values  # de 1070:270f
+1078:28d3 func geldmenu_draw_labels  # de 1070:28d3
+1078:2ab8 func geldmenu_balance  # de 1070:2ab8
+1078:2b11 func geldmenu_show_page  # de 1070:2b11
+1078:2b3a func geldmenu_show  # de 1070:2b3a
+1078:2bb4 func geldmenu_close  # de 1070:2bb4
+1078:2bfa func geldmenu_load_data  # de 1070:2bfa
+1078:2e6c func geldmenu_init  # de 1070:2e6c
+1078:38d2 func geldmenu_destroy  # de 1070:38d2
+1078:39bf func geldmenuform_formkeydown  # de 1070:39bf
+1078:3b27 func geldmenu_save  # de 1070:3b27
+1078:3bf8 func geldmenu_load  # de 1070:3bf8
+1080:0002 func building_slice  # de 1078:0002
+1080:014c func guests_of  # de 1078:014c
+1080:0172 func set_guests_of  # de 1078:0172
+1080:0191 func money_of  # de 1078:0191
+1080:01e7 func add_money  # de 1078:01e7
+1080:0466 func set_loan  # de 1078:0466
+1080:04ce func change_loan  # de 1078:04ce
+1080:057a func loan_of  # de 1078:057a
+1080:05a0 func interest_of  # de 1078:05a0
+1080:05c6 func take_loan  # de 1078:05c6
+1080:061b func repay_loan  # de 1078:061b
+1080:0692 func economy_at  # de 1078:0692
+1080:075f func init_economy_periods  # de 1078:075f
+1080:0780 func mix_classes  # de 1078:0780
+1080:08b2 func create_totals  # de 1078:08b2
+1080:0918 func create_player_block  # de 1078:0918
+1080:09f6 func corner_risen  # de 1078:09f6
+1080:0d00 func corner_sunk  # de 1078:0d00
+1080:0eda func register_building  # de 1078:0eda
+1080:124e func unregister_building  # de 1078:124e
+1080:15d9 func add_site_budget  # de 1078:15d9
+1080:1684 func unregister_building_call  # de 1078:1684
+1080:169a func find_record  # de 1078:169a
+1080:17a0 func building_figures  # de 1078:17a0
+1080:1995 func find_building_site  # de 1078:1995
+1080:1a66 func set_connection_at  # de 1078:1a66
+1080:1b5e func place_site  # de 1078:1b5e
+1080:1d21 func start_building  # de 1078:1d21
+1080:1de9 func place_building  # de 1078:1de9
+1080:203d func finish_building  # de 1078:203d
+1080:2178 func lay_road  # de 1078:2178
+1080:2396 func build_road  # de 1078:2396
+1080:267e func remove_house_beach_life  # de 1078:267e
+1080:273a func remove_renters  # de 1078:273a
+1080:276f func remove_bridge_square  # de 1078:276f
+1080:280b func demolish  # de 1078:280b
+1080:3271 func init_players  # de 1078:3271
+1088:0123 func umenu_refresh  # de 1080:0123
+1088:014c func umenu_renovate_click  # de 1080:014c
+1088:017f func umenu_jump_click  # de 1080:017f
+1088:01b2 func umenu_minus_click  # de 1080:01b2
+1088:0235 func umenu_plus_click  # de 1080:0235
+1088:02bc func umenu_close_click  # de 1080:02bc
+1088:02d9 func umenu_draw_list  # de 1080:02d9
+1088:0be9 func umenu_scroll_click  # de 1080:0be9
+1088:0bfb func umenu_select_kind  # de 1080:0bfb
+1088:0e92 func umenu_hide  # de 1080:0e92
+1088:0ea8 func umenu_open  # de 1080:0ea8
+1088:1141 func load_umenu  # de 1080:1141
+1088:145f func umenu_init  # de 1080:145f
+1088:1b24 func umenu_free  # de 1080:1b24
+1088:1c3b func umenu_bild_mousedown  # de 1080:1c3b, changed
+1088:1e69 func umenu_bild_mousemove  # de 1080:1e54
+1088:1f2d func umenu_bild_mouseup  # de 1080:1f18
+1088:2040 func umenu_formkeydown  # de 1080:202b, changed
+1088:2316 func road_set  # de 1080:22be, changed
+1088:2382 func road_piece  # de 1080:232a
+1088:2672 func bridge_piece  # de 1080:261a
+1088:2889 func can_road  # de 1080:2831
+1088:2a30 func road_fits  # de 1080:29d8
+1088:2ada func can_bridge  # de 1080:2a82
+1088:2b64 func place_road  # de 1080:2b0c
+1088:2ec2 func place_bridge  # de 1080:2e6a
+1088:3082 func reconnect_roads  # de 1080:302a
+1088:31ed func road_drag_start  # de 1080:3195
+1088:3245 func road_drag_end  # de 1080:31ed
+1088:326e func plan_road  # de 1080:3216
+1090:000c func person_visible  # de 1088:000c
+1090:0025 func person_fill  # de 1088:0025
+1090:0153 func float_money  # de 1088:0153
+1090:0324 func add_person  # de 1088:0324
+1090:2c04 func add_surfer  # de 1088:2c04
+1090:2c3b func remove_first_at_home  # de 1088:2c3b
+1090:2d2a func remove_people_at  # de 1088:2d2a
+1090:2df2 func remove_person  # de 1088:2df2
+1090:3083 func add_drawn_person  # de 1088:3083
+1090:30ba func person_screen_pos  # de 1088:30ba
+1090:3496 func save_under_person  # de 1088:3496
+1090:3727 func sort_people  # de 1088:3727
+1090:385d func collect_people  # de 1088:385d
+1090:38c4 func draw_people  # de 1088:38c4
+1090:3a19 func draw_person  # de 1088:3a19
+1090:4ae2 func person_at  # de 1088:4ae2
+1090:4b93 func anyone_at  # de 1088:4b93
+1090:4bfa func form_look  # de 1088:4bfa
+1090:4c27 func view_corner_or_zero  # de 1088:4c27
+1090:4c55 func place_walker  # de 1088:4c55
+1090:4e18 func road_ahead  # de 1088:4e18
+1090:4f4f func walker_may_join  # de 1088:4f4f
+1090:5386 func walker_blocked  # de 1088:5386
+1090:571e func walker_free_square  # de 1088:571e
+1090:5841 func free_path_square  # de 1088:5841
+1090:5e73 func walker_mark_square  # de 1088:5e73
+1090:5f3e func walker_claim_ahead  # de 1088:5f3e
+1090:6769 func turn_walker  # de 1088:6769
+1090:68f1 func walker_sound  # de 1088:68f1
+1090:6975 func remove_people_from  # de 1088:6975
+1090:6bac func remove_workers  # de 1088:6bac
+1090:6c5a func people_map_changed  # de 1088:6c5a
+1090:6c8b func people_map_changed2  # de 1088:6c8b
+1090:6cba func place_harbour_ship  # de 1088:6cba
+1090:6ee7 func place_surfer  # de 1088:6ee7
+1090:70ab func turn_plane  # de 1088:70ab
+1090:75de func place_plane  # de 1088:75de
+1090:7a14 func place_people_again  # de 1088:7a14
+1090:7ee3 func people_flag16_clear  # de 1088:7ee3
+1090:7f4a func people_flag16_set  # de 1088:7f4a
+1090:7fb1 func people_refresh  # de 1088:7fb1
+1090:80a7 func load_animdat  # de 1088:80a7
+1090:868c func create_people  # de 1088:868c
+1090:88bb func people_free  # de 1088:88bb
+1090:8950 func save_people  # de 1088:8950
+1090:8a07 func load_people  # de 1088:8a07
+1098:0014 func tool_preview_squares  # de 1090:0014
+1098:124f func tool_preview  # de 1090:124f
+1098:155b func draw_tool_preview  # de 1090:155b
+1098:1836 func restore_under_tool_preview  # de 1090:1836
+1098:1919 func restore_under_people  # de 1090:1919
+1098:1a25 func send_person  # de 1090:1a25
+1098:2373 func spawn_people  # de 1090:2373
+1098:2c1f func plane_on_approach  # de 1090:2c1f
+1098:2ce5 func person_step  # de 1090:2ce5
+1098:5293 func people_tick  # de 1090:5293
+10a0:0002 func ship_heading  # de 1098:0002
+10a0:00ef func nearest_corner  # de 1098:00ef
+10a0:01c0 func open_sea  # de 1098:01c0
+10a0:0217 func ship_blocked  # de 1098:0217
+10a0:02c3 func ship_blocked_unmarked  # de 1098:02c3
+10a0:0357 func open_sea_ahead  # de 1098:0357
+10a0:03b3 func pick_sea_target  # de 1098:03b3
+10a0:0497 func wrap_heading  # de 1098:0497
+10a0:04ca func off_inner  # de 1098:04ca
+10a0:04f9 func ship_detour  # de 1098:04f9
+10a0:0745 func turn_taxiing_35  # de 1098:0745
+10a0:0a14 func turn_taxiing_36  # de 1098:0a14
+10a0:0ce3 func turn_taxiing_37  # de 1098:0ce3
+10a0:0e6d func turn_taxiing_38  # de 1098:0e6d
+10a0:109f func person_animate  # de 1098:109f
+10a8:0002 func same_square  # de 10a0:0002
+10a8:0026 func replace_building  # de 10a0:0026
+10a8:02ad func start_championship  # de 10a0:02ad
+10a8:0346 func transfer_property  # de 10a0:0346
+10a8:03ca func transfer_building  # de 10a0:03ca
+10a8:0691 func make_available  # de 10a0:0691
+10a8:074d func oil_slick_start  # de 10a0:074d
+10a8:0915 func oil_slick_end  # de 10a0:0915
+10a8:09ea func clear_property  # de 10a0:09ea
+10a8:0b49 func flood_start  # de 10a0:0b49
+10a8:0cce func flood_end  # de 10a0:0cce
+10a8:0d09 func quake_start  # de 10a0:0d09
+10a8:0d1c func quake_damage  # de 10a0:0d1c
+10a8:0ddc func quake_end  # de 10a0:0ddc
+10a8:0e17 func end_soft_soap  # de 10a0:0e17
+10a8:0ec8 func sabotage_at  # de 10a0:0ec8
+10a8:0f6c func init_sabotage_slots  # de 10a0:0f6c
+10a8:0fec func free_sabotage_slots  # de 10a0:0fec
+10a8:1000 func sabotage_blow_up  # de 10a0:1000
+10a8:10c6 func send_surfers  # de 10a0:10c6
+10a8:117e func effects_tick  # de 10a0:117e
+10a8:19d2 func sabotage_starts  # de 10a0:19d2
+10a8:1b31 func sabotage_caught  # de 10a0:1b31
+10a8:1d5e func order_sabotage  # de 10a0:1d5e
+10a8:1f65 func sabotage_command  # de 10a0:1f65
+10a8:232f func save_sabotage  # de 10a0:232f
+10b0:0002 func computers_bb_only  # new: state 1500 for scenario 10: computer_types[0x19a] := 7
+10b0:0011 func computers_find_themselves  # de 10a8:0002
+10b0:0176 func computer_bid  # de 10a8:0167
+10b0:0230 func computer_bid_for  # de 10a8:0221
+10b0:0382 func computer_bids  # de 10a8:0373
+10b0:03b5 func compbau_matches  # de 10a8:03a6
+10b0:0532 func offer_type  # de 10a8:0523
+10b0:0591 func step_square  # de 10a8:0582
+10b0:065a func road_square  # de 10a8:064b, changed
+10b0:0799 func choose_type  # de 10a8:078a
+10b0:0936 func category_fits  # de 10a8:0927
+10b0:0996 func choose_category  # de 10a8:0987
+10b0:0cc5 func road_along  # de 10a8:0cb6
+10b0:0e3f func walk_to_road  # de 10a8:0e30
+10b0:0f76 func area_free  # de 10a8:0f67
+10b0:10a7 func own_house_near  # de 10a8:1098
+10b0:1206 func site_allowed  # de 10a8:11f7
+10b0:1278 func site_fits  # de 10a8:1269
+10b0:1318 func try_sites  # de 10a8:1309
+10b0:1405 func find_road_near  # de 10a8:13f6
+10b0:1463 func find_site  # de 10a8:1454
+10b0:14c1 func collect_road_ends  # de 10a8:14b2
+10b0:164a func build_on_site  # de 10a8:163b
+10b0:174a func level_site  # de 10a8:173b
+10b0:1b19 func build_road_on  # de 10a8:1b0a
+10b0:1dfc func next_road_start  # de 10a8:1ded
+10b0:1f53 func find_road_start  # de 10a8:1f44
+10b0:206f func find_road_start_call  # de 10a8:2060
+10b0:208a func start_area  # de 10a8:207b
+10b0:21ed func change_area  # de 10a8:21de, changed
+10b0:2472 func build_step  # de 10a8:2463
+10b0:2a6f func manage_loans  # de 10a8:2a60
+10b0:2aed func worst_building  # de 10a8:2ade
+10b0:2cd0 func order_building  # de 10a8:2cc1, changed
+10b0:2d69 func computer_turn  # de 10a8:2d5a
+10b0:303d func computer_players_tick  # de 10a8:302e
+10b0:308f func save_computers  # de 10a8:3080
+10b0:32fb func load_computers  # de 10a8:32ec
+10b0:3567 func init_computers  # de 10a8:3558
+10b0:37e9 func load_compbau  # de 10a8:37da
+10b0:389a func create_computers  # de 10a8:388b
+10b0:3a7b func free_computers  # de 10a8:3a6c
+10b8:0002 func gen_raise_corner  # de 10b0:0002
+10b8:0130 func gen_try_raise  # de 10b0:0130
+10b8:01f0 func risen_contains  # de 10b0:01f0
+10b8:025b func risen_add  # de 10b0:025b
+10b8:0291 func check_raise  # de 10b0:0291
+10b8:03fa func raise_step  # de 10b0:03fa
+10b8:069f func raise_corner  # de 10b0:069f
+10b8:0ace func gen_risen_add  # de 10b0:0ace
+10b8:0b04 func gen_check_raise  # de 10b0:0b04
+10b8:0ba3 func gen_raise_step  # de 10b0:0ba3
+10b8:0e0c func gen_raise_checked  # de 10b0:0e0c
+10b8:1162 func gen_lower_corner  # de 10b0:1162
+10b8:1290 func gen_try_lower  # de 10b0:1290
+10b8:12c7 func lower_step  # de 10b0:12c7
+10b8:1907 func lower_corner  # de 10b0:1907
+10b8:1c54 func gen_lower_step  # de 10b0:1c54
+10b8:2053 func gen_lower_checked  # de 10b0:2053
+10b8:22dd func plot_fill_push  # de 10b0:22dd
+10b8:233b func plot_fill_pop  # de 10b0:233b
+10b8:239a func plot_fill_goto  # de 10b0:239a
+10b8:23c3 func plot_fill  # de 10b0:23c3
+10b8:29c0 func number_plots  # de 10b0:29c0
+10b8:2b9b func set_corner_height  # de 10b0:2b9b
+10b8:2c83 func level_corner  # de 10b0:2c83
+10b8:2d70 func gen_set_corner  # de 10b0:2d70
+10b8:2e03 func gen_level_square  # de 10b0:2e03
+10b8:2e6f func gen_slope_square  # de 10b0:2e6f
+10b8:3030 func clear_map  # de 10b0:3030
+10b8:3199 func reset_ground  # de 10b0:3199
+10b8:33bc func reshape  # de 10b0:33bc
+10b8:354c func shape_squares  # de 10b0:354c
+10b8:371e func swap_points  # de 10b0:371e
+10b8:375a func hill_line  # de 10b0:375a
+10b8:3904 func hill  # de 10b0:3904
+10b8:3c5c func gen_atoll  # de 10b0:3c5c
+10b8:404c func hill_cluster  # de 10b0:404c
+10b8:412c func gen_one_island  # de 10b0:412c
+10b8:41b5 func gen_group  # de 10b0:41b5
+10b8:424f func river_piece  # de 10b0:424f
+10b8:4506 func river_start  # de 10b0:4506
+10b8:4560 func move_pos  # de 10b0:4560
+10b8:459a func river_source_blocked  # de 10b0:459a
+10b8:4618 func river_source  # de 10b0:4618
+10b8:470c func square_height_sum  # de 10b0:470c
+10b8:4786 func beside_river  # de 10b0:4786
+10b8:47ff func rivers_beside  # de 10b0:47ff
+10b8:4885 func flat_way_value  # de 10b0:4885
+10b8:48d7 func flat_way  # de 10b0:48d7
+10b8:4a7d func river_step  # de 10b0:4a7d
+10b8:4bea func opposite_direction  # de 10b0:4bea
+10b8:4c06 func follow_river  # de 10b0:4c06
+10b8:4cb1 func river_erase  # de 10b0:4cb1
+10b8:4d19 func river  # de 10b0:4d19
+10b8:4d79 func rivers  # de 10b0:4d79
+10b8:4dae func decorate  # de 10b0:4dae
+10b8:4fd1 func smooth_land  # de 10b0:4fd1
+10b8:517b func location_of_square  # de 10b0:517b
+10b8:52a4 func location_from_island  # de 10b0:52a4
+10b8:52d4 func generate_island  # de 10b0:52d4
+10b8:53fe func level_road_square  # de 10b0:53fe
+10b8:5653 func load_maperste_table  # de 10b0:5653
+10b8:56ce func load_maperste  # de 10b0:56ce
+10b8:5788 func create_maperste  # de 10b0:5788
+10b8:582a func free_maperste  # de 10b0:582a
+10c0:02e9 func uebersichtsmap_hit  # de 10b8:02e9
+10c0:038d func uebersichtsmap_square_at  # de 10b8:038d
+10c0:0422 func uebersichtsmap_square_x  # de 10b8:0422
+10c0:0443 func uebersichtsmap_square_y  # de 10b8:0443
+10c0:045f func uemap_owners_heights_x  # de 10b8:045f
+10c0:04b1 func uemap_owners_heights_y  # de 10b8:04b1
+10c0:05f8 func uemap_owners_slopes_x  # de 10b8:05f8
+10c0:0684 func uemap_owners_slopes_y  # de 10b8:0684
+10c0:0786 func uemap_terrain_heights_x  # de 10b8:0786
+10c0:07df func uemap_terrain_heights_y  # de 10b8:07df
+10c0:08a8 func uemap_terrain_slopes_x  # de 10b8:08a8
+10c0:0934 func uemap_terrain_slopes_y  # de 10b8:0934
+10c0:098c func uemap_buildings_heights_x  # de 10b8:098c
+10c0:0a0a func uemap_buildings_heights_y  # de 10b8:0a0a
+10c0:0b57 func uemap_buildings_slopes_x  # de 10b8:0b57
+10c0:0c10 func uemap_buildings_slopes_y  # de 10b8:0c10
+10c0:0d18 func uemap_location_x  # de 10b8:0d18
+10c0:0d28 func uemap_location_y  # de 10b8:0d28
+10c0:0d53 func uemap_occupancy_x  # de 10b8:0d53
+10c0:0d63 func uemap_occupancy_y  # de 10b8:0d63
+10c0:0dc2 func uemap_green_x  # de 10b8:0dc2
+10c0:0dd2 func uemap_green_y  # de 10b8:0dd2
+10c0:0eeb func uebersichtsmap_draw_area  # de 10b8:0eeb
+10c0:11b4 func uemap_draw_owners_heights  # de 10b8:11b4
+10c0:11e1 func uemap_draw_buildings_heights  # de 10b8:11e1
+10c0:120e func uemap_draw_location  # de 10b8:120e
+10c0:123b func uemap_draw_green  # de 10b8:123b
+10c0:1268 func uemap_draw_occupancy  # de 10b8:1268
+10c0:1295 func uemap_draw_terrain_heights  # de 10b8:1295
+10c0:12c2 func uemap_draw_buildings_slopes  # de 10b8:12c2
+10c0:12ef func uemap_draw_owners_slopes  # de 10b8:12ef
+10c0:131c func uemap_draw_terrain_slopes  # de 10b8:131c
+10c0:1349 func uebersichtsmap_draw_frame  # de 10b8:1349
+10c0:1485 func uebersichtsmap_erase_frame  # de 10b8:1485
+10c0:1504 func uebersichtsmap_redraw_land  # de 10b8:1504
+10c0:1534 func uebersichtsmap_redraw_occupancy  # de 10b8:1534
+10c0:1564 func uebersichtsmap_redraw_cleared  # de 10b8:1564
+10c0:1594 func uebersichtsmap_redraw_demolished  # de 10b8:1594
+10c0:15c4 func uebersichtsmap_redraw_location  # de 10b8:15c4
+10c0:15f4 func uebersichtsmap_redraw_road  # de 10b8:15f4
+10c0:1624 func uebersichtsmap_redraw_area  # de 10b8:1624
+10c0:1654 func uebersichtsmap_redraw_building  # de 10b8:1654
+10c0:1684 func uebersichtsmap_redraw_squares  # de 10b8:1684
+10c0:16fa func uebersichtsmap_draw_area_all  # de 10b8:16fa
+10c0:171b func uebersichtsmap_draw_strip  # de 10b8:171b
+10c0:173e func uebersichtsmap_redraw_framed  # de 10b8:173e
+10c0:1765 func uebersichtsmap_draw_area_framed  # de 10b8:1765
+10c0:17cf func uebersichtsmap_draw_mode_area  # de 10b8:17cf
+10c0:1a49 func uebersichtsmap_redraw_all  # de 10b8:1a49
+10c0:1a6e func uebersichtsmap_scroll_by  # de 10b8:1a6e
+10c0:1c74 func uebersichtsmap_umschaltbild_mousedown  # de 10b8:1c74
+10c0:1d21 func uebersichtsmap_umschaltbild_mouseup  # de 10b8:1d21
+10c0:1e25 func uebersichtsmap_update_bars  # de 10b8:1e25
+10c0:1e4a func uebersichtsmap_set_ns_bar  # de 10b8:1e4a
+10c0:1e73 func uebersichtsmap_ns_position  # de 10b8:1e73
+10c0:1e96 func uebersichtsmap_ns_thumb  # de 10b8:1e96
+10c0:1f52 func uebersichtsmap_ns_position_at  # de 10b8:1f52
+10c0:200e func uebersichtsmap_draw_ns_thumb  # de 10b8:200e
+10c0:20a5 func uebersichtsmap_erase_ns_thumb  # de 10b8:20a5
+10c0:20f2 func uebersichtsmap_scroll_ns  # de 10b8:20f2
+10c0:216e func uebersichtsmap_nsscrolltimer_timer  # de 10b8:216e
+10c0:21c7 func uebersichtsmap_start_ns_timer  # de 10b8:21c7
+10c0:21fa func uebersichtsmap_stop_ns_timer  # de 10b8:21fa
+10c0:222b func uebersichtsmap_nsscrollbild_mousedown  # de 10b8:222b
+10c0:2421 func uebersichtsmap_nsscrollbild_mousemove  # de 10b8:2421
+10c0:24a1 func uebersichtsmap_nsscrollbild_mouseup  # de 10b8:24a1
+10c0:257f func uebersichtsmap_set_wo_bar  # de 10b8:257f
+10c0:25a8 func uebersichtsmap_wo_position  # de 10b8:25a8
+10c0:25cb func uebersichtsmap_wo_thumb  # de 10b8:25cb
+10c0:26a8 func uebersichtsmap_wo_position_at  # de 10b8:26a8
+10c0:2785 func uebersichtsmap_draw_wo_thumb  # de 10b8:2785
+10c0:281c func uebersichtsmap_erase_wo_thumb  # de 10b8:281c
+10c0:2869 func uebersichtsmap_scroll_wo  # de 10b8:2869
+10c0:28e5 func uebersichtsmap_woscrolltimer_timer  # de 10b8:28e5
+10c0:293e func uebersichtsmap_start_wo_timer  # de 10b8:293e
+10c0:2971 func uebersichtsmap_stop_wo_timer  # de 10b8:2971
+10c0:29a2 func uebersichtsmap_menubild_mousedown  # de 10b8:29a2
+10c0:2e01 func uebersichtsmap_menubild_mousemove  # de 10b8:2e01
+10c0:2e99 func uebersichtsmap_menubild_mouseup  # de 10b8:2e99
+10c0:303e func uebersichtsmap_select  # de 10b8:303e
+10c0:31f8 func uebersichtsmap_restore_part  # de 10b8:31f8
+10c0:3363 func uebersichtsmap_place_image  # de 10b8:3363
+10c0:346a func uebersichtsmap_fill_image  # de 10b8:346a
+10c0:3553 func uebersichtsmap_layout  # de 10b8:3553
+10c0:37f5 func uebersichtsmap_mapbild_mousedown  # de 10b8:37f5
+10c0:39b1 func uebersichtsmap_mapbild_mousemove  # de 10b8:39b1
+10c0:3aab func uebersichtsmap_mapbild_mouseup  # de 10b8:3aab
+10c0:3ac3 func uebersichtsmap_ueberschriftbild_mousedown  # de 10b8:3ac3
+10c0:3c9b func uebersichtsmap_ueberschriftbild_mousemove  # de 10b8:3c9b
+10c0:3d2b func uebersichtsmap_ueberschriftbild_mouseup  # de 10b8:3d2b
+10c0:3e73 func uebersichtsmap_resize  # de 10b8:3e73
+10c0:3eee func uebersichtsmap_draw_close_text  # de 10b8:3eee
+10c0:3f7f func uebersichtsmap_close  # de 10b8:3f7f
+10c0:3fab func uebersichtsmap_game_start  # de 10b8:3fab
+10c0:4079 func uebersichtsmap_open  # de 10b8:4079
+10c0:41ad func uebermap_load_data  # de 10b8:41ad
+10c0:4538 func uebersichtsmap_init  # de 10b8:4538
+10c0:4b29 func uebersichtsmap_free  # de 10b8:4b29
+10c0:4c59 func uebersichtsmap_key_scroll  # de 10b8:4c59
+10c0:4c95 func uebersichtsmap_formkeydown  # de 10b8:4c95
+10c0:4e34 func uebersichtsmap_save  # de 10b8:4e34
+10c0:50de func uebersichtsmap_load  # de 10b8:50de
+10c8:0002 func widget_init  # de 10c0:0002
+10c8:003e func widget_done  # de 10c0:003e
+10c8:004d func widget_set_visible  # de 10c0:004d
+10c8:005c func widget_clear_visible  # de 10c0:005c
+10c8:006b func widget_hit  # de 10c0:006b
+10c8:00b3 func widget_click  # de 10c0:00b3
+10c8:00ba func widget_show  # de 10c0:00ba
+10c8:00e4 func widget_hide  # de 10c0:00e4
+10c8:0116 func widget_draw  # de 10c0:0116
+10c8:011d func widget_erase  # de 10c0:011d
+10c8:0181 func gauge_init  # de 10c0:0181
+10c8:01dc func gauge_draw  # de 10c0:01dc
+10c8:02a2 func label_init  # de 10c0:02a2
+10c8:0316 func listbox_init  # de 10c0:0316
+10c8:039d func listbox_done  # de 10c0:039d
+10c8:03cc func listbox_can_scroll_up  # de 10c0:03cc
+10c8:03e7 func listbox_can_scroll_down  # de 10c0:03e7
+10c8:0409 func listbox_has_selection  # de 10c0:0409
+10c8:0431 func listbox_mouse_down  # de 10c0:0431
+10c8:04ed func listbox_draw  # de 10c0:04ed
+10c8:0552 func listbox_selected  # de 10c0:0552
+10c8:0559 func radio_init  # de 10c0:0559
+10c8:05d6 func radio_draw  # de 10c0:05d6
+10c8:0666 func radio_mouse_down  # de 10c0:0666
+10c8:06c7 func radio_select  # de 10c0:06c7
+10c8:06fe func radio_deselect  # de 10c0:06fe
+10c8:0725 func radio_selected  # de 10c0:0725
+10c8:072c func checkbox_init  # de 10c0:072c
+10c8:0797 func checkbox_mouse_down  # de 10c0:0797
+10c8:07fa func checkbox_toggle  # de 10c0:07fa
+10c8:083b func button_init  # de 10c0:083b
+10c8:08cb func button_draw  # de 10c0:08cb
+10c8:0958 func button_mouse_down  # de 10c0:0958
+10c8:0998 func button_mouse_up  # de 10c0:0998
+10c8:09eb func scrollbar_init  # de 10c0:09eb
+10c8:0aec func scrollbar_draw  # de 10c0:0aec
+10c8:0e21 func scrollbar_press  # de 10c0:0e21
+10c8:0f10 func scrollbar_release  # de 10c0:0f10
+10c8:0fe3 func scrollbar_mouse_down  # de 10c0:0fe3
+10c8:13b0 func scrollbar_mouse_move  # de 10c0:13b0
+10c8:15f7 func scrollbar_mouse_up  # de 10c0:15f7
+10c8:191b func scrollbar_arrow_pressed  # de 10c0:191b
+10c8:1922 func scrollbar_stepped  # de 10c0:1922
+10c8:1929 func scrollbar_paged  # de 10c0:1929
+10c8:1930 func edit_init  # de 10c0:1930
+10c8:19c0 func edit_draw  # de 10c0:19c0
+10c8:19d7 func edit_key_down  # de 10c0:19d7
+10c8:1c1b func edit_mouse_down  # de 10c0:1c1b
+10c8:1cc1 func edit_insert_char  # de 10c0:1cc1
+10d0:1810 func tmediaplayer_open  # de 10c8:1810
+10d0:1b18 func tmediaplayer_close  # de 10c8:1b18
+10d0:1c10 func tmediaplayer_play  # de 10c8:1c10
+10d0:1ee2 func tmediaplayer_stop  # de 10c8:1ee2
+10d0:28b5 func tmediaplayer_eject  # de 10c8:28b5
+10d0:2ea9 func tmediaplayer_get_length  # de 10c8:2ea9
+10d0:2fd7 func tmediaplayer_get_position  # de 10c8:2fd7
+10d8:07bf func vcl_messagedlg  # de 10d0:07bf
+10f0:177b func tcontrol_set_left  # de 10e8:177b
+10f0:179d func tcontrol_set_top  # de 10e8:179d
+10f0:17bf func tcontrol_set_width  # de 10e8:17bf
+10f0:17e1 func tcontrol_set_height  # de 10e8:17e1
+10f0:1cb8 func tcontrol_set_enabled  # de 10e8:1cb8
+10f0:201c func tcontrol_bringtofront  # de 10e8:201c
+10f0:22c6 func tcontrol_refresh  # de 10e8:22c6
+10f8:2e80 func tcustomform_set_visible  # de 10f0:2e80
+10f8:56ce func tcustomform_hide  # de 10f0:56ce
+10f8:56e1 func tcustomform_show  # de 10f0:56e1
+10f8:697e func tapplication_restore  # de 10f0:697e
+10f8:69fd func tapplication_bringtofront  # de 10f0:69fd
+10f8:6aa7 func vcl_application_settitle  # de 10f0:6aa7
+10f8:6d18 func tapplication_processmessages  # de 10f0:6d18
+10f8:6e7b func vcl_application_createform  # de 10f0:6e7b
+10f8:6f16 func vcl_application_run  # de 10f0:6f16
+1108:0764 func sys_str_int  # de 1100:0764
+1108:0795 func str_to_int  # de 1100:0795, changed
+1108:08e1 func sys_fileexists  # de 1100:08e1
+1108:17ad func fun_1108_17ad  # de 1100:1789
+1108:27c9 func fun_1108_27c9  # de 1100:27a5
+1108:27d3 func fun_1108_27d3  # de 1100:2831, changed
+1108:2bd8 func fun_1108_2bd8  # de 1100:2bb4
+1108:2bf7 func fun_1108_2bf7  # de 1100:2bd3
+1110:0093 func sys_halt  # de 1108:0093
+1110:0182 func sys_getmem  # de 1108:0182
+1110:0625 func sys_assign_text  # de 1108:0625
+1110:06ac func sys_reset_text  # de 1108:06ac
+1110:070b func sys_close_text  # de 1108:070b
+1110:08ef func sys_readln  # de 1108:08ef
+1110:095a func sys_read_end  # de 1108:095a
+1110:0996 func sys_read_char  # de 1108:0996
+1110:0a31 func sys_read_pstr  # de 1108:0a31
+1110:0aa2 func sys_read_longint  # de 1108:0aa2
+1110:0b47 func sys_eof_text  # de 1108:0b47
+1110:0b88 func sys_assign_file  # de 1108:0b88
+1110:0bcc func sys_reset_file  # de 1108:0bcc
+1110:0bd5 func sys_rewrite_file  # de 1108:0bd5
+1110:0c4d func sys_close_file  # de 1108:0c4d
+1110:0cb7 func sys_blockread  # de 1108:0cb7
+1110:0cbe func sys_blockwrite  # de 1108:0cbe
+1110:0d1f func sys_seek  # de 1108:0d1f
+1110:14a4 func sys_long_mul  # de 1108:14a4
+1110:14e1 func sys_long_div  # de 1108:14e1
+1110:15cd func sys_pstr_load  # de 1108:15cd
+1110:15e7 func sys_pstr_store  # de 1108:15e7
+1110:160b func sys_pstr_copy  # de 1108:160b
+1110:164c func sys_pstr_concat  # de 1108:164c
+1110:16be func sys_pstr_compare  # de 1108:16be
+1110:1775 func sys_pstr_delete  # de 1108:1775
+1110:1d8c func sys_random  # de 1108:1d8c
+1110:1de9 func sys_random_step  # de 1108:1de9
+1110:1e21 func sys_randomize  # de 1108:1e21
+1110:1f5c func sys_val_longint  # de 1108:1f5c
+1110:1fa4 func sys_filesize  # de 1108:1fa4
+1118:004c data base_demand  # de 1110:004c
+1118:004e data map_version  # de 1110:004e
+1118:0056 data people_spawn  # de 1110:0056
+1118:0057 data computers_play  # de 1110:0057
+1118:0058 data view_owner_pointers  # de 1110:0058
+1118:0059 data view_occupancy_pointers  # de 1110:0059
+1118:005b data option_music  # de 1110:005b
+1118:005c data option_news_events  # de 1110:005c
+1118:005d data option_news_buildings  # de 1110:005d
+1118:005e data option_news_sabotage  # de 1110:005e
+1118:005f data option_news_congratulations  # de 1110:005f
+1118:0060 data option_button_help  # de 1110:0060
+1118:0061 data option_sounds  # de 1110:0061
+1118:0062 data sound_enabled  # de 1110:0062
+1118:0063 data auction_waits  # de 1110:0063
+1118:0064 data option_show_books_at_new_year  # de 1110:0064
+1118:0065 data disasters_enabled  # de 1110:0065
+1118:0066 data option_speech  # de 1110:0066
+1118:0067 data paused  # de 1110:0067
+1118:006e data scenario  # de 1110:006e
+1118:0070 data money_frozen  # de 1110:0070
+1118:0072 data insured  # de 1110:0072
+1118:0074 data player_colours  # de 1110:0074
+1118:007c data view_rotation  # de 1110:007c
+1118:0086 data flood  # de 1110:0086
+1118:0087 data earthquake  # de 1110:0087
+1118:0088 data oil_slick  # de 1110:0088
+1118:008a data island_shape  # de 1110:008a
+1118:008c data difficulty  # de 1110:008c
+1118:008e data relief  # de 1110:008e
+1118:0090 data land_amount  # de 1110:0090
+1118:0092 data rivers  # de 1110:0092
+1118:0094 data palm_chance  # de 1110:0094
+1118:0096 data game_speed  # de 1110:0096
+1118:009a data status_message_timeout  # de 1110:009a
+1118:009c data help_timeout  # de 1110:009c
+1118:009e data building_slice_tick  # de 1110:009e
+1118:00a2 data height_limit  # de 1110:00a2
+1118:00ea data kind_menus  # de 1110:00ea
+1118:0102 data player_names  # de 1110:0102
+1118:0902 data player_names_by_number  # de 1110:0902
+1118:0a02 data last_player_name  # de 1110:0a02
+1118:1224 data form_table  # de 1110:1224
+1118:12bc data view_width  # de 1110:12bc
+1118:12be data view_height  # de 1110:12be
+1118:12c0 data button_edges  # de 1110:12c0
+1118:1322 data load_map_name  # de 1110:1322
+1118:133c data played_without_disasters  # de 1110:133c
+1118:133e data view_keep_origin  # de 1110:133e
+1118:1340 data record_kinds  # de 1110:1340
+1118:134c data facility_classes  # de 1110:134c
+1118:1358 data free_squares  # de 1110:1358
+1118:1378 data not_buildings  # de 1110:1378
+1118:13b8 data palm_ground  # de 1110:13b8
+1118:13d8 data road_forms  # de 1110:13d8
+1118:13f8 data crossable_rivers  # de 1110:13f8
+1118:1418 data full_championships  # de 1110:1418
+1118:1438 data empty_championships  # de 1110:1438
+1118:1478 data computer_opponents  # de 1110:1478
+1118:1479 data player_count  # de 1110:1479
+1118:147a data name_steps  # de 1110:147a
+1118:1492 data ui_label_vmt  # de 1110:1492
+1118:14ae data ui_edit_vmt  # de 1110:14ae
+1118:14c5 data menu_previous  # de 1110:14c5
+1118:14ca data menu_visible_rows  # de 1110:14ca
+1118:14d1 data menu_next  # de 1110:14d1
+1118:14e0 data tool_buttons  # de 1110:14e0
+1118:14f2 data tool_buttons2  # de 1110:14f2
+1118:1572 data hauptschirm_layout_table  # de 1110:1572
+1118:163c data button_tooltip_texts  # de 1110:163c
+1118:16b8 data sabowin_rects  # de 1110:16b8
+1118:174b data month_lengths  # de 1110:174b
+1118:177c data ib_kinds  # de 1110:177c
+1118:1812 data dateimenue_rects  # de 1110:1812
+1118:18ca data endeform_rects  # de 1110:18ba
+1118:19ae data news_kinds  # de 1110:199e
+1118:1a62 data fernseher_rects  # de 1110:1a52
+1118:350c data umenu_row_colours  # de 1110:337c
+1118:3550 data taxiing_sprites  # de 1110:33c0
+1118:3580 data people_looks  # de 1110:33f0
+1118:35c0 data plane_tracks  # de 1110:3430
+1118:3640 data people_doors  # de 1110:34b0
+1118:3670 data path_turns  # de 1110:34e0
+1118:37b0 data track_ends  # de 1110:3620
+1118:37f0 data vehicle_moves  # de 1110:3660
+1118:3830 data airport_approaches  # de 1110:36a0
+1118:3908 data plane_circle  # de 1110:3778
+1118:3922 data turn_towards  # de 1110:3792
+1118:3932 data people_in_front  # de 1110:37a2
+1118:3d42 data ship_sprites  # de 1110:3bb2
+1118:3dbe data people_directions  # de 1110:3c2e
+1118:3dd2 data stage_spectators_flag  # de 1110:3c42
+1118:3df4 data route_starts  # de 1110:3c64
+1118:3e04 data ship_detours  # de 1110:3c74
+1118:3e64 data ship_drift  # de 1110:3cd4
+1118:3e74 data map_corners  # de 1110:3ce4
+1118:3e84 data atoll_boxes  # de 1110:3cf4
+1118:3f5e data sound_lengths  # de 1110:3dce
+1118:3fb4 data sound_opened  # de 1110:3e24
+1118:4b96 data rand_seed  # de 1110:4a06
+1118:4c16 data accounting_step  # de 1110:4a84
+1118:4c1a data accounting_last_day  # de 1110:4a88
+1118:4c1c data min_miete | long  # de 1110:4a8a
+1118:4c20 data max_miete | long  # de 1110:4a8e
+1118:4c24 data miete_spanne | long  # de 1110:4a92
+1118:4c28 data min_preis  # de 1110:4a96
+1118:4c54 data max_preis  # de 1110:4ac2
+1118:4c80 data settlement_sums  # de 1110:4aee
+1118:4e00 data abrechne_factor1 | pointer32  # de 1110:4c6e
+1118:4e04 data abrechne_factor2 | pointer32  # de 1110:4c72
+1118:4e08 data abrechne_factor3 | pointer32  # de 1110:4c76
+1118:4e0c data abrechne_factor4 | pointer32  # de 1110:4c7a
+1118:4e1c data beach_life_house | pointer32  # de 1110:4c8a
+1118:56dc data close_bmp  # de 1110:54b8
+1118:56e0 data closepre_bmp  # de 1110:54bc
+1118:5700 data sound_lo  # de 1110:54dc
+1118:5702 data gfxpos | pointer32  # de 1110:54de
+1118:5706 data grounpos | pointer32  # de 1110:54e2
+1118:570a data groundnr | pointer32  # de 1110:54e6
+1118:570e data straspos | pointer32  # de 1110:54ea
+1118:5712 data flusspos | pointer32  # de 1110:54ee
+1118:5716 data hausnr | pointer32  # de 1110:54f2
+1118:571a data hauspos | pointer32  # de 1110:54f6
+1118:571e data sabotage_armed  # de 1110:54fa
+1118:5720 data screen_width  # de 1110:54fc
+1118:5722 data screen_height  # de 1110:54fe
+1118:5724 data map_heights | pointer32  # de 1110:5500
+1118:5728 data map_ground  # de 1110:5504
+1118:572c data map_buildings  # de 1110:5508
+1118:5730 data map_forms  # de 1110:550c
+1118:5734 data map_parts  # de 1110:5510
+1118:5738 data map_owners  # de 1110:5514
+1118:573c data map_occupancy  # de 1110:5518
+1118:5748 data location_map | pointer32  # de 1110:5524
+1118:574c data plot_map | pointer32  # de 1110:5528
+1118:5750 data plot_count  # de 1110:552c
+1118:5754 data view_origin_i  # de 1110:5530
+1118:5756 data view_origin_j  # de 1110:5532
+1118:5758 data view_parity  # de 1110:5534
+1118:575a data view_squares  # de 1110:5536
+1118:61e2 data button_clicked  # de 1110:5fbe
+1118:61e4 data tile_dcs  # de 1110:5fc0
+1118:6266 data cursor_pos_x  # de 1110:6042
+1118:6268 data cursor_pos_y  # de 1110:6044
+1118:626a data drag_grab_x  # de 1110:6046
+1118:626c data drag_grab_y  # de 1110:6048
+1118:627a data tool  # de 1110:6056
+1118:627c data tool_building  # de 1110:6058
+1118:627e data mouse_square  # de 1110:605a
+1118:6554 data music_volume  # de 1110:6330
+1118:6558 data sound_volume  # de 1110:6334
+1118:655c data speech_volume  # de 1110:6338
+1118:6568 data road_drag_from  # de 1110:6344
+1118:656c data road_drag_to  # de 1110:6348
+1118:6570 data road_dragging  # de 1110:634c
+1118:667a data hintergrund  # de 1110:6456
+1118:6690 data window_forms  # de 1110:646c
+1118:66d4 data werbung_to_text  # de 1110:64b0
+1118:66d8 data renovierung_to_text  # de 1110:64b4
+1118:66dc data pointer_double_click  # de 1110:64b8
+1118:66e2 data land  # de 1110:64be
+1118:66e3 data max_lageeinfluss  # de 1110:64bf
+1118:66ea data werbungskosten  # de 1110:64c6
+1118:66ee data kreditgroesse  # de 1110:64ca
+1118:66f2 data max_schulden  # de 1110:64ce
+1118:66f6 data zinssatz  # de 1110:64d2
+1118:66fa data startgeld  # de 1110:64d6
+1118:66fe data landauswasserhebekosten  # de 1110:64da
+1118:6702 data landhebekosten  # de 1110:64de
+1118:6706 data landinwassersenkkosten  # de 1110:64e2
+1118:670a data landsenkkosten  # de 1110:64e6
+1118:670e data strassenabrisskosten  # de 1110:64ea
+1118:6712 data strassenbaukosten  # de 1110:64ee
+1118:6716 data palmenabrisskosten  # de 1110:64f2
+1118:671a data fundamentbaukosten  # de 1110:64f6
+1118:671e data lebenshaltungskosten  # de 1110:64fa
+1118:6722 data klassenmischungdivisor  # de 1110:64fe
+1118:6726 data klassenmischung  # de 1110:6502
+1118:672c data angeschlossenumrechnung  # de 1110:6508
+1118:6732 data verfallwahrscheinlichkeit  # de 1110:650e
+1118:673a data baumenue  # de 1110:6516
+1118:673e data buttons_down  # de 1110:651a
+1118:6756 data hauptschirm  # de 1110:6532
+1118:675a data ereignis | pointer32  # de 1110:6536
+1118:675e data event_days  # de 1110:653a
+1118:6768 data auktionsform  # de 1110:6544
+1118:676c data auction_bidder  # de 1110:6548
+1118:676e data auction_price  # de 1110:654a
+1118:6772 data auction_limits  # de 1110:654e
+1118:6792 data auction_item  # de 1110:656e
+1118:67ba data auction_colour  # de 1110:6596
+1118:67bd data auction_pressed  # de 1110:6599
+1118:67be data auction_rolled_up  # de 1110:659a
+1118:67c0 data auction_start_price  # de 1110:659c
+1118:67c4 data auction_calls  # de 1110:65a0
+1118:67c6 data auction_steps  # de 1110:65a2
+1118:67ca data auction_wait  # de 1110:65a6
+1118:67ce data auction_call_time  # de 1110:65aa
+1118:67d2 data auction_started  # de 1110:65ae
+1118:67d4 data auktion_texts  # de 1110:65b0
+1118:67de data sabotage_kind  # de 1110:65ba
+1118:67e0 data sabotage_kinds  # de 1110:65bc
+1118:67e4 data sabowin  # de 1110:65c0
+1118:67e8 data sabowin_background  # de 1110:65c4
+1118:67f0 data sabowin_button_pressed  # de 1110:65cc
+1118:67f4 data sabowin_pressed  # de 1110:65d0
+1118:67f6 data sabotage_labels  # de 1110:65d2
+1118:67fa data monate  # de 1110:65d6
+1118:67fe data fontdat1 | pointer32  # de 1110:65da
+1118:6802 data fontdat2 | pointer32  # de 1110:65de
+1118:6806 data font_bitmap  # de 1110:65e2
+1118:680a data font_dc  # de 1110:65e6
+1118:680c data ib_buttonzeile  # de 1110:65e8
+1118:6810 data ib_button  # de 1110:65ec
+1118:6814 data welche_button  # de 1110:65f0
+1118:6818 data welche_buttonzeile  # de 1110:65f4
+1118:681c data infobox_short_texts  # de 1110:65f8
+1118:6820 data infobox2  # de 1110:65fc
+1118:6824 data dateimenue  # de 1110:6600
+1118:6828 data dateimenue_background  # de 1110:6604
+1118:682c data dateimenue_mode  # de 1110:6608
+1118:682d data dateimenue_pressed  # de 1110:6609
+1118:682e data dateimenue_names  # de 1110:660a
+1118:6832 data dateimenue_name_count  # de 1110:660e
+1118:6834 data dateimenue_listed  # de 1110:6610
+1118:6836 data endeform  # de 1110:6612
+1118:6842 data endeform_pressed  # de 1110:661e
+1118:6844 data kompassform  # de 1110:6620
+1118:6848 data dummyform  # de 1110:6624
+1118:684c data fernseher  # de 1110:6628
+1118:6850 data fernseher_film_playing  # de 1110:662c
+1118:6851 data tv_busy  # de 1110:662d
+1118:6852 data fernseher_centred  # de 1110:662e
+1118:6854 data message_media | pointer32  # de 1110:6630
+1118:6858 data nachrich_title | pointer32  # de 1110:6634
+1118:685c data news_cursor  # de 1110:6638
+1118:685e data news_archive | pointer32  # de 1110:663a
+1118:6862 data nachrich_lines  # de 1110:663e
+1118:686e data fernseher_left  # de 1110:664a
+1118:6870 data fernseher_top  # de 1110:664c
+1118:6872 data fernseher_pressed  # de 1110:664e
+1118:6886 data fernseher_closing  # de 1110:6662
+1118:6887 data fernseher_mouse_up  # de 1110:6663
+1118:6888 data news_last  # de 1110:6664
+1118:6896 data fernseher_film_state  # de 1110:6672
+1118:689a data fernseher_opened_at  # de 1110:6676
+1118:689e data speaker_started  # de 1110:667a
+1118:68a0 data news_nothing_yet  # de 1110:667c
+1118:68a1 data fernseher_auto  # de 1110:667d
+1118:68a2 data ansicht_formkorrektur  # de 1110:667e
+1118:68a6 data ansicht_flusskorrektur  # de 1110:6682
+1118:68aa data ansicht_strassenkorrektur  # de 1110:6686
+1118:68ae data ansicht_extratabxkorrektur  # de 1110:668a
+1118:68b2 data ansicht_extratabykorrektur  # de 1110:668e
+1118:68b6 data ansicht_spaltenxkorrektur  # de 1110:6692
+1118:68ba data ansicht_zeilenxkorrektur  # de 1110:6696
+1118:68be data ansicht_spaltenykorrektur  # de 1110:669a
+1118:68c2 data ansicht_zeilenykorrektur  # de 1110:669e
+1118:68e6 data gfx_auslastungszeigerpos  # de 1110:66c2
+1118:68ea data gfx_spielerzeigerpos  # de 1110:66c6
+1118:68ee data startform  # de 1110:66ca
+1118:76f2 data startform_scenario_page  # de 1110:6ece
+1118:76f4 data ladenform  # de 1110:6ed0
+1118:76f8 data ladenform_names  # de 1110:6ed4
+1118:76fc data ladenform_name_count  # de 1110:6ed8
+1118:76fe data ladenform_listed  # de 1110:6eda
+1118:7700 data optionenform  # de 1110:6edc
+1118:7704 data highscoreform  # de 1110:6ee0
+1118:7708 data highscores  # de 1110:6ee4
+1118:7710 data highscore_game  # de 1110:6ee8
+1118:771a data schlussform  # de 1110:6eee
+1118:771e data music_playlist  # de 1110:6ef2
+1118:7726 data music_track  # de 1110:6efa
+1118:7728 data music_last_position  # de 1110:6efc
+1118:7730 data geldmenuform  # de 1110:6f04
+1118:7734 data building_sites | pointer32  # de 1110:6f08
+1118:7738 data plots | pointer32  # de 1110:6f0c
+1118:773c data houses | pointer32  # de 1110:6f10
+1118:7740 data facilities | pointer32  # de 1110:6f14
+1118:774c data totals | pointer32  # de 1110:6f20
+1118:7750 data player_block | pointer32  # de 1110:6f24
+1118:7754 data credit_refused  # de 1110:6f28
+1118:775c data money  # de 1110:6f30
+1118:777c data loan  # de 1110:6f50
+1118:779c data loan_interest  # de 1110:6f70
+1118:77bc data player_guests  # de 1110:6f90
+1118:77dc data economy_periods  # de 1110:6fb0
+1118:77e0 data umenuform  # de 1110:6fb4
+1118:77e4 data umenu_kind  # de 1110:6fb8
+1118:77e6 data umenu_texts  # de 1110:6fba
+1118:77ea data umenu_selected  # de 1110:6fbe
+1118:77ec data umenu_list  # de 1110:6fc0
+1118:77f0 data umenu_last  # de 1110:6fc4
+1118:77f2 data animdat4 | pointer32  # de 1110:6fc6
+1118:77f8 data people_runway  # de 1110:6fcc
+1118:7800 data tool_pointer_frame  # de 1110:6fd4
+1118:7802 data people  # de 1110:6fd6
+1118:7806 data animdat2 | pointer32  # de 1110:6fda
+1118:780a data neintrag | pointer32  # de 1110:6fde
+1118:780e data animdat3 | pointer32  # de 1110:6fe2
+1118:7816 data animdat1 | pointer32  # de 1110:6fea
+1118:781a data people_ships  # de 1110:6fee
+1118:781c data people_boats  # de 1110:6ff0
+1118:781e data people_last_building  # de 1110:6ff2
+1118:7820 data people_last  # de 1110:6ff4
+1118:786c data surfer_beach  # de 1110:7040
+1118:7870 data mouse_x  # de 1110:7044
+1118:7872 data mouse_y  # de 1110:7046
+1118:7874 data last_mouse_x  # de 1110:7048
+1118:7876 data last_mouse_y  # de 1110:704a
+1118:7878 data mouse_shift  # de 1110:704c
+1118:787a data road_drag_ground  # de 1110:704e
+1118:787b data road_drag_form  # de 1110:704f
+1118:787c data disaster_damage  # de 1110:7050
+1118:7880 data disaster_insured  # de 1110:7054
+1118:7882 data oil_slick_pos  # de 1110:7056
+1118:7886 data sabotage_slots | pointer32  # de 1110:705a
+1118:788a data championships | pointer32  # de 1110:705e
+1118:788e data computer_waited  # de 1110:7062
+1118:789e data computer_demolish_wait  # de 1110:7072
+1118:78ae data computer_levelling  # de 1110:7082
+1118:78be data computer_level  # de 1110:7092
+1118:78c6 data computer_blocked_by  # de 1110:709a
+1118:78ce data computer_site | pointer32  # de 1110:70a2
+1118:78d2 data computer_centre | pointer32  # de 1110:70a6
+1118:78d6 data computer_road | pointer32  # de 1110:70aa
+1118:78da data computer_road_direction | pointer32  # de 1110:70ae
+1118:78de data computer_unknown_b2 | pointer32  # de 1110:70b2
+1118:78e2 data computer_unknown_b6 | pointer32  # de 1110:70b6
+1118:78e6 data computer_unknown_ba | pointer32  # de 1110:70ba
+1118:78ea data computer_unknown_be | pointer32  # de 1110:70be
+1118:78ee data computer_turns  # de 1110:70c2
+1118:78f2 data computer_build_state | pointer32  # de 1110:70c6
+1118:78f6 data computer_state | pointer32  # de 1110:70ca
+1118:78fa data computer_category | pointer32  # de 1110:70ce
+1118:78fe data computer_new_area | pointer32  # de 1110:70d2
+1118:7902 data computer_first_road | pointer32  # de 1110:70d6
+1118:7906 data computer_building | pointer32  # de 1110:70da
+1118:790a data computer_counters | pointer32  # de 1110:70de
+1118:790e data computer_road_ends | pointer32  # de 1110:70e2
+1118:7912 data computer_roads | pointer32  # de 1110:70e6
+1118:7916 data computer_types | pointer32  # de 1110:70ea
+1118:791a data compbau | pointer32  # de 1110:70ee
+1118:791e data computer_status_text  # de 1110:70f2
+1118:7a1e data maperste_tables  # de 1110:71f2
+1118:7a4a data land_heights_copy  # de 1110:721e
+1118:7a4e data land_buildings_copy  # de 1110:7222
+1118:7a52 data hill_mask  # de 1110:7226
+1118:7a56 data hill_heights  # de 1110:722a
+1118:7a5a data wasnunform  # de 1110:722e
+1118:7a5e data creditform  # de 1110:7232
+1118:7a62 data pauseform  # de 1110:7236
+1118:7a66 data uebersichtsmap2  # de 1110:723a
+1118:7a68 data sound_busy  # de 1110:723c
+1118:7aba data sound_waves  # de 1110:728e
+1118:7b66 data wavemix_session  # de 1110:733a
+1118:7b68 data wavemix_active  # de 1110:733c
+1118:7b6a data wave_volume_level  # de 1110:733e
+1118:7b6e data helpform  # de 1110:7342
+1118:7b72 data waehrungsfaktor  # de 1110:7346
+1118:7b76 data fehler_texts | pointer32  # de 1110:734a
+1118:7b7a data sonstige_texts  # de 1110:734e
+1118:7b82 data sabotext_1 | pointer32  # de 1110:7356
+1118:7b86 data sabotext_2 | pointer32  # de 1110:735a
+1118:7b8a data sabotext_3 | pointer32  # de 1110:735e
+1118:7b8e data auswahl_texts | pointer32  # de 1110:7362
+1118:7b92 data hausname_list1 | pointer32  # de 1110:7366
+1118:7b96 data hausname_list2 | pointer32  # de 1110:736a
+1118:7b9a data hausprei | pointer32  # de 1110:736e
+1118:7b9e data hausdata | pointer32  # de 1110:7372
+1118:7ba6 data sonstige_short_texts  # de 1110:737a
+1118:7cf6 data application  # de 1110:74ca

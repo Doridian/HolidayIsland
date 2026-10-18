@@ -172,11 +172,11 @@ pub enum Change {
 pub enum Action {
     /// A button on the form goes down (true) or up (false). // 1110:6599
     Hold(bool),
-    /// Bid, or start an auction that waits for the player. With the mouse
-    /// (`checked`) only while the item isn't sold and with the money for
-    /// it (1028:1e23, 1028:2208); Enter bids without either check
-    /// (1028:26e4).
-    Bid { checked: bool },
+    /// Bid, or start an auction that waits for the player: the mouse's
+    /// button, only while the item isn't sold and with the money for it
+    /// (1028:1e23, 1028:2208). v1.0's Enter (1028:26e4) also bid, without
+    /// either check; the later build took Enter out (en 1028:3620).
+    Bid,
     /// Leave the item to the computers: the pass or close button goes
     /// down. // 1028:1e23, 1028:1b77 (1028:0c82)
     Pass,
@@ -184,7 +184,7 @@ pub enum Action {
     /// 1028:1ce0 (1028:0476)
     Close,
     /// Escape, Space or Alt+F4: close the form, then leave the item to the
-    /// computers. // 1028:26e4
+    /// computers. // 1028:26e4, en 1028:3620
     Leave,
 }
 
@@ -590,19 +590,17 @@ impl World {
     /// The player `player`'s `action` on the auction form, while it's
     /// open. The original's form is the human's, player 1; a bid's limit
     /// here is the commanding player's. // 1028:1e23, 1028:2208,
-    /// 1028:1b77, 1028:1ce0, 1028:26e4
+    /// 1028:1b77, 1028:1ce0, en 1028:3620
     pub(crate) fn auction_command(&mut self, player: u8, action: Action, tick: &mut Tick) {
         if !self.auction.open {
             return;
         }
         match action {
             Action::Hold(held) => self.auction.held = held,
-            Action::Bid { checked } => {
-                // BUG(original): Enter bids without the money check, and even after the third call.
-                let checked = checked || self.fixes.has(Fix::AuctionEnterBid);
+            Action::Bid => {
                 let a = &self.auction;
                 // The mouse does nothing on the buttons once it's sold.
-                if checked && a.sold.is_some() {
+                if a.sold.is_some() {
                     return;
                 }
                 if !a.joined {
@@ -612,7 +610,7 @@ impl World {
                 }
                 let limit = a.limits.get(usize::from(player.wrapping_sub(1))).copied().unwrap_or(0);
                 // The view shows error 0xe (1030:232d) for the mouse.
-                if checked && a.price.wrapping_add(a.price / 20) > limit {
+                if a.price.wrapping_add(a.price / 20) > limit {
                     return;
                 }
                 self.auction_bid(i16::from(player), tick);
@@ -747,7 +745,7 @@ mod tests {
         assert_eq!(w.auction.going, NO_BID);
         let join = Command {
             player: 1,
-            action: command::Action::Auction(Action::Bid { checked: true }),
+            action: command::Action::Auction(Action::Bid),
         };
         assert_eq!(w.apply(join).auction_changes, [Change::Joined]);
         assert!(w.auction.joined);
@@ -757,11 +755,11 @@ mod tests {
     fn the_human_bids() {
         let mut w = world(false);
         run(&mut w, OPEN_TICKS.into());
-        let bid = |checked| Command {
+        let bid = || Command {
             player: 1,
-            action: command::Action::Auction(Action::Bid { checked }),
+            action: command::Action::Auction(Action::Bid),
         };
-        let tick = w.apply(bid(true));
+        let tick = w.apply(bid());
         assert_eq!(tick.auction_changes, [Change::Bid(1)]);
         assert_eq!((w.auction.bidder, w.auction.price, w.auction.going), (1, 10_500, 0));
         assert_eq!(w.auction.colour, 1);
@@ -770,12 +768,13 @@ mod tests {
         let seed = w.random;
         run(&mut w, BID_TICKS.into());
         assert_eq!(w.random, seed);
-        // Over the player's money the mouse can't bid; Enter can.
+        // Over the player's money the player can't bid.
         w.auction.bid_pause = 0;
         w.auction.limits[0] = 11_000;
-        assert_eq!(w.apply(bid(true)).auction_changes, []);
+        assert_eq!(w.apply(bid()).auction_changes, []);
         assert_eq!(w.auction.price, 10_500);
-        assert_eq!(w.apply(bid(false)).auction_changes, [Change::Bid(1)]);
+        w.auction.limits[0] = 1_000_000;
+        assert_eq!(w.apply(bid()).auction_changes, [Change::Bid(1)]);
         assert_eq!(w.auction.price, 11_025);
         // Nobody outbids the player when the computers can't pay more.
         w.auction.bid_pause = 0;
@@ -845,10 +844,7 @@ mod tests {
             let mut w = world(false);
             w.fixes.set(Fix::AuctionPass, fixed);
             run(&mut w, OPEN_TICKS.into());
-            assert_eq!(
-                auction_command(&mut w, Action::Bid { checked: true }).auction_changes,
-                [Change::Bid(1)]
-            );
+            assert_eq!(auction_command(&mut w, Action::Bid).auction_changes, [Change::Bid(1)]);
             w.auction.limits[1..].fill(0);
             let tick = auction_command(&mut w, Action::Pass);
             // The original gives the item to nobody.
@@ -858,30 +854,12 @@ mod tests {
             let mut w = world(false);
             w.fixes.set(Fix::AuctionPass, fixed);
             run(&mut w, OPEN_TICKS.into());
-            auction_command(&mut w, Action::Bid { checked: true });
+            auction_command(&mut w, Action::Bid);
             w.auction.sold = Some(SOLD_TICKS);
             w.auction.limits[1..].fill(1_000_000);
             let tick = auction_command(&mut w, Action::Leave);
             assert_eq!(tick.messages.len(), usize::from(!fixed));
             assert_eq!(w.auction.bidder == 1, fixed);
-        }
-    }
-
-    #[test]
-    fn fix_auction_enter_bid() {
-        for fixed in [false, true] {
-            let mut w = world(false);
-            w.fixes.set(Fix::AuctionEnterBid, fixed);
-            run(&mut w, OPEN_TICKS.into());
-            // Over the player's money, Enter bids in the original.
-            w.auction.limits[0] = 10_400;
-            let enter = Action::Bid { checked: false };
-            assert_eq!(auction_command(&mut w, enter).auction_changes.is_empty(), fixed);
-            // And after the third call.
-            w.auction.bid_pause = 0;
-            w.auction.limits[0] = 1_000_000;
-            w.auction.sold = Some(SOLD_TICKS);
-            assert_eq!(auction_command(&mut w, enter).auction_changes.is_empty(), fixed);
         }
     }
 

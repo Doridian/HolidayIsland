@@ -100,7 +100,8 @@ const PADDLE_FRAME_MS: u32 = 25;
 const PADDLE_UP: i32 = 17;
 const PADDLE_FRAMES: i32 = 35;
 
-/// The keys `FormKeyDown` knows. // 1028:26e4
+/// The keys `FormKeyDown` knows. // en 1028:3620
+#[cfg(test)]
 const VK_RETURN: u16 = 0x0d;
 const VK_ESCAPE: u16 = 0x1b;
 const VK_SPACE: u16 = 0x20;
@@ -528,7 +529,7 @@ impl Auktionsform {
         } else {
             let (kx, ky) = (x, y - LAYOUT[2].1.top);
             if hit(BID_BUTTON, kx, ky) && pressed == Pressed::Bid {
-                actions.push(Action::Bid { checked: true });
+                actions.push(Action::Bid);
             }
             if hit(PASS_BUTTON, kx, ky) && pressed == Pressed::Pass && world.auction.open {
                 actions.push(Action::Close); // 1028:0476
@@ -541,14 +542,15 @@ impl Auktionsform {
         actions
     }
 
-    /// `FormKeyDown`: Escape, Space and Alt+F4 leave the auction, Enter
-    /// bids or starts it. // 1028:26e4
+    /// `FormKeyDown`: Escape, Space and Alt+F4 leave the auction.
+    /// v1.0's Enter bid (or started a waiting auction) without the money
+    /// check and after the third call too (1028:26e4); the later build
+    /// took it out. // en 1028:3620
     #[must_use]
     pub fn key_down(&self, key: u16, shift: ShiftState) -> Option<Action> {
         if shift.0 == 0 || shift == ShiftState::SHIFT {
             match key {
                 VK_ESCAPE | VK_SPACE => Some(Action::Leave),
-                VK_RETURN => Some(Action::Bid { checked: false }),
                 _ => None,
             }
         } else if shift == ShiftState::ALT && key == VK_F4 {
@@ -597,10 +599,7 @@ mod tests {
     fn keys() {
         let form = Auktionsform::new(vec![Surface::new(1, 1, 0); BITMAP_FILES.len()], Vec::new());
         assert_eq!(form.key_down(VK_ESCAPE, ShiftState::SHIFT), Some(Action::Leave));
-        assert_eq!(
-            form.key_down(VK_RETURN, ShiftState::default()),
-            Some(Action::Bid { checked: false })
-        );
+        assert_eq!(form.key_down(VK_RETURN, ShiftState::default()), None);
         assert_eq!(form.key_down(VK_F4, ShiftState::ALT), Some(Action::Leave));
         assert_eq!(form.key_down(VK_RETURN, ShiftState::CTRL), None);
     }

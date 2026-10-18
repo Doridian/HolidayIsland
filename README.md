@@ -62,8 +62,22 @@ tools/extract_cd.py /path/to/HolidayIsland.iso orig/
 tools/extract_install.py orig/_FILES.1 orig/
 ```
 
-Both print the SHA-256 of every file they write. Only the German release has
-been checked so far.
+Both print the SHA-256 of every file they write.
+
+The English UK release comes from The Collection Chamber's DOSBox
+installer (`Install-HOI.exe` and `Install-HOI.D01`):
+
+```sh
+tools/extract-hoi-installer.py DOWNLOAD_DIR orig-en/
+```
+
+Its `HOLIDAY.EXE` is a later build than the German CD's, with fixes and
+six more scenarios in `UPGRADE\`. The port follows that build: it
+takes its fixes, and reads `UPGRADE\` when the game's folder has one, so
+the German folder plays as before and the English one with the new
+scenarios. The texts and speech are still the folder's own; choosing a
+language comes later. [docs/versions.md](docs/versions.md) has the
+differences.
 
 ## Running
 
@@ -125,12 +139,14 @@ shared through [symbols/](symbols/README.md).
 - `tools/extract_cd.py`: pure-Python ISO9660 extractor for ISO and BIN/CUE images.
 - `tools/extract_install.py`: lists or extracts the installer archives (`_FILES.1`, `_SETUP.1`).
 - `tools/lzhuf.py`: the LZHUF decoder those archives use.
+- `tools/extract-hoi-installer.py`: unpacks the English release from its DOSBox installer.
 - `tools/gh`, `tools/ghidra/`: headless Ghidra setup and CLI for the decompilation.
 
 ## Docs
 
 - [docs/binaries.md](docs/binaries.md): what's on the CD, what the executables are
   built with (Delphi 1, 16-bit NE), segment map, OS surface, the VESA variant
+- [docs/versions.md](docs/versions.md): the German v1.0 and the later (English) build, how they differ, `UPGRADE\`
 - [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
 - [docs/port-architecture.md](docs/port-architecture.md): the planned Rust port: stack, crates, design
 - [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)

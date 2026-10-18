@@ -628,9 +628,10 @@ fn the_info_box_and_the_overview() {
         .key_down(0x0d, ShiftState::default(), &scene.world, &scene.font, &scene.info);
     assert_eq!(r.jump, Some(site));
     scene.save("umenu");
-    // `overview_list`: with fewer than 12 buildings the original's Up
-    // puts the list's top before its start; the fix keeps it at 0. A
-    // click on column 299 selects a row only in the original.
+    // With fewer than 12 buildings v1.0's Up put the list's top before
+    // its start; the later build keeps it at 0, with `overview_list` or
+    // not (en 1088:2040). A click on column 299 selects a row only in the
+    // original.
     assert!(scene.umenu.list.len() >= 3, "{:?}", scene.umenu.list);
     for fix in [false, true] {
         let u = &mut scene.umenu;
@@ -638,7 +639,7 @@ fn the_info_box_and_the_overview() {
         u.selected = 2;
         let _ = u.key_down(0x26, ShiftState::default(), &scene.world, &scene.font, &scene.info);
         assert_eq!(u.selected, 1);
-        assert_eq!(u.top_row() < 0, !fix, "{}", u.top_row());
+        assert!(u.top_row() >= 0, "{}", u.top_row());
         let _ = u.key_down(0x28, ShiftState::default(), &scene.world, &scene.font, &scene.info);
         assert_eq!(u.selected, 2);
         u.selected = 0;

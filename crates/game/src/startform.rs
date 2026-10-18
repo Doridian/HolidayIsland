@@ -5,7 +5,9 @@
 //! toolkit drawn into it: the settings for a new island (opponents, relief,
 //! land, rivers, island shape), the player's colour, name and difficulty,
 //! and the buttons. A second page swaps the background for `startsze.bmp`
-//! and shows the six scenarios instead of the island settings.
+//! and shows the six scenarios instead of the island settings; with the
+//! later build's `UPGRADE\` folder it's `startsz1.bmp` and twelve
+//! scenarios, 1 to 6 and 8 to 13 (en 1058:378f, `docs/versions.md`).
 //!
 //! The original writes the settings straight into globals as the player
 //! clicks; here they're a [`Settings`] the form owns. Clicks that leave the
@@ -85,6 +87,44 @@ const STARTSZE: BitmapId = BitmapId(27);
 const CLOSE: BitmapId = BitmapId(28);
 const CLOSE_PRESSED: BitmapId = BitmapId(29);
 
+/// With the later build's `UPGRADE\` folder, the bitmaps from there that
+/// come after [`BITMAP_FILES`]: the scenario page's background and its
+/// smaller check boxes. // en 1058:02cf, en 1058:378f (+0x1a8, +0x1ac)
+pub const UPGRADE_BITMAP_FILES: [&str; 3] = ["startsz1.bmp", "strakn2.bmp", "strakn2p.bmp"];
+const STARTSZ1: BitmapId = BitmapId(30);
+const CHECK2: BitmapId = BitmapId(31);
+const CHECKED2: BitmapId = BitmapId(32);
+
+/// The scenario boxes on the later build's page: left, top, width, 13
+/// high, by box; box `i` is scenario [`scenario_number`]`(i)`.
+/// // en 1058:378f (+0x2cb6 .. +0x38d4)
+const UPGRADE_BOXES: [(i32, i32, i32); 12] = [
+    (5, 0xdb, 0x6f),
+    (5, 0xec, 0x6f),
+    (5, 0xfd, 0x6f),
+    (0x77, 0xdb, 0x81),
+    (0x77, 0xec, 0x81),
+    (0x77, 0xfd, 0x81),
+    (0xfb, 0xdb, 0x78),
+    (0xfb, 0xec, 0x78),
+    (0xfb, 0xfd, 0x78),
+    (0x176, 0xdb, 0x78),
+    (0x176, 0xec, 0x78),
+    (0x176, 0xfd, 0x78),
+];
+
+/// How far right of its box the later build's scenario boxes start their
+/// text (v1.0's: 16). // en 1010:2511
+const UPGRADE_TEXT_GAP: i32 = 5;
+
+/// The scenario box `i` stands for: 1 to 6, then the later build's 8 to
+/// 13 (7 is the tutorial's number). // en 1058:1613 .. en 1058:25d8
+#[must_use]
+pub fn scenario_number(i: usize) -> u8 {
+    let i = u8::try_from(i).unwrap_or(u8::MAX);
+    if i < 6 { i + 1 } else { i.saturating_add(2) }
+}
+
 /// The credits under "Ein Spiel von:", which the form never shows.
 /// // 1058:27bb 1058:27c7 1058:27d7
 const CREDITS: [&[u8]; 3] = [b"Moritz Baer", b"Niels Kokkelink", b"Rainer Michael"];
@@ -115,7 +155,8 @@ pub struct Settings {
     /// Each player's colour, 1 to 8; the human is the first. Picking a
     /// colour swaps it with whoever had it. // 1110:0074
     pub colours: [u8; 8],
-    /// The scenario, 1 to 6, or 0 for a normal game. // 1110:006e
+    /// The scenario, 1 to 6 (and 8 to 13 with `UPGRADE\`), or 0 for a
+    /// normal game. // 1110:006e
     pub scenario: u8,
     /// The player's name: the first entry of the player names and the one
     /// the menu offers next time. // 1110:0102 1110:0a02
@@ -198,8 +239,9 @@ struct Texts {
     scenarios: Vec<u8>,
     /// Its caption on the scenario page: "Standardspiel". // 1110:67ce
     normal_game: Vec<u8>,
-    /// The scenarios' descriptions. // 1110:68ce..1110:6dce
-    descriptions: [Vec<u8>; 6],
+    /// The scenarios' descriptions, by box. // 1110:68ce..1110:6dce,
+    /// en 1118:6af2..1118:75f2
+    descriptions: Vec<Vec<u8>>,
 }
 
 /// The widgets, with their offsets in the form.
@@ -244,8 +286,9 @@ struct Widgets {
     colours: [RadioButton; 8],
     /// The scenario's description, +0x2b9f.
     description: Label,
-    /// Check boxes that act as radio buttons, +0x2cae, 0x11a apart.
-    scenarios: [CheckBox; 6],
+    /// Check boxes that act as radio buttons, +0x2cae, 0x11a apart; 12
+    /// of them in the later build (+0x2cb6).
+    scenarios: Vec<CheckBox>,
     name: Edit, // +0x3464
 }
 
@@ -323,6 +366,9 @@ pub struct StartForm {
     texts: Texts,
     /// On the scenario page. // 1110:6ece
     scenario_mode: bool,
+    /// The scenario page's background: `startsze.bmp`, or the later
+    /// build's `UPGRADE\startsz1.bmp`. // 1058:02cf, en 1058:02cf
+    scenario_page: BitmapId,
     settings: Settings,
     /// The player's view enhancements (`edit_field`, `scroll_bars`,
     /// `mouse_buttons`, `start_menu_scenario`).
@@ -506,11 +552,16 @@ impl StartForm {
     /// widgets from `settings`. // 1058:27e6
     ///
     /// `bitmaps` are [`BITMAP_FILES`] in that order (a missing one draws
-    /// nothing), `start` and `szenario` the lines of `START.TXT` and
-    /// `SZENARIO.TXT` (`formats::data::start_txt`, `szenario_txt`).
+    /// nothing), then with the later build's `UPGRADE\` folder its
+    /// [`UPGRADE_BITMAP_FILES`]; `start` and `szenario` the lines of
+    /// `START.TXT` and `SZENARIO.TXT` (`formats::data::start_txt`,
+    /// `szenario_txt`): 13 of them, or the 25 of `UPGRADE\SZENARIO.TXT`,
+    /// which make the page the later build's, with twelve scenarios.
+    /// // 1058:27e6, en 1058:378f, en 1058:2c38
     #[must_use]
     #[allow(clippy::too_many_lines)]
     pub fn new(font: Font, bitmaps: Vec<Surface>, start: &[Vec<u8>], szenario: &[Vec<u8>], settings: Settings) -> Self {
+        let upgrade = szenario.len() > formats::data::SZENARIO_LINES;
         // `startform_load_texts` reads the lines in order; 20 ("Abbruch")
         // and 23 are skipped. // 1058:1ed0
         let s = |line: usize| start.get(line - 1).cloned().unwrap_or_default();
@@ -532,10 +583,14 @@ impl StartForm {
         let mut version = button(8, 0x8e);
         version.text = s(21);
         let mut mode = button(0x12, 0x132);
+        // The later build's file goes on after the caption: the six new
+        // scenarios' names and descriptions, alternating. // en 1058:2c38
+        let boxes = if upgrade { 12 } else { 6 };
+        let name_line = |i: usize| if i < 6 { 2 * i + 1 } else { 2 * i + 2 };
         let texts = Texts {
             scenarios: s(24),
             normal_game: z(13),
-            descriptions: [z(2), z(4), z(6), z(8), z(10), z(12)],
+            descriptions: (0..boxes).map(|i| z(name_line(i) + 1)).collect(),
         };
         mode.text.clone_from(&texts.scenarios);
 
@@ -576,15 +631,36 @@ impl StartForm {
             ],
             name: Edit::new(Frame::new(0x4a, 0xae, 0x9c, 0x10), &settings.name, 12, 9, 11),
             colours: std::array::from_fn(colour),
-            description: label(0x10, 0x104, 0x1d4, 0x25, 10, 1, &texts.descriptions[0]),
-            scenarios: [
-                check(0x12, 0xdc, 0x82, &z(1)),
-                check(0x12, 0xf0, 0x82, &z(3)),
-                check(0xb3, 0xdc, 0x82, &z(5)),
-                check(0xb3, 0xf0, 0x82, &z(7)),
-                check(0x153, 0xdc, 0x82, &z(9)),
-                check(0x153, 0xf0, 0x82, &z(11)),
-            ],
+            description: if upgrade {
+                // en 1058:378f (+0x2ba7)
+                label(0x10, 0x10d, 0x1d4, 0x1e, 10, 1, &texts.descriptions[0])
+            } else {
+                label(0x10, 0x104, 0x1d4, 0x25, 10, 1, &texts.descriptions[0])
+            },
+            scenarios: if upgrade {
+                UPGRADE_BOXES
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &(left, top, width))| {
+                        CheckBox::new(
+                            label(left, top, width, 0xd, 9, 0, &z(name_line(i))),
+                            CHECK2,
+                            CHECKED2,
+                            10,
+                        )
+                        .with_gap(UPGRADE_TEXT_GAP)
+                    })
+                    .collect()
+            } else {
+                vec![
+                    check(0x12, 0xdc, 0x82, &z(1)),
+                    check(0x12, 0xf0, 0x82, &z(3)),
+                    check(0xb3, 0xdc, 0x82, &z(5)),
+                    check(0xb3, 0xf0, 0x82, &z(7)),
+                    check(0x153, 0xdc, 0x82, &z(9)),
+                    check(0x153, 0xf0, 0x82, &z(11)),
+                ]
+            },
             version,
         };
         for (l, text) in w.credits.iter_mut().zip(CREDITS) {
@@ -625,6 +701,7 @@ impl StartForm {
             w,
             texts,
             scenario_mode: false,
+            scenario_page: if upgrade { STARTSZ1 } else { STARTSZE },
             settings,
             enhance: Enhancements::ORIGINAL,
         }
@@ -699,7 +776,7 @@ impl StartForm {
             .map(Which::Island)
             .into_iter()
             .chain((0..8).map(Which::Colour))
-            .chain((0..6).map(Which::Scenario));
+            .chain((0..self.w.scenarios.len()).map(Which::Scenario));
         for which in radios {
             let radio = match which {
                 Which::Island(i) => &mut self.w.islands[i].radio,
@@ -897,10 +974,11 @@ impl StartForm {
     }
 
     /// The scenario boxes' `Click`s: store the scenario, untick the others
-    /// and show its description. // 1058:14a5..1058:1900
+    /// and show its description. // 1058:14a5..1058:1900,
+    /// en 1058:1613..en 1058:25d8
     fn scenario_click(&mut self, i: usize) {
-        self.settings.scenario = u8::try_from(i + 1).unwrap_or(0);
-        for other in 0..6 {
+        self.settings.scenario = scenario_number(i);
+        for other in 0..self.w.scenarios.len() {
             if other != i {
                 let out = self.w.scenarios[other].radio.deselect();
                 if out.repaint {
@@ -911,7 +989,9 @@ impl StartForm {
         let StartForm {
             assets, bild, w, texts, ..
         } = self;
-        w.description.text.clone_from(&texts.descriptions[i]);
+        if let Some(d) = texts.descriptions.get(i) {
+            w.description.text.clone_from(d);
+        }
         w.description.frame.erase(bild, assets.background());
         w.description.draw(bild, &assets.skin());
     }
@@ -931,6 +1011,7 @@ impl StartForm {
             w,
             texts,
             scenario_mode,
+            scenario_page,
             settings,
             ..
         } = self;
@@ -956,7 +1037,7 @@ impl StartForm {
                 widget.hide(bild, assets.background());
             }
             w.mode.text.clone_from(&texts.normal_game);
-            assets.background = STARTSZE;
+            assets.background = *scenario_page;
             bild.draw(0, 0, assets.background(), clip);
             let skin = assets.skin();
             for widget in w.scenario_page() {

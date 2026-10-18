@@ -173,6 +173,34 @@ Step 3 of `AnimationsTimer` (1020:1e9b), with the tooltips option
    number), the bubble at the form's top + 59 and the button's left edge.
 4. If none of them showed the bubble, it hides.
 
+## The later build
+
+The later build ([versions.md](versions.md)), which the port follows,
+changes the end form and the high scores for its six scenarios of
+`UPGRADE\`:
+
+- `UPGRADE\SCHLUSS.TXT` (en 1070:0294) has 44 lines: the blocks of
+  reasons have 14 lines each, the games 0, 7, 1–6 and then 8–13, so the
+  lost block starts at 19 and the rest (net worth ...) at 33. Without
+  `UPGRADE\` the port reads `TEXTE\SCHLUSS.TXT` as v1.0 does.
+- A fair win of scenarios 8–13 plays `ABFries`, `ABCamper`, `ABBBonly`,
+  `ABPRWund`, `ABHurry` or `ABChalle.avi` (en 1070:128d); 7 still has
+  none.
+- The high score table has 14 games, `0x3aa` bytes a rank (en
+  1068:0109, `game::highscoreform::ScoreTable`). Games 0–6 are
+  `SOUND\HIGHSCOR.WAV` as before; games 8–13 go to
+  `UPGRADE\HIGHSCO2.WAV`, slots 1–6 of a file of the same layout (slot 0
+  holds a copy of game 0's), read by en 1068:1adf and written by en
+  1068:1e08. Game 7, the tutorial's number, has a table in memory that
+  isn't saved: v1.0's overrun is gone. The port keeps the player's
+  copies, `HIGHSCOR.WAV` and `HIGHSCO2.WAV`, next to their saves.
+- The form (en 1068:29ac) draws `UPGRADE\highsco2.bmp` and has
+  thirteen check boxes, `UPGRADE\strakn2.bmp`/`strakn2p.bmp`, 126 × 13:
+  games 1–4 at x 3, 5, 6, 8, 9 at x 0x81, 10–13 at x 0x109, each column
+  from y 0xe6 every 0x11, and the normal game at 0x1a5, 0xe6. The new
+  scenarios' names are `UPGRADE\HIGHSCO2.TXT`'s six lines (en
+  1068:2493). "Szenarien" (text 3) is drawn at y 0xd6.
+
 ## The port
 
 | Form | Module | View API |
@@ -195,4 +223,5 @@ tooltips wait for those forms.
 - `FUN_10e8_6258`, the "active" test of step 3, is assumed to be the
   form's `Active`.
 - Whether the tutorial is ever scenario 7 (its texts exist in
-  `Schluss.txt`, its high score would overrun the table).
+  `Schluss.txt`; its high score overran v1.0's table, the later build
+  keeps a table for it in memory).

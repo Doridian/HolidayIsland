@@ -98,6 +98,11 @@ const BIG_MENUS: [u8; 3] = [10, 0x12, 0xe];
 
 /// The submenu to the left and right of each (9..=20), for the arrow keys:
 /// the button bar's order, round. // 1110:14ce, 1110:14da
+/// The later build's scenario 12 and the submenu whose first row it
+/// shows (`*(+0x1ed) + 10`). // en 1018:015f
+const HURRY_UP: u8 = 12;
+const HURRY_UP_SUBMENU: usize = 5;
+
 const PREVIOUS: [u8; 12] = [0x14, 9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf, 0xf, 0x11, 0x12, 0x13];
 const NEXT: [u8; 12] = [0xa, 0xb, 0xc, 0xd, 0xe, 0xf, 0x11, 0x11, 0x12, 0x13, 0x14, 9];
 
@@ -713,9 +718,18 @@ impl Baumenue {
     /// `FormKeyDown`: the arrow keys switch submenus, Escape cancels,
     /// Enter closes, Space gives the main screen the focus; F1 to F12, the
     /// digits but 0 and Pause go to the main screen; with `build_menu`
-    /// every key the menu doesn't use. // 1018:3290
+    /// every key the menu doesn't use. In the later build's scenario 10
+    /// (`scenario`) the arrows skip submenu 10, the hotels
+    /// ([`crate::hauptschirm::button_blocked`]). // 1018:3290, en 1018:32a5
     #[must_use]
-    pub fn key_down(&self, key: u16) -> Response {
+    pub fn key_down(&self, key: u16, scenario: u8) -> Response {
+        let skip = |b: u8, table: &[u8; 12]| {
+            if crate::hauptschirm::button_blocked(scenario, b) {
+                table.get(usize::from(b - FIRST_MENU)).copied().unwrap_or(b)
+            } else {
+                b
+            }
+        };
         let k = usize::from(self.menu).checked_sub(usize::from(FIRST_MENU));
         // BUG(original): only these keys reach the main screen: the arrow keys and 0 do nothing while the build menu has the focus.
         let own = matches!(key, 0x25 | 0x27 | 0x1b | 0xd | 0x20);
@@ -725,14 +739,24 @@ impl Baumenue {
         match key {
             0x27 => k
                 .and_then(|k| NEXT.get(k))
-                .map_or(Response::Nothing, |&b| Response::Button(b)),
+                .map_or(Response::Nothing, |&b| Response::Button(skip(b, &NEXT))),
             0x25 => k
                 .and_then(|k| PREVIOUS.get(k))
-                .map_or(Response::Nothing, |&b| Response::Button(b)),
+                .map_or(Response::Nothing, |&b| Response::Button(skip(b, &PREVIOUS))),
             0x1b => Response::Cancel,
             0xd => Response::Close,
             0x20 => Response::FocusMainScreen,
             _ => Response::Nothing,
+        }
+    }
+
+    /// State 1500 of the later build for `scenario` 12 (hurry up): the
+    /// submenu at index 5 (menu 14) starts at its first row, after the
+    /// world took [`crate::hintergrund::SCENARIO_BANNED`] off the menu.
+    /// // en 1018:015f
+    pub fn start_scenario(&mut self, scenario: u8) {
+        if scenario == HURRY_UP {
+            self.scroll[HURRY_UP_SUBMENU] = 0;
         }
     }
 

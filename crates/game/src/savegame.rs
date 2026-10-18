@@ -572,7 +572,8 @@ impl Source for Saving<'_> {
 
 impl World {
     /// The map file `save_map` writes of this world and `view`: the
-    /// version `1.000`, then each unit's globals (`docs/savegame.md`).
+    /// version (the later build's `1.100`, v1.0's `1.000`), then each
+    /// unit's globals (`docs/savegame.md`).
     /// Fields neither models are zeros. Saving reads the world and
     /// changes nothing, so it isn't a command: any player may save
     /// their copy. // 1048:2bae

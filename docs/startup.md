@@ -103,7 +103,17 @@ generator and the game's data (`new_world`,
 | 1200 | Creates `TWasNunForm`, the progress window (1040:33e9), shows it and disables the form | 1210 | 10 |
 | 1210 | With the timer off: generates a new island from the start menu's settings (1030:390e, hourglass cursor around 10b0:52d4, [island-generator.md](island-generator.md)); for a scenario or a saved game it only clears the map | 1220 | 10 |
 | 1220 | With the timer off: loads the data tables (1030:2e48: `HAUSPOS.DAT`, `HAUSNR.DAT`, the other `*POS.DAT`, prices, names...), the bitmaps (1030:307a: the frame's and the island's, see [map.md](map.md)) and the rest (1030:36e5: months, events, sabotage, the forms' data...), moving the progress bar to 100 | 1500 | 2 |
-| 1500 | Sets up the main screen (`hauptschirm_init`, 1020:2501) and stops the timer. With `+0x190`: `load_map` of the saved game, then `game_start_setup` (1010:2820). With `+0x191`: `load_map` of the scenario's `SZENARIO\*.his`, puts the kept name, colours and difficulty back, sets the starting money from the difficulty, the scenario's number of computer players and its events (`EREIGNn.DAT`, 1010:36f8), then `game_start_setup`. Finally closes the progress window and shows the main screen (1020:283b: starts its `AnimationsTimer`, height 479) | | |
+| 1500 | Sets up the main screen (`hauptschirm_init`, 1020:2501) and stops the timer. With `+0x190`: `load_map` of the saved game, then `game_start_setup` (1010:2820). With `+0x191`: `load_map` of the scenario's `SZENARIO\*.his` (the later build's 8–13: `UPGRADE\*.his`), puts the kept name, colours and difficulty back, sets the starting money from the difficulty, the scenario's number of computer players and its events (`EREIGNn.DAT`, 1010:36f8; 8–13 `UPGRADE\EREIGN7..12.DAT`), the build menu's bans and the computers (see below), then `game_start_setup`. Finally closes the progress window and shows the main screen (1020:283b: starts its `AnimationsTimer`, height 479) | | |
+
+The scenario's part of state 1500 in the later build (en 1010:0591,
+`hintergrund::start_scenario`): the computer players are 1, 3, 7, 2, 3,
+0 for scenarios 1–6 and 4, 3, 7, 4, 0, 5 for 8–13; scenarios 1, 4, 6, 8,
+12 and 13 take `SCENARIO_BANNED` off the build menu (1000:21a0), 11 only
+0x6f, 0x71 and 0x79 (en 1010:01d5); 10 cuts the computers' list of types
+of category 10 to seven (en 10b0:0002), 12 puts the build menu's
+submenu 5 back to its first row (en 1018:015f); the computers find
+themselves (10a8:0002) in all but 9, 10 and 12. v1.0 does the same for
+1–6, with the computers finding themselves always.
 
 So a normal game plays on the island state 1210 generated, and a scenario
 or a saved game replaces it with the file's. `game_start_setup` turns the
@@ -226,6 +236,17 @@ The normal page:
 
 The scenario page has six check boxes used as radio buttons, which set
 `scenario` and put the scenario's description under them.
+
+The later build ([versions.md](versions.md)) has twelve with its
+`UPGRADE\` folder (en 1058:378f): `UPGRADE\startsz1.bmp` for the page,
+the boxes 13 high with `UPGRADE\strakn2.bmp`/`strakn2p.bmp` and their
+text 5 pixels right of the box (en 1010:2511), in four columns at x 5,
+0x77, 0xfb and 0x176 from y 0xdb every 0x11: scenarios 1–3, 4–6, 8–10
+and 11–13 (en 1058:1613–en 1058:25d8; 7 is the tutorial's number). The
+description is at 0x10, 0x10d (0x1d4 × 0x1e). `UPGRADE\SZENARIO.TXT`
+(en 1058:2c38) has 25 lines: v1.0's 13, then the new scenarios' names
+and descriptions. The port shows that page when `UPGRADE\` is there
+(`game::startform::UPGRADE_BITMAP_FILES`).
 
 The scroll bars' `Click`s store their positions whenever they repaint. The
 defaults come from `init_game_defaults` (1000:1ea0) and the initialised

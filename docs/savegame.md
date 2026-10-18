@@ -11,7 +11,9 @@ file, field by field), [`game::savegame`](../crates/game/src/savegame.rs)
 ## The file
 
 `save_map` (1048:2bae) writes the string `1.000` (`string[5]`, from
-`1110:004e`; `load_map` reads six bytes and never looks at them), then calls
+`1110:004e`; the later build's `1.100`, which the port writes too,
+[versions.md](versions.md); `load_map` reads six bytes and never looks
+at them, so either build loads the other's files), then calls
 one routine per unit, each of which `BlockWrite`s its globals one after the
 other. `load_map` (1048:2a19) calls the matching readers in the same order.
 There are no tags, lengths or checksums. Each save routine writes exactly
@@ -202,6 +204,18 @@ the selected game loads it (1040:0180). Enter in the name field is its
 and Space close the menu, Enter focuses the name, `L` loads, `S` saves,
 `Q` quits, `N` starts a new game, Up and Down move the selection
 (without the name). Alt+F4 closes it.
+
+The later build ([versions.md](versions.md), en 1040:077e–en 1040:110c)
+draws `UPGRADE\datwin1d.BMP` with a fifth button on the left,
+"Löschen" (`UPGRADE\SONSTIGE.TXT`'s 25th text) at 8,114; "Neues Spiel"
+moves to 8,136, "Beenden" to 8,158 (two more entries in the table, en
+`1118:1812`). "Löschen" and the key `D` delete the selected game: a
+question (`Wirklich loeschen?`, `Vous êtes sûr?` or `Are you sure?` by
+`land`), then `MAPS\name.map` is erased and the list filled again. The
+port has that menu with `UPGRADE\` (`Dateimenue::with_upgrade`); as the
+message boxes aren't ported, it doesn't ask, and it only erases the
+player's own copy in the port's save directory, never the game's
+`MAPS\`.
 
 Quirks, kept: any press while the name is focused unfocuses it, so
 clicking "Speichern" while typing focuses the field again instead of

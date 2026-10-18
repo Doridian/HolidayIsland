@@ -66,9 +66,11 @@ const BUTTON_EDGES: [(i32, i32); 23] = [
 
 /// `button_at_mouse`: the button whose edges hold `x` (`mouse_x`, the
 /// last mouse move's x on `ButtonImage` or `Hauptbild`), the first one
-/// that does; `None` (23) between the groups. // 1018:394e
+/// that does; `None` (23) between the groups, and in the later build's
+/// scenario 10 for the hotels' button ([`crate::hauptschirm::button_blocked`]).
+/// // 1018:394e, en 1018:363c
 #[must_use]
-pub fn button_at_mouse(x: i32) -> Option<u8> {
+pub fn button_at_mouse(x: i32, scenario: u8) -> Option<u8> {
     let mut found = None;
     for (b, &(left, right)) in BUTTON_EDGES.iter().enumerate() {
         if left <= x && x <= right {
@@ -76,7 +78,7 @@ pub fn button_at_mouse(x: i32) -> Option<u8> {
             break;
         }
     }
-    found
+    found.filter(|&b| !crate::hauptschirm::button_blocked(scenario, b))
 }
 
 /// Step 3's part for the button bar (1020:1e9b): with the main screen
@@ -86,7 +88,13 @@ pub fn button_at_mouse(x: i32) -> Option<u8> {
 /// the bubble goes under the bar at the button's left edge: `(text, top,
 /// left)` for [`Helpform::show`].
 #[must_use]
-pub fn button_bar_tooltip(form: Rect, cursor: (i32, i32), mouse_x: i32, ready: bool) -> Option<(u8, i32, i32)> {
+pub fn button_bar_tooltip(
+    form: Rect,
+    cursor: (i32, i32),
+    mouse_x: i32,
+    scenario: u8,
+    ready: bool,
+) -> Option<(u8, i32, i32)> {
     if !ready {
         return None;
     }
@@ -95,7 +103,7 @@ pub fn button_bar_tooltip(form: Rect, cursor: (i32, i32), mouse_x: i32, ready: b
     if !in_bar {
         return None;
     }
-    let b = button_at_mouse(mouse_x)?;
+    let b = button_at_mouse(mouse_x, scenario)?;
     let left = BUTTON_EDGES[usize::from(b)].0 + form.left;
     Some((BUTTON_TEXTS[usize::from(b)], form.top + 0x3b, left))
 }
@@ -193,17 +201,20 @@ mod tests {
 
     #[test]
     fn button_bar() {
-        assert_eq!(button_at_mouse(0), Some(0));
-        assert_eq!(button_at_mouse(24), Some(0));
-        assert_eq!(button_at_mouse(80), None);
-        assert_eq!(button_at_mouse(639), Some(22));
+        assert_eq!(button_at_mouse(0, 0), Some(0));
+        assert_eq!(button_at_mouse(24, 0), Some(0));
+        assert_eq!(button_at_mouse(80, 0), None);
+        assert_eq!(button_at_mouse(639, 0), Some(22));
+        // The hotels' button in the later build's scenario 10.
+        assert_eq!(button_at_mouse(290, 0), Some(10));
+        assert_eq!(button_at_mouse(290, 10), None);
         let form = Rect::new(80, 60, 640, 480);
         assert_eq!(
-            button_bar_tooltip(form, (100, 60 + 0x22), 90, true),
+            button_bar_tooltip(form, (100, 60 + 0x22), 90, 0, true),
             Some((3, 60 + 0x3b, 168))
         );
-        assert_eq!(button_bar_tooltip(form, (100, 60 + 0x3c), 90, true), None);
-        assert_eq!(button_bar_tooltip(form, (100, 100), 80, true), None);
-        assert_eq!(button_bar_tooltip(form, (100, 100), 90, false), None);
+        assert_eq!(button_bar_tooltip(form, (100, 60 + 0x3c), 90, 0, true), None);
+        assert_eq!(button_bar_tooltip(form, (100, 100), 80, 0, true), None);
+        assert_eq!(button_bar_tooltip(form, (100, 100), 90, 0, false), None);
     }
 }

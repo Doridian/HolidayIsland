@@ -209,10 +209,6 @@ enhancements! {
     /// give the item away a second time after the third call (1028:0c82).
     AuctionPass = "auction_pass", "Passen lässt das Höchstgebot stehen",
         "Passing at an auction keeps the leading bid and doesn't sell the item again after the third call";
-    /// Enter bids at an auction with the same checks as the mouse: the
-    /// money, and not after the third call (1028:26e4).
-    AuctionEnterBid = "auction_enter_bid", "Gebot mit Enter wie mit der Maus",
-        "Enter bids at an auction only with the money and before the third call, as the mouse does";
     /// Player 8 gets the building type it wins at an auction
     /// (`make_available`, 10a0:0691).
     PrizePlayer8 = "prize_player8", "Spieler 8 bekommt Ersteigertes",
@@ -440,8 +436,9 @@ impl Config {
     };
 
     /// Everything on, or off with `original`, then each of `overrides`
-    /// (`key`, on) in order. Also gives the keys no enhancement has. A switch's text
-    /// (`on`, `0`, ...) is the caller's (`platform::settings::switch`).
+    /// (`key`, on) in order. Also gives the keys no enhancement has; a
+    /// [`RETIRED`] key is skipped without a word. A switch's text (`on`,
+    /// `0`, ...) is the caller's (`platform::settings::switch`).
     pub fn resolve<'a>(original: bool, overrides: impl IntoIterator<Item = (&'a str, bool)>) -> (Config, Vec<String>) {
         let mut c = if original { Config::ORIGINAL } else { Config::default() };
         let mut unknown = Vec::new();
@@ -450,7 +447,7 @@ impl Config {
                 c.fixes.set(f, on);
             } else if let Some(e) = Enhancement::from_key(key) {
                 c.view.set(e, on);
-            } else {
+            } else if !RETIRED.contains(&key) {
                 unknown.push(key.to_owned());
             }
         }
@@ -465,6 +462,15 @@ impl Config {
             .or_else(|| Enhancement::from_key(key).map(|e| self.view.has(e)))
     }
 }
+
+/// Keys of enhancements the port no longer has because the later build
+/// of the game fixes their bug itself, so the port always behaves that
+/// way (`docs/versions.md`). An old `settings.ini`, command line or saved
+/// game that names one still loads; the key is ignored.
+pub const RETIRED: &[&str] = &[
+    // Enter at an auction (1028:26e4): en 1028:3620 has no Enter.
+    "auction_enter_bid",
+];
 
 /// The prefix of a world fix's key in a saved game's chunk.
 const SAVED_PREFIX: &str = "fix.";
@@ -543,6 +549,10 @@ mod tests {
         assert_eq!(c.is_on("window_stacking"), Some(true));
         assert_eq!(c.is_on("nonsense"), None);
         assert_eq!(unknown, ["nonsense"]);
+        // A retired key is ignored, without a word.
+        let (c, unknown) = Config::resolve(false, [("auction_enter_bid", false)]);
+        assert_eq!((c, unknown.len()), (Config::default(), 0));
+        assert!(RETIRED.iter().all(|k| all().all(|i| i.key != *k)));
         // Later overrides win.
         let (c, _) = Config::resolve(false, [("window_stacking", false), ("window_stacking", true)]);
         assert!(c.view.has(stacking));
@@ -563,8 +573,12 @@ mod tests {
         for fixes in [Fixes::ORIGINAL, Fixes::all_on()] {
             assert_eq!(fixes_in(&fixes_chunk(fixes), Fixes::ORIGINAL), fixes);
         }
-        // Keys it doesn't know are skipped.
-        let chunk = formats::savegame::make_port_chunk([("fix.from_the_future", "1"), ("other", "x")]);
+        // Keys it doesn't know are skipped, a retired one too.
+        let chunk = formats::savegame::make_port_chunk([
+            ("fix.from_the_future", "1"),
+            ("other", "x"),
+            ("fix.auction_enter_bid", "0"),
+        ]);
         assert_eq!(fixes_in(&chunk, Fixes::ORIGINAL), Fixes::ORIGINAL);
     }
 }

@@ -146,16 +146,21 @@ selected row (`1110:6fbe`) in colour 7. Under it the selected one's rent
 a week or price per visit.
 
 Mouse (1080:1c3b, only with the left button): a kind's picture selects
-it; a row of the list selects it (up to column 300, the scroll bar's
+it (the later build's, en 1088:1c3b: the pictures up to x 282, not 283,
+whose kind is 12, and another kind's starts at its first building); a
+row of the list selects it (up to column 300, the scroll bar's
 first two; with `enhance.overview_list` up to 298); then the widgets; else the title bar
 drags the form (shrunk to it, and kept so after a double click there).
 "Renovieren" and the minus and plus buttons act on the selected building
 like the info box's, then draw the list; "Springe hin" moves the main
 screen's view to ten squares before it (1020:0787). Keys (1080:202b,
 alone or with Shift): Escape and Space close, R renovates, Left and
-Right go through the kinds (past 7), Up and Down move the selection
+Right go through the kinds (past 7; the later build, en 1088:2040, puts
+the list's top and the selection back to 0 for the new kind, v1.0 keeps
+them), Up and Down move the selection
 (drawing the kind from the top first, then moving the top so the
-selection shows; with `enhance.overview_list` the list only scrolls as
+selection shows, at 0 or more in the later build, before the list with
+fewer than 12 buildings in v1.0; with `enhance.overview_list` the list only scrolls as
 far as the selection needs, and the price's place is cleared with its
 own background, not row 0x43's), `+` and `-` (also on the number pad) change the
 price and draw the kind again, Enter jumps; Alt+F4 closes.

@@ -16,6 +16,7 @@ Windows-1252.
 | `SOUND\`, `SOUNDLO\` | 40 `*.WAV` each | Effects, 8-bit mono PCM at 22 kHz (`SOUND`) or 11 kHz (`SOUNDLO`). Except `HIGHSCOR.WAV` and the installer-only `HH_HIGH.WAV`: those are the **high-score table** under a `.WAV` name (see below). |
 | `SPRADEU1\`–`SPRADEU3\` | 271 `*.WAV`, 32 MB | German speech ("Sprache Deutsch"), 8-bit mono 22 kHz PCM. |
 | `FILMHI\`, `FILMLO\` | 23 `*.AVI` each | Cutscenes: Cinepak (`cvid`) 432×320 with MS ADPCM 22 kHz mono audio. `FILMLO` (46 MB vs 94 MB) is a lower-bitrate set of the same videos. |
+| `UPGRADE\` | 24 files | Only with the later build (the English release, [versions.md](versions.md)): six more scenarios (`*.HIS`, `EREIGN7`–`12.DAT`), and files that replace the CD's (`SONSTIGE`, `SZENARIO`, `SCHLUSS.TXT`, `HAUSPREI.DAT`, `CREDITS.BMP`) or are new (`HIGHSCO2.*`, `STARTSZ1`, `STRAKN2*`, `DATWIN1D.BMP`). The English install's names are in mixed case (`Hausname.txt`, `Sprache1\`), which the port's case-insensitive lookup takes. |
 
 `HOLIDAY.EXE` also carries data of its own, in its resources: the 23 DFM forms
 (component layout, captions, event bindings), cursors, the icon, and the VCL's

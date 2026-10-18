@@ -5,7 +5,8 @@
 //! (the island made from the start menu's settings and everything the
 //! game's data sets up around it), a scenario's ([`load_world`] and
 //! [`start_scenario`]) and a saved game's ([`load_saved_game`],
-//! `docs/savegame.md`).
+//! `docs/savegame.md`). It follows the later build (en 1010:0591,
+//! `docs/versions.md`), whose scenarios 8 to 13 come from `UPGRADE\`.
 
 use std::sync::Arc;
 
@@ -43,6 +44,53 @@ pub const SCENARIO_EVENTS: [&str; 6] = [
 
 /// How many computer players each scenario has. // 1000:2466, state 1500
 pub const SCENARIO_OPPONENTS: [u8; 6] = [1, 3, 7, 2, 3, 0];
+
+/// The later build's scenarios 8 to 13, whose files are in `UPGRADE\`
+/// (`docs/versions.md`): their maps, events and computer players.
+/// Scenario 7 is the tutorial's number, which no file of the start menu
+/// has. // en 1010:0591, state 1500
+pub const UPGRADE_SCENARIO_FILES: [&str; 6] = [
+    "Weltwund.his", // en 1010:0467
+    "Camper.his",   // en 1010:0474
+    "BBonly.his",   // en 1010:047f
+    "PRWunder.his", // en 1010:048a
+    "Hurryup.his",  // en 1010:0497
+    "Challeng.his", // en 1010:04a3
+];
+pub const UPGRADE_SCENARIO_EVENTS: [&str; 6] = [
+    "ereign7.dat",  // en 1010:0512
+    "ereign8.dat",  // en 1010:051e
+    "ereign9.dat",  // en 1010:052a
+    "ereign10.dat", // en 1010:0536
+    "ereign11.dat", // en 1010:0543
+    "ereign12.dat", // en 1010:0550
+];
+pub const UPGRADE_SCENARIO_OPPONENTS: [u8; 6] = [4, 3, 7, 4, 0, 5];
+
+/// The first and last scenario `UPGRADE\` adds.
+pub const UPGRADE_SCENARIOS: std::ops::RangeInclusive<u8> = 8..=13;
+
+/// Where scenario `n`'s map is, by its path in the game's folder: 1 to 6
+/// in `SZENARIO\`, 8 to 13 in `UPGRADE\`; none for another number.
+#[must_use]
+pub fn scenario_path(n: u8) -> Option<String> {
+    match n {
+        1..=6 => Some(format!("SZENARIO/{}", SCENARIO_FILES[usize::from(n - 1)])),
+        8..=13 => Some(format!("UPGRADE/{}", UPGRADE_SCENARIO_FILES[usize::from(n - 8)])),
+        _ => None,
+    }
+}
+
+/// How many computer players scenario `n` has; none for a number state
+/// 1500 doesn't set them for (0, the tutorial's 7). // en 1010:0591
+#[must_use]
+pub fn scenario_opponents(n: u8) -> Option<u8> {
+    match n {
+        1..=6 => Some(SCENARIO_OPPONENTS[usize::from(n - 1)]),
+        8..=13 => Some(UPGRADE_SCENARIO_OPPONENTS[usize::from(n - 8)]),
+        _ => None,
+    }
+}
 
 /// The saved game state 1500 loads from `MAPS\` when `hintergrund+0x190`
 /// is set (by loading a game): `Last.map` unless something put another
@@ -152,19 +200,20 @@ pub fn layout(screen: (i32, i32), enhance: Enhancements) -> Option<&'static Layo
 /// Where a new game's island comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Island {
-    /// `SZENARIO\` and the file's name.
-    Scenario(&'static str),
+    /// A scenario's map: its path in the game's folder
+    /// ([`scenario_path`]).
+    Scenario(String),
     /// A new island from the start menu's settings, made by 10b0:52d4 in
     /// state 1210: [`new_world`].
     Generated,
 }
 
 /// The island Start leads to: the scenario on the scenario page, or a
-/// generated one. // 1000:2466, state 1500
+/// generated one. // 1000:2466, en 1010:0591, state 1500
 #[must_use]
 pub fn new_island(settings: &Settings, scenario_page: bool) -> Island {
-    match settings.scenario {
-        n @ 1..=6 if scenario_page => Island::Scenario(SCENARIO_FILES[usize::from(n - 1)]),
+    match scenario_path(settings.scenario) {
+        Some(path) if scenario_page => Island::Scenario(path),
         _ => Island::Generated,
     }
 }
@@ -191,10 +240,7 @@ pub fn load_world(map: &SaveGame, settings: &Settings, scenario_page: bool) -> R
         world.player_colours = settings.colours;
         world.difficulty = settings.difficulty;
         start_money(&mut world);
-        if let Some(&n) = usize::from(settings.scenario)
-            .checked_sub(1)
-            .and_then(|i| SCENARIO_OPPONENTS.get(i))
-        {
+        if let Some(n) = scenario_opponents(settings.scenario) {
             world.player_count = n + 1;
         }
         // The players in the game and the empty seats.
@@ -210,17 +256,36 @@ pub fn load_world(map: &SaveGame, settings: &Settings, scenario_page: bool) -> R
 /// player can't build them there. // 1000:21a0
 pub const SCENARIO_BANNED: [u8; 12] = [0x6f, 0x71, 0x79, 0x7e, 0x25, 0x3c, 0x1e, 0x1d, 0x7d, 0x23, 0x6c, 0x6e];
 
-/// The scenarios whose build menu goes without [`SCENARIO_BANNED`].
-/// // 1000:2466, state 1500
-const BANNING_SCENARIOS: [u8; 3] = [1, 4, 6];
+/// The scenarios whose build menu goes without [`SCENARIO_BANNED`]: 1, 4
+/// and 6, and the later build's 8, 12 and 13. // 1000:2466, en 1010:0591,
+/// state 1500
+const BANNING_SCENARIOS: [u8; 6] = [1, 4, 6, 8, 12, 13];
+
+/// What scenario 11 (the wonders) takes off the build menu: the first
+/// three of [`SCENARIO_BANNED`]. // en 1010:01d5
+const SCENARIO_11_BANNED: [u8; 3] = [0x6f, 0x71, 0x79];
+
+/// Scenario 10 (B&B only) cuts the computers' list of types of category
+/// 10 to its first seven (`computer_types[0x19a] := 7`): no hotels for
+/// them either. // en 10b0:0002
+const BB_ONLY_CATEGORY: usize = 10;
+const BB_ONLY_TYPES: u8 = 7;
+
+/// The scenarios whose computer players find where they are at the
+/// start: all but the later build's 9, 10 and 12. // en 1010:0591
+const FINDING_SCENARIOS: [u8; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 11, 13];
 
 /// The rest of state 1500 for a scenario, once the world has its tables
 /// and its random numbers: the scenario's events (`events`, the rows of
 /// its `EREIGNn.DAT`, [`scenario_events`]) replace the map's, scenarios
-/// 1, 4 and 6 take [`SCENARIO_BANNED`] off the build menu (1000:21a0),
-/// and the computer players find where they are (10a8:0002). The
-/// original then sets the speech and the music on, the view's options.
-/// // 1000:2466
+/// 1, 4, 6, 8, 12 and 13 take [`SCENARIO_BANNED`] off the build menu
+/// (1000:21a0) and 11 the three of [`SCENARIO_11_BANNED`], 10 cuts the
+/// computers' list of category 10, and the computer players find where
+/// they are (10a8:0002), but not in 9, 10 and 12. Scenario 12 also puts
+/// the build menu's submenu 5 back to its first row, which is the view's
+/// (`crate::baumenue::Baumenue::start_scenario`). The original then sets
+/// the speech and the music on, the view's options. // 1000:2466,
+/// en 1010:0591
 pub fn start_scenario(world: &mut World, events: Option<&[[i32; 12]]>) {
     if let Some(rows) = events {
         world.load_event_rows(rows); // 1010:36f8
@@ -230,12 +295,25 @@ pub fn start_scenario(world: &mut World, events: Option<&[[i32; 12]]>) {
             world.remove_from_build_menu(building); // 1018:26b9
         }
     }
-    world.computers_find_themselves(); // 10a8:0002
+    match world.scenario {
+        10 => world.computers.cut_type_list(BB_ONLY_CATEGORY, BB_ONLY_TYPES), // en 10b0:0002
+        11 => {
+            for building in SCENARIO_11_BANNED {
+                world.remove_from_build_menu(building); // en 1010:01d5
+            }
+        }
+        _ => {}
+    }
+    if FINDING_SCENARIOS.contains(&world.scenario) {
+        world.computers_find_themselves(); // 10a8:0002
+    }
 }
 
 /// The rows of scenario `scenario`'s events, `DATA\EREIGNn.DAT`
-/// ([`SCENARIO_EVENTS`]), from `read` by their path on the CD; `None` for
-/// a number that isn't a scenario's. // 1000:2466, 1010:36f8
+/// ([`SCENARIO_EVENTS`]) or for the later build's 8 to 13
+/// `UPGRADE\EREIGN7.DAT` to `EREIGN12.DAT`, from `read` by their path in
+/// the game's folder; `None` for a number that isn't a scenario's.
+/// // 1000:2466, en 1010:0591, 1010:36f8
 ///
 /// # Errors
 /// If the file is missing or doesn't parse.
@@ -243,13 +321,17 @@ pub fn scenario_events(
     scenario: u8,
     read: impl Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<Option<Vec<[i32; 12]>>, LoadError> {
-    let Some(name) = usize::from(scenario)
-        .checked_sub(1)
-        .and_then(|i| SCENARIO_EVENTS.get(i))
-    else {
-        return Ok(None);
+    let path = match scenario {
+        1..=6 => format!(
+            "DATA/{}",
+            SCENARIO_EVENTS[usize::from(scenario - 1)].to_ascii_uppercase()
+        ),
+        8..=13 => format!(
+            "UPGRADE/{}",
+            UPGRADE_SCENARIO_EVENTS[usize::from(scenario - 8)].to_ascii_uppercase()
+        ),
+        _ => return Ok(None),
     };
-    let path = format!("DATA/{}", name.to_ascii_uppercase());
     let data = read(&path).ok_or_else(|| LoadError(format!("{path} not found")))?;
     data::ereignis(&data)
         .map(Some)
@@ -295,6 +377,34 @@ fn start_money(world: &mut World) {
     f.interest_rate = 6;
     f.money[0] = f.start_money;
     world.set_loan(1, world.finances.start_money);
+}
+
+/// The pyramid's building type, whose `HAUSPREI.DAT` second column the
+/// later build's `UPGRADE\HAUSPREI.DAT` lowers from 40 000 to 30 000; the
+/// only number of the game's tables it changes (`docs/versions.md`).
+const PYRAMID: usize = 125;
+const PYRAMID_V10: i32 = 40_000;
+const PYRAMID_LATER: i32 = 30_000;
+
+/// `HAUSPREI.DAT` as the later build reads it: `UPGRADE\HAUSPREI.DAT`
+/// (en 1048:341c), else the CD's `DATA\HAUSPREI.DAT` (1048:341c) with
+/// the later build's one change, the pyramid's price, so that a game
+/// without `UPGRADE\` plays with the later build's numbers too.
+///
+/// # Errors
+/// If the file is missing or doesn't parse.
+pub fn hausprei_table(read: impl Fn(&str) -> Option<Vec<u8>>) -> Result<Vec<[i32; 4]>, LoadError> {
+    if let Some(upgrade) = read("UPGRADE/HAUSPREI.DAT") {
+        return data::hausprei(&upgrade).map_err(|e| LoadError(format!("UPGRADE/HAUSPREI.DAT: {e}")));
+    }
+    let data = read("DATA/HAUSPREI.DAT").ok_or_else(|| LoadError("DATA/HAUSPREI.DAT not found".into()))?;
+    let mut table = data::hausprei(&data).map_err(|e| LoadError(format!("HAUSPREI.DAT: {e}")))?;
+    if let Some(row) = table.get_mut(PYRAMID)
+        && row[1] == PYRAMID_V10
+    {
+        row[1] = PYRAMID_LATER;
+    }
+    Ok(table)
 }
 
 /// What a new game is set up from: the CD's `DATA\` and `TEXTE\` files
@@ -357,7 +467,7 @@ impl GameData {
         let tables = Tables {
             hausnr: parsed("HAUSNR.DAT", data::hausnr(&dat("HAUSNR.DAT")?))?,
             hausdata: parsed("HAUSDATA.DAT", data::hausdata(&dat("HAUSDATA.DAT")?))?,
-            hausprei: parsed("HAUSPREI.DAT", data::hausprei(&dat("HAUSPREI.DAT")?))?,
+            hausprei: hausprei_table(&read)?,
             groundnr: parsed("GROUNDNR.DAT", data::groundnr(&dat("GROUNDNR.DAT")?))?,
             animdat1: parsed("ANIMDAT1.DAT", data::animdat1(&dat("ANIMDAT1.DAT")?))?,
             animdat4: parsed("ANIMDAT4.DAT", data::animdat4(&dat("ANIMDAT4.DAT")?))?,

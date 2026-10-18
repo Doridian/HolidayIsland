@@ -166,7 +166,7 @@ impl World {
     }
 
     /// Whether the human (marked: player 1) has reached the scenario's
-    /// goal. // 1008:0297
+    /// goal. // 1008:0297, en 1008:0555
     fn scenario_won(&self) -> bool {
         match self.scenario {
             // A normal game is won in 2056.
@@ -178,19 +178,89 @@ impl World {
             4 => self.luxury_guests(1) >= 4000,
             5 => self.facility_sum(1) >= 4000,
             6 => self.guests_last_months(1) >= 12_000 && self.plot_average() > 0x46,
-            // Not a scenario on the CD.
+            // The tutorial's number, not a scenario on the start menu.
             7 => self.date.year >= 2001 || self.net_worth(1) >= 1_000_000,
+            // The later build's scenarios (`UPGRADE\`), en 1008:0555:
+            // the islands joined into one,
+            8 => self.islands_joined(),
+            // 5000 campers,
+            9 => self.camp_site_guests(1) >= 5000,
+            // B&B only: the year 2021,
+            10 => self.date.year == 2021,
+            // the wonders 80 % full,
+            11 => self.wonders_full(1),
+            // hurry up: the year 2001,
+            12 => self.date.year == 2001,
+            // and the most guests on every island.
+            13 => self.most_guests_everywhere(),
             // BUG(original): an unset result for another scenario; the port says false.
             _ => false,
         }
     }
 
+    /// Whether exactly one plot is bigger than 41 squares: the islands are
+    /// joined (scenario 8). // en 1008:0317
+    fn islands_joined(&self) -> bool {
+        self.plots.iter().filter(|p| p.area() > 0x29).count() == 1
+    }
+
+    /// The guests of `player`'s small camp sites (type 0), scenario 9's
+    /// campers. // en 1008:0134
+    fn camp_site_guests(&self, player: u8) -> i32 {
+        self.houses
+            .iter()
+            .filter(|h| h.building() == 0 && self.island.owners.get(h.pos()) == Some(player))
+            .fold(0i32, |sum, h| sum.wrapping_add(i32::from(h.guests())))
+    }
+
+    /// Whether more than 8 of `player`'s buildings of the reputation types
+    /// (the wonders, `1110:1458`) are at least 80 % full (scenario 11).
+    /// // en 1008:036e
+    fn wonders_full(&self, player: u8) -> bool {
+        self.facilities
+            .iter()
+            .filter(|f| {
+                crate::construction::REPUTATION_BUILDINGS.contains(&f.building())
+                    && f.fill() > 0x4f
+                    && self.island.owners.get(f.pos()) == Some(player)
+            })
+            .count()
+            > 8
+    }
+
+    /// Whether on every plot the human's (marked: player 1's) houses have
+    /// more guests than half of the plot's (`+0xee` div 2), scenario 13.
+    /// The houses' guests are added up by the plot of their square, in a
+    /// table of 3001; the plots are looked at in their list's order until
+    /// one fails. // en 1008:03fc
+    fn most_guests_everywhere(&self) -> bool {
+        let mut sums = vec![0i32; 3001];
+        for h in &self.houses {
+            if self.island.owners.get(h.pos()) == Some(1)
+                && let Some(s) = sums.get_mut(usize::from(self.island.plot_at(h.pos())))
+            {
+                *s = s.wrapping_add(i32::from(h.guests()));
+            }
+        }
+        // BUG(original): a plot number outside 0..3000 reads the stack around the table; the port reads 0.
+        self.plots.iter().all(|p| {
+            let mine = usize::try_from(p.id())
+                .ok()
+                .and_then(|i| sums.get(i))
+                .copied()
+                .unwrap_or(0);
+            p.longint(crate::settlement::plot::GUESTS) / 2 < mine
+        })
+    }
+
     /// Whether the human (player 1) has lost: bankrupt in a normal game
     /// (which also marks them out), or the scenario's last year has come.
-    /// // 1008:042b
+    /// // 1008:042b, en 1008:075f
     fn scenario_lost(&mut self) -> bool {
         match self.scenario {
-            0 | 7 => {
+            // The normal game, the tutorial's 7 and the later build's 10
+            // and 12 (en 1008:075f).
+            0 | 7 | 10 | 12 => {
                 let lost = self.bankrupt(1);
                 if lost {
                     self.set_player_out(1, 1);
@@ -200,6 +270,10 @@ impl World {
             1 | 2 | 3 | 6 => self.date.year == 2017,
             4 => self.date.year == 2027,
             5 => self.date.year == 2007,
+            // The later build's scenarios, en 1008:075f.
+            8 => self.date.year == 2016,
+            9 => self.date.year == 2011,
+            11 | 13 => self.date.year == 2026,
             _ => false,
         }
     }

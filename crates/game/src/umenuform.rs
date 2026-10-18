@@ -489,7 +489,6 @@ impl Umenuform {
             if row > self.last() {
                 continue;
             }
-            // BUG(original): after the key Up with fewer than 12 buildings the list's top is before its start, and those rows are read from before the list; the port leaves them empty.
             let Some(&pos) = usize::try_from(row).ok().and_then(|r| self.list.get(r)) else {
                 continue;
             };
@@ -657,10 +656,16 @@ impl Umenuform {
         if !shift.contains(ShiftState::LEFT) {
             return r;
         }
-        if 7 < x && x < 0x11c && 0x11e < y && y < 0x139 {
+        // v1.0 took x up to 283 (`< 0x11c`), whose kind is 12, past the
+        // last; and kept the selection of the kind before (1080:1c3b).
+        // The later build fixed both. // en 1088:1c3b
+        if 7 < x && x < 0x11b && 0x11e < y && y < 0x139 {
             let mut kind = (x - 8) / KIND_SIZE;
             if kind >= ROADS {
                 kind += 1;
+            }
+            if kind != self.kind {
+                self.selected = 0;
             }
             self.kind = kind;
             self.select(kind, world, font, info);
@@ -802,11 +807,16 @@ impl Umenuform {
         match key {
             VK_ESCAPE | VK_SPACE => return self.hide(),
             VK_R => self.click(Which::Renovate, world, font, info, &mut r),
+            // The later build starts the new kind's list at its first
+            // building; v1.0 kept the selection of the kind before
+            // (1080:202b), which could be past the new list's end.
+            // // en 1088:2040
             VK_LEFT => {
                 self.kind = if self.kind == 0 { KINDS - 1 } else { self.kind - 1 };
                 if self.kind == ROADS {
                     self.kind = ROADS - 1;
                 }
+                self.selected = 0;
                 self.select(self.kind, world, font, info);
             }
             VK_RIGHT => {
@@ -814,6 +824,7 @@ impl Umenuform {
                 if self.kind == ROADS {
                     self.kind = ROADS + 1;
                 }
+                self.selected = 0;
                 self.select(self.kind, world, font, info);
             }
             VK_UP | VK_DOWN if self.enhance.has(Enhancement::OverviewList) => {
@@ -846,8 +857,10 @@ impl Umenuform {
                 // BUG(original): the kind is drawn again from the list's top first; Up then puts the selection in the top row, Down in the bottom row.
                 self.select(self.kind, world, font, info);
                 if self.scroll.position < self.selected {
-                    // BUG(original): with fewer than 12 buildings this is before the list's start.
-                    self.scroll.position = (self.last() - (ROWS - 1)).min(self.selected);
+                    // v1.0 put the top before the list's start with fewer
+                    // than 12 buildings (1080:202b); the later build keeps
+                    // it at 0 or more. // en 1088:2040
+                    self.scroll.position = (self.last() - (ROWS - 1)).min(self.selected).max(0);
                     self.draw_widget(Which::Scroll, font, false);
                 }
                 self.draw_list(world, font, info);
@@ -858,7 +871,7 @@ impl Umenuform {
                 }
                 self.select(self.kind, world, font, info);
                 if self.selected > ROWS - 2 {
-                    self.scroll.position = self.last().min(self.selected - (ROWS - 1));
+                    self.scroll.position = self.last().min(self.selected - (ROWS - 1)).max(0);
                     self.draw_widget(Which::Scroll, font, false);
                 }
                 self.draw_list(world, font, info);

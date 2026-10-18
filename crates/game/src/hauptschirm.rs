@@ -315,6 +315,20 @@ pub enum KeyResult {
     Button(u8),
 }
 
+/// The button bar's button 10, the hotels' submenu, which the later
+/// build's scenario 10 (B&B only) takes away: the mouse (`button_at_mouse`)
+/// finds no button there, F2 does nothing and the build menu's arrows go
+/// past it. // en 1018:363c, en 1020:2e09, en 1018:32a5
+pub const HOTELS_BUTTON: u8 = 10;
+const BB_ONLY: u8 = 10;
+
+/// Whether `button` can't be used in `scenario` ([`HOTELS_BUTTON`] in
+/// scenario 10).
+#[must_use]
+pub fn button_blocked(scenario: u8, button: u8) -> bool {
+    scenario == BB_ONLY && button == HOTELS_BUTTON
+}
+
 /// What the info bar's texts need besides the world.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InfoTexts {
@@ -1012,8 +1026,8 @@ impl Hauptschirm {
         self.info_shown = None;
     }
 
-    /// The button of the button bar at `x`, `y` in `ButtonImage`, if any.
-    /// // 1110:12c0
+    /// The button of the button bar at `x`, `y` in `ButtonImage`, if any;
+    /// the caller leaves out a [`button_blocked`] one. // 1110:12c0
     #[must_use]
     pub fn button_at(x: i32, y: i32) -> Option<u8> {
         if !(0..BUTTON_SIZE).contains(&y) {
@@ -1164,6 +1178,10 @@ impl Hauptschirm {
         if (mods == 0 || mods == ShiftState::SHIFT.0)
             && let Some(&(_, n)) = BUTTON_KEYS.iter().find(|(keys, _)| keys.contains(&key))
         {
+            // en 1020:2e09: F2 does nothing in scenario 10.
+            if button_blocked(world.scenario, n) {
+                return KeyResult::Ignored;
+            }
             return KeyResult::Button(n);
         }
         let step = if mods == ShiftState::CTRL.0 {

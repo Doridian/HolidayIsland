@@ -452,10 +452,15 @@ impl RadioButton {
     /// `height` square; the text starts 16 pixels right of it, `width -
     /// height - 3` wide, centred for a 12 pixel line. // 10c0:05d6 1010:1572
     fn draw_in(&self, dst: &mut Surface, skin: &Skin, colour: i32) {
+        self.draw_gap(dst, skin, colour, TEXT_GAP);
+    }
+
+    /// The box, and the text `gap` pixels right of it.
+    fn draw_gap(&self, dst: &mut Surface, skin: &Skin, colour: i32, gap: i32) {
         let f = &self.frame;
         let bitmap = if self.on { self.on_bitmap } else { self.off_bitmap };
         skin.blit(dst, bitmap, (f.left, f.top), f.height, f.height);
-        let at = (f.left + f.height + 16, (f.height - 12) / 2 + f.top);
+        let at = (f.left + f.height + gap, (f.height - 12) / 2 + f.top);
         skin.font
             .draw(dst, &self.text, at, f.width - f.height - 3, self.align, colour);
     }
@@ -470,6 +475,10 @@ impl Widget for RadioButton {
     }
 }
 
+/// How far right of a radio button's or check box's box its text starts.
+/// // 1010:1572
+const TEXT_GAP: i32 = 16;
+
 /// A check box: a radio button that toggles, with the text in another colour
 /// when it's on. `checkbox_init` // 10c0:072c
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -477,6 +486,9 @@ pub struct CheckBox {
     pub radio: RadioButton,
     /// Colour row of the text when checked, +0x118.
     pub checked_colour: i32,
+    /// How far right of the box the text starts: 16, or 5 for the
+    /// later build's scenario boxes on the start menu (en 1010:2511).
+    pub gap: i32,
 }
 
 impl CheckBox {
@@ -485,7 +497,17 @@ impl CheckBox {
         CheckBox {
             radio: RadioButton::new(label, off_bitmap, on_bitmap),
             checked_colour,
+            gap: TEXT_GAP,
         }
+    }
+
+    /// The same with the text `gap` pixels right of the box: the later
+    /// build's draw for the start menu's twelve scenarios (VMT en
+    /// `1118:1da2`), 5 pixels. // en 1010:2511
+    #[must_use]
+    pub fn with_gap(mut self, gap: i32) -> Self {
+        self.gap = gap;
+        self
     }
 
     #[must_use]
@@ -531,7 +553,7 @@ impl Widget for CheckBox {
         } else {
             self.radio.colour
         };
-        self.radio.draw_in(dst, skin, colour);
+        self.radio.draw_gap(dst, skin, colour, self.gap);
     }
 }
 

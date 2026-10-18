@@ -132,8 +132,11 @@ the Windows 95 one. How the installer picks between `WAVEMIX.DLL` (1.50) and
 
 ## Other releases
 
-Only the German CD has been looked at. Any other release (another language
-or a patch) would need its own hashes here and may differ in its data files
-(`TEXTE\`, `SPRADEU*\` speech). The other archive.org
-item called "HolidayIsland" holds a gameplay video and an unidentified
-`Holiday_Island.exe`, not a CD image.
+The English UK release (`orig-en/`, unpacked from a DOSBox install by
+`tools/extract-hoi-installer.py`) has a later build of `HOLIDAY.EXE`,
+the "Erweiterte Version", with fixes and six more scenarios in
+`UPGRADE\`; the port follows it. [versions.md](versions.md) has its
+hashes, how it differs from this one and how to import it into Ghidra
+next to this one. The other archive.org item called "HolidayIsland"
+holds a gameplay video and an unidentified `Holiday_Island.exe`, not a
+CD image.

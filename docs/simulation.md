@@ -264,6 +264,15 @@ it ends without a score. Either way the original shows `schlussform`
 | 5 Surfer | the visitors (`+0xc`) of the surf schools (0x6d) ≥ 4000 | 2007 |
 | 6 Oeko | the last 12 months' guests ≥ 12 000 and the plots' quality (`+4`) averaged by their `+0x352` ≥ 71 | 2017 |
 | 7 (not on the CD) | from 2001, or net worth ≥ 1 000 000 | bankrupt |
+| 8 Weltwund (`UPGRADE\`) | exactly one plot of more than 41 squares (`+0x352`): the islands joined (en 1008:0317) | 2016 |
+| 9 Camper | the guests (`+0x10`) of player 1's small camp sites (type 0) ≥ 5000 (en 1008:0134) | 2011 |
+| 10 BBonly | the year is 2021 | bankrupt |
+| 11 PRWunder | more than 8 of player 1's facilities of the reputation types (`1110:1458`) at least 80 % full (`+0x15`; en 1008:036e) | 2026 |
+| 12 Hurryup | the year is 2001 | bankrupt |
+| 13 Challeng | on every plot player 1's houses' guests more than half the plot's (`+0xee` div 2; en 1008:03fc) | 2026 |
+
+Scenarios 8–13 are the later build's ([versions.md](versions.md),
+en 1008:0555, en 1008:075f), with its `UPGRADE\` folder.
 
 - Net worth (1008:0c6e): the buildings' value (at least 0) plus money
   less loan, at most `MaxInt`. Money (1078:0191) is 99 999 999 while it's

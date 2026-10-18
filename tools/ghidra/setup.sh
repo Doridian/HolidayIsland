@@ -1,11 +1,43 @@
 #!/usr/bin/env bash
 # (Re)create the headless Ghidra project in ghidra/ and analyze orig/HOLIDAY.EXE.
 # Usage: tools/ghidra/setup.sh [--force]    (~half a minute)
+#        tools/ghidra/setup.sh --en         import the later build (orig-en/HOLIDAY.EXE)
+#                                           as a second program, HOLIDAY_EN.EXE, into the
+#                                           existing project (again: replaces it); see
+#                                           docs/versions.md
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GHIDRA="${GHIDRA_INSTALL_DIR:-/opt/ghidra}"
 PROJ="$ROOT/ghidra"
 SCRIPTS="$ROOT/tools/ghidra/scripts"
+
+if [[ "${1:-}" == "--en" ]]; then
+	if [[ ! -f "$ROOT/orig-en/HOLIDAY.EXE" ]]; then
+		echo "orig-en/HOLIDAY.EXE missing; run tools/extract-hoi-installer.py first" >&2
+		exit 1
+	fi
+	if [[ ! -e "$PROJ/HolidayIsland.gpr" ]]; then
+		echo "no Ghidra project; run tools/ghidra/setup.sh first" >&2
+		exit 1
+	fi
+	# The program takes the file's name, and symbols/<name>.txt is applied.
+	TMP="$(mktemp -d)"
+	trap 'rm -rf "$TMP"' EXIT
+	cp "$ROOT/orig-en/HOLIDAY.EXE" "$TMP/HOLIDAY_EN.EXE"
+	mkdir -p "$PROJ/logs"
+	exec 9>"$PROJ/.gh.lock"
+	flock 9
+	"$GHIDRA/support/analyzeHeadless" "$PROJ" HolidayIsland \
+		-import "$TMP/HOLIDAY_EN.EXE" -overwrite \
+		-scriptPath "$SCRIPTS" \
+		-postScript HolidayPost.java \
+		-postScript GhCli.java "$PROJ/logs/setup-en-apply.out" apply \
+		-log "$PROJ/logs/setup-en.log" -scriptlog "$PROJ/logs/setup-en-script.log" \
+		>"$PROJ/logs/setup-en.stdout" 2>&1 || { tail -50 "$PROJ/logs/setup-en.stdout"; exit 1; }
+	cat "$PROJ/logs/setup-en-apply.out" 2>/dev/null || true
+	echo "done: HOLIDAY_EN.EXE in $PROJ/HolidayIsland.gpr (GH_PROGRAM=HOLIDAY_EN.EXE tools/gh ...)"
+	exit 0
+fi
 
 if [[ ! -f "$ROOT/orig/HOLIDAY.EXE" ]]; then
 	echo "orig/HOLIDAY.EXE missing; run tools/fetch_archive_org.py orig/ first" >&2

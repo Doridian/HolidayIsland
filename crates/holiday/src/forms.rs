@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use formats::bmp::Bitmap;
 use formats::data::{
     geldmenu_dat, geldmenu_txt, hausname, infobox_dat, infobox_txt, message_media_names, modatyp, modatyp_txt,
-    nachrich, sabotage, sabotext, sonstige, text_lines, uebermap_dat, uebermap_txt,
+    nachrich, sabotage, sabotext, text_lines, uebermap_dat, uebermap_txt,
 };
 use formats::highscore::HighScores;
 use game::auktionsform;
@@ -28,7 +28,7 @@ use game::fernseher::{self, Fernseher};
 use game::geldmenu::{self, Geldmenuform};
 use game::hauptschirm::{self, Hauptschirm};
 use game::helpform::{self, Helpform};
-use game::highscoreform::{self, Highscoreform};
+use game::highscoreform::{self, Highscoreform, ScoreTable};
 use game::infobox::{self, Infobox};
 use game::kompassform::{self, Kompassform};
 use game::optionen::{self, Optionenform, Settings};
@@ -198,9 +198,12 @@ fn text(dir: &Path, name: &str) -> Vec<u8> {
     find(dir, name).map_or_else(|| read(dir, name), |p| std::fs::read(&p).unwrap_or_default())
 }
 
-/// The high scores: the player's file, else the CD's. // 1040:1ae0
-pub(crate) fn high_scores(dir: &Path, own: &Path) -> HighScores {
-    std::fs::read(own)
+/// The high scores: the player's file, else the CD's; with the later
+/// build's `UPGRADE\` folder also its scenarios' table, the player's
+/// `HIGHSCO2.WAV` next to `own`, else `UPGRADE\HIGHSCO2.WAV`.
+/// // 1040:1ae0, en 1068:1adf
+pub(crate) fn high_scores(dir: &Path, own: &Path) -> ScoreTable {
+    let first = std::fs::read(own)
         .ok()
         .and_then(|d| HighScores::parse(&d))
         .or_else(|| {
@@ -208,7 +211,21 @@ pub(crate) fn high_scores(dir: &Path, own: &Path) -> HighScores {
                 .iter()
                 .find_map(|n| HighScores::parse(&std::fs::read(find(dir, n)?).ok()?))
         })
-        .expect("HIGHSCOR.WAV")
+        .expect("HIGHSCOR.WAV");
+    let second = crate::upgrade::present(dir)
+        .then(|| {
+            std::fs::read(second_high_scores(own))
+                .ok()
+                .and_then(|d| HighScores::parse(&d))
+                .or_else(|| HighScores::parse(&std::fs::read(find(dir, "UPGRADE/HIGHSCO2.WAV")?).ok()?))
+        })
+        .flatten();
+    ScoreTable::new(&first, second.as_ref())
+}
+
+/// The player's `HIGHSCO2.WAV`, next to their `HIGHSCOR.WAV`.
+pub(crate) fn second_high_scores(own: &Path) -> std::path::PathBuf {
+    own.with_file_name("HIGHSCO2.WAV")
 }
 
 /// Puts `images` into `form` at `bounds` and paints it, if `visible`.
@@ -292,11 +309,11 @@ impl Forms {
         font: &Font,
         info: &hauptschirm::InfoTexts,
         settings: Settings,
-        high_scores: HighScores,
+        high_scores: ScoreTable,
         screen: &Hauptschirm,
         size: (i32, i32),
     ) -> Forms {
-        let texts = sonstige(&text(dir, "TEXTE/SONSTIGE.TXT")).expect("SONSTIGE.TXT");
+        let texts = crate::upgrade::sonstige(dir);
         let modatyp = modatyp(&text(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT");
         let (short_names, long_names) = hausname(&text(dir, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
 
@@ -371,14 +388,29 @@ impl Forms {
         let schluss = Schlussform::new(
             font.clone(),
             bitmaps(dir, &schlussform::BITMAP_FILES),
-            schlussform::schluss_lines(&text(dir, "TEXTE/SCHLUSS.TXT")),
+            if crate::upgrade::present(dir) {
+                // en 1070:0294
+                schlussform::schluss_lines_upgrade(&crate::upgrade::file(dir, "SCHLUSS.TXT", "TEXTE/SCHLUSS.TXT"))
+            } else {
+                schlussform::schluss_lines(&text(dir, "TEXTE/SCHLUSS.TXT"))
+            },
         );
-        let high = Highscoreform::new(
+        let mut high_bitmaps = bitmaps(dir, &highscoreform::BITMAP_FILES);
+        let upgrade = crate::upgrade::present(dir);
+        if upgrade {
+            high_bitmaps.extend(crate::upgrade::bitmaps(dir, &highscoreform::UPGRADE_BITMAP_FILES));
+        }
+        let mut high = Highscoreform::new(
             font.clone(),
-            bitmaps(dir, &highscoreform::BITMAP_FILES),
+            high_bitmaps,
             highscoreform::highscor_lines(&text(dir, "TEXTE/HIGHSCOR.TXT")),
             high_scores,
         );
+        if upgrade {
+            // en 1068:2493: `UPGRADE\HIGHSCO2.TXT`'s six names.
+            let names = text_lines(&crate::upgrade::file(dir, "HIGHSCO2.TXT", "TEXTE/HIGHSCOR.TXT"));
+            high = high.with_upgrade(names.into_iter().take(6).collect());
+        }
         let help = Helpform::new(
             font.clone(),
             picture(dir, helpform::BITMAP_FILE).expect("Help.bmp"),
@@ -386,7 +418,17 @@ impl Forms {
         );
         // 1030:3c42: "Schließen", `SONSTIGE.TXT`'s 14th text.
         let schliessen = texts.texts.get(13).cloned().unwrap_or_default();
-        let credits = Creditform::new(font.clone(), bitmaps(dir, &creditform::BITMAP_FILES), &schliessen);
+        let mut credit_bitmaps = bitmaps(dir, &creditform::BITMAP_FILES);
+        if crate::upgrade::present(dir) {
+            // en 1038:3925: the picture from `UPGRADE\`.
+            if let Some(picture) = crate::upgrade::bitmaps(dir, &["CREDITS.BMP"])
+                .pop()
+                .filter(|p| p.width > 0)
+            {
+                credit_bitmaps[0] = picture;
+            }
+        }
+        let credits = Creditform::new(font.clone(), credit_bitmaps, &schliessen);
         let enhance = Enhanceform::new(font.clone(), bitmaps(dir, &enhanceform::BITMAP_FILES), &schliessen);
         Forms {
             settings,
@@ -1025,7 +1067,13 @@ impl Game {
                 tip = Some((t, bottom + menu.top + o.top, l + menu.left + o.left));
             }
         }
-        let bar = helpform::button_bar_tooltip(main, self.mouse, self.forms.bar_x, ready && focus == Some(Focus::Main));
+        let bar = helpform::button_bar_tooltip(
+            main,
+            self.mouse,
+            self.forms.bar_x,
+            self.world.scenario,
+            ready && focus == Some(Focus::Main),
+        );
         tip = bar.or(tip);
         match tip {
             Some((t, tp, l)) => self.forms.help.show(t, tp, l, self.size),

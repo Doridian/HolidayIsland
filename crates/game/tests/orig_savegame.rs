@@ -120,7 +120,10 @@ fn cd_maps_save_as_they_were_read() {
         let world = World::from_map(&file).unwrap();
         let view = MapView::from_map(&file);
         let saved = world.to_map(&view);
-        assert_eq!(saved.version, file.version);
+        // The CD's maps are v1.0's (`1.000`); the port writes the later
+        // build's `1.100`.
+        assert_eq!(file.version, formats::savegame::VERSION_V10);
+        assert_eq!(saved.version, formats::savegame::VERSION);
         let (a, b): (Vec<_>, Vec<_>) = (file.numbered().collect(), saved.numbered().collect());
         assert_eq!(a.len(), b.len(), "{name}");
         for ((n, x), (_, y)) in a.iter().zip(&b) {

@@ -22,7 +22,7 @@ method table at 1028:00ac gives the handlers:
 | `Timer3Timer` | 1028:1973 | Every 100 ms while the form is open: a step, [below](#a-step-10281973) |
 | `leisteMouseDown`/`Move`/`Up` | 1028:1b77, 1c4d, 1ce0 | The close button (16 × 16 at the left) and the bar to drag the form by |
 | `knopfimageMouseDown`/`Up` | 1028:1e23, 2208 | The bid and pass buttons |
-| `FormKeyDown` | 1028:26e4 | Escape, Space, Alt+F4: close and pass; Enter: bid |
+| `FormKeyDown` | 1028:26e4, en 1028:3620 | Escape, Space, Alt+F4: close and pass (v1.0: Enter bids) |
 
 | Image | Bounds | Drawn from |
 |---|---|---|
@@ -101,8 +101,10 @@ mouth `Random(7)` within 800 ms of a call; eyes and brows each with
 - **Bid** (mouse down, unless `Timer1` runs): with the auction started,
   only with the money (price + 5 % up to the player's limit, else error
   0xe); mouse up over it bids. If the auction waits for the player, the
-  button says "Auktion starten" and starts it instead. Enter does the
-  same without either check (`fix.auction_enter_bid` checks both).
+  button says "Auktion starten" and starts it instead. In v1.0 Enter
+  did the same without either check (1028:26e4); the later build took
+  Enter out (en 1028:3620, [versions.md](versions.md)), and so does the
+  port.
 - **Pass** (mouse down, unless `Timer1` runs) and the **close** button
   (mouse down, always): the computers bid among themselves (1028:0c82):
   if any limit is above the price, up to 101 tries of a raise of

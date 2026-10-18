@@ -84,12 +84,39 @@ pub const WON_FILMS: [&str; 7] = [
     "ABoeko.avi",   // 1068:0fcc
 ];
 
+/// The won films of the later build's scenarios 8 to 13. // en 1070:121d
+/// .. en 1070:125c
+pub const UPGRADE_WON_FILMS: [&str; 6] = [
+    "ABFries.avi",  // en 1070:121d
+    "ABCamper.avi", // en 1070:1229
+    "ABBBonly.avi", // en 1070:1236
+    "ABPRWund.avi", // en 1070:1243
+    "ABHurry.avi",  // en 1070:1250
+    "ABChalle.avi", // en 1070:125c
+];
+
+/// The lines of `TEXTE\Schluss.txt`, and of the later build's
+/// `UPGRADE\Schluss.txt`, whose blocks of reasons have a line for each of
+/// fourteen games instead of eight.
+pub const LINES: usize = 32;
+pub const LINES_UPGRADE: usize = 44;
+
 /// `Schluss.txt`'s 32 lines, as `schluss_load_texts` reads them
 /// (`Readln` into `string`s); missing lines are empty. // 1068:0288
 #[must_use]
 pub fn schluss_lines(data: &[u8]) -> Vec<Vec<u8>> {
+    schluss_lines_n(data, LINES)
+}
+
+/// The later build's `UPGRADE\Schluss.txt`: its 44 lines. // en 1070:0294
+#[must_use]
+pub fn schluss_lines_upgrade(data: &[u8]) -> Vec<Vec<u8>> {
+    schluss_lines_n(data, LINES_UPGRADE)
+}
+
+fn schluss_lines_n(data: &[u8], n: usize) -> Vec<Vec<u8>> {
     let mut f = formats::pascal::TextReader::new(data);
-    (0..32).map(|_| f.read_line()).collect()
+    (0..n).map(|_| f.read_line()).collect()
 }
 
 /// What the results show: the globals `schluss_load_texts` reads.
@@ -132,12 +159,17 @@ impl Results {
 }
 
 /// The music and the film for the end of a game: `None` for the film of
-/// a scenario past 6. // 1068:1016
+/// the tutorial's 7 and past 13. // 1068:1016, en 1070:128d
 #[must_use]
 pub fn end_media(r: &Results) -> (&'static str, Option<&'static str>) {
     if r.fair_win() {
-        // BUG(original): a won scenario past 6 (the tutorial, 7) sets no film, leaving the film player's file name as it was; the port shows the results at once.
-        (WON_MUSIC, WON_FILMS.get(usize::from(r.scenario)).copied())
+        // BUG(original): a won game of the tutorial's 7 (or past 13) sets no film, leaving the film player's file name as it was; the port shows the results at once.
+        let film = match r.scenario {
+            s @ 0..=6 => WON_FILMS.get(usize::from(s)).copied(),
+            s @ 8..=13 => UPGRADE_WON_FILMS.get(usize::from(s - 8)).copied(),
+            _ => None,
+        };
+        (WON_MUSIC, film)
     } else {
         (LOST_MUSIC, Some(LOST_FILM))
     }
@@ -158,8 +190,13 @@ pub struct Texts {
 /// net worth (21, the money, 22), the guests (23, 24) and the score (25,
 /// 26), each joined with spaces, the high score note (27) and the
 /// buttons (28–31). // 1068:0288
+///
+/// The later build's file ([`LINES_UPGRADE`] lines, [`schluss_lines_upgrade`])
+/// has fourteen lines in each block, the scenarios 8 to 13 after 6, so
+/// the rest is twelve lines further on. // en 1070:0294
 #[must_use]
 pub fn schluss_load_texts(lines: &[Vec<u8>], r: &Results) -> Texts {
+    let games = if lines.len() >= LINES_UPGRADE { 14 } else { 8 };
     let line = |n: usize| lines.get(n).cloned().unwrap_or_default();
     let join = |a: usize, middle: &[u8], b: usize| {
         let mut s = line(a);
@@ -174,16 +211,18 @@ pub fn schluss_load_texts(lines: &[Vec<u8>], r: &Results) -> Texts {
     let why = if r.cheated {
         line(4)
     } else {
-        let block = if r.won { 5 } else { 13 };
+        let block = if r.won { 5 } else { 5 + games };
         let row = match r.scenario {
             0 => Some(0),
             7 => Some(1),
             s @ 1..=6 => Some(usize::from(s) + 1),
-            // BUG(original): a scenario past 7 leaves the text as it was; the port leaves it empty.
+            s @ 8..=13 if games == 14 => Some(usize::from(s)),
+            // BUG(original): a scenario past the file's (7, or 13 in the later build's) leaves the text as it was; the port leaves it empty.
             _ => None,
         };
         row.map(|k| line(block + k)).unwrap_or_default()
     };
+    let rest = 5 + 2 * games;
     let score = r.score.unwrap_or(0);
     Texts {
         labels: [
@@ -191,12 +230,12 @@ pub fn schluss_load_texts(lines: &[Vec<u8>], r: &Results) -> Texts {
             line(1),
             verdict,
             why,
-            join(21, &r.net_worth, 22),
-            join(23, r.guests.to_string().as_bytes(), 24),
-            join(25, score.to_string().as_bytes(), 26),
-            line(27),
+            join(rest, &r.net_worth, rest + 1),
+            join(rest + 2, r.guests.to_string().as_bytes(), rest + 3),
+            join(rest + 4, score.to_string().as_bytes(), rest + 5),
+            line(rest + 6),
         ],
-        buttons: [line(28), line(29), line(30), line(31)],
+        buttons: [line(rest + 7), line(rest + 8), line(rest + 9), line(rest + 10)],
     }
 }
 

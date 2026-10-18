@@ -18,7 +18,7 @@ use game::auction;
 use game::command::{self, Command};
 use game::endeform::{self, Endeform};
 use game::helpform::{self, Helpform, button_bar_tooltip};
-use game::highscoreform::{self, Highscoreform, date_text, highscor_lines};
+use game::highscoreform::{self, Highscoreform, ScoreTable, date_text, highscor_lines};
 use game::hintergrund::{SCENARIO_FILES, load_world};
 use game::monate::Date;
 use game::schlussform::{self, Action, Results, Schlussform, Stage, schluss_lines};
@@ -200,10 +200,15 @@ fn new_schlussform() -> (Schlussform, Palette) {
     )
 }
 
-fn new_highscoreform(table: HighScores) -> (Highscoreform, Palette) {
+fn new_highscoreform(table: &HighScores) -> (Highscoreform, Palette) {
     let (bitmaps, palette) = surfaces(&highscoreform::BITMAP_FILES);
     (
-        Highscoreform::new(font(), bitmaps, highscor_lines(&read("TEXTE/HIGHSCOR.TXT")), table),
+        Highscoreform::new(
+            font(),
+            bitmaps,
+            highscor_lines(&read("TEXTE/HIGHSCOR.TXT")),
+            ScoreTable::new(table, None),
+        ),
         palette,
     )
 }
@@ -240,7 +245,7 @@ fn a_won_game_ends_with_a_high_score() {
 
     // The score goes into the developers' test table, scenario 1's.
     let test = HighScores::parse(&read("SOUNDLO/HIGHSCOR.WAV")).unwrap();
-    let (mut high, hpalette) = new_highscoreform(test);
+    let (mut high, hpalette) = new_highscoreform(&test);
     let name = world.player_names[1].clone();
     let date = date_text(17, 10, 2026);
     let r2 = high.add(world.scenario, &name, &date, &r.net_worth, score);
@@ -353,7 +358,7 @@ fn the_button_bar_tooltips() {
     // The main screen at 80, 60 on 800 × 600; the mouse on the build
     // menu's "Häuser" (button 9).
     let main = Rect::new(80, 60, 640, 480);
-    let (text, top, left) = button_bar_tooltip(main, (80 + 270, 60 + 40), 270, true).unwrap();
+    let (text, top, left) = button_bar_tooltip(main, (80 + 270, 60 + 40), 270, 0, true).unwrap();
     assert_eq!(texts[usize::from(text)], b"H\xe4user");
     assert!(help.show(text, top, left, SCREEN));
     assert!(!help.show(text, top, left, SCREEN), "already shown");

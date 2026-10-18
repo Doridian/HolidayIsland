@@ -362,7 +362,7 @@ fn the_player_builds_levels_and_demolishes() {
     assert!(scene.tools.sprites.iter().all(|s| s.sprite >= 0x17c), "doesn't fit");
 
     // The menu closes with "Bauen" (Enter), the tool stays.
-    let r = scene.tools.menu.key_down(0xd);
+    let r = scene.tools.menu.key_down(0xd, 0);
     assert_eq!(r, baumenue::Response::Close);
     let view = scene.screen.camera().view;
     let (actions, key) = scene.tools.menu_response(
