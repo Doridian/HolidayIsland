@@ -17,9 +17,14 @@ the command `Action::Sabotage { kind, at }`.
 description (`+0x22`), what it can be used on as text (`+0x122`), the
 price (`Longint`, `+0x222`) and six building types (`+0x226`, five
 characters each, 255 for none; only the piranhas' are read; the German
-file gives the shark diver 254). The port reads it from its language
-data (`lang/<code>/TEXTE/`): the world's prices and pools from the
-world's language's, the window's texts from the player's. It then
+file gives the shark diver 254, the English 255, the only number in
+which the two releases' files differ). The port reads it from its
+language data (`lang/<code>/TEXTE/`, compiled in): the world's prices
+and pools from the world's language's (`game::sabotage::table` of
+`World::language`, the language the game was created in), whatever the
+player's or the game folder's; the window's texts from the player's.
+So German and English players in one network game have the same table
+([networking.md](networking.md#playing)). It then
 reads `SABOTEXT.TXT` (1048:375e): the window's title, "Schliessen" and
 "Sabotieren". It also sets the picked kind (`1110:65ba`) and `1110:54fa`
 to 0.
@@ -129,9 +134,12 @@ and the kind's check of the table (here the piranhas' works).
 ## The port
 
 - `Action::Sabotage { kind, at }` → `World::sabotage_command`
-  (10a0:1f65, 10a0:1d5e, 10a0:1b31, 10a0:19d2, 10a0:1000). The world
-  keeps the kinds' prices and targets in `Tables::sabotage`
-  (`GameData::load` reads `TEXTE/SABOTAGE.TXT`).
+  (10a0:1f65, 10a0:1d5e, 10a0:1b31, 10a0:19d2, 10a0:1000). The kinds'
+  prices and targets are `World::sabotage_kind`: the table of the
+  world's language (`game::sabotage::table`,
+  `lang/<code>/TEXTE/SABOTAGE.TXT` read once), not one of the game
+  folder's tables, so a saved game loaded in the middle of another
+  takes its own language's with it.
 - `World::sabotage_fits` is the picture's check.
 - `Tools::sabowin` holds the window (`Sabowin`, given by the caller);
   `Tools::click` shows and hides it, `Tools::press` turns the click into

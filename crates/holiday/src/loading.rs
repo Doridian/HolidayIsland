@@ -32,11 +32,11 @@ use std::collections::VecDeque;
 
 use super::{
     Auktionsform, Baumenue, Command, Config, Duration, Fields, FileMenu, Font, Form, Forms, Game, Hauptschirm,
-    InfoTexts, Island, MapView, Options, Path, PathBuf, Pending, Random, Rc, SaveGame, ScoreTable, Settings, Stack,
-    Start, Surface, Tiles, Tools, World, auktion, auktionsform, auswahl, baumenu_dat, baumenu_txt, baumenue, bitmap,
-    bitmaps, enhance, fehler, file_menu, folder_land, font, generated_start, hauptschirm, hausname, hintergrund, lang,
-    lang_text, load_form, load_tiles, message_media_names, monate, read, read_opt, sabowin, scenario_start, seed,
-    sound, upgrade, wasnunform,
+    InfoTexts, Island, MapView, NetStopped, Options, Path, PathBuf, Pending, Random, Rc, SaveGame, ScoreTable,
+    Settings, Stack, Start, Surface, Tiles, Tools, World, auktion, auktionsform, auswahl, baumenu_dat, baumenu_txt,
+    baumenue, bitmap, bitmaps, enhance, fehler, file_menu, folder_land, font, generated_start, hauptschirm, hausname,
+    hintergrund, lang, lang_text, load_form, load_tiles, message_media_names, monate, read, read_opt, sabowin,
+    scenario_start, seed, sound, upgrade, wasnunform,
 };
 use crate::forms::{FormParts, FormStep};
 
@@ -583,6 +583,7 @@ impl GameParts {
             seat: game::seats::HOST_SEAT,
             net: None,
             net_over: None,
+            net_stopped: NetStopped::No,
             forms,
             // The caller sets the player's (`Setup::assemble`).
             stack: Stack::new(enhance::Enhancements::ORIGINAL),

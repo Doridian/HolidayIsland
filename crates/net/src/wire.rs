@@ -27,7 +27,10 @@ use game::seats::{Client, ClientCommand, SeatChange};
 
 /// The protocol's version. Peers of other versions don't play together:
 /// the host refuses them.
-pub const VERSION: u16 = 1;
+/// Version 2: the snapshot carries a hash per game file
+/// (`crate::hash::data_hashes`) and the end says whether the host quit
+/// ([`Ending`]).
+pub const VERSION: u16 = 2;
 
 /// The biggest frame the session sends: 16 KiB, which browsers' data
 /// channels all take.
@@ -47,9 +50,9 @@ pub enum Message {
     /// Client → host: what the client does.
     Command(Action),
     /// Host → client: the world before tick `tick`, as a saved game, and
-    /// the hash of what the host's world took from its game files
-    /// (`crate::hash::data_hash`).
-    Snapshot { tick: u64, data: u64, save: Vec<u8> },
+    /// the hashes of what the host's world took from its game files
+    /// (`crate::hash::data_hashes`).
+    Snapshot { tick: u64, data: Vec<u64>, save: Vec<u8> },
     /// Host → clients: the go for `tick`, with the commands to apply
     /// before it, in order (none is a go too).
     Go { tick: u64, commands: Vec<ClientCommand> },
@@ -58,7 +61,17 @@ pub enum Message {
     /// Client → host: leaving for good.
     Bye,
     /// Host → clients: the game is over for the clients, and why.
-    End(String),
+    End(Ending),
+}
+
+/// Why the host ended the game for its clients ([`Message::End`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ending {
+    /// The host's player ended their game on purpose: back to the start
+    /// menu, or out of the program. A client tells it from a lost host.
+    Quit,
+    /// Something else, with why.
+    Other(String),
 }
 
 /// Why bytes didn't read as a message.
@@ -225,7 +238,10 @@ pub fn encode(message: &Message) -> Vec<u8> {
         Message::Snapshot { tick, data, save } => {
             w.u8(4);
             w.u64(*tick);
-            w.u64(*data);
+            w.len(data.len());
+            for &d in data {
+                w.u64(d);
+            }
             w.bytes(save);
         }
         Message::Go { tick, commands } => {
@@ -243,9 +259,15 @@ pub fn encode(message: &Message) -> Vec<u8> {
             w.u64(*hash);
         }
         Message::Bye => w.u8(7),
-        Message::End(why) => {
+        Message::End(ending) => {
             w.u8(8);
-            w.bytes(why.as_bytes());
+            match ending {
+                Ending::Quit => w.u8(0),
+                Ending::Other(why) => {
+                    w.u8(1);
+                    w.bytes(why.as_bytes());
+                }
+            }
         }
     }
     w.0
@@ -272,11 +294,19 @@ pub fn decode(bytes: &[u8]) -> Result<Message, Error> {
         },
         2 => Message::Reject(r.text()?),
         3 => Message::Command(action_from(&mut r)?),
-        4 => Message::Snapshot {
-            tick: r.u64()?,
-            data: r.u64()?,
-            save: r.bytes()?,
-        },
+        4 => {
+            let tick = r.u64()?;
+            let n = r.len()?;
+            let mut data = Vec::with_capacity(n);
+            for _ in 0..n {
+                data.push(r.u64()?);
+            }
+            Message::Snapshot {
+                tick,
+                data,
+                save: r.bytes()?,
+            }
+        }
         5 => {
             let tick = r.u64()?;
             let n = r.len()?;
@@ -295,7 +325,11 @@ pub fn decode(bytes: &[u8]) -> Result<Message, Error> {
             hash: r.u64()?,
         },
         7 => Message::Bye,
-        8 => Message::End(r.text()?),
+        8 => Message::End(match r.u8()? {
+            0 => Ending::Quit,
+            1 => Ending::Other(r.text()?),
+            _ => return Err(Error::Malformed),
+        }),
         _ => return Err(Error::Malformed),
     };
     if !r.0.is_empty() {
@@ -702,7 +736,7 @@ mod tests {
             Message::Reject("no seat".to_owned()),
             Message::Snapshot {
                 tick: 99,
-                data: 5,
+                data: vec![5, !0],
                 save: vec![1, 2, 3],
             },
             Message::Go {
@@ -718,7 +752,8 @@ mod tests {
             },
             Message::Hash { tick: 10, hash: !0 },
             Message::Bye,
-            Message::End("the host quit".to_owned()),
+            Message::End(Ending::Quit),
+            Message::End(Ending::Other("the host's game stopped".to_owned())),
         ];
         messages.extend(every_action().into_iter().map(Message::Command));
         for m in messages {

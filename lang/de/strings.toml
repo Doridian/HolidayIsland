@@ -103,6 +103,14 @@ enhance_hint = "Die Maus über einer Zeile zeigt hier, was sie ändert."
 # The host's option for games with several players (crate::simulation).
 auction_timeout = "Wartezeit der Auktion (Sekunden)"
 auction_timeout_description = "Mit mehreren Spielern und \"Auktion wartet\": wie lange eine Auktion wartet, bis jeder Spieler sie gestartet oder gepasst hat. Wer dann nicht hat, gilt als ausgestiegen."
+# A network game (docs/networking.md): its end for a client, the offer to
+# save, and waiting for the host.
+net_host_quit = "Der Gastgeber hat das Spiel beendet."
+net_host_lost = "Die Verbindung zum Gastgeber ist abgebrochen, das Spiel ist zu Ende."
+net_ended = "Das Netzwerkspiel ist beendet."
+net_save_question = "Möchten Sie das Spiel speichern, wie es jetzt steht? Jeder kann es später als Gastgeber wieder starten."
+net_waiting_host = "Warte auf das Spiel des Gastgebers ..."
+net_host_dropped = "Die Verbindung zum Gastgeber ist unterbrochen. Warte auf ihn ..."
 
 # The enhancements' short names and one-line descriptions, by their keys
 # (crate::enhance).

@@ -18,9 +18,10 @@ use formats::highscore::HighScores;
 use formats::savegame::SaveGame;
 use game::highscoreform::{self, Highscoreform, ScoreTable};
 use game::hintergrund::{
-    SCENARIO_BANNED, UPGRADE_SCENARIO_OPPONENTS, UPGRADE_SCENARIOS, hausprei_table, load_world, scenario_events,
-    scenario_path, start_scenario,
+    GameData, SCENARIO_BANNED, UPGRADE_SCENARIO_OPPONENTS, UPGRADE_SCENARIOS, hausprei_table, load_world,
+    scenario_events, scenario_path, start_scenario,
 };
+use game::lang::Language;
 use game::schlussform::{self, Results};
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
@@ -99,7 +100,6 @@ fn tables() -> Arc<Tables> {
         animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
         form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
         road_cost: modatyp(&read("DATA/MODATYP.DAT")).unwrap().strassenbaukosten,
-        sabotage: Vec::new(),
     })
 }
 
@@ -292,4 +292,56 @@ fn the_end_of_a_new_scenario() {
         "{:?}",
         String::from_utf8_lossy(&won.labels[4])
     );
+}
+
+/// What the world takes from the game folder is the same in the German
+/// CD's files (`orig/`) and the English release's: the tables
+/// (`HAUSPREI.DAT` once v1.0's pyramid price is the later build's), the
+/// set-up's data, `MODATYP.DAT` but for its `land` and the build menu's
+/// lists. The English release's `BAUMENU.DAT` changes only the labels'
+/// layouts, the view's (`lang/<code>/DATA/`). So a German and an English
+/// player can play one network game (`docs/networking.md`). Skipped
+/// without both folders.
+#[test]
+fn the_releases_give_the_world_the_same_data() {
+    if !have_en() || try_read_in(&dir("orig"), "DATA/MODATYP.DAT").is_none() {
+        return;
+    }
+    for language in Language::ALL {
+        let de = GameData::load(|n| try_read_in(&dir("orig"), n), language).unwrap();
+        let en = GameData::load(|n| try_read_in(&dir("orig-en"), n), language).unwrap();
+        assert_eq!(de.tables, en.tables);
+        let mut m = en.modatyp.clone();
+        assert_eq!(
+            (de.modatyp.land, m.land),
+            (formats::data::Land::Deutschland, formats::data::Land::England)
+        );
+        m.land = de.modatyp.land;
+        assert_eq!(format!("{:?}", de.modatyp), format!("{m:?}"));
+        for (name, a, b) in [
+            (
+                "MAPERSTE.DAT",
+                format!("{:?}", de.maperste),
+                format!("{:?}", en.maperste),
+            ),
+            (
+                "ABRECHNE.DAT",
+                format!("{:?}", de.abrechnung),
+                format!("{:?}", en.abrechnung),
+            ),
+            ("EREIGNIS.DAT", format!("{:?}", de.events), format!("{:?}", en.events)),
+            ("ANIMDAT2.DAT", format!("{:?}", de.paths), format!("{:?}", en.paths)),
+            ("NEINTRAG.DAT", format!("{:?}", de.entries), format!("{:?}", en.entries)),
+            ("ANIMDAT3.DAT", format!("{:?}", de.tracks), format!("{:?}", en.tracks)),
+            ("COMPBAU.DAT", format!("{:?}", de.compbau), format!("{:?}", en.compbau)),
+            (
+                "BAUMENU.DAT",
+                format!("{:?}", de.baumenu.menus),
+                format!("{:?}", en.baumenu.menus),
+            ),
+        ] {
+            assert_eq!(a, b, "{name}");
+        }
+        assert_ne!(de.baumenu.layouts, en.baumenu.layouts, "the labels' layouts differ");
+    }
 }

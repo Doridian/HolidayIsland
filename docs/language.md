@@ -181,10 +181,12 @@ language too. The world makes in it:
 - `kein Datum` for an empty entry (`news.no_date`, which the TV shows in
   its player's language too) and the computers' status texts
   (`[computer]`), the same in both languages;
-- the sabotage's costs and the piranhas' pools from `SABOTAGE.TXT`. The
-  two releases' files differ in one number the game never reads (the
-  shark diver's target, 254 in German, 255 in English), so the world
-  plays the same in either language (`lang_data` checks it).
+- the sabotage's costs and the piranhas' pools from `SABOTAGE.TXT`
+  (`sabotage::table` of the world's language, not the folder's or the
+  player's). The two releases' files differ in one number the game never
+  reads (the shark diver's target, 254 in German, 255 in English), so
+  the world plays the same in either language (`lang_data` checks it),
+  and German and English players share a network game.
 
 The view's formatting (the info bar's date and money, the forms, the
 TV's dates and money) follows each player's language. In multiplayer each player

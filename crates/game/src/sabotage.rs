@@ -3,12 +3,15 @@
 //! [`crate::sabowin`]), and the timed effects `effects_tick` counts down
 //! once a day. `docs/sabotage.md` has the whole of it.
 
+use std::sync::OnceLock;
+
 use formats::data;
 
 use crate::accounts::BOOK_OTHER;
 use crate::construction::{BUILDING_SITE, EMPTY_CHAMPIONSHIPS, FULL_CHAMPIONSHIPS, Record};
 use crate::enhance::Fix;
 use crate::events::UNSHAKEN;
+use crate::lang::Language;
 use crate::news::Message;
 use crate::simulation::{Status, Tick};
 use crate::world::{Pos, World, on_map};
@@ -34,6 +37,27 @@ pub fn kinds(kinds: &[data::Sabotage]) -> Vec<SabotageKind> {
             targets: k.targets,
         })
         .collect()
+}
+
+/// The world's sabotage table: the kinds of `language`'s `SABOTAGE.TXT`
+/// (`lang/<code>/TEXTE/`, compiled in), read once. The original reads its
+/// folder's file at the start (1028:361f); the port's world reads the
+/// one of its own language ([`World::language`]), whatever the player's
+/// or the game folder's, so every peer of a network game, German or
+/// English, has the same table, and each player's sabotage window shows
+/// their own language's texts (`crate::sabowin`). The two differ in one
+/// number the game never reads: the German file gives the shark diver
+/// the target 254, the English 255 (only the piranhas' targets are read,
+/// 10a0:1f65).
+#[must_use]
+pub fn table(language: Language) -> &'static [SabotageKind] {
+    static TABLES: [OnceLock<Vec<SabotageKind>>; Language::ALL.len()] =
+        [const { OnceLock::new() }; Language::ALL.len()];
+    let i = Language::ALL.iter().position(|&l| l == language).unwrap_or(0);
+    TABLES[i].get_or_init(|| {
+        let file = language.file("TEXTE/SABOTAGE.TXT").unwrap_or_default();
+        data::sabotage(&file).map(|(_, k)| kinds(&k)).unwrap_or_default()
+    })
 }
 
 /// The sabotage kinds, `SABOTAGE.TXT`'s order.
@@ -64,16 +88,16 @@ const SEA_GROUND: u8 = 2;
 /// The ground of the road pieces the road sabotage takes.
 const ROAD_PIECES: std::ops::RangeInclusive<u8> = 10..=0x3a;
 
-impl crate::world::Tables {
-    /// Sabotage kind `kind`; past the table a free kind with no targets.
+impl World {
+    /// Sabotage kind `kind` of the world's table ([`table`] of
+    /// [`World::language`]); past the table a free kind with no targets.
+    /// // *1110:65bc
     #[must_use]
     pub fn sabotage_kind(&self, kind: u8) -> SabotageKind {
         // BUG(original): a kind past the nine reads past the table (only a command can ask for one); the port takes a free kind with no targets.
-        self.sabotage.get(usize::from(kind)).copied().unwrap_or_default()
+        table(self.language).get(usize::from(kind)).copied().unwrap_or_default()
     }
-}
 
-impl World {
     /// The sabotage tool's click: `player` orders sabotage of `kind` on
     /// the square `at` (the building there, for most kinds) if it's on
     /// the map, not the player's own and, for player 1, paid for, and if
@@ -88,7 +112,7 @@ impl World {
         if self.island.owners.at(at) == player {
             return error(0x19);
         }
-        let cost = self.tables.sabotage_kind(kind).cost;
+        let cost = self.sabotage_kind(kind).cost;
         // Single human: only player 1's money is checked (the computers
         // never sabotage); here every human seat's ([`World::is_human`]).
         if self.is_human(player) && self.money_of(player) < cost {
@@ -100,7 +124,7 @@ impl World {
         let order = match kind {
             PIRANHAS if free => None,
             PIRANHAS => {
-                if self.tables.sabotage_kind(kind).targets.contains(&i16::from(building)) {
+                if self.sabotage_kind(kind).targets.contains(&i16::from(building)) {
                     Some((120, origin()))
                 } else if self.fixes.has(Fix::SabotagePoolError) {
                     None
@@ -134,7 +158,7 @@ impl World {
     /// human: player 1's; each view asks for its seat. // 1090:0014
     #[must_use]
     pub fn sabotage_fits(&self, player: u8, kind: u8, at: Pos) -> bool {
-        let k = self.tables.sabotage_kind(kind);
+        let k = self.sabotage_kind(kind);
         if !on_map(at) || self.island.owners.at(at) == player || k.cost > self.money_of(player) {
             return false;
         }
@@ -160,7 +184,7 @@ impl World {
     /// first effect ([`World::sabotage_starts`]); with no free slot it
     /// fails (0x1c). // 10a0:1d5e
     fn order_sabotage(&mut self, days: u16, pos: Pos, kind: u8, player: u8, tick: &mut Tick) {
-        let cost = self.tables.sabotage_kind(kind).cost;
+        let cost = self.sabotage_kind(kind).cost;
         self.add_money(player, cost.wrapping_neg()); // 1078:01e7
         // Single human: only player 1 has books and sees the money rise;
         // here every human seat.

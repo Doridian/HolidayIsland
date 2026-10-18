@@ -82,7 +82,13 @@ fn tiles() -> Tiles {
 }
 
 fn world_tables() -> Arc<Tables> {
+    // The world's sabotage table is its language's, from `lang/`: the
+    // German CD's file, as `orig/` has it.
     let (_, kinds) = sabotage(&read("TEXTE/SABOTAGE.TXT")).unwrap();
+    assert_eq!(
+        game::sabotage::table(game::lang::Language::De),
+        game::sabotage::kinds(&kinds)
+    );
     Arc::new(Tables {
         hausnr: hausnr(&read("DATA/HAUSNR.DAT")).unwrap(),
         hausdata: hausdata(&read("DATA/HAUSDATA.DAT")).unwrap(),
@@ -92,7 +98,6 @@ fn world_tables() -> Arc<Tables> {
         animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
         form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
         road_cost: modatyp(&read("DATA/MODATYP.DAT")).unwrap().strassenbaukosten,
-        sabotage: game::sabotage::kinds(&kinds),
     })
 }
 
@@ -263,7 +268,7 @@ fn sabotage_on_a_computers_building() {
     }
     let (mut w, _) = world();
     w.finances.money[0] = 1_000_000;
-    let cost = w.tables.sabotage_kind(STINK_BOMB).cost;
+    let cost = w.sabotage_kind(STINK_BOMB).cost;
     assert_eq!(cost, 10_000);
     let target = computer_building(&w, |_| true);
     let victim = w.island.owners.at(target);
@@ -319,7 +324,7 @@ fn sabotage_on_a_computers_building() {
     let seed = (1..10_000).find(|&s| draws(s).0 >= 30).unwrap();
     let (bombed, _) = sabotage_with(&w, seed, BOMB, target);
     assert_eq!(bombed.island.buildings.at(target), NO_BUILDING);
-    assert_eq!(bombed.finances.money[0], 1_000_000 - w.tables.sabotage_kind(BOMB).cost);
+    assert_eq!(bombed.finances.money[0], 1_000_000 - w.sabotage_kind(BOMB).cost);
 
     // The refusals: nothing paid, nothing drawn.
     let refused = |w: &World, kind, at, error: u8| {
@@ -344,7 +349,7 @@ fn sabotage_on_a_computers_building() {
         .unwrap();
     refused(&w, STINK_BOMB, land, 0x1a);
     // Piranhas in what isn't a pool: no error, nothing at all (the bug).
-    let pools = w.tables.sabotage_kind(PIRANHAS).targets;
+    let pools = w.sabotage_kind(PIRANHAS).targets;
     let not_pool = computer_building(&w, |b| !pools.contains(&i16::from(b)));
     let (after, tick) = sabotage_with(&w, 7, PIRANHAS, not_pool);
     assert_eq!((errors(&tick), after.finances.money), (vec![], w.finances.money));
@@ -464,7 +469,7 @@ fn the_sabotage_tool_and_window() {
     assert_eq!(actions, [Action::Sabotage { kind: BOMB, at }]);
     let money = world.finances.money[0];
     let _ = world.apply(human(actions[0].clone()));
-    assert_eq!(world.finances.money[0], money - world.tables.sabotage_kind(BOMB).cost);
+    assert_eq!(world.finances.money[0], money - world.sabotage_kind(BOMB).cost);
 
     // The button again: the pointer.
     let _ = tools.click(tools::SABOTAGE, &world, &font, &tiles, &info, view, (800, 600));

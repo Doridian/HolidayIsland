@@ -370,9 +370,27 @@ struct Game {
     /// A network game's session (`network`): the commands go to it, and
     /// the clock runs on its goes.
     net: Option<network::NetGame>,
-    /// The network game ended, and why: the game goes back to the start
-    /// menu (a client) or on alone (the host).
-    net_over: Option<String>,
+    /// A client's network game ended, and why: the game tells the
+    /// player, offers to save and goes back to the start menu
+    /// (`Holiday::net_game_over`). The host's goes on alone instead.
+    net_over: Option<net::End>,
+    /// Whether a client's network game is over: its world then stays as
+    /// it was after the last tick it ran (no more ticks, no commands),
+    /// to be saved.
+    net_stopped: NetStopped,
+}
+
+/// A client's network game that ended ([`Game::net_stopped`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum NetStopped {
+    /// Not ended (or not a client's network game).
+    #[default]
+    No,
+    /// Ended: the world stands still, the player is told.
+    Stopped,
+    /// The file menu is open to save it (`AfterMessage::NetSave`); once
+    /// it closes the game goes back to the start menu.
+    Saving,
 }
 
 impl Game {
@@ -495,6 +513,10 @@ impl Game {
     fn apply_commands(&mut self) -> bool {
         let mut changed = false;
         for command in std::mem::take(&mut self.commands) {
+            if self.net_stopped != NetStopped::No {
+                // The network game is over: the world is as it was.
+                continue;
+            }
             if let Some(net) = &mut self.net {
                 net.session.submit(command.action);
             } else {
@@ -506,19 +528,37 @@ impl Game {
     }
 
     /// A network game's news: who came and went, a desync, the end of the
-    /// session. A host whose session ended plays on alone: its clients'
-    /// seats go to the computers, by its own commands.
+    /// session. A client whose host dropped says so on the status bar
+    /// while it waits for it; one whose host came back reads the host's
+    /// world again. A client whose session ended stops its world as it
+    /// stands, for the player to save (`Holiday::net_game_over`). A host
+    /// whose session ended plays on alone: its clients' seats go to the
+    /// computers, by its own commands.
     fn net_poll(&mut self) -> bool {
         let Some(net) = &mut self.net else { return false };
         let events = net.session.poll(Some(&self.world));
-        let Some(why) = network::report(&events) else {
-            return false;
-        };
         let host = net.session.is_host();
+        let mut changed = false;
+        for e in &events {
+            match e {
+                net::Event::HostLost { .. } => {
+                    let text = lang::Text::NetHostDropped.bytes(self.info.language);
+                    self.screen.show_status(&text, &self.font);
+                    changed = true;
+                }
+                net::Event::Welcome { seat, .. } => self.set_seat(*seat),
+                net::Event::Snapshot { data, save, .. } => changed |= self.read_host_world(data, save),
+                _ => {}
+            }
+        }
+        let Some(end) = network::report(&events) else {
+            return changed;
+        };
         self.net = None;
         if !host {
-            self.net_over = Some(why);
-            return false;
+            self.net_over = Some(end);
+            self.net_stopped = NetStopped::Stopped;
+            return true;
         }
         let away: Vec<_> = self
             .world
@@ -535,6 +575,30 @@ impl Game {
             });
         }
         self.apply_commands()
+    }
+
+    /// A client's host came back after its connection dropped and sent
+    /// its world again: the game goes on from it, the view as it was. A
+    /// world that doesn't read ends the session.
+    fn read_host_world(&mut self, data: &[u64], save: &SaveGame) -> bool {
+        match network::joined_world(&self.dir, data, save, self.info.language) {
+            Ok(world) => {
+                self.world = world;
+                self.screen.people.clear();
+                let handed = self.world.split_off_view_people();
+                self.screen.people.adopt(&handed);
+                self.screen.paint_map(&self.world, &self.tiles);
+                self.screen.show_info(&self.world, &self.font, &self.info);
+                true
+            }
+            Err(e) => {
+                eprintln!("network: {e}");
+                self.net = None;
+                self.net_over = Some(net::End::Other(e));
+                self.net_stopped = NetStopped::Stopped;
+                true
+            }
+        }
     }
 
     /// The view plays `seat`: its tools, forms and results are that
@@ -554,6 +618,10 @@ impl Game {
     /// question, the end form and the high scores stop nothing
     /// (decision 8).
     fn clock_stopped(&self) -> bool {
+        // A client's network game that ended stands still for its save.
+        if self.net_stopped != NetStopped::No {
+            return true;
+        }
         if self.world.seats.multiplayer() {
             return false;
         }
@@ -1458,6 +1526,16 @@ enum AfterMessage {
     Nothing,
     /// The file menu's "Löschen": OK erases the game. // en 1040:110c
     Delete(Vec<u8>),
+    /// A client's network game ended (the port's): Yes opens the file
+    /// menu to save the game as it stands, No goes back to the start
+    /// menu.
+    NetSave,
+    /// A client waits for the host's world: the box goes when it comes;
+    /// Cancel gives up and quits.
+    JoinWaiting,
+    /// The host turned a waiting client away, or the connection ended:
+    /// OK quits.
+    JoinFailed,
 }
 
 /// What `backgroundimage` shows.
@@ -1746,8 +1824,41 @@ impl Holiday {
                     self.delete_game(&name);
                 }
             }
+            AfterMessage::NetSave => {
+                if r == ModalResult::Yes
+                    && let Some(game) = &mut self.game
+                {
+                    game.net_stopped = NetStopped::Saving;
+                    let games = self.saves.games(self.enhance.view);
+                    game.open_file_menu(games);
+                } else {
+                    self.back_to_start_menu();
+                }
+            }
+            AfterMessage::JoinWaiting | AfterMessage::JoinFailed => {
+                self.joining = None;
+                self.quit = true;
+            }
         }
         self.repaint();
+    }
+
+    /// A client's network game ended (`end`): the game, stopped where it
+    /// was after the last tick it ran, says why in a message box and
+    /// offers to save it ([`AfterMessage::NetSave`]); then it goes back to
+    /// the start menu. The saved game holds the seats, so anyone can host
+    /// it again, the other players' seats away until they join or rejoin.
+    fn net_game_over(&mut self, end: &net::End) {
+        let language = self.language();
+        let mut text = network::end_text(end, language);
+        text.push(b'\n');
+        text.extend(lang::Text::NetSaveQuestion.bytes(language));
+        self.open_message(
+            &text,
+            DlgType::Confirmation,
+            &[Btn::Yes, Btn::No],
+            AfterMessage::NetSave,
+        );
     }
 
     /// `Screen.Cursor := crHourGlass` around work on the files (en
@@ -2179,6 +2290,8 @@ impl Holiday {
         let refresh = response.refresh || response.moved || response.action.is_some();
         match response.action {
             Some(dateimenue::Action::Close) => game.file_menu.visible = false,
+            // A network game that ended is only saved.
+            Some(dateimenue::Action::Load(_)) if game.net_stopped == NetStopped::Saving => {}
             Some(dateimenue::Action::Load(name)) => match self.saves.read(&name) {
                 // 1040:0f27: load_map in the middle of the game, a command
                 // to the world, under the hourglass (en 1040:1069).
@@ -2207,6 +2320,11 @@ impl Holiday {
                 let games = self.saves.games(self.enhance.view);
                 if let Some(game) = &mut self.game {
                     game.file_menu.menu.set_games(games);
+                    // A network game that ended: saved, the menu goes and
+                    // with it the game.
+                    if game.net_stopped == NetStopped::Saving {
+                        game.file_menu.visible = false;
+                    }
                 }
             }
             // `MessageDlg(…, mtError, [mbOK], 0)` with the message in the
@@ -2296,9 +2414,10 @@ impl Holiday {
     }
 
     /// A client waiting for the host: once the host's world comes, the
-    /// game is set up from it (states 1200 to 1500) and joins; if the
-    /// host turns it away or the connection ends, the program ends with
-    /// why.
+    /// game is set up from it (states 1200 to 1500) and joins. Meanwhile
+    /// a message box says it's waiting (once the intro is done), and
+    /// Cancel there gives up. If the host turns it away or the
+    /// connection ends, a message box says so and the program ends.
     fn poll_joining(&mut self) {
         let Some(session) = &mut self.joining else { return };
         // The goes wait in the session while the game is set up.
@@ -2306,9 +2425,8 @@ impl Holiday {
             return;
         }
         let events = session.poll(None);
-        if network::report(&events).is_some() {
-            self.joining = None;
-            self.quit = true;
+        if let Some(end) = network::report(&events) {
+            self.join_failed(&end);
             return;
         }
         let Some((data, save)) = events.into_iter().find_map(|e| match e {
@@ -2318,8 +2436,15 @@ impl Holiday {
             return;
         };
         let fallback = self.language();
-        match network::joined_world(&self.dir, data, &save, fallback) {
+        match network::joined_world(&self.dir, &data, &save, fallback) {
             Ok(world) => {
+                if self
+                    .message
+                    .as_ref()
+                    .is_some_and(|m| m.then == AfterMessage::JoinWaiting)
+                {
+                    self.message = None;
+                }
                 self.intro = Intro::Done;
                 self.load = None;
                 self.start.hide();
@@ -2329,10 +2454,24 @@ impl Holiday {
             }
             Err(e) => {
                 eprintln!("network: {e}");
-                self.joining = None;
-                self.quit = true;
+                self.join_failed(&net::End::Other(e));
             }
         }
+    }
+
+    /// A waiting client's session ended (`end`): a message box says why,
+    /// and its OK quits.
+    fn join_failed(&mut self, end: &net::End) {
+        self.joining = None;
+        let text = network::end_text(end, self.language());
+        self.open_message(&text, DlgType::Error, &[Btn::Ok], AfterMessage::JoinFailed);
+    }
+
+    /// A client that waits for the host's world says so in a message box
+    /// where the start menu would be (the intro done).
+    fn show_join_waiting(&mut self) {
+        let text = lang::Text::NetWaitingHost.bytes(self.language());
+        self.open_message(&text, DlgType::Information, &[Btn::Cancel], AfterMessage::JoinWaiting);
     }
 
     /// The rest of `back_to_start_menu`: the
@@ -2501,8 +2640,15 @@ impl Holiday {
             // States 450 and 500.
             self.intro = Intro::Done;
             self.sound.borrow_mut().effects_on(); // 10a0:254f
-            self.start.show(self.size);
+            if self.joining.is_none() {
+                self.start.show(self.size);
+            }
             self.set_picture(Picture::Background);
+            if self.joining.is_some() {
+                // A client waits for the host's world instead of the
+                // start menu.
+                self.show_join_waiting();
+            }
         } else {
             self.intro = Intro::After(to);
         }
@@ -2609,8 +2755,19 @@ impl App for Holiday {
             self.process_requests();
             self.repaint();
         }
-        if self.game.as_ref().is_some_and(|g| g.net_over.is_some()) {
-            // A client's network game ended: back to the start menu.
+        // A client's network game ended: say why and offer to save, then
+        // back to the start menu once the file menu (and what it opened,
+        // the quit question) has closed.
+        if self.message.is_none()
+            && let Some(end) = self.game.as_mut().and_then(|g| g.net_over.take())
+        {
+            self.net_game_over(&end);
+        }
+        if self.message.is_none()
+            && self.game.as_ref().is_some_and(|g| {
+                g.net_stopped == NetStopped::Saving && !g.file_menu.visible && !g.forms.clock_stopped()
+            })
+        {
             self.back_to_start_menu();
         }
         let film_done = self.sound.borrow().film_done();
@@ -2915,9 +3072,10 @@ fn load_tiles(dir: &Path) -> Tiles {
     )
 }
 
-/// The tables the simulation reads (1030:2e48), for a scenario's world
-/// in `language` (the sabotage's kinds of `SABOTAGE.TXT`).
-fn world_tables(dir: &Path, language: lang::Language) -> Arc<Tables> {
+/// The tables the simulation reads (1030:2e48), for a scenario's world.
+/// (The sabotage's kinds are the world's language's,
+/// `game::sabotage::table`.)
+fn world_tables(dir: &Path) -> Arc<Tables> {
     Arc::new(Tables {
         hausnr: hausnr(&read(dir, "DATA/HAUSNR.DAT")).expect("HAUSNR.DAT"),
         hausdata: hausdata(&read(dir, "DATA/HAUSDATA.DAT")).expect("HAUSDATA.DAT"),
@@ -2931,11 +3089,6 @@ fn world_tables(dir: &Path, language: lang::Language) -> Arc<Tables> {
         road_cost: modatyp(&read(dir, "DATA/MODATYP.DAT"))
             .expect("MODATYP.DAT")
             .strassenbaukosten,
-        sabotage: game::sabotage::kinds(
-            &formats::data::sabotage(&lang_text(language, "TEXTE/SABOTAGE.TXT"))
-                .expect("SABOTAGE.TXT")
-                .1,
-        ),
     })
 }
 
@@ -3009,7 +3162,7 @@ fn scenario_start(
     // A scenario's file has no fixes: the player's.
     world.set_loaded_fixes(fixes);
     world.random = Random::new(seed);
-    world.tables = world_tables(dir, language);
+    world.tables = world_tables(dir);
     // A scenario is a new game: the world's text is in the player's
     // language (the names are the scenario's).
     world.language = language;

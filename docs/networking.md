@@ -16,10 +16,13 @@ browser ([below](#the-browser-build)).
 ## Playing
 
 Someone runs the signaling server (below). The host starts the game with
-`--host=ROOM`, picks the game on the start menu as usual and starts it;
-the game is hosted from then on. Each other player starts with
-`--join=ROOM`: the game waits, without showing the start menu, until the
-host's world comes, sets the game up from it and plays a seat.
+`--host=ROOM`, picks the game on the start menu as usual and starts it
+(a new game, a scenario, or a saved game, a network game's too); the
+game is hosted from then on. Each other player starts with
+`--join=ROOM`: after the intro, instead of the start menu, a message
+box says it's waiting for the host's game (Cancel gives up and quits);
+when the host's world comes, the game is set up from it and plays a
+seat. If the host turns it away, a message box says why and OK quits.
 
 ```sh
 holiday-server                                   # on a machine both can reach
@@ -41,12 +44,31 @@ holiday --join=island --signal=ws://server:3536  # each other player
 Without `--host=` or `--join=` nothing of this runs: no connection, no
 thread, no runtime. The game says on the terminal what happens (who
 joined or left, a desync, the end of the session), with `network:` in
-front.
+front; waiting for the host, a host whose connection dropped and the
+end of the game it also says in the game (below).
 
-Every player needs the same release of the game's files (the German CD
-or the English release, `orig-en/`): the world's tables come from them.
-A client whose tables differ from the host's is told so and stops
-(`data` in the snapshot, below).
+**German and English players play together.** The German CD's files
+and the English release's (`orig-en/`) give the world the same tables;
+`crates/game/tests/orig_en_upgrade.rs`
+(`the_releases_give_the_world_the_same_data`) compares everything the
+world reads from both folders: `HAUSNR`, `HAUSDATA`, `HAUSPREI` (v1.0's
+pyramid price made the later build's, as the port always does),
+`GROUNDNR`, `ANIMDAT1` to `ANIMDAT4`, `DARSTELL`, `MAPERSTE`,
+`ABRECHNE`, `EREIGNIS`, `NEINTRAG`, `COMPBAU`, `MODATYP` (but for its
+`land`, `D` or `E`) and `BAUMENU.DAT`'s lists. What differs is view
+only: `BAUMENU.DAT`'s, `GELDMENU.DAT`'s and `INFOBOX.DAT`'s label
+layouts, which the port takes from its language data anyway. The
+world's own text and its sabotage table come from the world's language
+(`World::language`, the one the game was created in, in the snapshot),
+never the player's or the folder's (`game::sabotage::table`: the two
+languages' `SABOTAGE.TXT` differ only in the shark diver's target, 254
+or 255, which the game never reads); each player's sabotage window and
+every other text are in their own language. The snapshot also carries
+the host's folder language, which a saved game without a language of
+its own takes when it's loaded in the middle of the game. A client
+whose tables do differ from the host's (another, unknown release, or
+changed files) is refused, told which files (`data` in the snapshot,
+below).
 
 ## Running the signaling server
 
@@ -165,20 +187,53 @@ asked for, a game with no computer's seat left.
 the computer while none of its clients is there. Coming back with
 `--rejoin=ID` is `SeatChange::Rejoin`, with a new snapshot. A client
 that ends its game (back to the start menu, or quitting) says goodbye
-first: `SeatChange::Leave`. When the host's game ends (back to the
-start menu, or quitting), it tells its clients, which print why and go
-back to the start menu; if the host's connection just drops, the
-clients notice that instead. A host whose own connection ends plays on
-alone: its clients' seats go to the computers by its own `Disconnect`
-commands.
+first: `SeatChange::Leave`. A host whose own connection ends (its
+transport closes) plays on alone: its clients' seats go to the
+computers by its own `Disconnect` commands.
+
+**The host quitting.** There's no host migration: when the host goes,
+the game is over for everyone.
+
+- When the host's game ends (back to the start menu, or quitting the
+  program), it sends `End` with the reason `Quit`, so a client tells a
+  deliberate quit (`net::End::HostQuit`) from a lost host.
+- When the connection to the host drops, a client waits
+  `net::HOST_GRACE`, **10 seconds** (`Config::host_grace`), for it to
+  come back: the status bar says so, and the world waits as for any
+  late go (it runs the goes it has, then stands). Ten seconds covers a
+  short network hiccup without leaving the players long before a
+  stopped game. If the host's peer connects again meanwhile, the
+  client says hello as the client it was and gets a new snapshot,
+  which it reads its world from again (`Event::HostBack`). After the
+  grace the host is gone for good (`net::End::HostLost`), as it is at
+  once when the client's own transport closes.
+- Either way the client's world stops where it was after the last tick
+  it ran (no more ticks, no commands), and a message box says why (the
+  host ended the game, or the connection to it was lost) and asks
+  whether to save. Yes opens the file menu, the game's own save form:
+  Save there saves the game under a name (as any client may,
+  decision 12) and the game goes back to the start menu, as it does on
+  No, on closing the menu or on "Neues Spiel". Loading is off there.
+- Anyone can host the saved game again: they load it from the start
+  menu and start it with `--host=`. The file keeps the seats and
+  clients; loading it makes whoever hosts it the host, in seat 1, and
+  brings the file's other clients back away, their seats the
+  computers', until they come back with `--rejoin=ID` (the number the
+  game gave them) or someone takes a seat with `--seat=N`. The one who
+  saved it, if it isn't seat 1's player, hosts as seat 1 and finds their
+  own seat played by the computer meanwhile; the host always plays seat 1
+  (decision 11).
 
 **Wire format** (`net::wire`), hand-written so the same message is
-always the same bytes: the protocol version (`u16`, now 1; the host
+always the same bytes: the protocol version (`u16`, now 2; the host
 refuses other versions), a tag byte, the fields. Integers
 little-endian; lists and byte strings with a `u32` length; a fix by its
 key; a saved game as its file. The messages: `Hello`, `Welcome`,
-`Reject`, `Command` (client to host), `Snapshot`, `Go`, `Hash` (both
-ways), `Bye` (client), `End` (host). Under them, frames of at most
+`Reject`, `Command` (client to host), `Snapshot` (with a hash of each
+table the world reads from the game folder, `net::hash::data_hashes`),
+`Go`, `Hash` (both ways), `Bye` (client), `End` (host; `Quit`, or
+another reason as text). Version 2 brought the per-table hashes and
+`End`'s reason. Under them, frames of at most
 16 KiB (what every browser's data channel takes): a byte saying whole,
 more to come or last, then the piece. The snapshot is a few hundred KiB
 and goes in pieces.
@@ -217,24 +272,21 @@ dependency.
 - What the game says about the network (`network: ...`) goes to the
   browser's console.
 - The hash and the wire format are the same on every target; a native
-  host and a browser client play together, and the other way round.
-  Both need the same release of the game's files: the browser plays
-  the German CD's, so a native peer needs those too.
+  host and a browser client play together, and the other way round,
+  whichever release each has (the browser plays the German CD's
+  files).
+- Waiting for the host, a dropped host and the end of the game show in
+  the game as natively (message boxes, the status bar); closing the
+  host's tab is a lost host for its clients, after the grace.
 
 ## Open
 
-- **The host leaving.** Ending the session cleanly for the clients is
-  built (they're told and go back to the start menu); what should
-  happen instead (another client takes over as host, the game pauses
-  for the host to come back, the clients play on without one) isn't
-  decided.
 - A UI: hosting, joining and the seats from the start menu, and the
-  network's messages on screen rather than the terminal.
-- The players' language: the world's sabotage table comes from the
-  texts of the language a world is set up in (`SABOTAGE.TXT`: the
-  English and German texts differ in one target), so a client sets its
-  base world up in the snapshot's world language. A host and a client
-  with different releases of the game's files can't play together.
+  rest of the network's messages (who joined or left, a desync) on
+  screen rather than the terminal.
+- The host's own seat when it hosts a saved game: always seat 1, so
+  a client who saved a game and hosts it plays seat 1, not the seat it
+  had.
 - Reconnecting without a restart: a client whose connection dropped
   comes back by starting the game again with `--rejoin=`.
 - A client keeps its own view settings; the views of a joining client

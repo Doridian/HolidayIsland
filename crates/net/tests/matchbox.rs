@@ -151,7 +151,7 @@ fn a_session_over_webrtc() {
         for e in client.poll(client_world.as_ref()) {
             match e {
                 Event::Snapshot { data, save, .. } => {
-                    client_world = Some(world_from_snapshot(&base, data, &save).unwrap());
+                    client_world = Some(world_from_snapshot(&base, &data, &save).unwrap());
                 }
                 Event::Desync { .. } | Event::Ended(_) | Event::Rejected(_) => panic!("{e:?}"),
                 _ => {}

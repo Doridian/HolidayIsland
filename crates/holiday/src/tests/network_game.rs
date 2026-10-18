@@ -2,8 +2,9 @@
 //! through the signaling server, run in the test, over WebRTC on this
 //! machine: the host starts a game, the client joins it from the
 //! command line's options, takes seat 2 and plays along; its commands
-//! act for its seat on both; when the host's game ends, the client goes
-//! back to its start menu. Skipped without the game's files in `orig/`.
+//! act for its seat on both; when the host quits, the client's game
+//! stops, says so, saves the game in the file menu and goes back to its
+//! start menu. Skipped without the game's files in `orig/`.
 
 use std::net::SocketAddr;
 use std::time::Instant;
@@ -65,10 +66,14 @@ fn a_client_joins_the_hosts_game() {
     // The client waits for the host's world and joins with it.
     let mut client = fixed_holiday(&dir);
     client.joining = Some(args(network::Role::Join).connect().unwrap());
+    // It says so in a message box until the world comes.
+    client.show_join_waiting();
+    assert_eq!(client.message.as_ref().unwrap().then, AfterMessage::JoinWaiting);
     frames(&mut host, &mut client, |h, c| {
         tick_of(c).is_some() && tick_of(c) == tick_of(h) && h.game.as_ref().is_some_and(|g| g.world.seats.humans() == 2)
     });
     let (h, c) = (host.game.as_ref().unwrap(), client.game.as_ref().unwrap());
+    assert!(client.message.is_none(), "the waiting box went");
     assert_eq!(c.seat, 2, "the client's view plays seat 2");
     assert_eq!(c.tools.seat, 2);
     assert!(!h.world.is_computer(2));
@@ -89,10 +94,36 @@ fn a_client_joins_the_hosts_game() {
     assert_eq!(h.world.advertising_level(2), if more { level + 1 } else { level - 1 });
     assert_eq!(world_hash(&c.world), world_hash(&h.world));
 
-    // The host's game ends: the client's goes back to the start menu.
+    // The host quits its game: the client's stops where it was, says so
+    // in a message box and offers to save it.
     host.back_to_start_menu();
-    frames(&mut host, &mut client, |_, c| c.game.is_none());
-    assert!(client.start.visible());
+    frames(&mut host, &mut client, |_, c| c.message.is_some());
+    assert_eq!(client.message.as_ref().unwrap().then, AfterMessage::NetSave);
+    let c = client.game.as_mut().unwrap();
+    assert!(c.net.is_none() && c.net_stopped == NetStopped::Stopped);
+    let stopped = world_hash(&c.world);
+    // It stands still: no more ticks, no commands.
+    c.commands.push(Command {
+        player: 1,
+        action: command::Action::MoneyMenu(game::geldmenu::Action::Advertising { more: true }),
+    });
+    for _ in 0..20 {
+        App::update(&mut client, Duration::from_millis(u64::from(TICK_MS)));
+    }
+    assert_eq!(world_hash(&client.game.as_ref().unwrap().world), stopped);
+    // Yes: the file menu, which saves the game, then the start menu.
+    client.message_answered(ModalResult::Yes);
+    let c = client.game.as_ref().unwrap();
+    assert!(c.net_stopped == NetStopped::Saving && c.file_menu.visible);
+    client.file_menu_response(dateimenue::Response {
+        action: Some(dateimenue::Action::Save(b"NETGAME".to_vec())),
+        ..dateimenue::Response::default()
+    });
+    App::update(&mut client, Duration::from_millis(u64::from(TICK_MS)));
+    assert!(client.game.is_none() && client.start.visible());
+    let save = client.saves.read(b"NETGAME").expect("the client's game is saved");
+    let seats = game::seats::Seats::from_chunk(&save.trailing).expect("with its seats");
+    assert_eq!(seats.humans(), 2);
     for h in [&host, &client] {
         std::fs::remove_dir_all(&h.saves.dir).ok();
     }

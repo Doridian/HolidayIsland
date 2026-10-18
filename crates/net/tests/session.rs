@@ -13,7 +13,11 @@ use formats::savegame::SaveGame;
 use game::command::Action;
 use game::enhance::{Fixes, SINGLE_PLAYER_ONLY};
 use game::geldmenu;
+use game::hintergrund::{self, GameData};
+use game::lang::Language;
+use game::savegame::MapView;
 use game::seats::{Client, HOST};
+use game::startform::Settings;
 use game::world::World;
 use net::hash::world_hash;
 use net::memory::{Hub, MemoryTransport};
@@ -45,7 +49,7 @@ impl Peer {
         let events = self.session.poll(self.world.as_ref());
         for e in &events {
             if let Event::Snapshot { data, save, .. } = e {
-                self.world = Some(world_from_snapshot(base, *data, save).unwrap());
+                self.world = Some(world_from_snapshot(base, data, save).unwrap());
             }
         }
         self.events.extend(events);
@@ -88,8 +92,12 @@ struct Game {
 
 impl Game {
     fn new(fixes: Fixes, config: Config) -> Game {
+        Game::hosting(scenario(fixes), config)
+    }
+
+    /// The host's game is `world`, from the start.
+    fn hosting(world: World, config: Config) -> Game {
         let hub = Hub::new();
-        let world = scenario(fixes);
         let host = Peer {
             session: Session::host(hub.transport(), ROOM, config).unwrap(),
             world: Some(world.clone()),
@@ -278,7 +286,7 @@ fn three_peers_join_drop_rejoin_and_desync() {
     g.run(20);
 
     // B leaves for good: it's no longer one of the game's clients.
-    g.clients[b].session.leave("");
+    g.clients[b].session.leave();
     g.run(10);
     assert!(g.host.take_events().contains(&Event::Left {
         client: b_client,
@@ -290,15 +298,13 @@ fn three_peers_join_drop_rejoin_and_desync() {
     // The host ends the game: the clients hear why.
     let d = g.join(g.hub.transport(), config);
     g.run(10);
-    g.host.session.leave("the host quit");
+    g.host.session.leave();
     for c in &mut g.clients {
         c.poll(&g.base);
     }
     let events = g.clients[d].take_events();
     assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, Event::Ended(why) if why.contains("the host quit"))),
+        events.iter().any(|e| matches!(e, Event::Ended(net::End::HostQuit))),
         "{events:?}"
     );
     assert_eq!(g.host_world().seats.host(), HOST);
@@ -321,20 +327,29 @@ fn a_snapshot_is_the_world() {
             world.tick();
         }
         let save = SaveGame::parse(&world.snapshot().to_bytes()).unwrap();
-        let mut back = world_from_snapshot(&world, net::hash::data_hash(&world), &save).unwrap();
+        let data = net::hash::data_hashes(&world);
+        let mut back = world_from_snapshot(&world, &data, &save).unwrap();
         assert_eq!(game::savegame::differences(&back, &world), Vec::<&str>::new());
         assert_eq!(world_hash(&back), world_hash(&world));
         // A joiner's game hands its view the people the same way: there
         // are none left in the world to hand over.
         let _ = back.split_off_view_people();
         assert_eq!(world_hash(&back), world_hash(&world));
-        // Another release's files: refused.
+        // A game folder of the other language: fine, and the world keeps
+        // the host's folder language.
         let mut other = world.clone();
         other.folder_language = match world.folder_language {
             game::lang::Language::De => game::lang::Language::En,
             game::lang::Language::En => game::lang::Language::De,
         };
-        assert!(world_from_snapshot(&other, net::hash::data_hash(&world), &save).is_err());
+        let back = world_from_snapshot(&other, &data, &save).unwrap();
+        assert_eq!(world_hash(&back), world_hash(&world));
+        // Other tables: refused, saying which.
+        let mut prices = (*world.tables).clone();
+        prices.hausprei[1][0] += 1;
+        other.tables = std::sync::Arc::new(prices);
+        let e = world_from_snapshot(&other, &data, &save).unwrap_err();
+        assert!(e.contains("HAUSPREI.DAT"), "{e}");
     }
     let config = Config {
         delay: 6,
@@ -356,4 +371,134 @@ fn a_snapshot_is_the_world() {
     assert_eq!(w.seats.humans(), 3);
     assert_eq!(w.seats.member(2).map(|m| m.seat), Some(1), "co-op in seat 1");
     assert!(g.clients.iter().all(|c| c.session.tick() == g.host.session.tick()));
+}
+
+/// A client's save of a network game hosts again: whoever hosts it plays
+/// seat 1, the file's other clients are away (their seats the
+/// computers') until they come back as the clients they were, and the
+/// game plays on, every world the host's.
+#[test]
+#[allow(clippy::many_single_char_names)] // Two games, step by step.
+fn a_clients_save_hosts_again() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let config = Config {
+        hash_every: 1,
+        ..Config::default()
+    };
+    let mut g = Game::new(Fixes::ORIGINAL, config);
+    g.run(10);
+    let a = g.join(g.hub.transport(), config);
+    let b = g.join(g.hub.transport(), config);
+    g.run(100);
+    let (a_client, b_client) = (g.clients[a].client().unwrap(), g.clients[b].client().unwrap());
+    assert_eq!(g.host_world().seats.humans(), 3);
+    // The host quits; A saves its copy as it stands, its view in the
+    // original's fields.
+    g.host.session.leave();
+    for c in &mut g.clients {
+        c.poll(&g.base);
+    }
+    assert!(g.clients[a].session.ended());
+    let saved = g.clients[a].world().clone();
+    let save = SaveGame::parse(&saved.to_map(&MapView::default()).to_bytes()).unwrap();
+
+    // Someone loads it from the start menu (a fresh game, the host alone)
+    // and hosts it.
+    let loaded = g.base.load_map(&save).unwrap();
+    assert_eq!(loaded.seats.host(), HOST);
+    for c in [a_client, b_client] {
+        let m = loaded.seats.member(c).expect("the file's clients are there");
+        assert!(!m.present, "client {c} is away");
+        assert!(loaded.is_computer(m.seat), "its seat {} is the computer's", m.seat);
+    }
+    assert!(loaded.seats.member(HOST).unwrap().present);
+    assert!(
+        SINGLE_PLAYER_ONLY.iter().all(|&f| loaded.fixes.has(f)),
+        "still a game of several"
+    );
+    let mut h = Game::hosting(loaded, config);
+    h.base = g.base.clone();
+    h.run(10);
+    // A comes back as the client it was, in its seat; someone new takes
+    // B's seat in co-op with B, who's away.
+    let b_seat = h.host_world().seats.member(b_client).unwrap().seat;
+    let a2 = h.join(
+        h.hub.transport(),
+        Config {
+            rejoin: Some(a_client),
+            ..config
+        },
+    );
+    h.join(
+        h.hub.transport(),
+        Config {
+            seat: Some(b_seat),
+            ..config
+        },
+    );
+    h.run(100);
+    let w = h.host_world();
+    let a_seat = w.seats.member(a_client).unwrap().seat;
+    assert!(w.seats.member(a_client).unwrap().present);
+    assert!(!w.is_computer(a_seat) && !w.is_computer(b_seat));
+    assert_eq!(h.clients[a2].client(), Some(a_client));
+    assert!(h.clients.iter().all(|c| !c.session.ended()));
+}
+
+/// Reads `name` from the folder `root`, whatever the case of its letters.
+fn read_in(root: &std::path::Path, name: &str) -> Option<Vec<u8>> {
+    let mut path = root.to_path_buf();
+    for part in name.split('/') {
+        let found = std::fs::read_dir(&path)
+            .ok()?
+            .filter_map(Result::ok)
+            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(part))?;
+        path = found.path();
+    }
+    std::fs::read(path).ok()
+}
+
+/// A host with the German CD's files and a client with the English
+/// release's (`orig-en/`) play together: the client's world is read over
+/// one set up from its own folder in English, and is the host's German
+/// world bit for bit, its sabotage table the German one. Skipped without
+/// both folders.
+#[test]
+fn a_german_host_and_an_english_client() {
+    let en_dir = orig().join("../orig-en");
+    if !orig().join("SZENARIO").exists() || read_in(&en_dir, "DATA/MODATYP.DAT").is_none() {
+        eprintln!("skipping: needs orig/ and orig-en/");
+        return;
+    }
+    let de = GameData::load(|n| read_in(&orig(), n), Language::De).unwrap();
+    let en = GameData::load(|n| read_in(&en_dir, n), Language::En).unwrap();
+    let config = Config {
+        hash_every: 1,
+        ..Config::default()
+    };
+    let mut world = scenario(Fixes::ORIGINAL);
+    world.tables = std::sync::Arc::clone(&de.tables);
+    world.language = Language::De;
+    world.folder_language = Language::De;
+    let mut g = Game::hosting(world, config);
+    // The client's own world, as `network::joined_world` sets it up: from
+    // the English folder, in English.
+    g.base = hintergrund::set_up_begin(&Settings::default(), &en, 0, Fixes::ORIGINAL);
+    assert_eq!(g.base.folder_language, Language::En);
+    g.run(10);
+    let c = g.join(g.hub.transport(), config);
+    g.run(300);
+    let w = g.clients[c].world();
+    assert_eq!((w.language, w.folder_language), (Language::De, Language::De));
+    assert_eq!(w.sabotage_kind(game::sabotage::SHARK_DIVER).targets[0], 254);
+    assert!(
+        g.clients[c]
+            .take_events()
+            .iter()
+            .chain(&g.host.take_events())
+            .all(|e| !matches!(e, Event::Desync { .. }))
+    );
 }

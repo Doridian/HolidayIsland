@@ -16,7 +16,7 @@ use game::seats::Client;
 use game::startform::Settings;
 use game::world::World;
 use net::matchbox::{IceServers, MatchboxTransport, valid_room};
-use net::{Config, Event, Session};
+use net::{Config, End, Event, Session};
 
 /// The default signaling server: one on this machine.
 pub(crate) const DEFAULT_SIGNAL: &str = "ws://localhost:3536";
@@ -131,19 +131,15 @@ pub(crate) type NetSession = Session<MatchboxTransport>;
 
 /// A game's network session. When the game goes (back to the start
 /// menu, or the program ends), a client says goodbye and the host ends
-/// the session for its clients.
+/// the session for its clients, saying it quit (`net::End::HostQuit` for
+/// them).
 pub(crate) struct NetGame {
     pub session: NetSession,
 }
 
 impl Drop for NetGame {
     fn drop(&mut self) {
-        let why = if self.session.is_host() {
-            "the host left the game"
-        } else {
-            ""
-        };
-        self.session.leave(why);
+        self.session.leave();
     }
 }
 
@@ -163,15 +159,17 @@ impl NetArgs {
 
 /// The world a joining client starts from: the host's snapshot `save`
 /// read over a world set up from this game folder `dir`, in the
-/// snapshot's world language (the world's text and the sabotage's table
-/// are that language's, as on the host).
+/// snapshot's world language. The world's text and its sabotage table are
+/// that language's whatever this folder's (`game::sabotage::table`), so
+/// a German and an English game folder join each other's games; only the
+/// tables the world reads from the folder must be the host's (`data`).
 ///
 /// # Errors
-/// If this folder's files aren't the host's, or the snapshot doesn't
-/// read.
+/// If this folder's tables aren't the host's (saying which files), or the
+/// snapshot doesn't read.
 pub(crate) fn joined_world(
     dir: &Path,
-    data: u64,
+    data: &[u64],
     save: &SaveGame,
     fallback: game::lang::Language,
 ) -> Result<World, String> {
@@ -181,9 +179,10 @@ pub(crate) fn joined_world(
     net::world_from_snapshot(&base, data, save)
 }
 
-/// Says on the terminal what the session says, and whether it ended,
-/// with why.
-pub(crate) fn report(events: &[Event]) -> Option<String> {
+/// Says on the terminal (the browser's console) what the session says,
+/// and whether it ended, with why. Being turned away is an end too
+/// ([`End::Other`]).
+pub(crate) fn report(events: &[Event]) -> Option<End> {
     let mut ended = None;
     for e in events {
         match e {
@@ -208,18 +207,41 @@ pub(crate) fn report(events: &[Event]) -> Option<String> {
                 let whose = client.map_or_else(|| "the host's".to_owned(), |c| format!("client {c}'s"));
                 eprintln!("network: DESYNC after tick {tick}: this world {ours:016x}, {whose} {theirs:016x}");
             }
+            Event::HostLost { grace } => eprintln!(
+                "network: the connection to the host dropped; waiting {} s for it to come back",
+                grace.as_secs()
+            ),
+            Event::HostBack => eprintln!("network: the host is back; its world comes again"),
             Event::Rejected(why) => {
                 eprintln!("network: the host turned this game away: {why}");
-                ended = Some(why.clone());
+                ended = Some(End::Other(format!("the host turned this game away: {why}")));
             }
-            Event::Ended(why) => {
-                eprintln!("network: {why}");
-                ended = Some(why.clone());
+            Event::Ended(end) => {
+                eprintln!("network: {end}");
+                ended = Some(end.clone());
             }
             Event::Warning(w) => eprintln!("network: {w}"),
         }
     }
     ended
+}
+
+/// What the game says, in `language`, when the network game ended for a
+/// client with `end`: why, in the game's words, and for anything but the
+/// host's quitting or loss the session's own reason (in English, as on
+/// the terminal) under it.
+pub(crate) fn end_text(end: &End, language: game::lang::Language) -> Vec<u8> {
+    use game::lang::Text;
+    match end {
+        End::HostQuit => Text::NetHostQuit.bytes(language),
+        End::HostLost(_) => Text::NetHostLost.bytes(language),
+        End::Other(why) => {
+            let mut text = Text::NetEnded.bytes(language);
+            text.push(b'\n');
+            text.extend(game::lang::encode(why));
+            text
+        }
+    }
 }
 
 #[cfg(test)]

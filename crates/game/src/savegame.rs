@@ -1150,6 +1150,12 @@ impl World {
 /// itself always has on.
 const SNAPSHOT_SAVED_STATE: &str = "snapshot.saved_state";
 
+/// The port's chunk's line of a snapshot with the host's
+/// [`World::folder_language`], which a file loaded in the middle of the
+/// game without a language of its own takes, so that every peer's
+/// does, whatever their game folders' languages.
+const SNAPSHOT_FOLDER_LANGUAGE: &str = "snapshot.folder_language";
+
 impl World {
     /// The world as a network game's host sends it to a client that
     /// joins ([`World::load_snapshot`]): a saved game, with
@@ -1165,13 +1171,17 @@ impl World {
         let mut save = w.to_map(&MapView::default());
         let mut lines = save.port_chunk().unwrap_or_default();
         lines.push((SNAPSHOT_SAVED_STATE.to_owned(), u8::from(had).to_string()));
+        lines.push((
+            SNAPSHOT_FOLDER_LANGUAGE.to_owned(),
+            self.folder_language.code().to_owned(),
+        ));
         save.trailing = formats::savegame::make_port_chunk(lines.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         save
     }
 
     /// The world a [`World::snapshot`] holds, read over `self`, which
-    /// gives what no file holds: the tables from the game's files and
-    /// the folder's language. It's the snapshot's world as it was, the
+    /// gives what no file holds: the tables from the game's files (the
+    /// folder's language is the snapshot's, the host's). It's the snapshot's world as it was, the
     /// seats too: unlike [`World::load_map`], which keeps the running
     /// game's clients and brings the file's others back away, the
     /// file's clients are there as the file has them, and
@@ -1186,13 +1196,13 @@ impl World {
         if let Some(seats) = crate::seats::Seats::from_chunk(&save.trailing) {
             w.seats = seats;
         }
-        let had = save
-            .port_chunk()
-            .unwrap_or_default()
-            .into_iter()
-            .find(|(k, _)| k == SNAPSHOT_SAVED_STATE)
-            .is_none_or(|(_, v)| v == "1");
+        let chunk = save.port_chunk().unwrap_or_default();
+        let line = |key: &str| chunk.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        let had = line(SNAPSHOT_SAVED_STATE).is_none_or(|v| v == "1");
         w.fixes.set(Fix::SavedState, had);
+        if let Some(l) = line(SNAPSHOT_FOLDER_LANGUAGE).and_then(crate::lang::Language::from_code) {
+            w.folder_language = l;
+        }
         Ok(w)
     }
 }

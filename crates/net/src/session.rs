@@ -24,26 +24,43 @@
 //!   `SeatChange::Rejoin` and a snapshot the same way.
 //! - A client's connection dropping is `SeatChange::Disconnect`, saying
 //!   goodbye ([`Session::leave`]) `SeatChange::Leave`. When the host
-//!   leaves, the clients get [`Event::Ended`] with why.
+//!   quits, it says so ([`Ending::Quit`]) and the clients get
+//!   [`Event::Ended`] with [`End::HostQuit`]. When the connection to the
+//!   host drops, a client waits [`Config::host_grace`] for it to come
+//!   back (it then says hello again as the client it was and gets a new
+//!   snapshot); after that the host counts as gone for good
+//!   ([`End::HostLost`]). There's no host migration: the game is over
+//!   for the clients, who may save their own copy of the world.
 //!
 //! The session never touches the world: the caller applies the steps'
 //! commands and ticks it, so the world changes only by commands, as in
 //! single player.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
+
+use web_time::Instant;
 
 use formats::savegame::SaveGame;
 use game::command::Action;
 use game::seats::{Client, ClientCommand, HOST, HOST_SEAT, SeatChange};
 use game::world::World;
 
-use crate::hash::{data_hash, world_hash};
+use crate::hash::{data_differences, data_hashes, world_hash};
 use crate::transport::{PeerId, Role, Transport, TransportEvent};
-use crate::wire::{self, Assembler, Message};
+use crate::wire::{self, Assembler, Ending, Message};
 
 /// How many of a peer's own hashes it keeps to compare with others'
 /// that come late.
 const KEEP_HASHES: usize = 256;
+
+/// How long a client waits for the host's connection to come back once
+/// it dropped, before the host counts as gone for good and the game is
+/// over ([`End::HostLost`]): 10 seconds. Long enough for a short
+/// network hiccup (the host's peer connecting again), short enough that
+/// the players aren't left looking at a stopped game for long; the world
+/// waits meanwhile, as it does for any late go.
+pub const HOST_GRACE: Duration = Duration::from_secs(10);
 
 /// The session's settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +75,9 @@ pub struct Config {
     pub seat: Option<u8>,
     /// A client: the client it was, to come back as.
     pub rejoin: Option<Client>,
+    /// A client: how long it waits for a dropped host to come back
+    /// ([`HOST_GRACE`] by default).
+    pub host_grace: Duration,
 }
 
 impl Default for Config {
@@ -67,6 +87,31 @@ impl Default for Config {
             hash_every: 10,
             seat: None,
             rejoin: None,
+            host_grace: HOST_GRACE,
+        }
+    }
+}
+
+/// Why the session ended for this peer ([`Event::Ended`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum End {
+    /// A client: the host quit its game (said so, [`Ending::Quit`]).
+    HostQuit,
+    /// A client: the connection to the host is gone for good: it dropped
+    /// and didn't come back within [`Config::host_grace`], or this
+    /// peer's transport closed. How.
+    HostLost(String),
+    /// Anything else (the host's transport closing, another protocol
+    /// version, a world that didn't read), with why.
+    Other(String),
+}
+
+impl std::fmt::Display for End {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            End::HostQuit => write!(f, "the host ended the game"),
+            End::HostLost(how) => write!(f, "lost the host: {how}"),
+            End::Other(why) => write!(f, "{why}"),
         }
     }
 }
@@ -78,7 +123,11 @@ pub enum Event {
     Welcome { client: Client, seat: u8 },
     /// A client: the world to start from, before tick `tick`; the steps
     /// from that tick follow. Read it with [`world_from_snapshot`].
-    Snapshot { tick: u64, data: u64, save: Box<SaveGame> },
+    Snapshot {
+        tick: u64,
+        data: Vec<u64>,
+        save: Box<SaveGame>,
+    },
     /// The host: a client is taken in (or back) at `seat`.
     Joined { client: Client, seat: u8, rejoin: bool },
     /// The host: a client's connection dropped, or it left for good.
@@ -93,9 +142,15 @@ pub enum Event {
     },
     /// A client: the host turned it away.
     Rejected(String),
-    /// The session is over for this peer: the host ended it, the
-    /// connection to it dropped, or the transport closed.
-    Ended(String),
+    /// A client: the connection to the host dropped. The game waits up
+    /// to `grace` for it to come back, then ends ([`End::HostLost`]).
+    HostLost { grace: Duration },
+    /// A client: the host is back within the grace; a new welcome and
+    /// snapshot follow, which the client's world is read from again.
+    HostBack,
+    /// The session is over for this peer: the host quit, the connection
+    /// to it is gone for good, or something else ([`End`]).
+    Ended(End),
     /// Something to log: a message that didn't read.
     Warning(String),
 }
@@ -155,6 +210,9 @@ pub struct Session<T: Transport> {
     issued: BTreeSet<Client>,
     /// A client: the host's peer, once connected.
     host: Option<PeerId>,
+    /// A client: when the host's connection dropped, while it may still
+    /// come back.
+    host_lost: Option<Instant>,
 }
 
 impl<T: Transport> Session<T> {
@@ -208,6 +266,7 @@ impl<T: Transport> Session<T> {
             hellos: Vec::new(),
             issued: BTreeSet::new(),
             host: None,
+            host_lost: None,
         }
     }
 
@@ -305,8 +364,25 @@ impl<T: Transport> Session<T> {
                         Err(e) => self.bad_message(peer, &e),
                     }
                 }
-                TransportEvent::Closed(why) => self.end(format!("the connection closed: {why}")),
+                TransportEvent::Closed(why) => {
+                    let end = match self.role {
+                        // Nothing comes back over a closed transport.
+                        Role::Client => End::HostLost(format!("the connection closed: {why}")),
+                        Role::Host => End::Other(format!("the connection closed: {why}")),
+                    };
+                    self.end(end);
+                }
             }
+        }
+        if self
+            .host_lost
+            .is_some_and(|since| since.elapsed() >= self.config.host_grace)
+        {
+            self.host_lost = None;
+            self.end(End::HostLost(format!(
+                "the connection dropped and didn't come back within {} s",
+                self.config.host_grace.as_secs()
+            )));
         }
         if let Some(world) = world {
             for (peer, seat, rejoin) in std::mem::take(&mut self.hellos) {
@@ -368,14 +444,14 @@ impl<T: Transport> Session<T> {
 
     /// Leaves the session: a client says goodbye (its seat goes back to
     /// the computers unless it has co-op partners), the host ends it for
-    /// every client with `why`.
-    pub fn leave(&mut self, why: &str) {
+    /// every client, saying it quit ([`Ending::Quit`]).
+    pub fn leave(&mut self) {
         if self.ended {
             return;
         }
         match self.role {
             Role::Host => {
-                let m = Message::End(why.to_owned());
+                let m = Message::End(Ending::Quit);
                 for peer in self.remotes.keys().copied().collect::<Vec<_>>() {
                     self.send(peer, &m);
                 }
@@ -389,10 +465,10 @@ impl<T: Transport> Session<T> {
         self.ended = true;
     }
 
-    fn end(&mut self, why: String) {
+    fn end(&mut self, end: End) {
         if !self.ended {
             self.ended = true;
-            self.events.push(Event::Ended(why));
+            self.events.push(Event::Ended(end));
         }
     }
 
@@ -414,13 +490,24 @@ impl<T: Transport> Session<T> {
     }
 
     fn connected(&mut self, peer: PeerId) {
-        // A client talks to the host only: the first peer it meets.
-        if self.role == Role::Client && self.host.is_none() {
+        // A client talks to the host only: the first peer it meets, or
+        // the host coming back after its connection dropped, which takes
+        // the client back as the client it was.
+        if self.role == Role::Client && self.host.is_none() && !self.ended {
             self.host = Some(peer);
-            let hello = Message::Hello {
-                seat: self.config.seat,
-                rejoin: self.config.rejoin,
+            let hello = match self.me {
+                Some((client, seat)) => Message::Hello {
+                    seat: Some(seat),
+                    rejoin: Some(client),
+                },
+                None => Message::Hello {
+                    seat: self.config.seat,
+                    rejoin: self.config.rejoin,
+                },
             };
+            if self.host_lost.take().is_some() {
+                self.events.push(Event::HostBack);
+            }
             self.send(peer, &hello);
         }
     }
@@ -429,8 +516,16 @@ impl<T: Transport> Session<T> {
         self.assemblers.remove(&peer);
         match self.role {
             Role::Client => {
-                if self.host == Some(peer) {
-                    self.end("lost the connection to the host".to_owned());
+                if self.host == Some(peer) && !self.ended {
+                    self.host = None;
+                    if self.config.host_grace.is_zero() {
+                        self.end(End::HostLost("the connection dropped".to_owned()));
+                    } else {
+                        self.host_lost = Some(Instant::now());
+                        self.events.push(Event::HostLost {
+                            grace: self.config.host_grace,
+                        });
+                    }
                 }
             }
             Role::Host => {
@@ -455,7 +550,7 @@ impl<T: Transport> Session<T> {
     fn bad_message(&mut self, peer: PeerId, e: &wire::Error) {
         match (self.role, e) {
             (Role::Client, wire::Error::Version(_)) if self.host == Some(peer) => {
-                self.end(format!("the host speaks another version: {e}"));
+                self.end(End::Other(format!("the host speaks another version: {e}")));
             }
             (Role::Host, wire::Error::Version(_)) => {
                 self.send(peer, &Message::Reject(format!("{e}")));
@@ -534,7 +629,7 @@ impl<T: Transport> Session<T> {
                         save: Box::new(save),
                     });
                 }
-                Err(e) => self.end(format!("the host's world didn't read: {e}")),
+                Err(e) => self.end(End::Other(format!("the host's world didn't read: {e}"))),
             },
             Message::Go { tick, commands } => {
                 if self.tick.is_some_and(|t| tick >= t) {
@@ -545,7 +640,8 @@ impl<T: Transport> Session<T> {
                 self.theirs.push((tick, None, hash));
                 self.check_hashes();
             }
-            Message::End(why) => self.end(format!("the host ended the game: {why}")),
+            Message::End(Ending::Quit) => self.end(End::HostQuit),
+            Message::End(Ending::Other(why)) => self.end(End::Other(format!("the host ended the game: {why}"))),
             m => self.events.push(Event::Warning(format!(
                 "the host sent {}, which is a client's",
                 name(&m)
@@ -666,7 +762,7 @@ impl<T: Transport> Session<T> {
         }
         let snapshot = Message::Snapshot {
             tick,
-            data: data_hash(world),
+            data: data_hashes(world),
             save: world.snapshot().to_bytes(),
         };
         let goes: Vec<Message> = self
@@ -729,14 +825,20 @@ fn name(m: &Message) -> &'static str {
 
 /// The world a client starts from: the snapshot `save` read over `base`,
 /// a world set up from this peer's own game files (`World::load_snapshot`),
-/// once `data` shows the host's files are the same.
+/// once `data` shows that the tables the world takes from them are the
+/// host's ([`crate::hash::data_hashes`]). The folder's language needn't
+/// be: a German and an English game play together.
 ///
 /// # Errors
-/// If the game files differ from the host's, or the snapshot doesn't
-/// read.
-pub fn world_from_snapshot(base: &World, data: u64, save: &SaveGame) -> Result<World, String> {
-    if data_hash(base) != data {
-        return Err("the host's game files are another release's (or language's) than these".to_owned());
+/// If the tables differ from the host's (saying which files), or the
+/// snapshot doesn't read.
+pub fn world_from_snapshot(base: &World, data: &[u64], save: &SaveGame) -> Result<World, String> {
+    let differ = data_differences(&data_hashes(base), data);
+    if !differ.is_empty() {
+        return Err(format!(
+            "this game's files differ from the host's in what the world reads: {}",
+            differ.join(", ")
+        ));
     }
     base.load_snapshot(save)
         .map_err(|e| format!("the host's world didn't load: {e}"))

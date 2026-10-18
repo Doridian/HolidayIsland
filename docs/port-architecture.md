@@ -275,7 +275,9 @@ in the design points above:
   folder's `land`), so every peer and every reload makes the same text
   ([language.md](language.md#the-worlds-text)). The view formats the
   rest (dates, money, forms; the archive's dates read back from the
-  world's text) in each player's own language.
+  world's text) in each player's own language. The world's sabotage
+  table is its language's too (`game::sabotage::table`), so German and
+  English players share one game ([networking.md](networking.md#playing)).
 
 Not in scope: matchmaking, accounts, or play with the original Windows version.
 
@@ -377,6 +379,8 @@ only for one human, as the original.
 | 13 | All of this is built before any networking; tests run several clients in one process | Built for 1–12 (`crates/game/tests/multiplayer.rs`) |
 | Network | WebRTC through matchbox, behind a transport trait (a WebSocket relay can be added as a fallback); a star, every client connected to the host on the reliable, ordered channel; coturn for TURN, the ICE servers configurable; host-authoritative lockstep with an input delay; native first, `crates/net` kept fit for wasm | Built natively, from the command line ([networking.md](networking.md)) |
 | Co-op | Two or more clients may play one seat: commands come from a client and act for its seat, each client has its own view, host-only is by client, and the forced fixes count clients | Built ([above](#seats-and-clients)) |
+| Host quits | When the host quits, or its connection is lost for good (after a grace period), the game ends for everyone with a message in the game; each remaining player is offered a save of their own copy as it stood at the last tick they ran, which anyone can host again (the other seats away until their players join or rejoin). No host migration. The host's `End` says it quit, so clients tell that from a lost host | Built: `End(Quit)`, `net::HOST_GRACE` (10 s), the message box and the file menu to save ([networking.md](networking.md#the-protocol)) |
+| Languages | The world's sabotage table is always the world's own language's; each player sees their own language's texts; only what the world reads from the game folder must match between peers, so the German and English releases play together | Built: `game::sabotage::table(World::language)`, the snapshot's per-table hashes (`net::hash::data_hashes`) and the host's folder language ([networking.md](networking.md#playing)) |
 
 Built in phase 2 too: the `p == 1` places now ask `World::is_human`
 (the money checks, the books, sabotage, the year end's and the month's
@@ -404,8 +408,8 @@ A human who takes a seat in the middle of a game takes the colour as
 its computer left it, money and loan too ([above](#seats-and-clients)).
 The high scores are each view's to enter, from its seat's results.
 
-Still open: the host's own quitting (the session ends cleanly for the
-clients; what should happen instead isn't decided).
+The host's own quitting is decided and built (the "Host quits" row):
+the game ends for everyone, and each remaining player may save it.
 
 ### Networking
 
@@ -436,7 +440,13 @@ server `crates/server`, wired into the binary by command-line options
   same world bit for bit) before the tick its `SeatChange::Join` is
   carried out on, and the goes from that tick. A dropped connection is
   `SeatChange::Disconnect`, coming back (`--rejoin=`) `Rejoin`, saying
-  goodbye `Leave`.
+  goodbye `Leave`. Only the tables the world reads from the game folder
+  must be the host's (hashed one by one in the snapshot), not the
+  folder's language.
+- **The host quitting**: it sends `End(Quit)`; a dropped host is waited
+  for `net::HOST_GRACE` (10 s) and then gone for good. A client's world
+  stops at its last tick, a message box says why and offers the file
+  menu to save it, then the start menu. No host migration.
 - **Wire format**: hand-written, versioned, deterministic; frames of at
   most 16 KiB.
 - Tests: the session over the in-memory transport (three peers, joins

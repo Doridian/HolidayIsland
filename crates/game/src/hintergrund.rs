@@ -436,9 +436,10 @@ pub struct GameData {
     pub names: data::Strings,
     /// `BAUMENU.DAT`: the build menu's lists and layouts. // 1018:080f
     pub baumenu: data::BaumenuData,
-    /// The world's language ([`World::language`]), whose `NAMEN.TXT` and
-    /// `SABOTAGE.TXT` these are and whose `MONATE.TXT` the news archive's
-    /// dates are written with.
+    /// The world's language ([`World::language`]), whose `NAMEN.TXT` this
+    /// is and whose `MONATE.TXT` the news archive's dates are written
+    /// with. (Its `SABOTAGE.TXT` the world reads itself,
+    /// `crate::sabotage::table`.)
     pub language: Language,
 }
 
@@ -483,7 +484,6 @@ impl GameData {
             animdat4: parsed("ANIMDAT4.DAT", data::animdat4(&dat("ANIMDAT4.DAT")?))?,
             form_korrektur: parsed("DARSTELL.DAT", data::darstell(&dat("DARSTELL.DAT")?))?.form_korrektur,
             road_cost: modatyp.strassenbaukosten,
-            sabotage: crate::sabotage::kinds(&parsed("SABOTAGE.TXT", data::sabotage(&file("TEXTE/SABOTAGE.TXT")?))?.1),
         };
         let maperste = parsed("MAPERSTE.DAT", data::maperste(&dat("MAPERSTE.DAT")?))?;
         let (nobody, _player, names) = parsed("NAMEN.TXT", data::namen(&file("TEXTE/NAMEN.TXT")?))?;

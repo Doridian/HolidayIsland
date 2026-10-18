@@ -81,7 +81,17 @@ http://localhost:8000/?join=island&signal=wss://example.org/holiday&stun=stun:ex
 `stun=` and `turn=` may repeat; `turn-user=` and `turn-password=` go
 with `turn=`. A page served over HTTPS can only use a `wss://`
 signaling server. A browser and a native game play together, either
-hosting.
+hosting, with the German CD's files or the English release's on the
+native side, and in either language (`?lang=en`).
+
+A joining page says in the game that it waits for the host's game (a
+message box where the start menu would be; Cancel gives up). When the
+host quits, or its connection is lost for good (10 s after it drops,
+the status bar saying so meanwhile; closing the host's tab is that),
+the game stops, says why in a message box and offers to save it: Yes
+opens the file menu, whose Save keeps the game in the browser's
+storage, and then the start menu comes. Hosting that save again works
+as natively ([networking.md](networking.md#the-protocol)).
 
 ## Storage
 

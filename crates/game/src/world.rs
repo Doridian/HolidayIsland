@@ -818,10 +818,6 @@ pub struct Tables {
     /// map file doesn't save it (unit 1010:0d4c skips it), so it stays
     /// what the game's data gave it. // 1110:64ee
     pub road_cost: i32,
-    /// `SABOTAGE.TXT`'s nine kinds of sabotage, as far as the world needs
-    /// them: the price and the building types piranhas go into. The rest
-    /// is the form's ([`crate::sabowin`]). // *1110:65bc, 1028:361f
-    pub sabotage: Vec<crate::sabotage::SabotageKind>,
 }
 
 impl Tables {

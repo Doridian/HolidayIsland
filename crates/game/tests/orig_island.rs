@@ -266,7 +266,6 @@ fn palms_grow() {
         animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
         form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
         road_cost: modatyp(&read("DATA/MODATYP.DAT")).unwrap().strassenbaukosten,
-        sabotage: Vec::new(),
     });
     world.random = Random::new(0xdead_beef);
     let before = palm_stages(&world);
@@ -324,7 +323,6 @@ fn world_tables() -> Arc<Tables> {
         animdat4: animdat4(&read("DATA/ANIMDAT4.DAT")).unwrap(),
         form_korrektur: darstell(&read("DATA/DARSTELL.DAT")).unwrap().form_korrektur,
         road_cost: modatyp(&read("DATA/MODATYP.DAT")).unwrap().strassenbaukosten,
-        sabotage: Vec::new(),
     })
 }
 

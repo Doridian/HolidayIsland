@@ -131,16 +131,56 @@ pub fn world_hash(world: &World) -> u64 {
     stable_hash(world)
 }
 
-/// The hash of what a world takes from the game's files rather than from
-/// a saved game: the tables and the folder's language. A client whose
-/// game files aren't the host's (another release) can't follow the
-/// host's world.
+/// What a world takes from the game folder's files rather than from a
+/// saved game ([`game::world::Tables`], which `World::keep_unsaved`
+/// keeps), one by one, with the file each comes from, in the order of
+/// [`data_hashes`]. Nothing of the folder's language is among them: the
+/// world's own text and its sabotage table come from the world's
+/// language (`World::language`, in the snapshot), so a German and an
+/// English game folder give the same. The German CD and the English
+/// release have the same tables (`docs/networking.md`).
+pub const DATA_FILES: [&str; 8] = [
+    "DATA/HAUSNR.DAT",
+    "DATA/HAUSDATA.DAT",
+    "HAUSPREI.DAT (DATA/ or UPGRADE/)",
+    "DATA/GROUNDNR.DAT",
+    "DATA/ANIMDAT1.DAT",
+    "DATA/ANIMDAT4.DAT",
+    "DATA/DARSTELL.DAT",
+    "DATA/MODATYP.DAT (Strassenbaukosten)",
+];
+
+/// The hashes of what a world takes from the game folder's files, one
+/// for each of [`DATA_FILES`]. A client whose files give other tables
+/// than the host's can't follow the host's world.
 #[must_use]
-pub fn data_hash(world: &World) -> u64 {
-    let mut h = StableHasher::new();
-    world.tables.hash(&mut h);
-    world.folder_language.hash(&mut h);
-    h.finish()
+pub fn data_hashes(world: &World) -> Vec<u64> {
+    let t = &*world.tables;
+    vec![
+        stable_hash(&t.hausnr),
+        stable_hash(&t.hausdata),
+        stable_hash(&t.hausprei),
+        stable_hash(&t.groundnr),
+        stable_hash(&t.animdat1),
+        stable_hash(&t.animdat4),
+        stable_hash(&t.form_korrektur),
+        stable_hash(&t.road_cost),
+    ]
+}
+
+/// The files of [`DATA_FILES`] whose hashes differ between `ours` and
+/// `theirs` ([`data_hashes`]); all of them if the lists don't match up.
+#[must_use]
+pub fn data_differences(ours: &[u64], theirs: &[u64]) -> Vec<&'static str> {
+    if ours.len() != theirs.len() {
+        return DATA_FILES.to_vec();
+    }
+    DATA_FILES
+        .iter()
+        .zip(ours.iter().zip(theirs))
+        .filter(|(_, (a, b))| a != b)
+        .map(|(&f, _)| f)
+        .collect()
 }
 
 #[cfg(test)]

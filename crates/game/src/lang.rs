@@ -353,6 +353,17 @@ texts! {
     /// and what it does.
     AuctionTimeout = "port.auction_timeout",
     AuctionTimeoutDescription = "port.auction_timeout_description",
+    /// A network game's end for a client (`docs/networking.md`): the
+    /// host quit, the connection to the host is gone, or the session
+    /// ended otherwise; then the offer to save the client's copy.
+    NetHostQuit = "port.net_host_quit",
+    NetHostLost = "port.net_host_lost",
+    NetEnded = "port.net_ended",
+    NetSaveQuestion = "port.net_save_question",
+    /// A client waiting for the host's world, and for a dropped host to
+    /// come back.
+    NetWaitingHost = "port.net_waiting_host",
+    NetHostDropped = "port.net_host_dropped",
 }
 
 impl Text {

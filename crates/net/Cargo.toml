@@ -16,6 +16,9 @@ matchbox = ["dep:matchbox_socket", "dep:tokio", "dep:wasm-bindgen-futures"]
 formats = { path = "../formats" }
 game = { path = "../game" }
 matchbox_socket = { version = "0.14", optional = true }
+# The clock of the host's grace period (`std::time` natively,
+# `performance.now()` in the browser).
+web-time = "1.1"
 
 # Natively the socket's message loop runs on a thread of its own, on a
 # small tokio runtime. The browser build spawns it with

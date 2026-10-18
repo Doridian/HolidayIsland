@@ -25,5 +25,5 @@ pub mod session;
 pub mod transport;
 pub mod wire;
 
-pub use session::{Config, Event, Session, Step, world_from_snapshot};
+pub use session::{Config, End, Event, HOST_GRACE, Session, Step, world_from_snapshot};
 pub use transport::{PeerId, Role, Transport, TransportEvent};
