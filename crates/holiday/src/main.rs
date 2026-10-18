@@ -1253,9 +1253,6 @@ enum AfterMessage {
     Nothing,
     /// The file menu's "Löschen": OK erases the game. // en 1040:110c
     Delete(Vec<u8>),
-    /// Going back to the start menu without the CD: OK looks again,
-    /// Cancel ends the program. // en 1010:35e4
-    InsertCd,
 }
 
 /// What `backgroundimage` shows.
@@ -1534,15 +1531,6 @@ impl Holiday {
                 // en 1040:1190: only OK erases.
                 if r == ModalResult::Ok {
                     self.delete_game(&name);
-                }
-            }
-            AfterMessage::InsertCd => {
-                // en 1010:3671: Cancel ends the program (`Halt`), OK
-                // looks again.
-                if r == ModalResult::Cancel {
-                    self.quit = true;
-                } else {
-                    self.wait_for_cd();
                 }
             }
         }
@@ -2041,9 +2029,11 @@ impl Holiday {
     /// "Neues Spiel" (`back_to_start_menu`, en 1010:3582, de 1010:25dc):
     /// saves `Last.map`, hides the game's forms and frees the game
     /// (en 1038:3657, de 1030:3974: the clock, the forms, the people, the
-    /// computers, the news, the music closed, ...), then waits for the
-    /// CD ([`Holiday::wait_for_cd`]) and shows a new start menu
-    /// ([`Holiday::new_start_menu`]).
+    /// computers, the news, the music closed, ...) and shows a new start
+    /// menu ([`Holiday::new_start_menu`]). The later build first waits
+    /// for the CD (en 1010:35e4: until the film directory has
+    /// `surfwm.avi`, `INSERT_CD` with OK to look again and Cancel to
+    /// quit); the port doesn't check for a CD.
     fn back_to_start_menu(&mut self) {
         let Some(game) = self.game.take() else { return };
         if let Err(e) = self.saves.write(hintergrund::LAST_MAP.as_bytes(), &game.map()) {
@@ -2063,35 +2053,10 @@ impl Holiday {
         self.options = game.forms.settings.after_game(sound_on);
         drop(game);
         self.repaint();
-        self.wait_for_cd();
+        self.new_start_menu();
     }
 
-    /// The later build's wait for the CD before the start menu
-    /// (en 1010:35e4): until the film directory has `surfwm.avi`, a
-    /// message box asks for it (`MessageDlg(…, mtInformation, [mbOK,
-    /// mbCancel], 0)`, [`AfterMessage::InsertCd`]). The original asks in
-    /// English whatever its `land` (en 1010:3540; the German text,
-    /// en 1010:3502, is in the build unused); the port asks in the view's
-    /// language. v1.0 doesn't wait.
-    fn wait_for_cd(&mut self) {
-        // BUG(original): the later build asks in English whatever its `land`; the port asks in the view's language.
-        if self.sound.borrow().film_exists(setup::INSERT_CD_FILM) {
-            self.new_start_menu();
-        } else {
-            let text = match self.language() {
-                lang::Language::De => setup::INSERT_CD,
-                lang::Language::En => setup::INSERT_CD_EN,
-            };
-            self.open_message(
-                text,
-                DlgType::Information,
-                &[Btn::Ok, Btn::Cancel],
-                AfterMessage::InsertCd,
-            );
-        }
-    }
-
-    /// The rest of `back_to_start_menu` once the CD is there: the
+    /// The rest of `back_to_start_menu`: the
     /// globals back to a new game's (en 1048:2a05: `init_game_defaults`,
     /// en 1000:22b4, which sets the start menu's island, difficulty,
     /// scenario and colours and the options back; `clear_game_flags`;
@@ -5713,48 +5678,5 @@ mod tests {
         assert_eq!(second.screen.camera(), first.screen.camera());
         assert_eq!(second.tools.down, first.tools.down);
         std::fs::remove_dir_all(&h.saves.dir).ok();
-    }
-
-    /// Going back to the start menu without the CD (the later build's
-    /// wait): OK looks again, Cancel ends the program; the question is in
-    /// the view's language. With `HOLIDAY_PNG` set it goes there as
-    /// `step4-insert-cd-<tag>.png`.
-    #[test]
-    fn waiting_for_the_cd() {
-        let Some(dir) = game_dir() else { return };
-        // Without the CD: OK looks again, Cancel ends the program.
-        for (setting, tag) in [
-            (lang::Setting::Auto, "de"),
-            (lang::Setting::Is(lang::Language::En), "de-lang-en"),
-        ] {
-            let mut h = fixed_holiday(&dir);
-            h.enhance.language = setting;
-            h.start.hide();
-            h.next_menu = Some(Settings::default());
-            h.open_message(
-                match h.language() {
-                    lang::Language::De => setup::INSERT_CD,
-                    lang::Language::En => setup::INSERT_CD_EN,
-                },
-                DlgType::Information,
-                &[Btn::Ok, Btn::Cancel],
-                AfterMessage::InsertCd,
-            );
-            write_png(&h, &format!("step4-insert-cd-{tag}"));
-            key(&mut h, 0x0d);
-            assert!(
-                h.message.is_none() && h.start.visible() && !h.quit,
-                "OK: the CD is there now"
-            );
-            h.start.hide();
-            h.open_message(
-                setup::INSERT_CD,
-                DlgType::Information,
-                &[Btn::Ok, Btn::Cancel],
-                AfterMessage::InsertCd,
-            );
-            key(&mut h, 0x1b);
-            assert!(h.quit, "Cancel: Halt");
-        }
     }
 }

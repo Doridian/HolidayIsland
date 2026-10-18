@@ -48,11 +48,8 @@ HOLIDAY ISLAND again.` (en 1000:1918). `back_to_start_menu`
 (en 1010:3582) asks for the CD in English (en 1010:3540; the German one,
 en 1010:3502, is unused). v1.0 has only the German ones (1000:15b0,
 1000:175b). The port has both as `formats::setup::MISSING_SETUP`,
-`MISSING_CD`, `INSERT_CD` and their `_EN`. It shows `INSERT_CD` when
-going back to the start menu finds no `surfwm.avi` in the film
-directory, in the view's language (not always in English as the later
-build does); the two of `init_paths` it doesn't, as it checks neither
-the CD nor `SETUP.DAT` at the start.
+`MISSING_CD`, `INSERT_CD` and their `_EN`, but shows none of them: the
+port never checks for the CD or `SETUP.DAT`.
 
 The message boxes' own captions and buttons (`Confirm`, `&Cancel`, ...)
 are the VCL's string resources, in the build's language: German in
@@ -120,8 +117,6 @@ What it switches, all of it the view's:
 - The later build's messages by `land`
   (`dateimenue::invalid_name_text`, `dateimenue::delete_question`),
   and the message boxes' captions and buttons (`game::msgdlg`).
-- The CD question when going back to the start menu
-  (`formats::setup::INSERT_CD`, `INSERT_CD_EN`).
 - The high score's date: `dd.MM.yy` in German, `dd/MM/yy` in English
   (`highscoreform::date_text`).
 - The port's own texts: the list of enhancements (`lang::Text`) and the

@@ -248,9 +248,8 @@ after it.
 - A file the parser can't read loads nothing (the original, with I/O
   checks off, stops reading at the error and keeps the rest of the old
   game, [original-bugs.md](original-bugs.md)).
-- "Neues Spiel" (`back_to_start_menu`, en 1010:3582) frees the game,
-  waits for the CD (`surfwm.avi`, with the later build's question), and
-  puts back what `init_game_defaults` and the data reload set (the start
+- "Neues Spiel" (`back_to_start_menu`, en 1010:3582) frees the game
+  (the later build's wait for the CD isn't ported) and puts back what `init_game_defaults` and the data reload set (the start
   menu's settings but the opponents and the name, the options but the
   speech, the sounds), so the next game starts as the first did
   ([startup.md](startup.md#back-to-the-start-menu-101025dc-en-10103582)).

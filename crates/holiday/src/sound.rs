@@ -428,15 +428,6 @@ impl Sound {
         }
     }
 
-    /// Whether the film directory has the film `name` (`FileExists`).
-    pub fn film_exists(&self, name: &str) -> bool {
-        let sub = match self.film_quality {
-            setup::Film::Lo => "FILMLO",
-            setup::Film::Hi => "FILMHI",
-        };
-        crate::forms::find(&self.dir, &format!("{sub}/{name}")).is_some()
-    }
-
     /// The film player's `Stop`/`Eject`/`Close`.
     pub fn stop_film(&mut self) {
         if self.film.take().is_some() {

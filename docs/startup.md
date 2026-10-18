@@ -207,7 +207,8 @@ and shows a new `TStartform`, which `startform_init` sets from the
 globals. The later build puts the globals back before the reload, and
 first waits for the CD: until the film directory has `surfwm.avi` it
 asks (`MessageDlg(…, mtInformation, [mbOK, mbCancel], 0)`, always the
-English text, en 1010:3540); Cancel ends the program (`Halt`).
+English text, en 1010:3540); Cancel ends the program (`Halt`). The
+port never asks for the CD (no copy protection).
 
 `init_game_defaults` sets the start menu's island settings, difficulty,
 scenario and colours back to their defaults, and the options (music,
@@ -217,7 +218,6 @@ opponents (`1110:1478`, a scenario's or a file's) and the name
 (`last_player_name`, `1110:0a02`, the one the menu last started with).
 
 The `holiday` binary does the same: it saves `Last.map`, drops the game,
-waits for the CD with the port's message box (in the view's language),
 puts back the start menu's settings (`Settings::after_game`) and the
 options (`optionen::Settings::after_game`), empties the sounds, plays
 `holiday.mid` and shows a new start menu. The world and its tables are

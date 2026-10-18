@@ -46,10 +46,6 @@ pub const MISSING_CD_EN: &[u8] =
 pub const INSERT_CD: &[u8] = b"Bitte legen Sie die HOLIDAY ISLAND CD in das CD-Rom Laufwerk.";
 /// The English [`INSERT_CD`]. // en 1010:3540
 pub const INSERT_CD_EN: &[u8] = b"Please put the HOLIDAY ISLAND CD in the CD-Rom Drive.";
-/// The film in the film directory whose presence counts as the CD in the
-/// drive when going back to the start menu (`back_to_start_menu`'s
-/// `FileExists(film_dir + 'surfwm.avi')`, en 1010:35e4). // en 1010:34f7
-pub const INSERT_CD_FILM: &str = "surfwm.avi";
 
 /// The files whose presence counts as "the CD is in the drive": one in the
 /// data directory, then these in the film directory, checked in this order.
