@@ -313,16 +313,19 @@ impl Forms {
         screen: &Hauptschirm,
         size: (i32, i32),
     ) -> Forms {
-        let texts = crate::upgrade::sonstige(dir);
+        // The view's texts are in the player's language.
+        let language = info.language;
+        let texts = crate::upgrade::sonstige(dir, language);
         let modatyp = modatyp(&text(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT");
-        let (short_names, long_names) = hausname(&text(dir, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
+        let (short_names, long_names) =
+            hausname(&crate::lang_text(language, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
 
         // 1040:3a45, 1060:0789
         let pause = Pauseform::new(bitmaps(dir, &pauseform::BITMAP_FILES));
         let options = Optionenform::new(
             font.clone(),
             bitmaps(dir, &optionen::BITMAP_FILES),
-            text_lines(&text(dir, "TEXTE/OPTIONEN.TXT")),
+            text_lines(&crate::lang_text(language, "TEXTE/OPTIONEN.TXT")),
         );
         // 1048:1ffd: the messages' pictures, by `FILENAME.DAT`.
         let pictures = message_media_names(&text(dir, "DATA/FILENAME.DAT"))
@@ -333,18 +336,19 @@ impl Forms {
             font.clone(),
             bitmaps(dir, &fernseher::BITMAP_FILES),
             pictures,
-            nachrich(&text(dir, "TEXTE/NACHRICH.TXT")),
+            nachrich(&crate::lang_text(language, "TEXTE/NACHRICH.TXT")),
             message_media_names(&text(dir, "DATA/FILMNAME.DAT")),
             size,
         );
         tv.set_speech(message_media_names(&text(dir, "DATA/SOUNNAME.DAT")));
         // 1070:2e6c
-        let (geldmenu_texts, close) = geldmenu_txt(&text(dir, "TEXTE/GELDMENU.TXT")).expect("GELDMENU.TXT");
-        let (advertising, renovation) = modatyp_txt(&text(dir, "TEXTE/MODATYP.TXT"));
+        let (geldmenu_texts, close) =
+            geldmenu_txt(&crate::lang_text(language, "TEXTE/GELDMENU.TXT")).expect("GELDMENU.TXT");
+        let (advertising, renovation) = modatyp_txt(&crate::lang_text(language, "TEXTE/MODATYP.TXT"));
         let money = Geldmenuform::new(
             font.clone(),
             bitmaps(dir, &geldmenu::BITMAP_FILES),
-            geldmenu_dat(&text(dir, "DATA/GELDMENU.DAT")).expect("GELDMENU.DAT"),
+            geldmenu_dat(&crate::lang_text(language, "DATA/GELDMENU.DAT")).expect("GELDMENU.DAT"),
             geldmenu::Texts {
                 geldmenu: geldmenu_texts,
                 close,
@@ -362,17 +366,17 @@ impl Forms {
             font.clone(),
             bitmaps(dir, &uebersichtsmap::BITMAP_FILES),
             &uebermap_dat(&text(dir, "DATA/UEBERMAP.DAT")).expect("UEBERMAP.DAT"),
-            &uebermap_txt(&text(dir, "TEXTE/UEBERMAP.TXT")).expect("UEBERMAP.TXT"),
+            &uebermap_txt(&crate::lang_text(language, "TEXTE/UEBERMAP.TXT")).expect("UEBERMAP.TXT"),
             texts.texts.get(13).map_or(&[][..], |t| &t[..]),
             modatyp.max_grueneinfluss,
             (wo, ns, screen.camera().view),
         );
         let compass = Kompassform::new(font.clone(), bitmaps(dir, &kompassform::BITMAP_FILES), size.0);
         // 1038:3c2b, 1080:0ea8
-        let ib_texts = infobox_txt(&text(dir, "TEXTE/INFOBOX.TXT")).expect("INFOBOX.TXT");
+        let ib_texts = infobox_txt(&crate::lang_text(language, "TEXTE/INFOBOX.TXT")).expect("INFOBOX.TXT");
         let short_texts = ib_texts.short_texts.clone();
         let infobox = Infobox::new(
-            infobox_dat(&text(dir, "DATA/INFOBOX.DAT")).expect("INFOBOX.DAT"),
+            infobox_dat(&crate::lang_text(language, "DATA/INFOBOX.DAT")).expect("INFOBOX.DAT"),
             ib_texts,
             long_names,
             texts.texts.clone(),
@@ -380,7 +384,7 @@ impl Forms {
         );
         let umenu = Umenuform::new(
             bitmaps(dir, &umenuform::BITMAP_FILES),
-            text_lines(&text(dir, "TEXTE/UMENU.TXT")),
+            text_lines(&crate::lang_text(language, "TEXTE/UMENU.TXT")),
             short_texts,
             short_names,
         );
@@ -390,9 +394,14 @@ impl Forms {
             bitmaps(dir, &schlussform::BITMAP_FILES),
             if crate::upgrade::present(dir) {
                 // en 1070:0294
-                schlussform::schluss_lines_upgrade(&crate::upgrade::file(dir, "SCHLUSS.TXT", "TEXTE/SCHLUSS.TXT"))
+                schlussform::schluss_lines_upgrade(&crate::upgrade::file(
+                    dir,
+                    language,
+                    "SCHLUSS.TXT",
+                    "TEXTE/SCHLUSS.TXT",
+                ))
             } else {
-                schlussform::schluss_lines(&text(dir, "TEXTE/SCHLUSS.TXT"))
+                schlussform::schluss_lines(&crate::lang_text(language, "TEXTE/SCHLUSS.TXT"))
             },
         );
         let mut high_bitmaps = bitmaps(dir, &highscoreform::BITMAP_FILES);
@@ -403,12 +412,17 @@ impl Forms {
         let mut high = Highscoreform::new(
             font.clone(),
             high_bitmaps,
-            highscoreform::highscor_lines(&text(dir, "TEXTE/HIGHSCOR.TXT")),
+            highscoreform::highscor_lines(&crate::lang_text(language, "TEXTE/HIGHSCOR.TXT")),
             high_scores,
         );
         if upgrade {
             // en 1068:2493: `UPGRADE\HIGHSCO2.TXT`'s six names.
-            let names = text_lines(&crate::upgrade::file(dir, "HIGHSCO2.TXT", "TEXTE/HIGHSCOR.TXT"));
+            let names = text_lines(&crate::upgrade::file(
+                dir,
+                language,
+                "HIGHSCO2.TXT",
+                "TEXTE/HIGHSCOR.TXT",
+            ));
             high = high.with_upgrade(names.into_iter().take(6).collect());
         }
         let help = Helpform::new(
@@ -433,7 +447,7 @@ impl Forms {
             font.clone(),
             bitmaps(dir, &enhanceform::BITMAP_FILES),
             &schliessen,
-            info.language(),
+            info.language,
         );
         Forms {
             settings,
@@ -481,13 +495,14 @@ impl Forms {
 
     /// The sabotage window (`TSabowin`, 1028:361f), which the tools keep.
     pub fn sabowin(dir: &Path, font: &Font, info: &hauptschirm::InfoTexts) -> Sabowin {
-        let (labels, kinds) = sabotage(&text(dir, "TEXTE/SABOTAGE.TXT")).expect("SABOTAGE.TXT");
+        let language = info.language;
+        let (labels, kinds) = sabotage(&crate::lang_text(language, "TEXTE/SABOTAGE.TXT")).expect("SABOTAGE.TXT");
         let pictures = sabowin::picture_files(&kinds)
             .iter()
             .map(|f| picture(dir, f).unwrap_or_else(|| panic!("GRAFIK/{f} not found")))
             .collect();
         let texts = sabowin::Texts {
-            sabotext: sabotext(&text(dir, "TEXTE/SABOTEXT.TXT")),
+            sabotext: sabotext(&crate::lang_text(language, "TEXTE/SABOTEXT.TXT")),
             labels,
             kinds,
             info: info.clone(),
@@ -956,11 +971,11 @@ impl Game {
     /// the TV off, the end form with its film and results. The clock
     /// stands while it's up.
     fn game_over(&mut self, over: &game::simulation::GameOver) {
-        let results = Results::of(&self.world, over, self.info.currency_factor, self.info.land);
+        let results = Results::of(&self.world, over, self.info.currency_factor, self.info.language);
         if let Some(score) = over.score {
             let (d, m, y) = today();
             let name = self.world.player_names.get(1).cloned().unwrap_or_default();
-            let date = highscoreform::date_text(d, m, y, self.info.language());
+            let date = highscoreform::date_text(d, m, y, self.info.language);
             let r = self
                 .forms
                 .high

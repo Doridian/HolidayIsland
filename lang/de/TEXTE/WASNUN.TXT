@@ -1,0 +1,4 @@
+Laden der Karte
+Erstellen der neuen Karte
+Initialisierung des Spiels
+Initialisierung der Karte

@@ -1,0 +1,32 @@
+SPIELENDE
+Der Tag der Abrechnung
+Herzlichen Glückwunsch, Sie haben das Spielziel erreicht!
+Sie haben das Spielziel nicht erreicht!
+Sie haben versucht, durch gemeine Tastenkombinationen die Programmierer zu täuschen!
+Sie haben 60 Jahre auf Holiday Island erfolgreich gewirtschaftet.
+Sie haben das Tutorial-Szenarium erfolgreich überstanden. Nun können Sie sich an das Standardspiel wagen.
+Sie haben genug Geld verdient.
+Es kamen genug Urlauber nach Holiday Island.
+Nun haben Sie alle Mitspieler verdrängt.
+Die High-Society ist begeistert.
+Let's go Surfin' now ...
+Sanfter Tourismus auf Holiday Island.
+Sie sind Pleite gegangen.
+Versuchen Sie das Tutorial-Szenarium nochmals und geben Sie nächstes Mal etwas besser auf Ihr Geld acht.
+Sie haben es nicht geschafft, in 20 Jahren 500.000.000 DM zu verdienen.
+Es kamen im zwanzigsten Jahr keine 10.000 Urlauber nach Holiday Island.
+Die Konkurrenz schläft auch nach 20 Jahren nicht.
+Die Insel hat nach 30 Jahren noch nicht genug Akzeptanz bei der High-Society gefunden.
+Es konnte nach 10 Jahren nicht das ersehnte Surferparadies geschaffen werden.
+Der Tourismus ist nach 20 Jahren noch nicht sanft genug.
+Ihr Vermögen beträgt
+DM.
+Im letzten Jahr kamen
+Urlauber.
+In der Endabrechnung haben Sie
+Punkte erreicht.
+Ihr Spiel wird in der High-Score Tabelle eingetragen!
+Weiterspielen
+High-Score
+Beenden
+Neues Spiel

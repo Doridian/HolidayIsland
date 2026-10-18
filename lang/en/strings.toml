@@ -1,0 +1,322 @@
+# Holiday Island: the strings in English that aren't in a TEXTE\ or
+# UPGRADE\ file (lang/README.md). UTF-8; the port shows them in the
+# game's Windows-1252 font. Every key here is in every language's
+# strings.toml.
+#
+# Where a value comes from: the later (English) build's HOLIDAY.EXE
+# (`en` addresses), its texts for `land` E; the VCL's English string
+# resources in that HOLIDAY.EXE; or the port itself ([port] and
+# [enhance.*]). Texts the English build left in German stay German, as
+# released (they never show).
+
+[language]
+name = "English"
+
+[format]
+# `date_text` (en 1030:12b0): {day}, {suffix}, {month} (MONATE.TXT's)
+# and {year}.
+date = "{day}{suffix} {month} {year}"
+# `land` E: st, nd, rd for 1, 2, 3, 21, 22, 23 and 31, th for the rest
+# (CS:12a0 to CS:12a9).
+day_suffixes = "st|nd|rd|th|th|th|th|th|th|th|th|th|th|th|th|th|th|th|th|th|st|nd|rd|th|th|th|th|th|th|th|st"
+# `group_digits` (en 1030:2145), `insert_decimal_marks` (en 1030:21f3).
+thousands = ","
+decimal = "."
+# Delphi's `DateToStr` (1008:0512) on a British Windows.
+highscore_date = "dd/MM/yy"
+# The currency's name and factor are SONSTIGE.TXT's: £ times 4.
+
+[msgdlg]
+# The VCL's string resources 0xf06f to 0xf072 (en `1118:4120`).
+warning = "Warning"
+error = "Error"
+information = "Information"
+confirmation = "Confirm"
+# 0xf073 to 0xf07d (en `1118:4148`).
+yes = "&Yes"
+no = "&No"
+ok = "&OK"
+cancel = "&Cancel"
+abort = "Abort"
+retry = "&Retry"
+ignore = "&Ignore"
+all = "&All"
+help = "&Help"
+
+[file_menu]
+# `dateimenue_save` (en 1040:0ede).
+invalid_name = "Invalid Filename"
+# Before "Delete" (en 1040:10f9).
+delete_question = "Are you sure?"
+
+[news]
+# An empty news archive entry's date (en 1048:1fc5): German in the
+# English build too. The world's, saved in the archive.
+no_date = "kein Datum"
+# NACHRICH.TXT's name for "no medium" (en 1048:0a45); the English
+# NACHRICH.TXT uses it too.
+no_medium = "kein"
+
+[computer]
+# The computers' status texts (`1110:70f2`): German in the English build too; the
+# world's, saved in the map file, never on the screen.
+idle = "Gar nix"
+thinking = "WLTNaechstenSchrittueberlegen"
+demolishing = "WLTGebaeudeabreissen"
+waiting = "WLTAbwarten"
+selling = "WLTGebaeudeverkaufen"
+nothing = "WLBNichtstun"
+start_area = "WLBStartInselsuchen"
+change_area = "WLBInselwechseln"
+choose_category = "WLBGebaeudeartauswaehlen"
+choose_type = "WLBGebaeudewaehlen"
+find_road = "WLBGebaeudeBauPunktsuchen"
+find_site = "WLBGebaeudeBauPunktsuchen2"
+build = "WLBGebaeudebauen"
+level = "WLBBauplatzebenmachen"
+even_out = "WLBBauplatzhoeheausgleichen"
+road = "WLBStrassebauen"
+road_start = "WLBStrassenBauPunktsuchen"
+
+[port]
+# The port's own texts: the list of enhancements (crate::enhanceform).
+enhance_title = "ENHANCEMENTS"
+enhance_fixes = "Game fixes"
+enhance_view = "Screen and sound"
+enhance_fixes_note = "For this game and new games"
+enhance_view_note = "Your settings for every game"
+enhance_all_on = "All on"
+enhance_all_off = "All off (original)"
+enhance_credits = "Credits"
+enhance_saved = "Changes apply at once and are saved in settings.ini."
+enhance_not_saved = "Changes apply at once, but only until you quit (no settings.ini)."
+enhance_command_line = "At the next start --original and --enhance come first again."
+enhance_screen_off = "CREDITS (INFO) now opens the credits (back: enhance.enhancements_screen=on)."
+enhance_hint = "Hold the mouse over a row to see here what it changes."
+
+# The enhancements' short names and one-line descriptions, by their keys
+# (crate::enhance).
+
+[enhance.site_effect]
+label = "Site demolition removes its effect"
+description = "Demolishing a building site takes its effect off the location map"
+
+[enhance.bridge_demolition_cost]
+label = "Sea bridge demolition costs"
+description = "Demolishing a sea bridge costs the road demolition cost per square, as the original adds up but never charges"
+
+[enhance.price_class_range]
+label = "Price class by min and max price"
+description = "A facility's price class is its place between MinPreis and MaxPreis, not divided by MaxPreis"
+
+[enhance.ownerless_buildings]
+label = "Ownerless buildings pay nobody"
+description = "Buildings of nobody no longer pay their takings, costs and guests into player 8's sums and interest"
+
+[enhance.palm_removal]
+label = "Dead palms are taken off"
+description = "Palms that die or are cleared by moving the land come off their plot's count and the location map"
+
+[enhance.computer_area_change]
+label = "Computer checks the new area"
+description = "A computer changing area checks the size of the plot it moves to, not the one it leaves"
+
+[enhance.computer_type_lists]
+label = "Computer build lists stay in bounds"
+description = "The computers' building lists stop at 40 types a category instead of running into the next"
+
+[enhance.ship_detour]
+label = "Ships steer round properly"
+description = "A blocked harbour ship's second detour looks at the squares ahead, not its own square"
+
+[enhance.stage_spectators]
+label = "Stages find their spectators"
+description = "Stages look for their spectators where they stand, not on the stage's first square"
+
+[enhance.plane_approach]
+label = "Planes land properly"
+description = "A plane's second approach needs both coordinates to match, not either"
+
+[enhance.plot_merge_numbers]
+label = "Plots merge properly"
+description = "Land rising between plots merges them by their full numbers, not their numbers cut to a byte"
+
+[enhance.computer_road_ground]
+label = "Computer roads go by their ground"
+description = "The computers' roads go by the ground they start on, not the human's last road drag"
+
+[enhance.levelling_cliffs]
+label = "Levelling without steeper cliffs"
+description = "Moving the land takes along neighbours two or more steps off, so existing cliffs don't get steeper"
+
+[enhance.levelling_errors]
+label = "Levelling reports the first error"
+description = "Raising and lowering the land report the first error, not a later building or the money"
+
+[enhance.road_connections]
+label = "New roads connect every building"
+description = "A new road reconnects every building near it, not only those whose first square shows part 0"
+
+[enhance.nobodys_buildings]
+label = "Info box buttons for own buildings"
+description = "The info box's buttons work on the player's own buildings only, not on nobody's"
+
+[enhance.auction_computer_limit]
+label = "Computers bid within their limit"
+description = "A computer bids at an auction only when its bid is within its limit, not just the price"
+
+[enhance.auction_pass]
+label = "Passing keeps the leading bid"
+description = "Passing at an auction keeps the leading bid and doesn't sell the item again after the third call"
+
+[enhance.prize_player8]
+label = "Player 8 gets what it wins"
+description = "Player 8 gets the building it wins at an auction, as players 2 to 7 do"
+
+[enhance.computer_bid_overflow]
+label = "Computer limit without overflow"
+description = "A rich computer's auction limit no longer overflows and wraps"
+
+[enhance.atoll_hills]
+label = "Atoll hills spread properly"
+description = "The atoll's small hills are centred on the ring by their own variation, not the big hills'"
+
+[enhance.river_start]
+label = "Rivers rise on hills only"
+description = "The island generator's rivers only start on the hills, never on the flat or in the sea"
+
+[enhance.generator_levelling]
+label = "Island maker: rivers without cliffs"
+description = "The island generator's land changes are undone on an error, so its rivers leave no cliffs"
+
+[enhance.river_flat_way]
+label = "Rivers look only up to the edge"
+description = "A river on the flat looks for its way up to the map's edge, not round the other side"
+
+[enhance.load_order]
+label = "Loading keeps the order"
+description = "Loading a game keeps the building sites and the plots' building lists in their saved order"
+
+[enhance.sabotage_pool_error]
+label = "Piranhas in pools only"
+description = "Piranhas ordered for a building that isn't a pool say so, as the other sabotage kinds do"
+
+[enhance.news_archive_order]
+label = "News archive stays in order"
+description = "The news archive keeps its 26th and 27th messages in order when it first fills"
+
+[enhance.tv_lights]
+label = "TV lights without game chance"
+description = "The TV's blinking lights no longer use the game's random numbers, so the speech doesn't change the game"
+
+[enhance.window_stacking]
+label = "Windows stack as in Windows"
+description = "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top"
+
+[enhance.big_map]
+label = "Bigger window shows more island"
+description = "A bigger screen shows more island: the main screen fills it and its map view grows"
+
+[enhance.scroll_bars]
+label = "Scroll bars as in Windows"
+description = "Scroll bar arrows step when pressed and repeat while held; thumbs follow the mouse; paging stops at the mouse"
+
+[enhance.edit_field]
+label = "Text fields keep the focus"
+description = "Text fields keep the focus when clicked, so the file menu's Speichern saves a typed name"
+
+[enhance.modifier_clicks]
+label = "Clicks with Shift and Ctrl too"
+description = "Clicks on lists, with the tools and on the main scroll bars work with Shift or Ctrl held and on a double click"
+
+[enhance.mouse_buttons]
+label = "Only the left button clicks"
+description = "The right mouse button no longer clicks start menu buttons, ticks options, drags the money menu or closes the credits"
+
+[enhance.start_menu_scenario]
+label = "Start menu ticks the scenario"
+description = "The start menu's scenario page ticks the scenario that will start"
+
+[enhance.auction_title]
+label = "Auction title doesn't jump"
+description = "The auction form's title doesn't jump a row up after a click on its title bar"
+
+[enhance.form_positions]
+label = "Windows open in the right place"
+description = "Forms open where they belong: the auction centred, the money menu whole, the others over the main screen"
+
+[enhance.saved_games_order]
+label = "Saved games sorted by name"
+description = "The lists of saved games are sorted by name, not backwards"
+
+[enhance.road_drag]
+label = "Road ends where you let go"
+description = "A dragged road ends where the mouse is let go, also with the animations off"
+
+[enhance.build_menu]
+label = "Build menu passes on keys"
+description = "The build menu passes on the keys it doesn't use and makes no closing sound when it's closed"
+
+[enhance.money_menu_button]
+label = "Year's end presses money button"
+description = "The year's end presses the money menu's button when it opens the menu"
+
+[enhance.overview_scrolling]
+label = "Overview map scrolls properly"
+description = "Clicks on the overview map keep the main view within its scroll bars; its thumb stays off the arrow"
+
+[enhance.overview_colours]
+label = "Overview map shows every colour"
+description = "The overview map has a colour for low grass, high sand and nobody's buildings instead of none"
+
+[enhance.form_drags]
+label = "Window drags end on release"
+description = "Form drags end when the mouse comes up and only move the form grabbed; the quit question stays on screen"
+
+[enhance.infobox_text]
+label = "Info box: thousands and the sea"
+description = "The info box puts the thousands marks in the right place and names the sea off the map"
+
+[enhance.infobox_size]
+label = "Info box fits its size"
+description = "The info box grows or shrinks to what it shows after a button"
+
+[enhance.overview_list]
+label = "Buildings overview scrolls properly"
+description = "The buildings' overview keeps the selection in view with Up and Down and draws its price cleanly"
+
+[enhance.tv_form]
+label = "TV buttons work as meant"
+description = "The TV's buttons, back button and title work as meant, and browsing keeps it open"
+
+[enhance.desktop_background]
+label = "Background picture for any size"
+description = "Any window size gets the nearest background picture, centred, and nothing is cut off at the edges"
+
+[enhance.auction_calls]
+label = "The auctioneer can be heard"
+description = "The auctioneer's three calls are heard"
+
+[enhance.sound_times]
+label = "Sounds without animations too"
+description = "Sounds play again after their time with the animations off too"
+
+[enhance.music]
+label = "Music without gaps, after loading"
+description = "The music starts at the playlist's first track, has no silence between tracks and plays on after loading"
+
+[enhance.tv_sound]
+label = "TV sound fits its message"
+description = "The TV's speech belongs to its message, and its films don't leave the sounds silent or at the speech volume"
+
+[enhance.enhancements_screen]
+label = "CREDITS shows this list"
+description = "The options' CREDITS button (INFO in German) opens this list of enhancements; the credits are a button away"
+
+[enhance.no_main_title]
+label = "No second title bar"
+description = "When the main screen fills the window it drops its own title bar; the map gets the room"
+
+[enhance.mouse_wheel]
+label = "Mouse wheel scrolls"
+description = "The mouse wheel scrolls the island (with Shift across), the overview map and the lists"

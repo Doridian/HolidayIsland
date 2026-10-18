@@ -8,12 +8,15 @@
 //! `SCHLUSS.TXT` (en 1070:0294), `HAUSPREI.DAT` (en 1048:341c),
 //! `CREDITS.BMP` (en 1038:3925), `DATWIN1D.BMP` (en 1040:159e),
 //! `STARTSZ1.BMP` (en 1058:02cf); and new: the scenarios' maps and
-//! events, `STRAKN2*.BMP`, `HIGHSCO2.*`.
+//! events, `STRAKN2*.BMP`, `HIGHSCO2.*`. The texts among them are the
+//! port's language data's (`game::lang`, `lang/<code>/UPGRADE/`); the
+//! folder decides whether the game reads them.
 
 use std::path::Path;
 
 use formats::bmp::Bitmap;
 use formats::data::{self, Sonstige};
+use game::lang::Language;
 use vcl::surface::Surface;
 
 /// The texts the later build can't start without: a folder that lacks
@@ -28,28 +31,31 @@ pub fn present(dir: &Path) -> bool {
         .all(|f| crate::forms::find(dir, &format!("UPGRADE/{f}")).is_some_and(|p| p.is_file()))
 }
 
-/// `UPGRADE\name` if the folder is there and has it, else `fallback` (a
-/// path in the game's folder), whatever the case of their letters.
+/// The text file `UPGRADE\name` in `language` if the game's folder has
+/// the `UPGRADE\` folder, else `fallback` (`TEXTE/…`) in `language`: the
+/// texts come from the port's language data (`game::lang`), the folder
+/// only decides which of the two the game reads.
 #[must_use]
-pub fn file(dir: &Path, name: &str, fallback: &str) -> Vec<u8> {
-    let upgraded = present(dir)
-        .then(|| crate::forms::find(dir, &format!("UPGRADE/{name}")))
-        .flatten()
-        .and_then(|p| std::fs::read(p).ok());
-    upgraded.unwrap_or_else(|| crate::read(dir, fallback))
+pub fn file(dir: &Path, language: Language, name: &str, fallback: &str) -> Vec<u8> {
+    if present(dir) {
+        crate::lang_text(language, &format!("UPGRADE/{name}"))
+    } else {
+        crate::lang_text(language, fallback)
+    }
 }
 
-/// `SONSTIGE.TXT`: the later build's 25 texts from `UPGRADE\`, else the
-/// CD's 24 (1020:3dc4, en 1010:3e42).
+/// `SONSTIGE.TXT` in `language`: the later build's 25 texts of
+/// `UPGRADE\` when the game's folder has it, else the CD's 24 (1020:3dc4,
+/// en 1010:3e42).
 #[must_use]
-pub fn sonstige(dir: &Path) -> Sonstige {
+pub fn sonstige(dir: &Path, language: Language) -> Sonstige {
     let parsed = if present(dir) {
         data::sonstige_with(
-            &file(dir, "SONSTIGE.TXT", "TEXTE/SONSTIGE.TXT"),
+            &crate::lang_text(language, "UPGRADE/SONSTIGE.TXT"),
             data::SONSTIGE_TEXTS_UPGRADE,
         )
     } else {
-        data::sonstige(&crate::read(dir, "TEXTE/SONSTIGE.TXT"))
+        data::sonstige(&crate::lang_text(language, "TEXTE/SONSTIGE.TXT"))
     };
     parsed.expect("SONSTIGE.TXT")
 }

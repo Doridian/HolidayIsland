@@ -16,7 +16,10 @@ the command `Action::Sabotage { kind, at }`.
 (`string[20]`), the picture in `GRAFIK` (`string[12]`, `+0x15`), the
 description (`+0x22`), what it can be used on as text (`+0x122`), the
 price (`Longint`, `+0x222`) and six building types (`+0x226`, five
-characters each, 255 for none; only the piranhas' are read). It then
+characters each, 255 for none; only the piranhas' are read; the German
+file gives the shark diver 254). The port reads it from its language
+data (`lang/<code>/TEXTE/`): the world's prices and pools from the
+world's language's, the window's texts from the player's. It then
 reads `SABOTEXT.TXT` (1048:375e): the window's title, "Schliessen" and
 "Sabotieren". It also sets the picked kind (`1110:65ba`) and `1110:54fa`
 to 0.

@@ -25,8 +25,10 @@ pub const PATH_LEN: usize = 144;
 /// "Please run SETUP.EXE from the HOLIDAY ISLAND CD first." Each build
 /// has the message in its own language; the later (English) build keeps
 /// the German and a French one too, but shows the English
-/// (`init_paths`, en 1000:196d). The port picks by the player's language
-/// (`game::lang`, `docs/language.md`). // 1000:15b0, en 1000:15c4
+/// (`init_paths`, en 1000:196d). The port shows none of these (it checks
+/// neither the CD nor `SETUP.DAT`), so they're kept here for reference
+/// and aren't in the language data (`docs/language.md`).
+/// // 1000:15b0, en 1000:15c4
 pub const MISSING_SETUP: &[u8] = b"Bitte starten Sie zun\xe4chst SETUP.EXE von der HOLIDAY ISLAND CD.";
 /// The later build's [`MISSING_SETUP`]. // en 1000:1649
 pub const MISSING_SETUP_EN: &[u8] = b"Please start first SETUP.EXE on the HOLIDAY ISLAND CD.";

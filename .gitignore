@@ -21,6 +21,9 @@ _SETUP.1
 *.BMP
 *.WAV
 *.MID
+# The port's language data is text: the label layouts of DATA\ that differ
+# by translation are kept as text files there (lang/README.md).
+!/lang/*/DATA/*.DAT
 
 # Build output
 /target/

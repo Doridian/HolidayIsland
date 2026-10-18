@@ -49,7 +49,7 @@ fn game_data() -> Option<GameData> {
         eprintln!("skipping: {} not found", orig().display());
         return None;
     }
-    Some(GameData::load(read).unwrap())
+    Some(GameData::load(read, game::lang::Language::De).unwrap())
 }
 
 /// The CD's map files: the tutorial and the scenarios.

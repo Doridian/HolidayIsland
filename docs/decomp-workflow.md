@@ -139,17 +139,26 @@ symbols/        what we know about HOLIDAY.EXE, as text
 ## Rules
 
 - **Never commit original game data or binaries**: no game files, disassembly
-  or decompiler dumps, no machine code, and no image data (bitmaps, icons,
-  cursors, palettes, DFM picture data). Users supply their own CD; the port
-  loads the data files and `HOLIDAY.EXE`'s resources (DFMs, cursors, icon)
-  from it at runtime.
-- **EXE text and number tables live as named data in their modules**, the
-  way the original authors had them: `const`/`static` strings, arrays and
-  struct tables in the modules that use them, with meaningful names and types
-  and the original address in a comment on each item (`// 1110:15e0`), like the
-  functions.
-  Take them from the EXE with `tools/gh`. Most of the game's text is in
-  `TEXTE\*.TXT` on the CD anyway.
+  or decompiler dumps, no machine code, and no image, video or sound data
+  (bitmaps, icons, cursors, palettes, DFM picture data, films, WAVs, MIDI).
+  Users supply their own CD; the port loads the data files and
+  `HOLIDAY.EXE`'s resources (DFMs, cursors, icon) from it at runtime.
+- **The exception is text**: the original's texts, strings, numbers and
+  formats, in German and in the official English translation, are in the
+  repository as language data, one folder per language
+  ([lang/README.md](../lang/README.md), [language.md](language.md)): every
+  `TEXTE\` and `UPGRADE\` text file as UTF-8, the label layouts that differ
+  by translation, and `strings.toml` with the EXE's strings and the
+  formats. That's where text goes, not into the code. The data tables of
+  `DATA\` (numbers that play) still come from the game folder.
+- **EXE number tables live as named data in their modules**, the way the
+  original authors had them: `const`/`static` arrays and struct tables in
+  the modules that use them, with meaningful names and types and the
+  original address in a comment on each item (`// 1110:15e0`), like the
+  functions. EXE strings that are text go into `lang/<code>/strings.toml`,
+  with the address in a comment there, and the code names them by key
+  (`game::lang::Text`). Take them from the EXE with `tools/gh`; most of
+  the game's text is in `TEXTE\*.TXT` anyway.
 - Name functions after what they do. Note the original address in a comment
   (`// 10f0:6e7b`) so it can be traced back. Original units become modules, and
   Delphi methods keep their form's name (`hauptschirm::timer1_timer`).

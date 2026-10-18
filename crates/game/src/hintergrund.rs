@@ -17,6 +17,7 @@ use vcl::random::Random;
 use crate::enhance::{Enhancement, Enhancements, Fixes};
 use crate::events::Event;
 use crate::generator::Maperste;
+use crate::lang::Language;
 use crate::people::People;
 use crate::settlement::Settlement;
 use crate::startform::Settings;
@@ -409,7 +410,8 @@ pub fn hausprei_table(read: impl Fn(&str) -> Option<Vec<u8>>) -> Result<Vec<[i32
 
 /// What a new game is set up from: the CD's `DATA\` and `TEXTE\` files
 /// the program loads at the start (state 100, 1030:38a3) and when a game
-/// starts (state 1220, 1030:3932), parsed.
+/// starts (state 1220, 1030:3932), parsed. The texts are the world's
+/// language's, from the port's language data (`crate::lang`).
 #[derive(Debug, Clone)]
 pub struct GameData {
     /// The tables the simulation reads (`HAUSNR.DAT`, ...).
@@ -429,14 +431,15 @@ pub struct GameData {
     /// `COMPBAU.DAT`. // 10a8:37da
     pub compbau: Vec<[u8; 7]>,
     /// `NAMEN.TXT`: the name of nobody and the computers' names to pick
-    /// from. // 1010:0414
+    /// from, in [`GameData::language`]. // 1010:0414
     pub nobody: Vec<u8>,
     pub names: data::Strings,
     /// `BAUMENU.DAT`: the build menu's lists and layouts. // 1018:080f
     pub baumenu: data::BaumenuData,
-    /// `MONATE.TXT`, which the news archive's dates are written with
-    /// (`crate::news::DateFormat`). // 1030:000d
-    pub months: data::Strings,
+    /// The world's language ([`World::language`]), whose `NAMEN.TXT` and
+    /// `SABOTAGE.TXT` these are and whose `MONATE.TXT` the news archive's
+    /// dates are written with.
+    pub language: Language,
 }
 
 /// A file [`GameData::load`] couldn't read or parse.
@@ -453,16 +456,23 @@ impl std::error::Error for LoadError {}
 
 impl GameData {
     /// Parses the files `read` gives by their path on the CD
-    /// (`DATA/MAPERSTE.DAT`, ...).
+    /// (`DATA/MAPERSTE.DAT`, ...), and the texts of `language`.
     ///
     /// # Errors
     /// The first file that's missing or doesn't parse.
-    pub fn load(read: impl Fn(&str) -> Option<Vec<u8>>) -> Result<GameData, LoadError> {
+    pub fn load(read: impl Fn(&str) -> Option<Vec<u8>>, language: Language) -> Result<GameData, LoadError> {
         fn parsed<T, E: std::fmt::Display>(name: &str, r: Result<T, E>) -> Result<T, LoadError> {
             r.map_err(|e| LoadError(format!("{name}: {e}")))
         }
-        let file = |name: &str| read(name).ok_or_else(|| LoadError(format!("{name} not found")));
-        let dat = |name: &str| file(&format!("DATA/{name}"));
+        let file = |name: &str| {
+            language
+                .file(name)
+                .ok_or_else(|| LoadError(format!("{name} not in lang/{}", language.code())))
+        };
+        let dat = |name: &str| {
+            let path = format!("DATA/{name}");
+            read(&path).ok_or_else(|| LoadError(format!("{path} not found")))
+        };
         let modatyp = parsed("MODATYP.DAT", data::modatyp(&dat("MODATYP.DAT")?))?;
         let tables = Tables {
             hausnr: parsed("HAUSNR.DAT", data::hausnr(&dat("HAUSNR.DAT")?))?,
@@ -493,7 +503,7 @@ impl GameData {
             nobody,
             names,
             baumenu: parsed("BAUMENU.DAT", data::baumenu_dat(&dat("BAUMENU.DAT")?))?,
-            months: parsed("MONATE.TXT", data::monate(&file("TEXTE/MONATE.TXT")?))?,
+            language,
         })
     }
 }
@@ -534,11 +544,11 @@ fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool, fixes
     };
     // State 100: 1010:064a.
     apply_modatyp(&mut w, &data.modatyp); // 1010:000e
+    // The world's text is in the language the game is created in.
+    w.language = data.language;
+    w.folder_language = Language::of_land(data.modatyp.land);
+    w.news = crate::news::News::new(w.language); // 1048:1ffd
     pick_names(&mut w, &data.nobody, &data.names); // 1010:0414
-    w.news.date_format = crate::news::DateFormat {
-        months: data.months.clone(),
-        land: data.modatyp.land as u8,
-    };
     // The start menu's globals; Start puts the name in for player 1
     // (1058:021a).
     w.player_colours = settings.colours;

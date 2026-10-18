@@ -1,0 +1,17 @@
+WerbungToText:array[0..7] of string[20]=
+keine
+sehr wenig
+wenig
+mäßig
+ausreichend
+viel
+sehr viel
+maximal
+RenovierungToText:array[0..5] of string[20]=
+keine
+jährlich
+alle 2 Jahre
+alle 3 Jahre
+alle 4 Jahre
+alle 5 Jahre
+

@@ -1,0 +1,27 @@
+
+Ein Spiel von:
+Start
+Farbe:
+Computergegner:
+Inselform:
+Atoll
+Inselgruppe
+Eine Insel
+Relief:
+flach
+bergig
+Landmenge:
+wenig
+viel
+Flüsse:
+keine
+viele
+Name:
+Abbruch
+Version: Deutsch
+Altes Spiel fortsetzen
+
+Szenarien
+Schwierigkeitsgrad:
+leicht
+schwer

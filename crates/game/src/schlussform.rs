@@ -28,12 +28,12 @@
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
+use crate::lang::Language;
 use crate::money::format_money;
 use crate::simulation::GameOver;
 use crate::text::{Align, Font};
 use crate::widgets::{BitmapId, Button, Frame, Label, Skin, Sound, Widget};
 use crate::world::World;
-use formats::data::Land;
 
 /// The bitmaps the form draws with, from `GRAFIK`, in the order
 /// [`Schlussform::new`] takes them.
@@ -138,15 +138,15 @@ pub struct Results {
 
 impl Results {
     /// The results of the game the world just ended, the human's
-    /// (player 1's), with the money as `factor` and `land` format it.
+    /// (player 1's), with the money as `factor` and `language` format it.
     #[must_use]
-    pub fn of(world: &World, over: &GameOver, factor: i32, land: Land) -> Self {
+    pub fn of(world: &World, over: &GameOver, factor: i32, language: Language) -> Self {
         // Single human: the results are player 1's.
         Results {
             won: over.won,
             cheated: world.cheated,
             scenario: world.scenario,
-            net_worth: format_money(over.net_worth, factor, land),
+            net_worth: format_money(over.net_worth, factor, language),
             guests: world.guests_last_months(1),
             score: over.score,
         }

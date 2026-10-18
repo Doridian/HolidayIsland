@@ -1,0 +1,329 @@
+# Holiday Island: the strings in German that aren't in a TEXTE\ or
+# UPGRADE\ file (lang/README.md). UTF-8; the port shows them in the
+# game's Windows-1252 font. Every key here is in every language's
+# strings.toml.
+#
+# Where a value comes from: the German v1.0 HOLIDAY.EXE (addresses
+# without a build) or the later build (`en` addresses), whose German
+# texts the later build keeps for `land` D; the VCL's German string
+# resources in v1.0's HOLIDAY.EXE; or the port itself ([port] and
+# [enhance.*]). Typos are the original's: keep them.
+
+[language]
+# The language's own name.
+name = "Deutsch"
+
+[format]
+# How the info bar, the news and the end forms write a date
+# (`date_text`, en 1030:12b0, de 1030:0148): {day}, {suffix}, {month}
+# (MONATE.TXT's) and {year}.
+date = "{day}{suffix} {month} {year}"
+# The suffix after the day: one for every day, or 31 separated by `|`
+# (`land` D: CS:12ac).
+day_suffixes = "."
+# The thousands mark (`group_digits`, en 1030:2145) and the decimal mark
+# of a price with pennies (`insert_decimal_marks`, en 1030:21f3).
+thousands = "."
+decimal = ","
+# The high score table's date: Delphi's `DateToStr` (1008:0512), the
+# short date format of a German Windows. dd, MM and yy are replaced.
+highscore_date = "dd.MM.yy"
+# The currency's name and factor aren't here: they're SONSTIGE.TXT's
+# (`Waehrungsfaktor` and _TXTWaehrung_), DM times 10.
+
+[msgdlg]
+# The message boxes' captions: the VCL's string resources 0xf06f to
+# 0xf072 (en `1118:4120`).
+warning = "Warnung"
+error = "Fehler"
+information = "Information"
+confirmation = "Bestätigen"
+# Their buttons, `&` before the mnemonic: 0xf073 to 0xf07d (en `1118:4148`).
+yes = "&Ja"
+no = "&Nein"
+ok = "&OK"
+cancel = "&Abbruch"
+abort = "Abbruch"
+retry = "&Wiederholen"
+ignore = "&Ignorieren"
+all = "&Alles"
+help = "&Hilfe"
+
+[file_menu]
+# A name that isn't a valid file name (`dateimenue_save`, en 1040:0eb0;
+# v1.0 1040:0e03 has only this one).
+invalid_name = "Dateiname ungültig"
+# The question before "Löschen" erases a game (en 1040:10d7).
+delete_question = "Wirklich loeschen?"
+
+[news]
+# An empty news archive entry's date (1048:1fc5). The world's: written
+# into the archive and saved with it, in the world's language.
+no_date = "kein Datum"
+# NACHRICH.TXT's name for "no medium" (1048:0a45, 1048:1b39).
+no_medium = "kein"
+
+[computer]
+# The computers' status texts (`1110:70f2`, 10a8:2cfa to 10a8:3026):
+# the world's, saved in the map file, never on the screen. The same in
+# both builds.
+idle = "Gar nix"
+thinking = "WLTNaechstenSchrittueberlegen"
+demolishing = "WLTGebaeudeabreissen"
+waiting = "WLTAbwarten"
+selling = "WLTGebaeudeverkaufen"
+nothing = "WLBNichtstun"
+start_area = "WLBStartInselsuchen"
+change_area = "WLBInselwechseln"
+choose_category = "WLBGebaeudeartauswaehlen"
+choose_type = "WLBGebaeudewaehlen"
+find_road = "WLBGebaeudeBauPunktsuchen"
+find_site = "WLBGebaeudeBauPunktsuchen2"
+build = "WLBGebaeudebauen"
+level = "WLBBauplatzebenmachen"
+even_out = "WLBBauplatzhoeheausgleichen"
+road = "WLBStrassebauen"
+road_start = "WLBStrassenBauPunktsuchen"
+
+[port]
+# The port's own texts: the list of enhancements (crate::enhanceform).
+enhance_title = "ERWEITERUNGEN"
+enhance_fixes = "Spielkorrekturen"
+enhance_view = "Anzeige und Ton"
+enhance_fixes_note = "Für dieses Spiel und neue Spiele"
+enhance_view_note = "Ihre Einstellungen für jedes Spiel"
+enhance_all_on = "Alle an"
+enhance_all_off = "Alle aus (Original)"
+enhance_credits = "Mitwirkende"
+enhance_saved = "Änderungen gelten sofort und werden in settings.ini gespeichert."
+enhance_not_saved = "Änderungen gelten sofort, aber nur bis zum Beenden (keine settings.ini)."
+enhance_command_line = "Beim nächsten Start gehen --original und --enhance wieder vor."
+enhance_screen_off = "INFO zeigt nun die Mitwirkenden (zurück: enhance.enhancements_screen=on)."
+enhance_hint = "Die Maus über einer Zeile zeigt hier, was sie ändert."
+
+# The enhancements' short names and one-line descriptions, by their keys
+# (crate::enhance).
+
+[enhance.site_effect]
+label = "Baustellenabriss nimmt Wirkung weg"
+description = "Der Abriss einer Baustelle nimmt ihre Wirkung von der Lagekarte"
+
+[enhance.bridge_demolition_cost]
+label = "Brückenabriss im Meer kostet"
+description = "Der Abriss einer Brücke im Meer kostet die Straßenabrisskosten je Feld, die das Original zusammenzählt, aber nie abbucht"
+
+[enhance.price_class_range]
+label = "Preisklasse nach Min- und Maxpreis"
+description = "Die Preisklasse einer Einrichtung liegt zwischen MinPreis und MaxPreis, statt durch MaxPreis geteilt zu werden"
+
+[enhance.ownerless_buildings]
+label = "Herrenlose Gebäude zahlen an keinen"
+description = "Gebäude von niemandem zahlen ihre Einnahmen, Kosten und Gäste nicht mehr in die Summen und Zinsen von Spieler 8"
+
+[enhance.palm_removal]
+label = "Tote Palmen werden abgezogen"
+description = "Palmen, die sterben oder beim Planieren fallen, gehen von der Zählung ihres Grundstücks und von der Lagekarte ab"
+
+[enhance.computer_area_change]
+label = "Computer prüft das neue Gebiet"
+description = "Ein Computer, der das Gebiet wechselt, prüft die Größe des neuen Grundstücks, nicht die des alten"
+
+[enhance.computer_type_lists]
+label = "Computer-Baulisten bleiben begrenzt"
+description = "Die Baulisten der Computer enden bei 40 Typen je Kategorie, statt in die nächste zu laufen"
+
+[enhance.ship_detour]
+label = "Schiffe weichen richtig aus"
+description = "Ein blockiertes Hafenschiff schaut beim zweiten Ausweichen auf die Felder vor sich, nicht auf sein eigenes"
+
+[enhance.stage_spectators]
+label = "Bühnen finden ihre Zuschauer"
+description = "Bühnen suchen ihre Zuschauer dort, wo sie stehen, nicht auf dem ersten Feld der Bühne"
+
+[enhance.plane_approach]
+label = "Flugzeuge landen richtig"
+description = "Beim zweiten Anflug eines Flugzeugs müssen beide Koordinaten stimmen, nicht nur eine"
+
+[enhance.plot_merge_numbers]
+label = "Grundstücke verschmelzen richtig"
+description = "Land, das zwischen Grundstücken auftaucht, verschmilzt sie nach ihren ganzen Nummern, nicht auf ein Byte gekürzt"
+
+[enhance.computer_road_ground]
+label = "Computerstraßen nach eigenem Boden"
+description = "Die Straßen der Computer richten sich nach dem Boden, auf dem sie beginnen, nicht nach der letzten Straße des Menschen"
+
+[enhance.levelling_cliffs]
+label = "Planieren ohne steilere Klippen"
+description = "Planieren nimmt Nachbarn mit, die zwei oder mehr Stufen abweichen, damit vorhandene Klippen nicht steiler werden"
+
+[enhance.levelling_errors]
+label = "Planieren meldet den ersten Fehler"
+description = "Heben und Senken melden den ersten Fehler, nicht ein späteres Gebäude oder das Geld"
+
+[enhance.road_connections]
+label = "Neue Straßen verbinden alle Gebäude"
+description = "Eine neue Straße verbindet jedes Gebäude in der Nähe neu, nicht nur die, deren erstes Feld Teil 0 zeigt"
+
+[enhance.nobodys_buildings]
+label = "Infobox-Knöpfe nur für eigene Gebäude"
+description = "Die Knöpfe der Infobox wirken nur auf die eigenen Gebäude, nicht auf die von niemandem"
+
+[enhance.auction_computer_limit]
+label = "Computer bieten nur im Limit"
+description = "Ein Computer bietet bei einer Auktion nur, wenn sein Gebot in seinem Limit liegt, nicht nur der Preis"
+
+[enhance.auction_pass]
+label = "Passen lässt das Höchstgebot stehen"
+description = "Passen bei einer Auktion lässt das Höchstgebot stehen und verkauft nach dem dritten Ruf nicht noch einmal"
+
+[enhance.prize_player8]
+label = "Spieler 8 bekommt Ersteigertes"
+description = "Spieler 8 bekommt das Gebäude, das er ersteigert, wie die Spieler 2 bis 7"
+
+[enhance.computer_bid_overflow]
+label = "Computer-Limit ohne Überlauf"
+description = "Das Auktionslimit eines reichen Computers läuft nicht mehr über"
+
+[enhance.atoll_hills]
+label = "Atoll-Hügel richtig verteilt"
+description = "Die kleinen Hügel des Atolls liegen nach ihrer eigenen Streuung auf dem Ring, nicht nach der der großen"
+
+[enhance.river_start]
+label = "Flüsse entspringen nur auf Hügeln"
+description = "Die Flüsse des Inselgenerators entspringen nur auf den Hügeln, nie im Flachen oder im Meer"
+
+[enhance.generator_levelling]
+label = "Inselbau: Flüsse ohne Klippen"
+description = "Die Landänderungen des Inselgenerators werden bei einem Fehler zurückgenommen, so hinterlassen seine Flüsse keine Klippen"
+
+[enhance.river_flat_way]
+label = "Flüsse suchen nur bis zum Rand"
+description = "Ein Fluss im Flachen sucht seinen Weg bis zum Kartenrand, nicht auf der anderen Seite herum"
+
+[enhance.load_order]
+label = "Laden behält die Reihenfolge"
+description = "Laden behält die Baustellen und die Gebäudelisten der Grundstücke in ihrer gespeicherten Reihenfolge"
+
+[enhance.sabotage_pool_error]
+label = "Piranhas nur in Pools"
+description = "Piranhas für ein Gebäude, das kein Pool ist, melden das, wie die anderen Sabotagearten"
+
+[enhance.news_archive_order]
+label = "Nachrichtenarchiv bleibt geordnet"
+description = "Das Nachrichtenarchiv hält seine 26. und 27. Nachricht in der richtigen Reihenfolge, wenn es zum ersten Mal voll ist"
+
+[enhance.tv_lights]
+label = "Fernsehlichter ohne Spielzufall"
+description = "Die blinkenden Lichter des Fernsehers nehmen nicht mehr die Zufallszahlen des Spiels, so ändert die Sprache das Spiel nicht"
+
+[enhance.window_stacking]
+label = "Fenster stapeln wie unter Windows"
+description = "Fenster stapeln sich wie unter Windows: ein Klick holt eines nach vorn (auch den Hauptschirm), nur modale bleiben oben"
+
+[enhance.big_map]
+label = "Großes Fenster zeigt mehr Insel"
+description = "Ein größerer Bildschirm zeigt mehr Insel: der Hauptschirm füllt ihn und seine Karte wächst"
+
+[enhance.scroll_bars]
+label = "Bildlaufleisten wie unter Windows"
+description = "Pfeile der Bildlaufleisten gehen beim Drücken einen Schritt und wiederholen; Schieber folgen der Maus; Blättern hält an der Maus"
+
+[enhance.edit_field]
+label = "Textfelder behalten den Fokus"
+description = "Textfelder behalten beim Klicken den Fokus, so speichert Speichern im Dateimenü einen getippten Namen"
+
+[enhance.modifier_clicks]
+label = "Klicks auch mit Umschalt und Strg"
+description = "Klicks auf Listen, mit den Werkzeugen und auf die Bildlaufleisten wirken auch mit Umschalt oder Strg und beim Doppelklick"
+
+[enhance.mouse_buttons]
+label = "Nur die linke Maustaste klickt"
+description = "Die rechte Maustaste klickt keine Startmenüknöpfe mehr, hakt keine Optionen an, zieht kein Geldmenü und schließt keine Mitwirkenden"
+
+[enhance.start_menu_scenario]
+label = "Startmenü hakt das Szenario an"
+description = "Die Szenarioseite des Startmenüs hakt das Szenario an, das starten wird"
+
+[enhance.auction_title]
+label = "Auktionstitel springt nicht"
+description = "Der Titel des Auktionsfensters springt nach einem Klick auf seine Titelleiste nicht eine Zeile hoch"
+
+[enhance.form_positions]
+label = "Fenster öffnen am richtigen Platz"
+description = "Fenster öffnen, wo sie hingehören: die Auktion mittig, das Geldmenü ganz, die anderen über dem Hauptschirm"
+
+[enhance.saved_games_order]
+label = "Spielstände nach Namen sortiert"
+description = "Die Listen der Spielstände sind nach Namen sortiert, nicht rückwärts"
+
+[enhance.road_drag]
+label = "Straße endet beim Loslassen"
+description = "Eine gezogene Straße endet dort, wo die Maus losgelassen wird, auch ohne Animationen"
+
+[enhance.build_menu]
+label = "Baumenü gibt Tasten weiter"
+description = "Das Baumenü gibt die Tasten weiter, die es nicht braucht, und macht geschlossen kein Schließgeräusch"
+
+[enhance.money_menu_button]
+label = "Jahresbilanz drückt den Geldknopf"
+description = "Der Jahreswechsel drückt den Knopf des Geldmenüs, wenn er das Menü öffnet"
+
+[enhance.overview_scrolling]
+label = "Übersichtskarte scrollt richtig"
+description = "Klicks auf die Übersichtskarte halten den Hauptschirm in seinen Bildlaufleisten; ihr Schieber bleibt vom Pfeil weg"
+
+[enhance.overview_colours]
+label = "Übersichtskarte zeigt alle Farben"
+description = "Die Übersichtskarte hat eine Farbe für niedriges Gras, hohen Sand und Gebäude von niemandem statt keiner"
+
+[enhance.form_drags]
+label = "Fensterziehen endet beim Loslassen"
+description = "Fensterziehen endet, wenn die Maus losgelassen wird, und bewegt nur das gefasste Fenster; die Abfrage zum Beenden bleibt im Bild"
+
+[enhance.infobox_text]
+label = "Infobox: Tausenderpunkte und Meer"
+description = "Die Infobox setzt die Tausenderpunkte an die richtige Stelle und nennt außerhalb der Karte das Meer"
+
+[enhance.infobox_size]
+label = "Infobox passt ihre Größe an"
+description = "Die Infobox wächst oder schrumpft nach einem Knopf auf das, was sie zeigt"
+
+[enhance.overview_list]
+label = "Gebäudeübersicht scrollt richtig"
+description = "Die Gebäudeübersicht hält die Auswahl mit Auf und Ab im Blick und zeichnet ihren Preis sauber"
+
+[enhance.tv_form]
+label = "Fernsehknöpfe wie gedacht"
+description = "Die Knöpfe, der Zurückknopf und der Titel des Fernsehers wirken wie gedacht, und Blättern lässt ihn offen"
+
+[enhance.desktop_background]
+label = "Hintergrundbild für jede Größe"
+description = "Jede Fenstergröße bekommt das nächste Hintergrundbild, mittig, und an den Rändern wird nichts abgeschnitten"
+
+[enhance.auction_calls]
+label = "Der Auktionator ist zu hören"
+description = "Die drei Rufe des Auktionators sind zu hören"
+
+[enhance.sound_times]
+label = "Geräusche auch ohne Animationen"
+description = "Geräusche spielen nach ihrer Zeit auch ohne Animationen wieder"
+
+[enhance.music]
+label = "Musik ohne Pausen, auch nach Laden"
+description = "Die Musik beginnt beim ersten Stück der Liste, hat keine Pausen zwischen den Stücken und spielt nach dem Laden weiter"
+
+[enhance.tv_sound]
+label = "Fernsehton passt zur Nachricht"
+description = "Die Sprache des Fernsehers gehört zu ihrer Nachricht, und seine Filme lassen die Geräusche nicht stumm oder auf Sprachlautstärke"
+
+[enhance.enhancements_screen]
+label = "INFO zeigt diese Liste"
+description = "Der INFO-Knopf der Optionen öffnet diese Liste der Erweiterungen (die Mitwirkenden sind einen Knopf entfernt)"
+
+[enhance.no_main_title]
+label = "Kein zweiter Titelbalken"
+description = "Füllt der Hauptschirm das Fenster, fällt seine eigene Titelleiste weg; die Karte bekommt den Platz"
+
+[enhance.mouse_wheel]
+label = "Mausrad scrollt"
+description = "Das Mausrad scrollt die Insel (mit Umschalt quer), die Übersichtskarte und die Listen"

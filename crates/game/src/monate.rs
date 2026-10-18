@@ -3,7 +3,7 @@
 //! `MONATE.TXT` and the 1st of January 1996. The simulation's clock moves
 //! it on by a day at a time (`docs/simulation.md`).
 
-use formats::data::Land;
+use crate::lang::Language;
 
 /// The first day of a new game. // 1030:000d
 pub const START: Date = Date {
@@ -68,27 +68,20 @@ impl Date {
     }
 
     /// The date as the info bar shows it: day, suffix, month name, year,
-    /// with the suffix for the `land` (`MODATYP.DAT`): `1. Januar 1996`,
-    /// `1st Januar 1996`. `months` are `MONATE.TXT`'s twelve. // 1030:0148
+    /// `1. Januar 1996`, `1st January 1996`. The original's suffix is by
+    /// `land` (`MODATYP.DAT`): `A` and `E` `st`, `nd`, `rd`, `th`
+    /// (1030:0138..1030:0141), `D` `.` (1030:0144), `F` none; the port's
+    /// pattern and suffixes are `language`'s (`format.date`,
+    /// `format.day_suffixes`). `months` are `MONATE.TXT`'s twelve.
+    /// // 1030:0148
     #[must_use]
-    pub fn text(&self, months: &[Vec<u8>], land: Land) -> Vec<u8> {
-        let suffix: &[u8] = match land {
-            Land::Amerika | Land::England => match self.day {
-                1 | 21 | 31 => b"st", // 1030:0138
-                2 | 22 => b"nd",      // 1030:013b
-                3 | 23 => b"rd",      // 1030:013e
-                _ => b"th",           // 1030:0141
-            },
-            Land::Deutschland => b".", // 1030:0144
-            Land::Frankreich => b"",
-        };
-        let mut s = self.day.to_string().into_bytes();
-        s.extend_from_slice(suffix);
-        s.push(b' '); // 1030:0146
+    pub fn text(&self, months: &[Vec<u8>], language: Language) -> Vec<u8> {
         let month = usize::from(self.month).checked_sub(1).and_then(|m| months.get(m));
-        s.extend_from_slice(month.map_or(&[][..], |m| &m[..]));
-        s.push(b' ');
-        s.extend_from_slice(self.year.to_string().as_bytes());
+        let mut s = language.format().date_text(
+            self.day,
+            month.map_or(&[][..], |m| &m[..]),
+            self.year.to_string().as_bytes(),
+        );
         s.truncate(255);
         s
     }
@@ -146,15 +139,15 @@ mod tests {
             .iter()
             .map(|m| m.as_bytes().to_vec())
             .collect();
-        assert_eq!(START.text(&months, Land::Deutschland), b"1. Januar 1996");
+        assert_eq!(START.text(&months, Language::De), b"1. Januar 1996");
         let d = Date {
             day: 22,
             month: 2,
             year: 1997,
         };
-        assert_eq!(d.text(&months, Land::England), b"22nd Februar 1997");
-        assert_eq!(Date { day: 13, ..d }.text(&months, Land::Amerika), b"13th Februar 1997");
-        assert_eq!(Date { day: 31, ..d }.text(&months, Land::Amerika), b"31st Februar 1997");
-        assert_eq!(d.text(&months, Land::Frankreich), b"22 Februar 1997");
+        assert_eq!(d.text(&months, Language::En), b"22nd Februar 1997");
+        assert_eq!(Date { day: 13, ..d }.text(&months, Language::En), b"13th Februar 1997");
+        assert_eq!(Date { day: 31, ..d }.text(&months, Language::En), b"31st Februar 1997");
+        assert_eq!(d.text(&months, Language::De), b"22. Februar 1997");
     }
 }

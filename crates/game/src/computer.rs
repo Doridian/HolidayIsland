@@ -24,30 +24,32 @@ use std::sync::Arc;
 use formats::savegame::SaveGame;
 
 use crate::enhance::Fix;
+use crate::lang::Text;
 use crate::roads::CROSSABLE;
 use crate::simulation::Tick;
 use crate::world::{Error, NO_BUILDING, PALM, Pos, World, on_map};
 
-/// The status texts (`1110:70f2`), Pascal strings in the code segment.
-/// The turn's.
-const STATUS_IDLE: &[u8] = b"Gar nix"; // 10a8:3026
-const STATUS_THINKING: &[u8] = b"WLTNaechstenSchrittueberlegen"; // 10a8:2cfa
-const STATUS_DEMOLISHING: &[u8] = b"WLTGebaeudeabreissen"; // 10a8:2d18
-const STATUS_WAITING: &[u8] = b"WLTAbwarten"; // 10a8:2d2d
-const STATUS_SELLING: &[u8] = b"WLTGebaeudeverkaufen"; // 10a8:2d39
+/// The status texts (`1110:70f2`), Pascal strings in the code segment;
+/// the port's are the world's language's (`computer.*` in
+/// `strings.toml`, the same in both builds). The turn's.
+const STATUS_IDLE: Text = Text::ComputerIdle; // 10a8:3026
+const STATUS_THINKING: Text = Text::ComputerThinking; // 10a8:2cfa
+const STATUS_DEMOLISHING: Text = Text::ComputerDemolishing; // 10a8:2d18
+const STATUS_WAITING: Text = Text::ComputerWaiting; // 10a8:2d2d
+const STATUS_SELLING: Text = Text::ComputerSelling; // 10a8:2d39
 /// The building's.
-const STATUS_NOTHING: &[u8] = b"WLBNichtstun"; // 10a8:234b
-const STATUS_START_AREA: &[u8] = b"WLBStartInselsuchen"; // 10a8:2358
-const STATUS_CHANGE_AREA: &[u8] = b"WLBInselwechseln"; // 10a8:236c
-const STATUS_CHOOSE_CATEGORY: &[u8] = b"WLBGebaeudeartauswaehlen"; // 10a8:237d
-const STATUS_CHOOSE_TYPE: &[u8] = b"WLBGebaeudewaehlen"; // 10a8:2396
-const STATUS_FIND_ROAD: &[u8] = b"WLBGebaeudeBauPunktsuchen"; // 10a8:23a9
-const STATUS_FIND_SITE: &[u8] = b"WLBGebaeudeBauPunktsuchen2"; // 10a8:23c3
-const STATUS_BUILD: &[u8] = b"WLBGebaeudebauen"; // 10a8:23de
-const STATUS_LEVEL: &[u8] = b"WLBBauplatzebenmachen"; // 10a8:23ef
-const STATUS_EVEN_OUT: &[u8] = b"WLBBauplatzhoeheausgleichen"; // 10a8:2405
-const STATUS_ROAD: &[u8] = b"WLBStrassebauen"; // 10a8:2421
-const STATUS_ROAD_START: &[u8] = b"WLBStrassenBauPunktsuchen"; // 10a8:2431
+const STATUS_NOTHING: Text = Text::ComputerNothing; // 10a8:234b
+const STATUS_START_AREA: Text = Text::ComputerStartArea; // 10a8:2358
+const STATUS_CHANGE_AREA: Text = Text::ComputerChangeArea; // 10a8:236c
+const STATUS_CHOOSE_CATEGORY: Text = Text::ComputerChooseCategory; // 10a8:237d
+const STATUS_CHOOSE_TYPE: Text = Text::ComputerChooseType; // 10a8:2396
+const STATUS_FIND_ROAD: Text = Text::ComputerFindRoad; // 10a8:23a9
+const STATUS_FIND_SITE: Text = Text::ComputerFindSite; // 10a8:23c3
+const STATUS_BUILD: Text = Text::ComputerBuild; // 10a8:23de
+const STATUS_LEVEL: Text = Text::ComputerLevel; // 10a8:23ef
+const STATUS_EVEN_OUT: Text = Text::ComputerEvenOut; // 10a8:2405
+const STATUS_ROAD: Text = Text::ComputerRoad; // 10a8:2421
+const STATUS_ROAD_START: Text = Text::ComputerRoadStart; // 10a8:2431
 
 /// A turn's states ([`Computers::state`]), by their status texts: build
 /// (0, and 1 for a type an event offered, [`World::order_building`]),
@@ -676,9 +678,9 @@ impl World {
     }
 
     /// The status text: what the computer player last did. // 1110:70f2
-    fn set_status(&mut self, text: &[u8]) {
+    fn set_status(&mut self, text: Text) {
         self.computers.status.clear();
-        self.computers.status.extend_from_slice(text);
+        self.computers.status.extend_from_slice(self.language.bytes(text));
     }
 
     /// The computers' turns: the status text is `Gar nix`, the turns count
@@ -1930,7 +1932,7 @@ mod tests {
         w.computer_turn(2, &mut tick);
         let expected = if r.random(1000) == 0 { DEMOLISHING } else { BUILDING };
         assert_eq!(w.computers.state[0], expected);
-        assert_eq!(w.computers.status, STATUS_THINKING);
+        assert_eq!(w.computers.status, b"WLTNaechstenSchrittueberlegen");
         // In the red with the bank saying no, it mostly waits.
         w.computers.state[0] = THINKING;
         w.finances.money[1] = -10;

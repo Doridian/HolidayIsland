@@ -1,0 +1,27 @@
+BText : array [TTextDing] of String[25] =
+Werbung:
+Werbekosten im Monat:
+Automatische Renovierung:
+Versicherung
+Geld leihen
+Kredit tilgen
+vergangenes Jahr
+laufendes Jahr
+Einnahmen
+Häuser:
+Hotels:
+Gaststätten:
+sonst. Gebäude:
+Ausgaben
+Häuser:
+Hotels:
+Gaststätten:
+sonst. Gebäude:
+Neue Gebäude:
+Werbung:
+Zinsen:
+Sonstiges:
+Gesamtbilanz:
+Guthaben:
+Schulden:
+Schließen

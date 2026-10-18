@@ -78,7 +78,7 @@ fn info() -> InfoTexts {
     let texts = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
     InfoTexts {
         months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
-        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        language: game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
         currency_factor: texts.waehrungsfaktor,
         currency: texts.texts.get(5).cloned().unwrap_or_default(),
     }
@@ -95,11 +95,7 @@ fn scenario() -> World {
     let mut world = load_world(&map, &settings, true).unwrap();
     world.tables = tables();
     world.random = Random::new(0x1996_0101);
-    let info = info();
-    world.news.date_format = game::news::DateFormat {
-        months: info.months.clone(),
-        land: info.land as u8,
-    };
+    world.language = info().language;
     world.clock.paused = false;
     world
 }
@@ -251,7 +247,7 @@ fn news_fill_the_archive() {
     let days: Vec<i32> = world.news.entries.iter().map(|e| e.day).collect();
     assert_ne!(days[0], NO_DAY);
     let first = &posted[0].entry;
-    let months = &world.news.date_format.months;
+    let months = world.language.months();
     assert!(
         months.iter().any(|m| first.date.windows(m.len()).any(|w| w == &m[..])),
         "a month's name in the date"

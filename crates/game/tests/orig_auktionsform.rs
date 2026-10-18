@@ -164,7 +164,7 @@ fn paints_the_auction_form() {
     let texts = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
     let info = InfoTexts {
         months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
-        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        language: game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
         currency_factor: texts.waehrungsfaktor,
         currency: texts.texts.get(5).cloned().unwrap_or_default(),
     };
@@ -254,7 +254,7 @@ fn the_auction_form_with_the_fixes() {
     let texts = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
     let info = InfoTexts {
         months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
-        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        language: game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
         currency_factor: texts.waehrungsfaktor,
         currency: texts.texts.get(5).cloned().unwrap_or_default(),
     };

@@ -1,0 +1,87 @@
+Waehrungsfaktor
+10
+_TXTSpielname_
+HOLIDAY ISLAND
+_TXTExitmenuueberschrift_
+HOLIDAY ISLAND VERLASSEN?
+_TXTExitlabel_
+Hiermit verlassen Sie Ihre Insel-Sitzung !
+_TXTok_
+OK
+_TXTAbbruch_
+Abbruch
+_TXTWaehrung_
+DM
+_TXTDateimenueueberschrift_
+DATEIMENÜ
+_TXTLaden_
+Laden
+_TXTSichern_
+Speichern
+_TXTNeuesSpiel_
+Neues Spiel
+_TXTQuit_
+Beenden
+_TXTSabotagemenuueberschrift_
+SABOTAGE
+_TXTSabotieren_
+Sabotieren
+_TXTSchliessen_
+Schließen
+_TXTGeldmenueueberschrift_
+FINANZEN
+_TXTMiete_
+Miete
+_TXTRenovieren_
+Renovieren
+_TXTBestechen_
+Bestechen
+_TXTVerkaufen_
+Verkaufen
+_TXTIBin_
+in
+_TXTIBTagen_
+Tagen
+_TXTGebaeudeuebersicht_
+Gebäudeübersicht
+_TXTKatastrophenschutz_
+Schutz vor Katastrophen:
+_TXTKatastrophenschutzkosten_
+Kosten im Monat:
+     ___ButtontoTextHilfetexte____
+Dateimenü
+Pause
+Optionen
+Nachrichten
+Finanzen
+Übersichtskarte
+Land anheben
+Land absenken
+Abreißen
+Häuser
+Hotels
+Gaststätten
+Einkaufsmöglichkeiten
+Sportanlagen
+Attraktionen
+Parks & Palmen
+Straßen & Brücken
+Fahrzeugverleihe
+Flughäfen
+Häfen
+Versorgung
+Sabotage
+Infomodus
+___Buttonhilfe____
+Besitzer
+Gebäudearten
+Lagequalität
+Natur
+Auslastung
+Schreibtisch
+Bilanz
+Guthaben
+Gesamtvermögen
+Urlauber
+Ruf
+

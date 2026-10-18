@@ -142,7 +142,7 @@ fn copy(dst: &mut Surface, src: &Surface) {
 /// An amount as the form shows it: the money, a space, the currency.
 /// // 1030:11a0, 1028:0dcf
 fn money(amount: i32, info: &InfoTexts) -> Vec<u8> {
-    let mut text = format_money(amount, info.currency_factor, info.land);
+    let mut text = format_money(amount, info.currency_factor, info.language);
     text.push(b' ');
     text.extend_from_slice(&info.currency);
     text.truncate(255);

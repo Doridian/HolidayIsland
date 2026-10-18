@@ -56,7 +56,8 @@ which gives the same file.
 ### The port's chunk
 
 The port writes its own data after the original's last field: the world's
-fixes ([original-bugs.md](original-bugs.md#options)). The original still
+fixes ([original-bugs.md](original-bugs.md#options)) and the world's
+language ([language.md](language.md#the-worlds-text)). The original still
 loads such a file: `load_map` (1048:2a19) opens it (`Reset` with a record
 size of 1), `BlockRead`s the version and each unit's fixed sizes, and
 closes it, without looking at the file's length or at what follows.
@@ -66,8 +67,11 @@ game it saved loads in the port with the player's defaults.
 
 The chunk is `HIPORT`, a 0 byte and the chunk's version (1), a `Longint`
 length, and that many bytes of text: one `key=value` per line. The world's
-fixes are `fix.<key>=1` or `=0`, every fix the port knows
-(`game::enhance::fixes_chunk`). Reading (`game::enhance::fixes_in`): a
+fixes are `fix.<key>=1` or `=0`, every fix the port knows, and the
+world's language is `language=de` or `=en` (`game::enhance::world_chunk`).
+A file without a language (`game::lang::language_in`) takes the game
+folder's (`World::folder_language`). Reading the fixes
+(`game::enhance::fixes_in`): a
 file without the chunk (every original file, `formats::savegame::port_chunk`
 gives none) or without a fix's line gives that fix its default: the
 player's for a game loaded from the start menu, the running game's for one

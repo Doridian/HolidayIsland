@@ -6,10 +6,17 @@ the CD, but `HOLIDAY.EXE` spells them in mixed case (`Hausdata.dat`, `Grafik\`,
 Windows-1252, German on the German CD and English in the English
 release ([language.md](language.md)).
 
+The text files are the one part of the game data the repository holds:
+[lang/](../lang/README.md) has, for German and English, every `TEXTE\`
+file, `UPGRADE\`'s texts and the three label layouts of `DATA\` that
+differ by translation, as UTF-8, and the port reads them from there, not
+from the folder. Everything else in the table below comes from the
+player's game folder.
+
 | Dir | Files | What |
 |---|---|---|
 | `DATA\` | 39 `*.DAT`, 364 KB | Game tables, all plain text, mostly numbers and names in fixed-width columns (`HAUSDATA.DAT`: buildings, `HAUSPREI.DAT`: prices, `FILENAME.DAT`: bitmap names, `*POS.DAT`: positions, `EREIGN*.DAT`: events, `ANIMDAT*.DAT`: animations, `FONTDAT*.DAT`: the cell and advance of each character in `GRAFIK\FONT.BMP`, the only font the game draws with; see `game::text`). |
-| `TEXTE\` | 23 `*.TXT` | UI texts, one string per line (`AUKTION.TXT`, `BAUMENU.TXT`, `NACHRICH.TXT`, ...). |
+| `TEXTE\` | 23 `*.TXT` | UI texts, one string per line (`AUKTION.TXT`, `BAUMENU.TXT`, `NACHRICH.TXT`, ...). In the repository as `lang/<code>/TEXTE/`; the port reads them from there. `HAUPTSCH.TXT` seems unused (below). |
 | `GRAFIK\` | 322 `*.BMP`, 19 MB | Uncompressed 8-bit Windows 3.x BMPs (`formats::bmp`). Tiles are mostly 128×125, icons 16×16. 310 share one palette; the five title pictures (`TIT*.BMP`) have their own. `GFXGROU2.BMP` is a cut-off copy of `GFXGROUN.BMP` that the game never loads. The installer can copy it to the hard disk (`SETUP.LST`). |
 | `MAPS\` | `TUTORIAL.MAP` | The tutorial island. Same format as the scenarios and the saved games (`*.map`, `Last.map`), which the original writes here ([savegame.md](savegame.md)). |
 | `SZENARIO\` | 6 `*.HIS`, ~770 KB each | Scenarios: `GELD`, `KOENIG`, `LUXUS`, `OEKO`, `SURFER`, `URLAUBER`. Start with a Pascal string `1.000` (a version) and map dimensions. |
@@ -17,12 +24,14 @@ release ([language.md](language.md)).
 | `SOUND\`, `SOUNDLO\` | 40 `*.WAV` each | Effects, 8-bit mono PCM at 22 kHz (`SOUND`) or 11 kHz (`SOUNDLO`). Except `HIGHSCOR.WAV` and the installer-only `HH_HIGH.WAV`: those are the **high-score table** under a `.WAV` name (see below). |
 | `SPRADEU1\`–`SPRADEU3\` | 271 `*.WAV`, 32 MB | German speech ("Sprache Deutsch"), 8-bit mono 22 kHz PCM. |
 | `FILMHI\`, `FILMLO\` | 23 `*.AVI` each | Cutscenes: Cinepak (`cvid`) 432×320 with MS ADPCM 22 kHz mono audio. `FILMLO` (46 MB vs 94 MB) is a lower-bitrate set of the same videos. |
-| `UPGRADE\` | 24 files | Only with the later build (the English release, [versions.md](versions.md)): six more scenarios (`*.HIS`, `EREIGN7`–`12.DAT`), and files that replace the CD's (`SONSTIGE`, `SZENARIO`, `SCHLUSS.TXT`, `HAUSPREI.DAT`, `CREDITS.BMP`) or are new (`HIGHSCO2.*`, `STARTSZ1`, `STRAKN2*`, `DATWIN1D.BMP`). The English install's names are in mixed case (`Hausname.txt`, `Sprache1\`), which the port's case-insensitive lookup takes. |
+| `UPGRADE\` | 24 files | Only with the later build (the English release, [versions.md](versions.md)): six more scenarios (`*.HIS`, `EREIGN7`–`12.DAT`), and files that replace the CD's (`SONSTIGE`, `SZENARIO`, `SCHLUSS.TXT`, `HAUSPREI.DAT`, `CREDITS.BMP`) or are new (`HIGHSCO2.*`, `STARTSZ1`, `STRAKN2*`, `DATWIN1D.BMP`). The English install's names are in mixed case (`Hausname.txt`, `Sprache1\`), which the port's case-insensitive lookup takes. Its four text files are in the repository too (`lang/<code>/UPGRADE/`, in German the port's translation); the port reads them from there when the folder has `UPGRADE\`. |
 
 `HOLIDAY.EXE` also carries data of its own, in its resources: the 23 DFM forms
 (component layout, captions, event bindings), cursors, the icon, and the VCL's
-button glyphs. Like the CD's files, those aren't committed. The port reads them
-from the user's EXE.
+button glyphs. Like the CD's pictures, sounds and tables, those aren't
+committed: the port reads them from the user's EXE. Its strings that are text
+(the message boxes' captions and buttons, the file menu's messages, ...) are
+in `lang/<code>/strings.toml`.
 
 ## How the game reads the tables
 
@@ -52,7 +61,8 @@ which reproduces those RTL routines. Things the loaders have in common:
   takes them as an argument.
 
 Still open:
-- `HAUPTSCH.TXT` isn't named anywhere in the EXE and may be unused.
+- `HAUPTSCH.TXT` isn't named anywhere in the EXE and may be unused (it's
+  in the language data anyway).
 - `SETUP.DAT` (written by the installer) only picks the directories and
   the sound/video quality: `formats::setup`, see [startup.md](startup.md).
 - The high-score table (`HIGHSCOR.WAV`) is `formats::highscore`: 10 ranks ×

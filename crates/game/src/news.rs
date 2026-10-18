@@ -16,6 +16,7 @@
 //! intended multiplayer behaviour).
 
 use crate::enhance::Fix;
+use crate::lang::{Language, Text};
 use crate::simulation::Tick;
 use crate::world::{Pos, World};
 
@@ -48,8 +49,6 @@ pub const ARCHIVE_ENTRIES: usize = 26;
 pub const ENTRY_SIZE: usize = 0x11c;
 /// An empty entry's day. // 1048:1ffd
 pub const NO_DAY: i32 = -1;
-/// An empty entry's date. // 1048:1fc5
-pub const NO_DATE: &[u8] = b"kein Datum";
 /// The message whose TV puts kind 0x46 people on its square's building
 /// (1048:12e9): `NACHRICH.TXT`'s 22nd, the announcement of a building's
 /// sale ([`crate::auction::BUILDING_SALE`]).
@@ -94,8 +93,18 @@ pub struct Entry {
 }
 
 impl Default for Entry {
-    /// An empty entry. // 1048:1ffd
+    /// An empty entry, in the default language ([`Entry::empty`]).
     fn default() -> Self {
+        Entry::empty(Language::default())
+    }
+}
+
+impl Entry {
+    /// An empty entry of a world in `language`: its date is the
+    /// language's `news.no_date` (`kein Datum` in both builds, 1048:1fc5).
+    /// // 1048:1ffd
+    #[must_use]
+    pub fn empty(language: Language) -> Self {
         Entry {
             day: NO_DAY,
             a: 0,
@@ -104,7 +113,7 @@ impl Default for Entry {
             y: 0,
             text: 0,
             number: 0,
-            date: NO_DATE.to_vec(),
+            date: language.bytes(Text::NoDate).to_vec(),
             pos: (0, 0),
             origin: (0, 0),
         }
@@ -170,29 +179,6 @@ impl Entry {
     }
 }
 
-/// What the date of an entry is written with: `MONATE.TXT` and the
-/// country from `MODATYP.DAT` (`date_text`, 1030:0148). They come from the
-/// CD, not the map file, like [`crate::world::Tables`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub struct DateFormat {
-    /// `MONATE.TXT`'s twelve. // [1110:65d6]
-    pub months: Vec<Vec<u8>>,
-    /// `Land` (`MODATYP.DAT`): 0 D, 1 A, 2 E, 3 F. // 1110:64be
-    pub land: u8,
-}
-
-impl DateFormat {
-    fn land(&self) -> formats::data::Land {
-        use formats::data::Land;
-        match self.land {
-            1 => Land::Amerika,
-            2 => Land::England,
-            3 => Land::Frankreich,
-            _ => Land::Deutschland,
-        }
-    }
-}
-
 /// The news archive and what goes with it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct News {
@@ -203,8 +189,6 @@ pub struct News {
     pub last: i16,
     /// No message was posted yet: the TV doesn't open. // 1110:667c
     pub nothing_yet: bool,
-    /// What the entries' dates are written with. Not in the map file.
-    pub date_format: DateFormat,
     /// The TV's speaker, as the view's TV reports it
     /// ([`crate::command::Action::Speaker`]). Not in the map file.
     pub speaker: Speaker,
@@ -229,14 +213,21 @@ pub enum Speaker {
 }
 
 impl Default for News {
-    /// As `init_messages` (1048:1ffd), which each game's set-up runs (state
-    /// 1220), leaves it.
+    /// [`News::new`] in the default language.
     fn default() -> Self {
+        News::new(Language::default())
+    }
+}
+
+impl News {
+    /// As `init_messages` (1048:1ffd), which each game's set-up runs (state
+    /// 1220), leaves it, for a world in `language`.
+    #[must_use]
+    pub fn new(language: Language) -> Self {
         News {
-            entries: vec![Entry::default(); ARCHIVE_ENTRIES],
+            entries: vec![Entry::empty(language); ARCHIVE_ENTRIES],
             last: 0,
             nothing_yet: true,
-            date_format: DateFormat::default(),
             speaker: Speaker::Off,
         }
     }
@@ -338,7 +329,6 @@ impl World {
         news.last = index16;
         let variant = self.random.random(3).cast_signed();
         message.text = message.number.wrapping_mul(3).wrapping_add(variant);
-        let format = &self.news.date_format;
         let entry = Entry {
             day: self.days,
             a: message.a,
@@ -347,7 +337,9 @@ impl World {
             y: message.y,
             text: message.text,
             number: message.number,
-            date: self.date.text(&format.months, format.land()), // 1030:0148
+            // In the world's language, which every player shares: the
+            // original's MONATE.TXT and `land`.
+            date: self.date.text(self.language.months(), self.language), // 1030:0148
             pos: message.pos.unwrap_or(self.viewpoint.origin),
             // Single human: the view origin of player 1.
             origin: self.viewpoint.origin,
@@ -565,7 +557,8 @@ mod tests {
         );
         assert_eq!(w.news.entries[4].pos, (77, 88));
         assert_eq!(w.news.entries[4].origin, (77, 88));
-        assert_eq!(w.news.entries[0].date, b"1.  1996");
+        // The world's language's date (German by default).
+        assert_eq!(w.news.entries[0].date, b"1. Januar 1996");
     }
 
     #[test]

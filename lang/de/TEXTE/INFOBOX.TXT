@@ -1,0 +1,87 @@
+ZeilenTexte : array[TIBZeilen,TIBTextart] of string =
+
+
+
+
+Baustelle
+
+Besitzer:
+
+Einnahmen:
+DM/M
+Kosten:
+DM/M
+Belegung:
+Url.
+Auslastung:
+
+Miete:
+DM/W
+Menüpreis:
+DM
+Zustand:
+%
+Fertig
+
+Hoehe:
+müNN
+INSEL-INFORMATION
+
+Qualität:
+%
+Urlauber:
+
+Größe:
+
+*** Beschreibungstexte: ***
+Ozean
+Ufer
+Grasland
+Sand
+Übergang Gras-Sand
+Straße auf Sand
+Straße auf Gras
+Straße auf Gras-Sand
+Brücke
+Fluß
+
+IBButtonzeile  :TIBButtonzeile =
+Text:
+
+Miete:
+Preis:
+
+
+
+
+
+
+IBButton       :TIBButton =
+Text:
+Renovieren
+
+
+Bestechen
+Verkaufen
+Abbruch
+OK
+Insel-Info
+Übersicht
+
+Kommerzsache To TagesPreisart:
+Menüpreis:
+Preis:
+Gebühren:
+Gebühren:
+Eintritt:
+Eintritt:
+Gebühren:
+Preis:
+Preis:
+Gebühren:
+
+
+
+
+
+

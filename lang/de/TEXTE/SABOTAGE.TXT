@@ -1,0 +1,57 @@
+Anwendbar auf:
+Kosten:
+Piranhas
+SApiranh.bmp
+Lassen Sie ein paar Piranhas in einen Pool.
+Pools
+50000
+    9   64   70  255  255  255
+Sprengladung
+SAbomb.bmp
+Versuchen Sie ein Gebäude in die Luft zu sprengen.
+Alle Gebäude
+200000
+  255  255  255  255  255  255
+Stinkbombe
+sastink.bmp
+Lassen sie eine Stinkbombe auf den Gegner los.
+Alle Gebäude
+10000
+  255  255  255  255  255  255
+Haitaucher
+sahai.bmp
+Schicken Sie einen Haitaucher vor die Küste.
+Meer
+30000
+  254  255  255  255  255  255
+Ratten
+saratte.bmp
+Setzen Sie Ratten bei dem Gegner aus.
+Alle Gebäude
+20000
+  255  255  255  255  255  255
+Schmierseife
+saoelauf.bmp
+Lassen Sie die Flugzeuge des Gegners rutschen.
+Flughäfen
+100000
+    9  255  255  255  255  255
+Bauzeit
+sabau.bmp
+Versuchen Sie die Bauzeit von einem gegnerischen Gebäude zu verlängern, indem Sie die Moral der Arbeiter untergraben.
+Baustellen
+10000
+  255  255  255  255  255  255
+Rufmord
+saruf.bmp
+Schädigen Sie den Ruf eines Gegners.
+Alle Gebäude
+50000
+  255  255  255  255  255  255
+Strassen
+sastrass.bmp
+Entfernt ein Straßenstück von einem Gegner.
+Strassen
+100000
+  255  255  255  255  255  255
+

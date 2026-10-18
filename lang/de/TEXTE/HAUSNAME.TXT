@@ -1,0 +1,264 @@
+Zeltplatz
+Jolly Hut
+Urwiezhaus
+Eis-Stand
+Hot-Dog-Stand
+Cocktailbar
+Bolzplatz
+Tennisplatz
+alter Park
+Swimmingpool
+Radel-Verleih
+Brücke
+Palme
+Bungalow
+Bungalow
+Villa Pitoria
+Villa Pitoria
+Luxusvilla
+Villa Holiday
+Palmbar
+Haifischbar
+Kiosk
+Laden
+H-Rundflüge
+Strandkörbe
+WaterBurger
+Jeepverleih
+Autosalon
+Müllkippe
+Osterinsel
+Stonehenge
+Baustelle
+Kraftwerk
+Kläranlage
+BayWatch Turm
+Miss Liberty
+Urlauber
+Schiefer Turm
+Treppina
+Bananorama
+Palm-Airport
+Palm-Airport
+Monkey-Airport
+Monkey-Airport
+Wolke Sieben
+Wolke Sieben
+Flugsbüttel
+Flugsbüttel
+Pegel
+Pegel
+Aerodrom
+Aerodrom
+Meeresbrücke
+Plattenia
+Kaschemme
+Paradieso
+Queen's Hotel
+Juwelier
+Beachvolleyball
+Stand
+Eiffelturm
+Ballamann 5
+Gourmettempel
+Supermarkt
+Wellenbad
+Minigolf
+Club Maritime
+Jungle Club
+Big Store
+Zoo
+Wasserpark
+Champusbar
+Spielhalle
+Casino
+Disco
+Theater
+Parkita
+Dolly Park
+Relapark
+Quadrapark
+Englapark
+Palm-Airport
+Palm-Airport
+Wolke Sieben
+Wolke Sieben
+Pegel
+Pegel
+Symrik Park
+Poorport
+Poorport
+Poorport
+Poorport
+LSP
+LSP
+LSP
+LSP
+Aquator
+Aquator
+Aquator
+Aquator
+Shipperman's
+Shipperman's
+Shipperman's
+Shipperman's
+Bigport
+Bigport
+Bigport
+Bigport
+Sphinx
+Surfverleih
+Big Ben
+Tennisstadion
+Tennis-WM
+Strandstadion
+Strandstadion
+Strandstadion
+Strandstadion
+Surf-WM
+Surf-WM
+Surf-WM
+Surf-WM
+Laufsteg
+Laufsteg
+Miss-HI-Wahl
+Miss-HI-Wahl
+Pyramide
+Brandenb. Tor
+*****************************************************************************
+kleiner Zeltplatz
+Jolly Good Hut
+Das Urwiezhaus
+Eis-Stand
+Hot-Dog-Stand
+Cocktailbar
+Bolzplatz
+Tennisplatz
+alter Park
+Swimmingpool
+Fahrrad-Verleih
+Brücke
+Palme
+Bungalow
+Bungalow
+Villa Pitoria
+Villa Pitoria
+Luxusvilla
+Villa Holiday Island
+Palmbar
+Haifischbar
+Kiosk
+Laden
+Hubschrauber-Rundflüge
+Strandkörbe
+WaterBurger
+Jeepverleih
+Autosalon
+Müllkippe
+Osterinselstatuen
+Stonehenge-Steine
+Baustelle
+Kraftwerk
+Kläranlage
+BayWatch Turm
+Freiheitsstatue
+Strandleben
+Schiefer Turm von Pisa
+Hotel Treppina
+Bananorama Hotel
+Palm-Airport
+Palm-Airport
+Monkey-Airport
+Monkey-Airport
+Wolke Sieben
+Wolke Sieben
+Flugsbüttel
+Flugsbüttel
+Holiday Pegel
+Holiday Pegel
+Aerodrom
+Aerodrom
+Meerbrücken
+Hotel Plattenia
+Kaschemme
+Hotel Paradieso
+Queen's Hotel
+Juwelier
+Beachvolleyball
+Stand
+Eiffelturm
+Ballamann 5
+Gourmettempel
+Supermarkt
+Wellenbad
+Minigolf
+Club Maritime
+Jungle Club
+Big Store
+Zoo
+Wasserpark
+Champagnerbar
+Spielhalle
+Casino
+Disco
+Theater
+Parkita
+Dolly Park
+Relapark
+Quadrapark
+Englapark
+Palm-Airport
+Palm-Airport
+Wolke Sieben
+Wolke Sieben
+Holiday Pegel
+Holiday Pegel
+Symrik Park
+Poorport
+Poorport
+Poorport
+Poorport
+Little Shipping Port
+Little Shipping Port
+Little Shipping Port
+Little Shipping Port
+Aquator
+Aquator
+Aquator
+Aquator
+Shipperman's Friend
+Shipperman's Friend
+Shipperman's Friend
+Shipperman's Friend
+Bigport
+Bigport
+Bigport
+Bigport
+Sphinx
+Surfverleih
+Big Ben
+Tennisstadion
+Tennis-WM
+Strandstadion
+Strandstadion
+Strandstadion
+Strandstadion
+Surf-WM
+Surf-WM
+Surf-WM
+Surf-WM
+Laufsteg
+Laufsteg
+Miss-HI-Wahl
+Miss-HI-Wahl
+Alte Maya-Pyramide
+Das Brandenburger Tor
+*****************************************************************************
+
+
+
+
+
+
+
+

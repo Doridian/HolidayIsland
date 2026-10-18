@@ -34,7 +34,8 @@
 //! [--films=hi|lo] [--no-audio] [--window-size=WxH] [--fullscreen|--windowed]
 //! [--ui-scale=N] [--lang=auto|de|en] [--original] [--enhance=KEY=on|off]
 //! [--enhancements] [--help] [GAME_DIR]` ([`USAGE`]), where `GAME_DIR` holds `HOLIDAY.EXE`,
-//! `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved games go to `DIR`
+//! `GRAFIK`, `DATA` and the films and sounds (default `orig`); the texts
+//! are the port's own (`game::lang`, `lang/`). Saved games go to `DIR`
 //! (default `MAPS` in the platform's data directory,
 //! `platform::storage::save_dir`); the lists show those and the game's own
 //! `MAPS` (the tutorial), which is only read. The sound plays the waves
@@ -1454,7 +1455,7 @@ impl Holiday {
     /// `land` (`game::lang`).
     fn language(&self) -> lang::Language {
         match &self.game {
-            Some(game) => game.info.language(),
+            Some(game) => game.info.language,
             None => self.enhance.language.language(folder_land(&self.dir)),
         }
     }
@@ -1999,13 +2000,13 @@ impl Holiday {
             // `MessageDlg(…, mtError, [mbOK], 0)` with the message in the
             // view's language. // 1040:0e03, en 1040:0eef
             Some(dateimenue::Action::InvalidName) => {
-                let text = dateimenue::invalid_name_text(game.info.land);
+                let text = dateimenue::invalid_name_text(game.info.language);
                 self.open_message(text, DlgType::Error, &[Btn::Ok], AfterMessage::Nothing);
             }
             // `MessageDlg(…, mtConfirmation, [mbOK, mbCancel], 0)`: OK
             // erases the game ([`Holiday::delete_game`]). // en 1040:110c
             Some(dateimenue::Action::Delete(name)) => {
-                let text = dateimenue::delete_question(game.info.land);
+                let text = dateimenue::delete_question(game.info.language);
                 self.open_message(
                     text,
                     DlgType::Confirmation,
@@ -2074,7 +2075,7 @@ impl Holiday {
             s.reset_effects(); // `init_sound`, en 1040:3c33
             s.intro_music();
         }
-        self.start = start_menu(&self.dir, &self.exe, settings);
+        self.start = start_menu(&self.dir, &self.exe, settings, self.language());
         self.start.menu.enhance = self.enhance.view;
         self.start.show(self.size);
         self.repaint();
@@ -2121,7 +2122,7 @@ impl Holiday {
         let Some(pending) = self.pending.take() else { return };
         let form = WasNunForm::show(
             bitmaps(&self.dir, &wasnunform::BITMAP_FILES),
-            wasnun_texts(&self.dir),
+            wasnun_texts(self.language()),
             &self.font,
             self.size,
         );
@@ -2332,7 +2333,14 @@ impl Holiday {
             Some(Action::Load) => {
                 // 1058:0c7d: the start menu is disabled and TLadenForm
                 // opens over it.
-                let mut load = load_menu(&self.dir, &self.exe, self.saves.games(self.enhance.view), self.size);
+                let language = self.language();
+                let mut load = load_menu(
+                    &self.dir,
+                    &self.exe,
+                    self.saves.games(self.enhance.view),
+                    self.size,
+                    language,
+                );
                 load.menu.enhance = self.enhance.view;
                 self.load = Some(load);
             }
@@ -2504,6 +2512,15 @@ fn read_opt(dir: &Path, name: &str) -> Option<Vec<u8>> {
         .or_else(|| std::fs::read(forms::find(dir, name)?).ok())
 }
 
+/// The text file `name` (`TEXTE/NAMEN.TXT`) in `language`, from the
+/// port's language data (`game::lang`, `lang/`), as the game's loaders
+/// read it.
+pub(crate) fn lang_text(language: lang::Language, name: &str) -> Vec<u8> {
+    language
+        .file(name)
+        .unwrap_or_else(|| panic!("no {name} in lang/{}", language.code()))
+}
+
 /// The folder's `land` (`MODATYP.DAT`, `load_modatyp`, en 1000:23ed),
 /// which `auto` follows (`game::lang`); `D` if the file can't be read.
 fn folder_land(dir: &Path) -> formats::data::Land {
@@ -2542,8 +2559,10 @@ fn bitmaps(dir: &Path, files: &[&str]) -> Vec<Surface> {
 
 /// The progress window's four lines of `TEXTE\WASNUN.TXT`, read line by
 /// line (`wasnun_load_texts`, en 1028:374a).
-fn wasnun_texts(dir: &Path) -> Vec<Vec<u8>> {
-    let data = read_opt(dir, &format!("TEXTE/{}", wasnunform::TEXT_FILE)).unwrap_or_default();
+fn wasnun_texts(language: lang::Language) -> Vec<Vec<u8>> {
+    let data = language
+        .file(&format!("TEXTE/{}", wasnunform::TEXT_FILE))
+        .unwrap_or_default();
     data.split(|&b| b == b'\n')
         .map(|l| l.strip_suffix(b"\r").unwrap_or(l).to_vec())
         .take(4)
@@ -2555,22 +2574,22 @@ fn wasnun_texts(dir: &Path) -> Vec<Vec<u8>> {
 ///
 /// With the later build's `UPGRADE\` folder its `SZENARIO.TXT` and
 /// bitmaps make the scenario page the later build's, with twelve
-/// scenarios. // en 1058:378f
-fn start_menu(dir: &Path, exe: &[u8], settings: Settings) -> StartMenu {
+/// scenarios. The texts are in `language`. // en 1058:378f
+fn start_menu(dir: &Path, exe: &[u8], settings: Settings, language: lang::Language) -> StartMenu {
     let mut images = bitmaps(dir, &startform::BITMAP_FILES);
     let szenario = if upgrade::present(dir) {
         images.extend(upgrade::bitmaps(dir, &startform::UPGRADE_BITMAP_FILES));
         szenario_txt_lines(
-            &upgrade::file(dir, "SZENARIO.TXT", "TEXTE/SZENARIO.TXT"),
+            &upgrade::file(dir, language, "SZENARIO.TXT", "TEXTE/SZENARIO.TXT"),
             formats::data::SZENARIO_LINES_UPGRADE,
         )
     } else {
-        szenario_txt(&read(dir, "TEXTE/SZENARIO.TXT"))
+        szenario_txt(&lang_text(language, "TEXTE/SZENARIO.TXT"))
     };
     let menu = StartForm::new(
         font(dir),
         images,
-        &start_txt(&read(dir, "TEXTE/START.TXT")),
+        &start_txt(&lang_text(language, "TEXTE/START.TXT")),
         &szenario,
         settings,
     );
@@ -2583,8 +2602,8 @@ fn start_menu(dir: &Path, exe: &[u8], settings: Settings) -> StartMenu {
 
 /// `TLadenForm` as 1038:3b46 creates and shows it, with `games`: at the
 /// bottom of the `screen`, `Bild` filling it. // 1038:3b46
-fn load_menu(dir: &Path, exe: &[u8], games: Vec<Vec<u8>>, screen: (i32, i32)) -> LoadMenu {
-    let texts = upgrade::sonstige(dir);
+fn load_menu(dir: &Path, exe: &[u8], games: Vec<Vec<u8>>, screen: (i32, i32), language: lang::Language) -> LoadMenu {
+    let texts = upgrade::sonstige(dir, language);
     let load = texts.texts.get(7).cloned().unwrap_or_default();
     let menu = LadenForm::new(font(dir), bitmaps(dir, &ladenform::BITMAP_FILES), &load, games);
     let mut form = load_form(exe, "TLADENFORM");
@@ -2613,8 +2632,8 @@ impl LoadMenu {
 
 /// `TDateimenue` as `Application.CreateForm` makes it, hidden, at the
 /// DFM's position. // 1040:154d
-fn file_menu(dir: &Path, exe: &[u8]) -> FileMenu {
-    let texts = upgrade::sonstige(dir);
+fn file_menu(dir: &Path, exe: &[u8], language: lang::Language) -> FileMenu {
+    let texts = upgrade::sonstige(dir, language);
     // BUG(original): the DFM's place on the screen (305, 139), which isn't over the centred main screen on a desktop bigger than 640×480.
     let mut form = load_form(exe, "TDATEIMENUE");
     let at = form.components[0].bounds;
@@ -2662,8 +2681,9 @@ fn load_tiles(dir: &Path) -> Tiles {
     )
 }
 
-/// The tables the simulation reads (1030:2e48), for a scenario's world.
-fn world_tables(dir: &Path) -> Arc<Tables> {
+/// The tables the simulation reads (1030:2e48), for a scenario's world
+/// in `language` (the sabotage's kinds of `SABOTAGE.TXT`).
+fn world_tables(dir: &Path, language: lang::Language) -> Arc<Tables> {
     Arc::new(Tables {
         hausnr: hausnr(&read(dir, "DATA/HAUSNR.DAT")).expect("HAUSNR.DAT"),
         hausdata: hausdata(&read(dir, "DATA/HAUSDATA.DAT")).expect("HAUSDATA.DAT"),
@@ -2678,7 +2698,7 @@ fn world_tables(dir: &Path) -> Arc<Tables> {
             .expect("MODATYP.DAT")
             .strassenbaukosten,
         sabotage: game::sabotage::kinds(
-            &formats::data::sabotage(&read(dir, "TEXTE/SABOTAGE.TXT"))
+            &formats::data::sabotage(&lang_text(language, "TEXTE/SABOTAGE.TXT"))
                 .expect("SABOTAGE.TXT")
                 .1,
         ),
@@ -2705,10 +2725,13 @@ type Start = (World, Camera, Option<(i16, i16)>, Fields);
 /// the generator. // 1000:2466
 #[cfg(test)]
 fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &mut Options, fixes: Fixes) -> Start {
-    start_world_seeded(dir, settings, scenario_page, options, fixes, seed())
+    let language = lang::Language::of_land(folder_land(dir));
+    start_world_seeded(dir, settings, scenario_page, options, fixes, seed(), language)
 }
 
-/// [`start_world`] with `RandSeed` as `Randomize` left it (`seed`).
+/// [`start_world`] with `RandSeed` as `Randomize` left it (`seed`), and
+/// the world's text in `language`, the player's when the game is created
+/// ([`World::language`]).
 fn start_world_seeded(
     dir: &Path,
     settings: &Settings,
@@ -2716,6 +2739,7 @@ fn start_world_seeded(
     options: &mut Options,
     fixes: Fixes,
     seed: u32,
+    language: lang::Language,
 ) -> Start {
     match hintergrund::new_island(settings, scenario_page) {
         Island::Scenario(path) => {
@@ -2725,11 +2749,11 @@ fn start_world_seeded(
             // A scenario's file has no fixes: the player's.
             world.set_loaded_fixes(fixes);
             world.random = Random::new(seed);
-            world.tables = world_tables(dir);
-            world.news.date_format = game::news::DateFormat {
-                months: monate(&read(dir, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
-                land: modatyp(&read(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT").land as u8,
-            };
+            world.tables = world_tables(dir, language);
+            // A scenario is a new game: the world's text is in the
+            // player's language (the names are the scenario's).
+            world.language = language;
+            world.folder_language = lang::Language::of_land(folder_land(dir));
             // The rest of state 1500: the scenario's events, its build
             // menu and the computers.
             if scenario_page {
@@ -2749,7 +2773,8 @@ fn start_world_seeded(
             (world, camera, Some(camera.origin), view.unported)
         }
         Island::Generated => {
-            let data = hintergrund::GameData::load(|name| read_opt(dir, name)).unwrap_or_else(|e| panic!("{e}"));
+            let data =
+                hintergrund::GameData::load(|name| read_opt(dir, name), language).unwrap_or_else(|e| panic!("{e}"));
             // States 100, 1210 and 1220.
             let world = hintergrund::new_world(settings, &data, seed, fixes);
             // The options as the initialised data has them (1000:1ea0).
@@ -2781,7 +2806,10 @@ fn load_game(
     config: &Config,
     seed: u32,
 ) -> Game {
-    let data = hintergrund::GameData::load(|name| read_opt(dir, name)).unwrap_or_else(|e| panic!("{e}"));
+    // The set-up's text is in the player's language; the file's world
+    // keeps the language it names, or takes the folder's (`World::load_map`).
+    let language = config.language.language(folder_land(dir));
+    let data = hintergrund::GameData::load(|name| read_opt(dir, name), language).unwrap_or_else(|e| panic!("{e}"));
     // The file's fixes; the player's for those it doesn't name (all of
     // them in an original file).
     let world = hintergrund::load_saved_game(map, settings, &data, seed, config.fixes)
@@ -2850,7 +2878,8 @@ fn start_game_seeded(
 ) -> Game {
     // A new game, and a scenario (whose file has no fixes), plays with
     // the player's, in place before the world is set up.
-    let start = start_world_seeded(dir, settings, scenario_page, &mut options, config.fixes, seed);
+    let language = config.language.language(folder_land(dir));
+    let start = start_world_seeded(dir, settings, scenario_page, &mut options, config.fixes, seed, language);
     let mut game = make_game(dir, exe, start, options, high, sound, size, config.language);
     if scenario_page {
         game.tools.menu.start_scenario(game.world.scenario); // en 1018:015f
@@ -2873,6 +2902,8 @@ fn make_game(
     size: (i32, i32),
     language: lang::Setting,
 ) -> Game {
+    // Every text of the view is in the player's language.
+    let language = language.language(folder_land(dir));
     {
         let mut s = sound.borrow_mut();
         s.music.init_playlist(&mut options); // 1018:37de, from 1030:36e5
@@ -2882,7 +2913,7 @@ fn make_game(
         }
     }
     let font = font(dir);
-    let texts = upgrade::sonstige(dir);
+    let texts = upgrade::sonstige(dir, language);
     let frame = bitmaps(dir, &hauptschirm::BITMAP_FILES);
     let title = texts.texts.first().cloned().unwrap_or_default();
     let mut screen = match origin {
@@ -2892,9 +2923,8 @@ fn make_game(
     let tiles = load_tiles(dir);
     screen.paint_map(&world, &tiles);
     let info = InfoTexts {
-        months: monate(&read(dir, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
-        // The view's `land`: the folder's, or the forced language's.
-        land: language.land(folder_land(dir)),
+        months: monate(&lang_text(language, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
+        language,
         currency_factor: texts.waehrungsfaktor,
         currency: texts.texts.get(5).cloned().unwrap_or_default(), // 1020:3ea6
     };
@@ -2915,7 +2945,7 @@ fn make_game(
         .iter()
         .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
         .collect();
-    let auction = Auktionsform::new(auction_bitmaps, auktion(&read(dir, "TEXTE/AUKTION.TXT")));
+    let auction = Auktionsform::new(auction_bitmaps, auktion(&lang_text(language, "TEXTE/AUKTION.TXT")));
     let mut auction_form = load_form(exe, "TAUKTIONSFORM");
     for (name, bounds) in auktionsform::LAYOUT {
         if let Some(c) = auction_form.component_mut(name) {
@@ -2925,16 +2955,19 @@ fn make_game(
     }
     // 1030:36e5 (1018:2fa2) and `game_start_setup` (1010:2820): the
     // build menu, and the tools from the map.
-    let names = hausname(&read(dir, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
+    let names = hausname(&lang_text(language, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
     let menu = Baumenue::new(
-        baumenu_txt(&read(dir, "TEXTE/BAUMENU.TXT")).expect("BAUMENU.TXT"),
-        &baumenu_dat(&read(dir, "DATA/BAUMENU.DAT")).expect("BAUMENU.DAT"),
+        baumenu_txt(&lang_text(language, "TEXTE/BAUMENU.TXT")).expect("BAUMENU.TXT"),
+        &baumenu_dat(&lang_text(language, "DATA/BAUMENU.DAT")).expect("BAUMENU.DAT"),
         names,
-        auswahl(&read(dir, "TEXTE/AUSWAHL.TXT")),
+        auswahl(&lang_text(language, "TEXTE/AUSWAHL.TXT")),
         bitmaps(dir, &baumenue::BITMAP_FILES),
         size,
     );
-    let mut tools = Tools::new(menu, fehler(&read(dir, "TEXTE/FEHLER.TXT")).expect("FEHLER.TXT"));
+    let mut tools = Tools::new(
+        menu,
+        fehler(&lang_text(language, "TEXTE/FEHLER.TXT")).expect("FEHLER.TXT"),
+    );
     tools.sabowin = Some(Forms::sabowin(dir, &font, &info));
     tools.start(&view_rest, &world, &font, &tiles, &info, screen.camera().view);
     screen.draw_buttons(&tools.down);
@@ -2985,7 +3018,7 @@ fn make_game(
         dir: dir.to_path_buf(),
         auction_captured: false,
         commands,
-        file_menu: file_menu(dir, exe),
+        file_menu: file_menu(dir, exe, language),
         view_rest,
         sound: Rc::clone(sound),
         size,
@@ -2997,11 +3030,12 @@ fn make_game(
 const USAGE: &str = "\
 usage: holiday [OPTIONS] [GAME_DIR]
 
-GAME_DIR holds HOLIDAY.EXE, GRAFIK, DATA and TEXTE (default: orig).
+GAME_DIR holds HOLIDAY.EXE, GRAFIK, DATA, the films and sounds (default:
+orig). The texts are the port's own, in German or English.
 
-  --lang=auto|de|en      the language of the dates, numbers and the port's
-                         texts (default auto: the game folder's; settings.ini
-                         language=); the folder's own texts stay as they are
+  --lang=auto|de|en      the language of every text (default auto: the game
+                         folder's; settings.ini language=); the speech stays
+                         the folder's
   --original             every enhancement off, as the original
   --enhance=KEY=on|off   one enhancement on or off
   --enhancements         list the enhancements and exit
@@ -3245,7 +3279,12 @@ impl Holiday {
         if let Some(image) = form.component_mut("backgroundimage") {
             image.visible = true;
         }
-        let start = start_menu(&dir, &exe, Settings::default());
+        let start = start_menu(
+            &dir,
+            &exe,
+            Settings::default(),
+            enhance.language.language(folder_land(&dir)),
+        );
         let font = font(&dir);
         let message_bitmaps = bitmaps(&dir, &msgdlg::BITMAP_FILES);
         let mut holiday = Holiday {
@@ -3430,7 +3469,7 @@ mod tests {
         let exe = read(&dir, "HOLIDAY.EXE");
         // `TEXTE\Hausname.txt` in mixed case.
         assert!(read_opt(&dir, "TEXTE/HAUSNAME.TXT").is_some());
-        let start = start_menu(&dir, &exe, Settings::default());
+        let start = start_menu(&dir, &exe, Settings::default(), lang::Language::En);
         assert!(!start.menu.scenario_mode());
         let settings = Settings {
             scenario: 10,
@@ -3458,7 +3497,7 @@ mod tests {
                 .key_down(0x71, ShiftState::default(), &game.world, &game.tiles),
             KeyResult::Ignored
         ));
-        let file = file_menu(&dir, &exe);
+        let file = file_menu(&dir, &exe, lang::Language::En);
         assert_eq!(file.menu.name(), b"");
         let background = bitmap(&dir, "GRAFIK/BCK80X60.BMP");
         let mut screen = Surface::new(800, 600, 0);
@@ -5014,13 +5053,15 @@ mod tests {
         h.input(Input::KeyUp(0x20));
     }
 
-    /// The main screen with its forms, the auction, the options and the
-    /// list of enhancements on the German (`orig/`) and the English
-    /// (`orig-en/`) folder, each in its own language (`auto`) and in the
-    /// other one forced (`docs/language.md`). The view's dates, numbers
-    /// and the port's texts follow the language; the world's text (the
-    /// news archive's dates) stays the folder's. With `HOLIDAY_PNG` set,
-    /// the screens go there as `lang-<folder>[-lang-<forced>]-<screen>.png`.
+    /// The main screen with its forms (the TV with a message), the
+    /// auction, the options, the list of enhancements and a message box
+    /// on the German (`orig/`) and the English (`orig-en/`) folder, each in
+    /// its own language (`auto`) and in the other one forced
+    /// (`docs/language.md`), and the start menu's scenario page. Every
+    /// text is the language's, from `lang/`: nothing of the folder's
+    /// language shows when another is forced. A new game's world is in
+    /// the player's language too. With `HOLIDAY_PNG` set, the screens go
+    /// there as `langfiles-<folder>[-lang-<forced>]-<screen>.png`.
     /// Skipped for a folder that isn't there.
     #[test]
     fn language_screens() {
@@ -5044,22 +5085,51 @@ mod tests {
             // The forms' buttons close them rather than raise them.
             config.view.set(enhance::Enhancement::WindowStacking, false);
             config.language = setting;
+            let language = setting.language(land);
+            // The start menu, on its scenario page with scenario 12 (the
+            // later build's, on the English folder) ticked.
+            let mut h = fixed_holiday_with(&dir, config);
+            let menu = &mut h.start.menu;
+            let _ = menu.mouse_down(0x12 + 4, 0x132 + 4, ShiftState::LEFT);
+            let _ = menu.mouse_up(0x12 + 4, 0x132 + 4, true);
+            assert!(menu.scenario_mode());
+            if upgrade::present(&dir) {
+                let _ = menu.mouse_down(0x176 + 4, 0xec + 4, ShiftState::LEFT);
+                assert_eq!(menu.settings().scenario, 12);
+            }
+            h.repaint();
+            write_png(&h, &format!("langfiles-{tag}-start"));
+
             let mut h = holiday_in_a_game(&dir, SIZE, config);
             let game = h.game.as_mut().unwrap();
-            let language = setting.language(land);
-            assert_eq!(game.info.language(), language);
-            assert_eq!(game.info.land, language.land(land));
-            // The world's date format is the folder's, whatever the view's.
-            assert_eq!(game.world.news.date_format.land, land as u8);
-            let date = game.world.date.text(&game.info.months, game.info.land);
+            assert_eq!(game.info.language, language);
+            // A new game's world is in the language it was created in.
+            assert_eq!(game.world.language, language);
+            assert_eq!(game.world.folder_language, Language::of_land(land));
+            let date = game.world.date.text(&game.info.months, game.info.language);
             // `6. Januar 1996`, `6th January 1996`.
             let dot = date.iter().take_while(|b| *b != &b' ').any(|&b| b == b'.');
             assert_eq!(dot, language == Language::De, "{}", String::from_utf8_lossy(&date));
+            let months = language.months();
+            assert!(months.iter().any(|m| date.windows(m.len()).any(|w| w == &m[..])));
             assert_eq!(
-                game::money::format_money(1_234_567, 1, game.info.land),
-                language.pick(&b"1.234.567"[..], &b"1,234,567"[..])
+                game::money::format_money(1_234_567, 1, game.info.language),
+                match language {
+                    Language::De => &b"1.234.567"[..],
+                    Language::En => &b"1,234,567"[..],
+                }
             );
-            write_png(&h, &format!("lang-{tag}-main"));
+            // The currency is the language's: DM times 10, £ times 4.
+            let currency: &[u8] = match language {
+                Language::De => b"DM",
+                Language::En => b"\xa3",
+            };
+            assert_eq!(game.info.currency, currency);
+            assert_eq!(game.info.currency_factor, if language == Language::De { 10 } else { 4 });
+            // The TV's message's date, the world's, in the same language.
+            let entry = &game.world.news.entries[usize::try_from(game.world.news.last).unwrap()];
+            assert!(months.iter().any(|m| entry.date.windows(m.len()).any(|w| w == &m[..])));
+            write_png(&h, &format!("langfiles-{tag}-main"));
             // The info bar's date and money, with the forms closed.
             let game = h.game.as_mut().unwrap();
             for button in [3, 4, 5] {
@@ -5068,7 +5138,7 @@ mod tests {
             let _ = game.update(Duration::ZERO);
             assert!(!game.forms.tv.visible && !game.forms.money.shown());
             h.repaint();
-            write_png(&h, &format!("lang-{tag}-infobar"));
+            write_png(&h, &format!("langfiles-{tag}-infobar"));
             // An auction: the item's picture, its texts and the price.
             let game = h.game.as_mut().unwrap();
             game.world.auction.item = 9;
@@ -5077,19 +5147,30 @@ mod tests {
             game.open_auction();
             assert!(game.auction.visible);
             h.repaint();
-            write_png(&h, &format!("lang-{tag}-auction"));
+            write_png(&h, &format!("langfiles-{tag}-auction"));
             let game = h.game.as_mut().unwrap();
             game.auction.visible = false;
             // The options, and from their "INFO" the enhancements.
             game.click_button(2);
             assert!(game.forms.options.visible);
             h.repaint();
-            write_png(&h, &format!("lang-{tag}-options"));
+            write_png(&h, &format!("langfiles-{tag}-options"));
             h.input(Input::KeyDown(0x20));
             h.input(Input::KeyUp(0x20));
             assert!(h.game.as_ref().unwrap().forms.enhance.visible);
             h.repaint();
-            write_png(&h, &format!("lang-{tag}-enhance"));
+            write_png(&h, &format!("langfiles-{tag}-enhance"));
+            h.input(Input::KeyDown(0x1b));
+            h.input(Input::KeyUp(0x1b));
+            // The file menu's question, in a message box.
+            h.open_message(
+                dateimenue::delete_question(language),
+                DlgType::Confirmation,
+                &[Btn::Ok, Btn::Cancel],
+                AfterMessage::Nothing,
+            );
+            h.repaint();
+            write_png(&h, &format!("langfiles-{tag}-message"));
         }
     }
 
@@ -5326,11 +5407,11 @@ mod tests {
         let font = font(&dir);
         for i in enhance::all() {
             for language in [lang::Language::De, lang::Language::En] {
-                let text = lang::latin1(i.label(language));
+                let text = lang::encode(i.label(language));
                 // A row's text is 280 - 16 - 3 wide (`ui_radio_draw`).
                 let label = i.label(language);
                 assert_eq!(font.wrap(&text, 261, game::text::Align::Left).len(), 1, "{label}");
-                let line = lang::latin1(&format!("{}: {}", i.key, i.description(language)));
+                let line = lang::encode(&format!("{}: {}", i.key, i.description(language)));
                 assert!(font.wrap(&line, 616, game::text::Align::Left).len() <= 2, "{}", i.key);
             }
         }
@@ -5471,7 +5552,7 @@ mod tests {
                 Language::En => b"Are you sure?",
             };
             assert_eq!(
-                dateimenue::delete_question(h.game.as_ref().unwrap().info.land),
+                dateimenue::delete_question(h.game.as_ref().unwrap().info.language),
                 expected
             );
             std::fs::remove_dir_all(&h.saves.dir).unwrap();
@@ -5543,7 +5624,7 @@ mod tests {
             let form = |h: &Holiday| h.loading.as_ref().map(|l| (l.form.text().to_vec(), l.form.percent()));
             assert_eq!(form(&h), Some((Vec::new(), 0)), "state 1200");
             h.update(Duration::ZERO);
-            let texts = wasnun_texts(&dir);
+            let texts = wasnun_texts(h.language());
             assert_eq!(
                 form(&h),
                 Some((texts[wasnunform::page::NEW_MAP].clone(), 5)),
@@ -5576,6 +5657,7 @@ mod tests {
                     scenario: 2,
                     ..Settings::default()
                 },
+                h.language(),
             )
             .menu;
             h.pending = Some(Pending::Start { scenario: true });
@@ -5594,12 +5676,17 @@ mod tests {
     /// there as `step4-insert-cd-<tag>.png`.
     /// A program on `dir` past the intro, its games' `RandSeed` fixed.
     fn fixed_holiday(dir: &Path) -> Holiday {
+        fixed_holiday_with(dir, Config::default())
+    }
+
+    /// [`fixed_holiday`] with the player's settings `config`.
+    fn fixed_holiday_with(dir: &Path, config: Config) -> Holiday {
         let sound = Sound::new(dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
         let saves = Saves {
             dir: std::env::temp_dir().join(format!("holiday-back-test-{}", std::process::id())),
             game_maps: dir.join("MAPS"),
         };
-        let mut h = Holiday::new(dir.to_path_buf(), saves, sound, Config::default());
+        let mut h = Holiday::new(dir.to_path_buf(), saves, sound, config);
         h.seed = || 0x1996_0611;
         h.resize(800, 600);
         h.intro_step(Duration::ZERO, MENU_AT);
@@ -5632,7 +5719,7 @@ mod tests {
             name: b"Tester".to_vec(),
             ..Settings::default()
         };
-        h.start = start_menu(&dir, &h.exe, custom);
+        h.start = start_menu(&dir, &h.exe, custom, h.language());
         h.start.show(h.size);
         start(&mut h);
         let game = h.game.as_mut().unwrap();
@@ -5668,7 +5755,7 @@ mod tests {
         let second = h.game.take().unwrap();
         // A fresh start with that menu and those options.
         let mut fresh = new();
-        fresh.start = start_menu(&dir, &fresh.exe, menu);
+        fresh.start = start_menu(&dir, &fresh.exe, menu, fresh.language());
         fresh.start.show(fresh.size);
         fresh.options.speech = false;
         start(&mut fresh);

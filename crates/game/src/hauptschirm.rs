@@ -27,7 +27,6 @@
 //! of ([`Hauptschirm::bar_mouse_down`], [`Hauptschirm::bar_tick`];
 //! `docs/map.md`, "The scroll bars").
 
-use formats::data::Land;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
@@ -334,23 +333,14 @@ pub fn button_blocked(scenario: u8, button: u8) -> bool {
 pub struct InfoTexts {
     /// `MONATE.TXT`. // [1110:65d6]
     pub months: Vec<Vec<u8>>,
-    /// The country from `MODATYP.DAT`, for the date's and the money's
-    /// format, as the player's language has it
-    /// ([`crate::lang::Setting::land`]: the folder's own unless another
-    /// language is forced). // 1110:64be
-    pub land: Land,
+    /// The player's language, for the date's and the money's format,
+    /// which the original takes from `MODATYP.DAT`'s country (`land`,
+    /// `1110:64be`; [`crate::lang`]).
+    pub language: crate::lang::Language,
     /// `Waehrungsfaktor` from `SONSTIGE.TXT`. // 1110:7346
     pub currency_factor: i32,
     /// The currency's name, `SONSTIGE.TXT`'s sixth text. // *1110:7352
     pub currency: Vec<u8>,
-}
-
-impl InfoTexts {
-    /// The player's language, which goes with the view's `land`.
-    #[must_use]
-    pub fn language(&self) -> crate::lang::Language {
-        crate::lang::Language::of_land(self.land)
-    }
 }
 
 /// The main screen's state and images.
@@ -709,7 +699,7 @@ impl Hauptschirm {
         if shown.is_none_or(|(_, m)| m != money) {
             // 1078:01e7, 1030:2211: the amount, a space, the currency;
             // in colour 11 when it's negative.
-            let mut text = format_money(money, texts.currency_factor, texts.land);
+            let mut text = format_money(money, texts.currency_factor, texts.language);
             text.push(b' '); // 1078:01e5
             text.extend_from_slice(&texts.currency);
             text.truncate(255);
@@ -720,7 +710,7 @@ impl Hauptschirm {
         if shown.is_none_or(|(d, _)| d != date) {
             // 1030:0148, 1030:228d; with `big_map` at the wider bar's
             // right end.
-            let text = date.text(&texts.months, texts.land);
+            let text = date.text(&texts.months, texts.language);
             let right = self.width - WIDTH;
             self.restore_info_bar(400 + right, 640);
             font.draw(&mut self.info, &text, (450 + right, 1), 182, Align::Right, 10);
@@ -1126,7 +1116,7 @@ impl Hauptschirm {
         }
         let mut money = |dst: &mut Surface, amount: i32, at: (i32, i32)| {
             // 1088:3a19: format_money, ' ' (1088:3a17), the currency.
-            let mut text = format_money(amount, texts.currency_factor, texts.land);
+            let mut text = format_money(amount, texts.currency_factor, texts.language);
             text.push(b' ');
             text.extend_from_slice(&texts.currency);
             text.truncate(255);

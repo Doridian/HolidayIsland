@@ -184,7 +184,10 @@ tracks), `orig-en/` and `orig/` differ in:
 - `DATA\BAUMENU.DAT`, `GELDMENU.DAT`, `INFOBOX.DAT`: positions and
   alignments of labels and values only (columns swapped and moved for
   the English words, `left`/`right`). Layout for the translation, no
-  numbers that play.
+  numbers that play; the port keeps them with each language's texts
+  (`lang/<code>/DATA/`).
+- `TEXTE\SABOTAGE.TXT`: besides the words, the shark diver's first
+  target, 254 in German and 255 in English, which the game never reads.
 - `DATA\MODATYP.DAT`: `land` `D` → `E`; every number the same.
 - `SZENARIO\URLAUBER.HIS`: one byte (0xa1448), a beach life square of
   one house (`*1110:6f10` record `+0x27`), 0xaa → 0xea.
@@ -203,8 +206,10 @@ hasn't been looked at.
 
 The port takes the later build's fixes unconditionally, reads
 `UPGRADE\` when it's there and plays its scenarios, and without it
-behaves as v1.0 with v1.0's files. The texts, the speech and the
-currency are the folder's; the language of the rest follows the folder
-or the player's choice ([language.md](language.md)). What's ported and what isn't yet is in the
+behaves as v1.0 with v1.0's files. The texts are the port's own, in
+German and English ([lang/](../lang/README.md)): the folder's
+language, or the player's choice, with `UPGRADE\`'s texts when the folder
+has it (in German the port's translation). The speech is the folder's
+([language.md](language.md)). What's ported and what isn't yet is in the
 modules' docs; [original-bugs.md](original-bugs.md) marks the rows the
 later build fixed.

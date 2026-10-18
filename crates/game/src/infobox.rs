@@ -138,14 +138,12 @@ fn concat(mut a: Vec<u8>, b: &[u8]) -> Vec<u8> {
 /// in Germany, `_` in France, `,` elsewhere). With `infobox_text`
 /// (`enhance`) the thousands are marked where they are. // 1030:13da, 1030:108b
 #[must_use]
-pub fn decimal_money(amount: i32, factor: i32, land: formats::data::Land, enhance: Enhancements) -> Vec<u8> {
-    use formats::data::Land;
+pub fn decimal_money(amount: i32, factor: i32, language: crate::lang::Language, enhance: Enhancements) -> Vec<u8> {
     let mut s = number(amount.wrapping_mul(factor));
-    let (point, thousands) = match land {
-        Land::Deutschland => (b',', b'.'),
-        Land::Frankreich => (b'.', b'_'),
-        Land::Amerika | Land::England => (b'.', b','),
-    };
+    // The original's marks by `land`: `D` `,` and `.`, `F` `.` and `_`,
+    // `A` and `E` `.` and `,`; the port's are the language's.
+    let format = language.format();
+    let (point, thousands) = (format.decimal, format.thousands);
     let first = usize::from(s.first() == Some(&b'-'));
     while s.len() - first < 3 {
         s.insert(first, b'0'); // 1030:1089
@@ -534,14 +532,14 @@ impl Infobox {
         let per_visit = (self.record_price(world).wrapping_mul(100) / 30)
             .checked_div(capacity)
             .unwrap_or(0);
-        decimal_money(per_visit, info.currency_factor, info.land, self.enhance)
+        decimal_money(per_visit, info.currency_factor, info.language, self.enhance)
     }
 
     /// Line `line`'s value. // 1038:014b
     fn value(&mut self, world: &World, info: &InfoTexts, line: usize) -> Vec<u8> {
         let t = &world.tables;
         let b = self.building;
-        let money = |n: i32| format_money(n, info.currency_factor, info.land);
+        let money = |n: i32| format_money(n, info.currency_factor, info.language);
         let capacity = i32::from(t.hausdata(b, 3));
         let plot = self.plot.and_then(|p| world.plots.get(p));
         match line {
@@ -709,7 +707,7 @@ impl Infobox {
         }
         if zeile.mit_wert && (row == ROW_RENT || row == ROW_PRICE) {
             let amount = if row == ROW_RENT {
-                format_money(self.record_rent(world) / 4, info.currency_factor, info.land)
+                format_money(self.record_rent(world) / 4, info.currency_factor, info.language)
             } else {
                 self.price_text(world, info)
             };
@@ -1081,14 +1079,13 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use formats::data::Land;
 
     /// The original's text.
     const O: Enhancements = Enhancements::ORIGINAL;
 
     #[test]
     fn decimals() {
-        let de = Land::Deutschland;
+        let de = crate::lang::Language::De;
         assert_eq!(decimal_money(5, 10, de, O), b"0,50");
         assert_eq!(decimal_money(0, 10, de, O), b"0,00");
         assert_eq!(decimal_money(-1, 1, de, O), b"-0,01");
@@ -1097,7 +1094,7 @@ mod tests {
         // The thousands mark one place off.
         assert_eq!(decimal_money(12_345, 10, de, O), b"1234,50");
         assert_eq!(decimal_money(1_234_567, 100, de, O), b"12.34567,00");
-        assert_eq!(decimal_money(500, 1, Land::England, O), b"5.00");
+        assert_eq!(decimal_money(500, 1, crate::lang::Language::En, O), b"5.00");
         // `infobox_text` marks them where they are.
         let mut e = O;
         e.set(Enhancement::InfoboxText, true);

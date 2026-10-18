@@ -195,7 +195,7 @@ fn info_bar() {
     let texts = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
     let info = InfoTexts {
         months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
-        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        language: game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
         currency_factor: texts.waehrungsfaktor,
         currency: texts.texts[5].clone(),
     };

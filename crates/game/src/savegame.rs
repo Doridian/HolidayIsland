@@ -582,7 +582,7 @@ impl World {
         let mut save = SaveGame::build(&mut Saving { world: self, view });
         // The port's chunk after the original's fields, which the
         // original doesn't read (`docs/savegame.md`).
-        save.trailing = crate::enhance::fixes_chunk(self.fixes);
+        save.trailing = crate::enhance::world_chunk(self.fixes, self.language);
         save
     }
 
@@ -594,7 +594,7 @@ impl World {
         // BUG(original): RandSeed isn't saved; a loaded game goes on with the numbers of the game in memory.
         self.random = before.random;
         self.tables = std::sync::Arc::clone(&before.tables);
-        self.news.date_format.clone_from(&before.news.date_format);
+        self.folder_language = before.folder_language;
         // BUG(original): an oil slick going on (1110:0088) isn't saved; the loaded game takes the flag of the one in memory.
         self.oil_slick = before.oil_slick;
         self.finances.frozen = before.finances.frozen;
@@ -645,8 +645,10 @@ impl World {
     pub fn load_map(&self, save: &SaveGame) -> Result<World, crate::world::Error> {
         let mut w = World::from_map(save)?;
         w.keep_unsaved(self);
-        // A file without the port's chunk leaves the fixes as they are.
+        // A file without the port's chunk leaves the fixes as they are,
+        // and takes the game folder's language.
         w.set_loaded_fixes(crate::enhance::fixes_in(&save.trailing, self.fixes));
+        w.language = crate::lang::language_in(&save.trailing).unwrap_or(self.folder_language);
         Ok(w)
     }
 }
@@ -816,7 +818,7 @@ mod tests {
         assert!(back.unported.is_empty());
         // The port's chunk follows the original's fields.
         assert!(bytes.ends_with(&save.trailing));
-        assert_eq!(save.trailing, crate::enhance::fixes_chunk(w.fixes));
+        assert_eq!(save.trailing, crate::enhance::world_chunk(w.fixes, w.language));
         // A file without it loads over a game and keeps that game's fixes.
         let mut original = parsed.clone();
         original.trailing.clear();
@@ -827,6 +829,18 @@ mod tests {
             World::from_map(&original).unwrap().fixes,
             crate::enhance::Fixes::ORIGINAL
         );
+        // The world's language goes with the file; a file without it
+        // takes the game folder's.
+        let en = crate::lang::Language::En;
+        let mut english = w.clone();
+        english.language = en;
+        let save = english.to_map(&view);
+        assert_eq!(World::from_map(&save).unwrap().language, en);
+        assert_eq!(w.load_map(&save).unwrap().language, en);
+        playing.language = crate::lang::Language::De;
+        playing.folder_language = en;
+        let loaded = playing.load_map(&original).unwrap();
+        assert_eq!((loaded.language, loaded.folder_language), (en, en));
     }
 
     #[test]

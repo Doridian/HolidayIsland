@@ -1,0 +1,10 @@
+// HIGHSCO2.TXT of the "Erweiterte Version" (UPGRADE\), in German.
+// Translated by the Holiday Island port, not by Sunflowers: Sunflowers
+// shipped this file only in English.
+// The high score table's names of the six new scenarios.
+North Indies
+Camper-Traum
+Ohne Hotels
+PR-Wunder
+Hurry Up
+Challenge

@@ -53,6 +53,8 @@ crates/game/       the decompiled game, one module per original unit; no platfor
 crates/platform/   winit/wgpu/cpal glue, the data source and storage backends
 crates/holiday/    the binary (native; the wasm entry point is planned)
 crates/net/        later: lockstep session, transport trait, WebSocket relay client
+lang/<code>/       the texts of each language (TEXTE/, UPGRADE/, strings.toml), embedded
+                   into crates/game (lang/README.md)
 ```
 
 `game` and `vcl` see the platform only through traits (display, audio, data
@@ -179,6 +181,13 @@ files, storage, clock), so they run headless in tests.
 - **Assets from the EXE** (the DFMs, the VCL's button glyphs) are read from
   the user's `HOLIDAY.EXE` at runtime and never committed. The mouse
   pointers are the system's, in the shapes the game sets (`platform::Cursor`).
+- **Text is the port's own.** The original's texts, strings and formats,
+  German and English, are in the repository's `lang/` folder, one folder
+  per language ([lang/README.md](../lang/README.md)), compiled into the
+  `game` crate (`game::lang`, `include_str!`). The language a player picks
+  decides every text of their view, whichever release the game folder is;
+  only the speech, the films and the pictures come from the folder
+  ([language.md](language.md)).
 
 ## Stretch goal: network multiplayer
 
@@ -230,10 +239,13 @@ in the design points above:
   gets a timeout with a default, or the game pauses for everyone.
 - Save games store seats and keep the original format readable. Single-player
   saves of the original load as a game with one human seat.
-- Language is each player's view setting; the world's own text (the
-  players' names, the news archive's dates) comes from the game folder's
-  data and must come with the world from the host
-  ([language.md](language.md#the-worlds-text)).
+- Language is each player's view setting. The world's own text (the
+  computers' names, the news archive's dates) is in the world's language,
+  `World::language`: the one the game was created in, in the world's hash
+  and saved with it (the port's chunk; a file without it takes the
+  folder's `land`), so every peer and every reload makes the same text
+  ([language.md](language.md#the-worlds-text)). The view formats the
+  rest (dates, money, forms) in each player's own language.
 
 Not in scope: matchmaking, accounts, or play with the original Windows version.
 

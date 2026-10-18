@@ -1,0 +1,12 @@
+GEBÄUDEÜBERSICHT
+Name
+Auslastung
+Zustand
+Gewinn
+DM/M
+Miete
+DM/W
+Menükosten
+Renovieren
+Springe hin
+

@@ -39,7 +39,7 @@
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
-use crate::lang::Language;
+use crate::lang::{Language, Text};
 use crate::text::{Align, Font, LINE_HEIGHT};
 use crate::widgets::Sound;
 
@@ -58,16 +58,15 @@ pub enum DlgType {
 
 impl DlgType {
     /// The caption: the string resources 0xf06f to 0xf072 (en
-    /// `1118:4120`).
+    /// `1118:4120`), in `language` (`msgdlg.*` in `strings.toml`).
     #[must_use]
     pub fn caption(self, language: Language) -> &'static [u8] {
-        let [de, en]: [&'static [u8]; 2] = match self {
-            DlgType::Warning => [b"Warnung", b"Warning"],
-            DlgType::Error => [b"Fehler", b"Error"],
-            DlgType::Information => [b"Information", b"Information"],
-            DlgType::Confirmation => [b"Best\xe4tigen", b"Confirm"],
-        };
-        language.pick(de, en)
+        language.bytes(match self {
+            DlgType::Warning => Text::MsgWarning,
+            DlgType::Error => Text::MsgError,
+            DlgType::Information => Text::MsgInformation,
+            DlgType::Confirmation => Text::MsgConfirmation,
+        })
     }
 }
 
@@ -108,21 +107,20 @@ pub enum ModalResult {
 
 impl Btn {
     /// The caption, with `&` before the mnemonic: the string resources
-    /// 0xf073 to 0xf07d (en `1118:4148`).
+    /// 0xf073 to 0xf07d (en `1118:4148`), in `language`.
     #[must_use]
     pub fn caption(self, language: Language) -> &'static [u8] {
-        let [de, en]: [&'static [u8]; 2] = match self {
-            Btn::Yes => [b"&Ja", b"&Yes"],
-            Btn::No => [b"&Nein", b"&No"],
-            Btn::Ok => [b"&OK", b"&OK"],
-            Btn::Cancel => [b"&Abbruch", b"&Cancel"],
-            Btn::Abort => [b"Abbruch", b"Abort"],
-            Btn::Retry => [b"&Wiederholen", b"&Retry"],
-            Btn::Ignore => [b"&Ignorieren", b"&Ignore"],
-            Btn::All => [b"&Alles", b"&All"],
-            Btn::Help => [b"&Hilfe", b"&Help"],
-        };
-        language.pick(de, en)
+        language.bytes(match self {
+            Btn::Yes => Text::BtnYes,
+            Btn::No => Text::BtnNo,
+            Btn::Ok => Text::BtnOk,
+            Btn::Cancel => Text::BtnCancel,
+            Btn::Abort => Text::BtnAbort,
+            Btn::Retry => Text::BtnRetry,
+            Btn::Ignore => Text::BtnIgnore,
+            Btn::All => Text::BtnAll,
+            Btn::Help => Text::BtnHelp,
+        })
     }
 
     /// What it answers: its `TBitBtn` kind's `ModalResult`. "Help" has

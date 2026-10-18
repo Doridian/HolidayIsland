@@ -38,8 +38,12 @@ original gives to computer opponents. `HOLIDAY.EXE` is a 16-bit
 Windows 3.1 program written in **Borland Delphi 1**; [docs/binaries.md](docs/binaries.md)
 has the details.
 
-This repository contains **no game data files or original code**. The game data
-comes from the original CD, which a script can download for you from the
+This repository contains **no game data files or original code**, with one
+exception: the game's texts. Its German and English texts, strings and
+formats are in [lang/](lang/README.md), as UTF-8 text, one folder per
+language, so the port shows either language whatever the game folder's.
+The rest of the game data (pictures, films, sounds, the data tables) comes
+from the original CD, which a script can download for you from the
 Internet Archive.
 
 ## Getting the game data
@@ -74,13 +78,15 @@ tools/extract-hoi-installer.py DOWNLOAD_DIR orig-en/
 
 Its `HOLIDAY.EXE` is a later build than the German CD's, with fixes and
 six more scenarios in `UPGRADE\`. The port follows that build: it
-takes its fixes, and reads `UPGRADE\` when the game's folder has one, so
-the German folder plays as before and the English one with the new
-scenarios. The texts and speech are the folder's own, and the port
-follows the folder's language for the rest (dates, numbers, its own
-texts); `--lang=de|en` or `language=` in `settings.ini` forces one
-([docs/language.md](docs/language.md)). [docs/versions.md](docs/versions.md)
-has the differences.
+takes its fixes, and plays `UPGRADE\`'s scenarios when the game's folder
+has it, so the German folder plays as before and the English one with
+the new scenarios. Every text comes from the port's own language data
+([lang/](lang/README.md)), German or English: the folder's language by
+default, or the one `--lang=de|en` or `language=` in `settings.ini`
+picks, so either folder plays fully in either language (the expanded
+edition's texts in German are the port's translation). The speech is the
+folder's ([docs/language.md](docs/language.md)).
+[docs/versions.md](docs/versions.md) has the differences.
 
 ## Running
 
@@ -89,7 +95,8 @@ cargo run --release -p holiday -- orig
 ```
 
 The argument is the directory with the game's files (`HOLIDAY.EXE`,
-`GRAFIK\`, `DATA\`, `TEXTE\`). It plays the intro, then shows the
+`GRAFIK\`, `DATA\`, the films and sounds); its texts are the port's own
+([lang/](lang/README.md)), in German or English (`--lang=de|en`). It plays the intro, then shows the
 background with the start menu on it. Start shows the main screen with
 the scenario's island, or a new island made from the menu's settings
 for a normal game; "Altes Spiel fortsetzen" loads a saved one. The arrow keys and the
@@ -152,6 +159,7 @@ shared through [symbols/](symbols/README.md).
   built with (Delphi 1, 16-bit NE), segment map, OS surface, the VESA variant
 - [docs/versions.md](docs/versions.md): the German v1.0 and the later (English) build, how they differ, `UPGRADE\`
 - [docs/language.md](docs/language.md): how the original picks its language, and the port's German and English
+- [lang/README.md](lang/README.md): the language data: the texts in German and English, and adding a language
 - [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
 - [docs/port-architecture.md](docs/port-architecture.md): the Rust port: stack, crates, design
 - [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)
@@ -169,5 +177,7 @@ It's intended for owners of the original game, for preservation and
 interoperability.
 
 The code in this repository is licensed under the
-[GNU Affero General Public License v3.0 or later](LICENSE). Game data is not
-included and is not covered by this license.
+[GNU Affero General Public License v3.0 or later](LICENSE). The game's texts
+in [lang/](lang/README.md) are Sunflowers' (but the port's own strings and
+translations) and aren't covered by this license; the rest of the game data
+isn't included.

@@ -18,11 +18,11 @@
 //! above "Neues Spiel", "Beenden" moves down one, and the table of
 //! rectangles has two more (en `1118:1812`, [`RECTS_UPGRADE`]).
 
-use formats::data::Land;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::enhance::{Enhancement, Enhancements};
+use crate::lang::{Language, Text};
 use crate::text::{Align, Font};
 use crate::widgets::{BitmapId, Button, Edit, Frame, ListBox, Outcome, ShiftState, Skin, Sound, Widget};
 
@@ -160,28 +160,22 @@ const BUTTONS_UPGRADE: Buttons = &[
 /// `VK_*` codes the form reads.
 /// The message for a name that isn't one ([`Action::InvalidName`]):
 /// v1.0 has only the German (CS:0df0, 1040:0e03); the later build picks
-/// it by `land` (en 1040:0eef): German for `D`, French for `F`, English
-/// for `A` and `E`. The port takes the later build's, by the view's
-/// `land` (`crate::lang`).
+/// it by `land` (en 1040:0eef): German for `D` (en 1040:0eb0), French
+/// for `F` (en 1040:0ec3), English for `A` and `E` (en 1040:0ede). The
+/// port takes the view's language's (`file_menu.invalid_name`,
+/// `crate::lang`); it has no French.
 #[must_use]
-pub fn invalid_name_text(land: Land) -> &'static [u8] {
-    match land {
-        Land::Deutschland => b"Dateiname ung\xfcltig",        // en 1040:0eb0
-        Land::Frankreich => b"Non valable nom de fichier",    // en 1040:0ec3
-        Land::Amerika | Land::England => b"Invalid Filename", // en 1040:0ede
-    }
+pub fn invalid_name_text(language: Language) -> &'static [u8] {
+    language.bytes(Text::InvalidName)
 }
 
 /// The later build's question before "Löschen" erases a game
-/// ([`Action::Delete`]), by `land` as [`invalid_name_text`].
-/// // en 1040:110c
+/// ([`Action::Delete`]), by `land` as [`invalid_name_text`] (en 1040:10d7,
+/// en 1040:10ea, en 1040:10f9); the port's in the view's language
+/// (`file_menu.delete_question`). // en 1040:110c
 #[must_use]
-pub fn delete_question(land: Land) -> &'static [u8] {
-    match land {
-        Land::Deutschland => b"Wirklich loeschen?",        // en 1040:10d7
-        Land::Frankreich => b"Vous \xeates s\xfbr?",       // en 1040:10ea
-        Land::Amerika | Land::England => b"Are you sure?", // en 1040:10f9
-    }
+pub fn delete_question(language: Language) -> &'static [u8] {
+    language.bytes(Text::DeleteQuestion)
 }
 
 const VK_RETURN: u16 = 0x0d;
@@ -797,11 +791,10 @@ mod tests {
 
     #[test]
     fn messages_by_land() {
-        assert_eq!(invalid_name_text(Land::Deutschland), b"Dateiname ung\xfcltig");
-        assert_eq!(invalid_name_text(Land::England), b"Invalid Filename");
-        assert_eq!(invalid_name_text(Land::Amerika), invalid_name_text(Land::England));
-        assert_eq!(delete_question(Land::England), b"Are you sure?");
-        assert_eq!(delete_question(Land::Frankreich), b"Vous \xeates s\xfbr?");
+        assert_eq!(invalid_name_text(Language::De), b"Dateiname ung\xfcltig");
+        assert_eq!(invalid_name_text(Language::En), b"Invalid Filename");
+        assert_eq!(delete_question(Language::En), b"Are you sure?");
+        assert_eq!(delete_question(Language::De), b"Wirklich loeschen?");
     }
 
     fn font() -> Font {

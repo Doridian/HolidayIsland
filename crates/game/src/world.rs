@@ -1176,6 +1176,19 @@ pub struct World {
     /// changes them ([`crate::command::Action::SetFix`]). The default,
     /// and a file without the chunk, is none: the original.
     pub fixes: crate::enhance::Fixes,
+    /// The language of the text the world makes: the computers' names
+    /// (`NAMEN.TXT`), the news archive's dates (`MONATE.TXT` and the
+    /// language's date format) and its other strings. The language a
+    /// game was created in, the same for every player, so in the hash;
+    /// saved in the port's chunk (`language=`, [`crate::lang::language_in`]).
+    /// A file without it (an original's, an older port's) takes
+    /// [`World::folder_language`]. Each player's view shows the rest in
+    /// their own language (`docs/language.md`).
+    pub language: crate::lang::Language,
+    /// The language of the game folder's `MODATYP.DAT` (`land`,
+    /// `1110:64be`), which a file without a language gets. Not in the map
+    /// file: kept when one is loaded, like [`World::tables`].
+    pub folder_language: crate::lang::Language,
 }
 
 impl Default for World {
@@ -1241,6 +1254,8 @@ impl Default for World {
             money_menu_shown: false,
             news: crate::news::News::default(),
             fixes: crate::enhance::Fixes::ORIGINAL,
+            language: crate::lang::Language::default(),
+            folder_language: crate::lang::Language::default(),
         }
     }
 }
@@ -1387,7 +1402,6 @@ fn news(save: &SaveGame) -> Result<crate::news::News, Error> {
         entries,
         last: word(save, "1110:6664")?.cast_signed(),
         nothing_yet: byte(save, "1110:667c")? != 0,
-        date_format: crate::news::DateFormat::default(),
         speaker: crate::news::Speaker::Off,
     })
 }
@@ -1599,6 +1613,10 @@ impl World {
             // Whoever starts the game from a file without it gives the
             // player's defaults instead (`crate::enhance::fixes_in`).
             fixes: crate::enhance::fixes_in(&save.trailing, crate::enhance::Fixes::ORIGINAL),
+            // The port's chunk's, if it has one; whoever loads a file
+            // without it gives the folder's ([`World::load_map`]).
+            language: crate::lang::language_in(&save.trailing).unwrap_or_default(),
+            folder_language: crate::lang::Language::default(),
         };
         world.unported = crate::savegame::unported_world_fields(save);
         world.link_plots();

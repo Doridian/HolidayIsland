@@ -1,0 +1,10 @@
+Zeiteinheiten=
+Tag
+Tage
+Woche
+Wochen
+Monat
+Monate
+Jahr
+Jahre
+

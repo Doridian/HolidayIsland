@@ -29,7 +29,7 @@ use vcl::surface::{Rop, Surface};
 
 use crate::command;
 use crate::enhance::{Enhancement, Enhancements, Fix, Fixes, Info};
-use crate::lang::{Language, Text, latin1};
+use crate::lang::{Language, Text, encode};
 use crate::text::{Align, Font, LINE_HEIGHT};
 use crate::widgets::{
     BitmapId, Button, CheckBox, Frame, Label, Outcome, ScrollBar, ScrollBitmaps, ShiftState, Skin, Sound, Widget,
@@ -193,7 +193,7 @@ impl Pane {
             .map(|k| {
                 let label = Label::new(
                     Frame::new(left, 0, ROW_WIDTH, 16),
-                    &latin1(k.info().label(language)),
+                    &encode(k.info().label(language)),
                     Align::Left,
                     BLACK,
                 );
@@ -555,7 +555,7 @@ impl Enhanceform {
         };
         font.draw(
             &mut self.image,
-            &latin1(&text),
+            &encode(&text),
             (TEXT_LEFT, INFO_TOP),
             TEXT_WIDTH,
             Align::Left,

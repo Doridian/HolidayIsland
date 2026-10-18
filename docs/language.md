@@ -2,8 +2,9 @@
 
 Two releases are known: the German v1.0 (`orig/`) and the English UK
 release, the later build (`orig-en/`, [versions.md](versions.md)). The
-port plays either folder and shows German or English: by default the
-folder's language, or the one the player picks.
+port plays either folder and shows German or English, from its own
+language data ([lang/](../lang/README.md)): by default the folder's
+language, or the one the player picks.
 
 ## How the original picks its language
 
@@ -49,12 +50,13 @@ HOLIDAY ISLAND again.` (en 1000:1918). `back_to_start_menu`
 en 1010:3502, is unused). v1.0 has only the German ones (1000:15b0,
 1000:175b). The port has both as `formats::setup::MISSING_SETUP`,
 `MISSING_CD`, `INSERT_CD` and their `_EN`, but shows none of them: the
-port never checks for the CD or `SETUP.DAT`.
+port never checks for the CD or `SETUP.DAT`, so they aren't in the
+language data either.
 
 The message boxes' own captions and buttons (`Confirm`, `&Cancel`, ...)
 are the VCL's string resources, in the build's language: German in
 v1.0's `HOLIDAY.EXE`, English in the later build's. The port has both
-(`game::msgdlg`) and shows the view's.
+(`[msgdlg]` in `strings.toml`, `game::msgdlg`) and shows the view's.
 
 The DFMs differ too: v1.0's forms are captioned with their names
 (`Baumenue`, `Hauptschirm`, ...), the later build's all `Holiday
@@ -69,9 +71,12 @@ that was never made.
 Left in German in both builds, and never on the screen: `kein Datum`
 (en 1048:1fc5, an empty news archive entry's date, which the TV never
 browses to), `kein` (en 1048:0a45, a message without a medium),
-`Fehler!!` (en 1040:1330, a saved game list's name past its end), the
-computer players' status texts (`game::computer`). The music's titles in
-the options (en 1060:14a1–14e2) are names.
+`Fehler!!` (en 1040:1330, a saved game list's name past its end; not
+ported), the computer players' status texts (`game::computer`). The
+port's English `strings.toml` keeps them German, as released. The
+music's titles in the options (en 1060:14a1–14e2) are names, the same in
+both builds, and stay in the code (`optionen::TRACK_NAMES`), like the
+credits' names.
 
 ### Windows
 
@@ -91,7 +96,21 @@ archive. `SONSTIGE.TXT` has a German comment line the loader skips, and
 
 ## The port
 
-`game::lang` has the setting and the port's own texts.
+The port carries both languages itself, in the repository's `lang/`
+folder ([lang/README.md](../lang/README.md)), compiled into the build
+(`game::lang`). Each language has every `TEXTE\` text file and
+`UPGRADE\`'s texts as the original has them (UTF-8 in the repository,
+Windows-1252 with CRLF for the loaders, `Language::file`), the label
+layouts the English release changed for its longer words
+(`DATA\BAUMENU.DAT`, `GELDMENU.DAT`, `INFOBOX.DAT`), and `strings.toml`
+with the EXE's strings, the formats and the port's own texts. German is
+the v1.0 CD's, English the English release's; the expanded edition's
+texts exist only in English, so `lang/de/UPGRADE/` is the port's
+translation, marked as such in each file's header.
+
+Embedded rather than read from a folder next to the binary: a build is
+one file that needs nothing but the game folder, the web build gets the
+text without a file system, and the tests run without `orig/`.
 
 ```text
 language=auto      # settings.ini: the folder's (the default)
@@ -101,67 +120,79 @@ language=en        # settings.ini: English whatever the folder
 
 It's one player's view setting, `enhance::Config::language` (with the
 enhancements, as the player's settings travel together; `--original`
-doesn't touch it). `auto` takes the language of the folder's `land`:
-German for `D`, English for `A`, `E` and `F` (the port has no French
-texts; `F` keeps its own marks).
+doesn't touch it). `auto` takes the language of the folder's `land`
+(`MODATYP.DAT`, the one thing the port still reads for it): German for
+`D`, English for `A`, `E` and `F` (the port has no French).
 
-What it switches, all of it the view's:
+The language decides every text of the player's view:
 
-- The view's `land` (`hauptschirm::InfoTexts::land`,
-  `lang::Setting::land`): the folder's own with `auto` or when the
-  forced language is the folder's, else `D` for German and `E` for
-  English. Everything the original formats by `land` reads it: the info
-  bar's date and money, the money menu, the info box, the buildings'
-  overview, the build menu's prices, the auction, the sabotage window,
-  the end form's results and the high score's money text.
-- The later build's messages by `land`
-  (`dateimenue::invalid_name_text`, `dateimenue::delete_question`),
-  and the message boxes' captions and buttons (`game::msgdlg`).
-- The high score's date: `dd.MM.yy` in German, `dd/MM/yy` in English
-  (`highscoreform::date_text`).
-- The port's own texts: the list of enhancements (`lang::Text`) and the
-  enhancements' labels and descriptions, each in German and English in
-  `game::enhance`'s list. The command line (`--help`, `--enhancements`)
-  and the log are English only.
+- every text the game reads from `TEXTE\` and `UPGRADE\` (with the
+  folder's `UPGRADE\`, the language's `UPGRADE\` texts; without it, its
+  `TEXTE\` ones, so the German CD still plays as v1.0);
+- the currency's name and factor (`SONSTIGE.TXT`: `DM` times 10, `£`
+  times 4), so an English game counts in pounds on the German folder;
+- the formats (`[format]`): the date's pattern and day suffixes, the
+  thousands and decimal marks (`group_digits`, `decimal_money`), the
+  high score table's date. They replace the original's `land` switches;
+  the view's `InfoTexts::language` carries the language to every form
+  that formats money or dates;
+- the label layouts of the build menu, the money menu and the info box;
+- the EXE's strings: the message boxes (`[msgdlg]`), the file menu's
+  messages (`[file_menu]`; the later build's French ones for `F` aren't
+  in the port);
+- the port's own texts (`[port]`, `lang::Text`) and the enhancements'
+  labels and descriptions (`[enhance.<key>]`). The command line
+  (`--help`, `--enhancements`) and the log are English only.
 
-What stays the folder's: every text from `TEXTE\` and `UPGRADE\`, the
-speech, the films, the currency's name and factor, the forms' layouts
-and bitmaps. So a forced language that isn't the folder's mixes: on the
-German folder `--lang=en` shows `6th Januar 1996`, `20,000,000 DM` and
-an English list of enhancements among German forms, and on the English
-folder `--lang=de` shows `6. January 1996` and `8.000.000 £`. That's
-accepted: a language's texts come with its folder.
+What stays the folder's: the speech (whichever of `SPRADEUn\` and
+`Sprache<n>\` is there, so a forced language that isn't the folder's
+plays the folder's speech), the films with their sound, the pictures
+(a few have words drawn in: the credits, some buttons), the data tables
+of `DATA\` and the scenarios' maps (with their computers' names). On the
+German folder `--lang=en` shows `6th January 1996` and `8,000,000 £`,
+and on the English folder `--lang=de` `6. Januar 1996` and
+`20.000.000 DM`, with every form's text in that language.
 
 ### The world's text
 
-The world never reads the setting. What of it is text is made from the
-folder's data, the same way for every player:
+The world doesn't read the player's setting. It has a language of its
+own, `World::language`: the language a game was created in (the
+creating player's), which every peer and every reload shares. It's in
+the world's hash and saved in the port's chunk after the map file's
+fields (`language=de`, `lang::language_in`). A file without it (an
+original's, an older port's) takes the game folder's language
+(`World::folder_language`, from `MODATYP.DAT`'s `land`, which loading a
+file keeps). A scenario is a new game: its world is in the player's
+language too. The world makes in it:
 
-- the players' names (`World::player_names`): `NAMEN.TXT`'s name for
-  nobody and the computers' names picked from it with the world's
-  random numbers (`hintergrund::pick_names`, en 1000:27f3); saved in the
-  map file;
+- the players' names (`World::player_names`): the language's
+  `NAMEN.TXT`, its name for nobody and the computers' names picked from
+  it with the world's random numbers (`hintergrund::pick_names`,
+  en 1000:27f3, `GameData::load`); saved in the map file. A scenario's
+  names are its map file's;
 - the news archive's dates (`news::Entry::date`): `post_message` writes
-  each entry's date as text with the folder's `MONATE.TXT` and `land`
-  (`news::DateFormat`, which the world keeps, `World::news`); saved in
-  the map file, and shown by the TV as written. So the TV's dates keep
-  the folder's format when another language is forced, unlike the info
-  bar's;
-- `kein Datum` for an empty entry and the computers' status texts,
-  which are the EXE's and the same in both builds.
+  each entry's date as text with the language's months and `[format]`;
+  saved in the map file and shown by the TV as written, so a player
+  with another language sees the world's dates in the world's language;
+- `kein Datum` for an empty entry (`news.no_date`) and the computers'
+  status texts (`[computer]`), the same in both languages;
+- the sabotage's costs and the piranhas' pools from `SABOTAGE.TXT`. The
+  two releases' files differ in one number the game never reads (the
+  shark diver's target, 254 in German, 255 in English), so the world
+  plays the same in either language (`lang_data` checks it).
 
-In multiplayer each player can have their own language. The folder's
-data must be the same for every peer anyway (the world's tables come
-from it), and with it the names and the archive's date format; a peer
-with a folder of another language would get another world, so the
-world's date format and names have to come with the world from the
-host, not from each peer's folder.
+The view's formatting (the info bar's date and money, the forms, the
+TV's money) follows each player's language. In multiplayer each player
+can have their own, and the world's text comes with the world.
 
 ### Screens
 
-`language_screens` (crates/holiday) renders the main screen with the
-TV, the money menu and the overview map, the info bar alone, an auction,
-the options and the list of enhancements, on each folder in its own
-language and in the other forced; with `HOLIDAY_PNG` set they go there
-as `lang-<folder>[-lang-<forced>]-<screen>.png`. On the English folder
-nothing German shows; on the German folder nothing English.
+`language_screens` (crates/holiday) renders the start menu's scenario
+page, the main screen with the TV's message, the money menu and the
+overview map, the info bar alone, an auction, the options, the list of
+enhancements and a message box, on each folder in its own language and
+in the other forced; with `HOLIDAY_PNG` set they go there as
+`langfiles-<folder>[-lang-<forced>]-<screen>.png`. On the German folder
+forced to English nothing German shows, and on the English folder
+forced to German nothing English, the expanded edition's scenarios in
+the port's German included.

@@ -108,7 +108,7 @@ fn info() -> InfoTexts {
     let sonstige = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
     InfoTexts {
         months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
-        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        language: game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
         currency_factor: sonstige.waehrungsfaktor,
         currency: sonstige.texts[5].clone(),
     }
@@ -565,7 +565,7 @@ fn the_info_box_and_the_overview() {
     assert_eq!(after, raise_rent(rent));
     let lines: Vec<String> = (0..scene.box_.lines.len()).map(|n| scene.line(n)).collect();
     eprintln!("house: {lines:?}");
-    let shown = format_money(after / 4, scene.info.currency_factor, scene.info.land);
+    let shown = format_money(after / 4, scene.info.currency_factor, scene.info.language);
     let shown: String = shown.iter().map(|&b| char::from(b)).collect();
     assert!(lines.contains(&format!("Miete:|{shown}|DM/W")), "{lines:?}");
     let money = scene.world.finances.money[0];

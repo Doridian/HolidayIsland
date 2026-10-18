@@ -377,7 +377,7 @@ impl Sabowin {
         self.font
             .draw(&mut self.image, &labels[1], (l, b - 0x1c), w, Align::Center, 9);
         let info = &self.texts.info;
-        let mut price = format_money(kind.cost, info.currency_factor, info.land); // 1030:11a0
+        let mut price = format_money(kind.cost, info.currency_factor, info.language); // 1030:11a0
         price.push(b' '); // 1028:3077
         price.extend_from_slice(&info.currency); // 1110:7352
         self.font
@@ -550,7 +550,7 @@ mod tests {
             kinds,
             info: InfoTexts {
                 months: Vec::new(),
-                land: formats::data::Land::Deutschland,
+                language: crate::lang::Language::De,
                 currency_factor: 1,
                 currency: b"DM".to_vec(),
             },

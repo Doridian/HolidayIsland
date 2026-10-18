@@ -1,0 +1,14 @@
+TextSpielname =
+HOLIDAY ISLAND
+TextExitmenuueberschrift =
+Holiday Island verlassen ?
+TextExitlabel =
+Hiermit verlassen Sie Ihre Insel-Sitzung !
+TextOK =
+OK
+TextAbbruch =
+Abbruch
+TextInfoboxueberschrift =
+Infobox
+TextWaehrung=
+DM

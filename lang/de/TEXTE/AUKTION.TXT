@@ -1,0 +1,12 @@
+Auktion
+verlassen
+Mehr bieten
+Aktuelles Gebot:
+von
+zum ersten
+zum zweiten
+zum dritten
+Startgebot:
+erhielt den Zuschlag
+AUKTION
+starten

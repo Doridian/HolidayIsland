@@ -1,0 +1,32 @@
+1  Gebäude im Weg!
+2  Straße im Weg!
+3  Ist hier schon ganz schön tief!
+4  Geht leider nicht höher!
+5  Zu nah am Kartenrand im SO!
+6  Zu nah am Kartenrand im NO!
+7  Zu nah am Kartenrand im NW!
+8  Zu nah am Kartenrand im SW!
+9  Nicht genügend Geld!
+10 Gelände zu steil!
+11 Wasser nicht bebaubar!
+12 Gelände zu uneben!
+13 Wasser zu tief!
+14 Sie haben nicht genug Geld!
+15 Brücke im Weg!
+16 Fluß im Weg!
+17 Nur auf Sand baubar!
+18 Nur auf Gras baubar!
+19 Bau nur am Ufer möglich!
+20 Gelände muß zum Bau eben sein!
+21 Kann hier nicht bauen!
+22 Ausserhalb der Karte!
+23 Gehört Ihnen nicht!
+24 Geht nicht!
+25 Gehört Ihnen!
+26 Sabotage hier nicht möglich!
+27 Hier ist schon eine Palme!
+28 Hier bewegt sich etwas!
+29 Die Zuschauer protestieren!
+30 im Weg!
+31 Brückenbau hier nicht möglich!
+

@@ -509,7 +509,7 @@ impl Umenuform {
                 .iter()
                 .find(|h| h.pos() == pos)
                 .map_or(0, crate::world::House::price);
-            format_money(rent / 4, info.currency_factor, info.land)
+            format_money(rent / 4, info.currency_factor, info.language)
         } else {
             let Some(f) = world.facilities.iter().find(|f| f.pos() == pos) else {
                 return Vec::new();
@@ -517,7 +517,7 @@ impl Umenuform {
             let capacity = i32::from(world.tables.hausdata(f.building(), 3));
             // BUG(original): a type with no capacity divides by zero; the port shows 0.
             let per_visit = (f.price().wrapping_mul(100) / 30).checked_div(capacity).unwrap_or(0);
-            decimal_money(per_visit, info.currency_factor, info.land, self.enhance)
+            decimal_money(per_visit, info.currency_factor, info.language, self.enhance)
         }
     }
 
@@ -564,7 +564,7 @@ impl Umenuform {
             );
         }
         let profit = takings.wrapping_sub(t.hausprei(building, 1));
-        let profit = format_money(profit, info.currency_factor, info.land);
+        let profit = format_money(profit, info.currency_factor, info.language);
         font.draw(&mut self.image, &profit, (0xbe, y), 100, Align::Right, colour);
     }
 

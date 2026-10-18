@@ -1,0 +1,47 @@
+OPTIONEN
+Musik
+Lautstärke:
+Geräusche
+Lautstärke:
+Sprachausgabe
+Lautstärke:
+Spielgeschwindigkeit:
+Nachrichten:
+Auktionen
+Neue Gebäude
+Sabotage
+Gratulationen
+Gebäudeumrandung:
+Besitzer
+Auslastung
+Keine
+Sonstiges:
+Jahresbilanz
+Auktion wartet
+Buttonhilfe
+Animationen
+Katastrophen
+OK
+TOP
+INFO
+
+Fenster hat noch nicht seine endgültige Funktion
+Buttonhilfe
+Süd
+West
+Nord
+Ost
+Auslastung:
+Geschwindigkeit:
+fix
+lahm
+Computergegner
+Geräusche
+Musik
+Anzeigemodus
+Besitzer
+Auslastung
+Neutral
+neue Daten laden
+Schließen
+

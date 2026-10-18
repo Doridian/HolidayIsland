@@ -189,7 +189,12 @@ fn sonstige_texts() -> formats::data::Sonstige {
 /// Money as the game shows it in Germany.
 fn results(world: &World, over: &GameOver) -> Results {
     let factor = sonstige_texts().waehrungsfaktor;
-    Results::of(world, over, factor, modatyp(&read("DATA/MODATYP.DAT")).unwrap().land)
+    Results::of(
+        world,
+        over,
+        factor,
+        game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
+    )
 }
 
 fn new_schlussform() -> (Schlussform, Palette) {

@@ -708,7 +708,7 @@ impl Geldmenuform {
     /// An amount with `separator` and the currency. // 1030:11a0
     fn money(&self, amount: i32, separator: u8) -> Vec<u8> {
         let info = &self.texts.info;
-        let mut text = format_money(amount, info.currency_factor, info.land);
+        let mut text = format_money(amount, info.currency_factor, info.language);
         text.push(separator);
         text.extend_from_slice(&info.currency);
         text.truncate(255);
@@ -859,7 +859,7 @@ impl Geldmenuform {
     fn put_book(&mut self, world: &World, kind: u8) {
         let value = world.book_value(kind);
         let info = &self.texts.info;
-        let text = format_money(value, info.currency_factor, info.land); // 1030:11a0
+        let text = format_money(value, info.currency_factor, info.language); // 1030:11a0
         self.put(&text, if value < 0 { 7 } else { 4 }, kind);
     }
 

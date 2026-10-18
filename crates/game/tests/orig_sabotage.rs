@@ -108,7 +108,7 @@ fn info() -> InfoTexts {
     let sonstige = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
     InfoTexts {
         months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
-        land: modatyp(&read("DATA/MODATYP.DAT")).unwrap().land,
+        language: game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
         currency_factor: sonstige.waehrungsfaktor,
         currency: sonstige.texts[5].clone(),
     }

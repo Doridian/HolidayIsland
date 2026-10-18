@@ -2,7 +2,7 @@
 //! player's loan and its interest next to it (segment `1078`), and how the
 //! info bar shows the amount (segment `1030`).
 
-use formats::data::Land;
+use crate::lang::Language;
 
 use crate::world::World;
 
@@ -237,11 +237,11 @@ impl World {
 
 /// `amount` as the game shows money: times the currency factor
 /// (`Waehrungsfaktor`, `SONSTIGE.TXT`), with a `-` in front of negative
-/// amounts and the digits grouped by threes for the `land`. Amounts whose
+/// amounts and the digits grouped by threes for the `language`. Amounts whose
 /// product wouldn't fit a `Longint` are worked out in two halves.
 /// // 1030:11a0
 #[must_use]
-pub fn format_money(amount: i32, factor: i32, land: Land) -> Vec<u8> {
+pub fn format_money(amount: i32, factor: i32, language: Language) -> Vec<u8> {
     let sign: &[u8] = if amount < 0 { b"-" } else { b"" }; // 1030:119c
     let n = amount.wrapping_abs();
     // BUG(original): a currency factor of 0 divides by zero; the port works the product out in halves.
@@ -263,19 +263,16 @@ pub fn format_money(amount: i32, factor: i32, land: Land) -> Vec<u8> {
     };
     let mut s = sign.to_vec();
     s.extend_from_slice(digits.as_bytes());
-    group_digits(&s, land)
+    group_digits(&s, language)
 }
 
-/// Puts a separator before every third digit from the right: `.` in
-/// Germany, `_` in France, `,` otherwise. A leading `-` doesn't count as
-/// a digit. // 1030:0fdd
+/// Puts a separator before every third digit from the right: the
+/// original's by `land`, `.` in Germany, `_` in France, `,` otherwise;
+/// the port's the language's (`format.thousands`). A leading `-` doesn't
+/// count as a digit. // 1030:0fdd
 #[must_use]
-pub fn group_digits(s: &[u8], land: Land) -> Vec<u8> {
-    let separator = match land {
-        Land::Deutschland => b'.',
-        Land::Frankreich => b'_',
-        Land::Amerika | Land::England => b',',
-    };
+pub fn group_digits(s: &[u8], language: Language) -> Vec<u8> {
+    let separator = language.format().thousands;
     let first = usize::from(s.first() == Some(&b'-'));
     let mut out = s.to_vec();
     // Pascal positions: the separator goes in before `i`, for `i` = length
@@ -338,14 +335,13 @@ mod tests {
 
     #[test]
     fn format() {
-        let de = Land::Deutschland;
+        let de = Language::De;
         assert_eq!(format_money(0, 10, de), b"0");
         assert_eq!(format_money(12, 10, de), b"120");
         assert_eq!(format_money(1234, 10, de), b"12.340");
         assert_eq!(format_money(-123_456, 10, de), b"-1.234.560");
         assert_eq!(format_money(-12_345, 10, de), b"-123.450");
-        assert_eq!(format_money(1234, 10, Land::England), b"12,340");
-        assert_eq!(format_money(1234, 10, Land::Frankreich), b"12_340");
+        assert_eq!(format_money(1234, 10, Language::En), b"12,340");
         // Too big for a Longint once multiplied.
         assert_eq!(format_money(i32::MAX, 10, de), b"21.474.836.470");
         assert_eq!(format_money(3_000_000, 1000, de), b"3.000.000.000");
@@ -354,7 +350,7 @@ mod tests {
 
     #[test]
     fn grouping() {
-        let de = Land::Deutschland;
+        let de = Language::De;
         assert_eq!(group_digits(b"", de), b"");
         assert_eq!(group_digits(b"1", de), b"1");
         assert_eq!(group_digits(b"123", de), b"123");

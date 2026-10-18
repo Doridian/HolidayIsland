@@ -45,7 +45,7 @@ fn game_data() -> Option<GameData> {
         eprintln!("skipping: {} not found", orig().display());
         return None;
     }
-    Some(GameData::load(read).unwrap())
+    Some(GameData::load(read, game::lang::Language::De).unwrap())
 }
 
 fn settings(island: i16, relief: i16, land: i16, rivers: i16) -> Settings {

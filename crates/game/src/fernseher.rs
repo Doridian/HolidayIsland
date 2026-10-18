@@ -109,8 +109,17 @@ const LIGHTS: [(i32, i32, Rect); 2] = [
 pub const SPEAKER_MS: u32 = 3000;
 pub const AUTO_CLOSE_MS: u32 = 6000;
 
-/// The media name for none. // 1048:0a45, 1048:1b39
+/// The media name for none (`kein` in both builds). // 1048:0a45, 1048:1b39
+#[cfg(test)]
 const NONE: &[u8] = b"kein";
+
+/// Whether `name` is `NACHRICH.TXT`'s media name for none: a language's
+/// `news.no_medium` (`kein`). // 1048:0a45, 1048:1b39
+fn is_none(name: &[u8]) -> bool {
+    crate::lang::Language::ALL
+        .iter()
+        .any(|l| name.eq_ignore_ascii_case(l.bytes(crate::lang::Text::NoMedium)))
+}
 
 /// `VK_*` codes the form reads. // 1048:26f6
 const VK_RETURN: u16 = 0x0d;
@@ -338,11 +347,11 @@ pub fn message_text(line: &[u8], entry: &Entry, names: &[Vec<u8>], info: &InfoTe
                 i += 1;
                 match at(i) {
                     b'1' => {
-                        add(&mut out, &format_money(entry.x, info.currency_factor, info.land)); // 1030:11a0
+                        add(&mut out, &format_money(entry.x, info.currency_factor, info.language)); // 1030:11a0
                         i += 1;
                     }
                     b'2' => {
-                        add(&mut out, &format_money(entry.y, info.currency_factor, info.land));
+                        add(&mut out, &format_money(entry.y, info.currency_factor, info.language));
                         i += 1;
                     }
                     _ => {}
@@ -433,7 +442,7 @@ impl Fernseher {
         usize::try_from(number)
             .ok()
             .and_then(|n| self.speech.get(n))
-            .filter(|f| !f.eq_ignore_ascii_case(NONE))
+            .filter(|f| !is_none(f))
             .map(Vec::as_slice)
     }
 
@@ -677,7 +686,7 @@ impl Fernseher {
         usize::try_from(number)
             .ok()
             .and_then(|n| self.films.get(n))
-            .filter(|f| !f.eq_ignore_ascii_case(NONE))
+            .filter(|f| !is_none(f))
             .cloned()
     }
 
@@ -1116,12 +1125,11 @@ mod tests {
     use super::*;
     use crate::news::Message;
     use crate::simulation::Tick;
-    use formats::data::Land;
 
     fn info() -> InfoTexts {
         InfoTexts {
             months: Vec::new(),
-            land: Land::Deutschland,
+            language: crate::lang::Language::De,
             currency_factor: 1,
             currency: b"DM".to_vec(),
         }

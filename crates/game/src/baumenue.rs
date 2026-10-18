@@ -488,7 +488,7 @@ impl Baumenue {
             .cloned()
             .unwrap_or_default();
         self.text_in(font, &name, 10, Align::Center, r::NAME);
-        let money = |n: i32| format_money(n, info.currency_factor, info.land);
+        let money = |n: i32| format_money(n, info.currency_factor, info.language);
         let number = |n: i16| n.to_string().into_bytes();
         let b = building.unwrap_or(u8::MAX);
         let figures = [

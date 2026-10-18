@@ -258,14 +258,13 @@ pub fn reset_highscores(table: &mut ScoreTable, game: u8) {
 
 /// Today's date as Delphi 1's `DateToStr` writes it with Windows' short
 /// date format, for a new entry. That's the Windows the game runs on,
-/// not the game's: the port takes the German Windows' `dd.MM.yy` for
-/// German and the British one's `dd/MM/yy` for English
-/// (`docs/language.md`). The original takes the date from the clock
-/// (1008:0512); the caller passes it.
+/// not the game's: the port takes the language's
+/// (`format.highscore_date`: the German Windows' `dd.MM.yy`, the British
+/// one's `dd/MM/yy`; `docs/language.md`). The original takes the date
+/// from the clock (1008:0512); the caller passes it.
 #[must_use]
 pub fn date_text(day: u32, month: u32, year: i32, language: Language) -> Vec<u8> {
-    let sep = language.pick('.', '/');
-    format!("{day:02}{sep}{month:02}{sep}{:02}", year.rem_euclid(100)).into_bytes()
+    language.format().highscore_date(day, month, year)
 }
 
 /// `HIGHSCOR.TXT`'s 16 lines (`load_highscor_txt`); missing lines are

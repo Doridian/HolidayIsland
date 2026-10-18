@@ -1,0 +1,61 @@
+// SZENARIO.TXT of the "Erweiterte Version" (UPGRADE\), in German.
+// Translated by the Holiday Island port, not by Sunflowers: Sunflowers
+// shipped this file only in English.
+// The first 13 lines are v1.0's German (TEXTE\SZENARIO.TXT) as they are; the
+// six new scenarios (the next 12) are the port's translation.
+Money-Maker
+Versuchen Sie, in maximal 20 Jahren 500.000.000 DM zu verdienen.
+Touristenfalle
+ Bringen Sie 10.000 Urlauber auf Ihre Insel. Ihnen bleiben dafür 20 Jahre Zeit.
+Monopolus
+Setzen Sie in 20 Jahren alle anderen Mitspieler außer Gefecht.
+Golden Island
+Erschaffen Sie eine Luxusinsel. Sie haben 30 Jahre Zeit, monatlich 4.000 reiche Gäste zufrieden zu stellen.
+Surfers Paradise
+Bringen Sie 4000 Surfer auf Ihre Insel. Sie haben 10 Jahre Zeit.
+Green Island
+Sie haben 20 Jahre Zeit, ein grünes Urlaubsparadies für 1.000 Urlauber zu schaffen.
+Standardspiel
+North Indies
+Verbinden Sie die North-Indies-Inseln Mali, Tosh, Sly und Robbie zu einer großen Insel.
+Camper-Traum
+Bringen Sie 5.000 Camper auf die Zeltplätze von Holiday Island. Sie haben 15 Jahre Zeit.
+Ohne Hotels
+Hotels gibt es keine. Zeigen Sie, wie weit Sie es in 25 Jahren bringen.
+PR-Wunder
+Sie haben alle Weltwunder erworben. Sie haben 30 Jahre Zeit, sie zu bauen und eine Auslastung von mindestens 80 % zu erreichen.
+Hurry Up
+Kurzes Spiel: Alle Gebäude stehen zur Verfügung, und Sie haben 5 Jahre Zeit, so viel Geld wie möglich zu verdienen.
+Challenge
+Nur für Profis: Holen Sie sich auf jeder der fünf Inseln den größten Teil des Tourismusgeschäfts. Ihnen bleiben dafür 30 Jahre Zeit.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
