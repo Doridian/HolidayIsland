@@ -429,7 +429,12 @@ impl Forms {
             }
         }
         let credits = Creditform::new(font.clone(), credit_bitmaps, &schliessen);
-        let enhance = Enhanceform::new(font.clone(), bitmaps(dir, &enhanceform::BITMAP_FILES), &schliessen);
+        let enhance = Enhanceform::new(
+            font.clone(),
+            bitmaps(dir, &enhanceform::BITMAP_FILES),
+            &schliessen,
+            info.language(),
+        );
         Forms {
             settings,
             pause,
@@ -955,7 +960,7 @@ impl Game {
         if let Some(score) = over.score {
             let (d, m, y) = today();
             let name = self.world.player_names.get(1).cloned().unwrap_or_default();
-            let date = highscoreform::date_text(d, m, y);
+            let date = highscoreform::date_text(d, m, y, self.info.language());
             let r = self
                 .forms
                 .high

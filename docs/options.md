@@ -115,12 +115,13 @@ stacking), 640 × 480 like the credits and centred, made of the game's
 own pieces: the high scores' background (its face mirrored down to
 480), the options' check boxes, the buildings' overview's scroll bar
 (its trough repeated, as it's 200 high), the credits' buttons, the
-game's font, and German texts:
+game's font, and texts in the player's language (German shown here;
+`game::lang`, [language.md](language.md)):
 
 - "Spielkorrekturen" (the world's fixes, "für dieses Spiel und neue
   Spiele") on the left, "Anzeige und Ton" (the view's) on the right:
-  each key's check box and German label, 18 rows at a time, scrolled by
-  its bar. The row under the mouse has its key and English description
+  each key's check box and label, 18 rows at a time, scrolled by
+  its bar. The row under the mouse has its key and description
   shown under the lists.
 - The notes under it: whether the changes are saved in `settings.ini`;
   with `--original` or `--enhance=` that the command line goes over the

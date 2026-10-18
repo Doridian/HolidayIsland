@@ -2,8 +2,9 @@
 
 File names are 8.3 upper case on
 the CD, but `HOLIDAY.EXE` spells them in mixed case (`Hausdata.dat`, `Grafik\`,
-`Filmhi\`), so the port needs case-insensitive file lookup. All text is German,
-Windows-1252.
+`Filmhi\`), so the port needs case-insensitive file lookup. All text is
+Windows-1252, German on the German CD and English in the English
+release ([language.md](language.md)).
 
 | Dir | Files | What |
 |---|---|---|

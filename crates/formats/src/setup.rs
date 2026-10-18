@@ -22,13 +22,30 @@ pub const FILE_NAME: &[u8] = b"setup.dat";
 /// Capacity of the directory strings.
 pub const PATH_LEN: usize = 144;
 
-/// "Please run SETUP.EXE from the HOLIDAY ISLAND CD first." // 1000:15b0
+/// "Please run SETUP.EXE from the HOLIDAY ISLAND CD first." Each build
+/// has the message in its own language; the later (English) build keeps
+/// the German and a French one too, but shows the English
+/// (`init_paths`, en 1000:196d). The port picks by the player's language
+/// (`game::lang`, `docs/language.md`). // 1000:15b0, en 1000:15c4
 pub const MISSING_SETUP: &[u8] = b"Bitte starten Sie zun\xe4chst SETUP.EXE von der HOLIDAY ISLAND CD.";
+/// The later build's [`MISSING_SETUP`]. // en 1000:1649
+pub const MISSING_SETUP_EN: &[u8] = b"Please start first SETUP.EXE on the HOLIDAY ISLAND CD.";
 
 /// "Please put the HOLIDAY ISLAND CD in the CD-ROM drive and start HOLIDAY
-/// ISLAND again." // 1000:175b
+/// ISLAND again.", as [`MISSING_SETUP`]. // 1000:175b, en 1000:185e
 pub const MISSING_CD: &[u8] =
     b"Bitte legen Sie die HOLIDAY ISLAND CD in das CD-Rom Laufwerk und starten Sie HOLIDAY ISLAND neu.";
+/// The later build's [`MISSING_CD`]. // en 1000:1918
+pub const MISSING_CD_EN: &[u8] =
+    b"Please put the HOLIDAY ISLAND CD in the CD-Rom Drive and start HOLIDAY ISLAND again.";
+
+/// The later build's question when going back to the start menu finds no
+/// CD (`back_to_start_menu`, with a retry), shown in English like
+/// [`MISSING_SETUP_EN`]; the German one is in the build too.
+/// // en 1010:3582, en 1010:3502
+pub const INSERT_CD: &[u8] = b"Bitte legen Sie die HOLIDAY ISLAND CD in das CD-Rom Laufwerk.";
+/// The English [`INSERT_CD`]. // en 1010:3540
+pub const INSERT_CD_EN: &[u8] = b"Please put the HOLIDAY ISLAND CD in the CD-Rom Drive.";
 
 /// The files whose presence counts as "the CD is in the drive": one in the
 /// data directory, then these in the film directory, checked in this order.

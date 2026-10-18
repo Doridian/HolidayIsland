@@ -203,7 +203,8 @@ hasn't been looked at.
 
 The port takes the later build's fixes unconditionally, reads
 `UPGRADE\` when it's there and plays its scenarios, and without it
-behaves as v1.0 with v1.0's files. Language (English texts and speech,
-£) is a separate step. What's ported and what isn't yet is in the
+behaves as v1.0 with v1.0's files. The texts, the speech and the
+currency are the folder's; the language of the rest follows the folder
+or the player's choice ([language.md](language.md)). What's ported and what isn't yet is in the
 modules' docs; [original-bugs.md](original-bugs.md) marks the rows the
 later build fixed.

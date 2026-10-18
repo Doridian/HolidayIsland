@@ -223,6 +223,10 @@ in the design points above:
   gets a timeout with a default, or the game pauses for everyone.
 - Save games store seats and keep the original format readable. Single-player
   saves of the original load as a game with one human seat.
+- Language is each player's view setting; the world's own text (the
+  players' names, the news archive's dates) comes from the game folder's
+  data and must come with the world from the host
+  ([language.md](language.md#the-worlds-text)).
 
 Not in scope: matchmaking, accounts, or play with the original Windows version.
 

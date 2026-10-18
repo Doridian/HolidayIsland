@@ -27,6 +27,7 @@ pub mod hintergrund;
 pub mod infobox;
 pub mod kompassform;
 pub mod ladenform;
+pub mod lang;
 pub mod location;
 pub mod monate;
 pub mod money;

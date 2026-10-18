@@ -247,7 +247,7 @@ fn a_won_game_ends_with_a_high_score() {
     let test = HighScores::parse(&read("SOUNDLO/HIGHSCOR.WAV")).unwrap();
     let (mut high, hpalette) = new_highscoreform(&test);
     let name = world.player_names[1].clone();
-    let date = date_text(17, 10, 2026);
+    let date = date_text(17, 10, 2026, game::lang::Language::De);
     let r2 = high.add(world.scenario, &name, &date, &r.net_worth, score);
     assert!(r2.save);
     let rank = (0..10)

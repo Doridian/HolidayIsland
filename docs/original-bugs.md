@@ -62,8 +62,9 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   reacts: `road_drag` (where `Action::RoadDragEnd` ends), `tv_form` and
   `tv_sound` (when the TV sends `Action::TvPause` and `Action::Speaker`),
   `overview_scrolling` (the viewpoint the people code reads).
-- Each has a stable key, a short German label (for the in-game list),
-  a one-line description and is on by default.
+- Each has a stable key, a short label (for the in-game list) and a
+  one-line description, both in German and English
+  ([language.md](language.md)), and is on by default.
   `enhance::Config::resolve` works them out: everything on, or off with
   the master switch, then each per-key override in order. The player
   sets them in the game's list of them (below), in the port's
@@ -99,7 +100,7 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   off (`--original`) "INFO" opens the credits (`TCreditform`,
   `game::creditform`) as in the original; the list has a button for
   them. Two lists of check boxes, the world's fixes and the view's, each
-  key's German label, scrolled by their bars; "Alle an", "Alle aus
+  key's label, scrolled by their bars; "Alle an", "Alle aus
   (Original)". A fix goes to the running game as `Action::SetFix`
   through `World::apply` and becomes the player's default for new games;
   a view enhancement applies at once (the layout too, for `big_map` and

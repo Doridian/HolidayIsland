@@ -75,9 +75,11 @@ Its `HOLIDAY.EXE` is a later build than the German CD's, with fixes and
 six more scenarios in `UPGRADE\`. The port follows that build: it
 takes its fixes, and reads `UPGRADE\` when the game's folder has one, so
 the German folder plays as before and the English one with the new
-scenarios. The texts and speech are still the folder's own; choosing a
-language comes later. [docs/versions.md](docs/versions.md) has the
-differences.
+scenarios. The texts and speech are the folder's own, and the port
+follows the folder's language for the rest (dates, numbers, its own
+texts); `--lang=de|en` or `language=` in `settings.ini` forces one
+([docs/language.md](docs/language.md)). [docs/versions.md](docs/versions.md)
+has the differences.
 
 ## Running
 
@@ -105,7 +107,7 @@ In a game, the options' "INFO" button lists them to switch one by one,
 or all off for the original; the list saves them in the port's
 `settings.ini`. `--original` switches everything off for a run (and
 "INFO" shows the credits again), `--enhance=KEY=on|off` one of them, and
-`--enhancements` lists the keys. Details in
+`--enhancements` lists the keys (`--help` the other options). Details in
 [docs/original-bugs.md](docs/original-bugs.md#options).
 
 ### Music
@@ -147,6 +149,7 @@ shared through [symbols/](symbols/README.md).
 - [docs/binaries.md](docs/binaries.md): what's on the CD, what the executables are
   built with (Delphi 1, 16-bit NE), segment map, OS surface, the VESA variant
 - [docs/versions.md](docs/versions.md): the German v1.0 and the later (English) build, how they differ, `UPGRADE\`
+- [docs/language.md](docs/language.md): how the original picks its language, and the port's German and English
 - [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
 - [docs/port-architecture.md](docs/port-architecture.md): the planned Rust port: stack, crates, design
 - [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)

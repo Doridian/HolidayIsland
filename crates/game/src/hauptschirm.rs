@@ -335,12 +335,22 @@ pub struct InfoTexts {
     /// `MONATE.TXT`. // [1110:65d6]
     pub months: Vec<Vec<u8>>,
     /// The country from `MODATYP.DAT`, for the date's and the money's
-    /// format. // 1110:64be
+    /// format, as the player's language has it
+    /// ([`crate::lang::Setting::land`]: the folder's own unless another
+    /// language is forced). // 1110:64be
     pub land: Land,
     /// `Waehrungsfaktor` from `SONSTIGE.TXT`. // 1110:7346
     pub currency_factor: i32,
     /// The currency's name, `SONSTIGE.TXT`'s sixth text. // *1110:7352
     pub currency: Vec<u8>,
+}
+
+impl InfoTexts {
+    /// The player's language, which goes with the view's `land`.
+    #[must_use]
+    pub fn language(&self) -> crate::lang::Language {
+        crate::lang::Language::of_land(self.land)
+    }
 }
 
 /// The main screen's state and images.

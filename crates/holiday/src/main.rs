@@ -30,7 +30,8 @@
 //!
 //! `holiday [--save-dir=DIR] [--soundfont=FILE.sf2] [--sound=hi|lo|off]
 //! [--films=hi|lo] [--no-audio] [--window-size=WxH] [--fullscreen|--windowed]
-//! [--ui-scale=N] [GAME_DIR]`, where `GAME_DIR` holds `HOLIDAY.EXE`,
+//! [--ui-scale=N] [--lang=auto|de|en] [--original] [--enhance=KEY=on|off]
+//! [--enhancements] [--help] [GAME_DIR]` ([`USAGE`]), where `GAME_DIR` holds `HOLIDAY.EXE`,
 //! `GRAFIK`, `DATA` and `TEXTE` (default `orig`). Saved games go to `DIR`
 //! (default `MAPS` in the platform's data directory,
 //! `platform::storage::save_dir`); the lists show those and the game's own
@@ -79,6 +80,7 @@ use game::hauptschirm::{self, Axis, Hauptschirm, InfoTexts, KeyResult};
 use game::highscoreform::ScoreTable;
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
+use game::lang;
 use game::optionen::Settings as Options;
 use game::sabowin;
 use game::savegame::{self, Fields, MapView};
@@ -1769,10 +1771,15 @@ impl Holiday {
                     game.file_menu.menu.set_games(games);
                 }
             }
-            // The message box (`MessageDlg`) isn't ported.
-            Some(dateimenue::Action::InvalidName) => eprintln!("Dateiname ungültig"),
+            // The message box (`MessageDlg`) isn't ported; its text, in
+            // the view's language, goes to the log. // en 1040:0eef
+            Some(dateimenue::Action::InvalidName) => {
+                let text = dateimenue::invalid_name_text(game.info.land);
+                eprintln!("{}", text.iter().map(|&b| char::from(b)).collect::<String>());
+            }
             Some(dateimenue::Action::Delete(name)) => {
-                // en 1040:110c: the original asks first (`MessageDlg`,
+                // en 1040:110c: the original asks first
+                // ([`dateimenue::delete_question`] in a `MessageDlg`,
                 // which isn't ported); the port only erases the player's
                 // own file, never the game's `MAPS\`.
                 match self.saves.delete(&name) {
@@ -2130,6 +2137,14 @@ fn read_opt(dir: &Path, name: &str) -> Option<Vec<u8>> {
         .or_else(|| std::fs::read(forms::find(dir, name)?).ok())
 }
 
+/// The folder's `land` (`MODATYP.DAT`, `load_modatyp`, en 1000:23ed),
+/// which `auto` follows (`game::lang`); `D` if the file can't be read.
+fn folder_land(dir: &Path) -> formats::data::Land {
+    read_opt(dir, "DATA/MODATYP.DAT")
+        .and_then(|d| modatyp(&d).ok())
+        .map_or(formats::data::Land::Deutschland, |m| m.land)
+}
+
 fn bitmap(dir: &Path, name: &str) -> Bitmap {
     Bitmap::parse(&read(dir, name)).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
@@ -2391,6 +2406,7 @@ fn load_game(
         high,
         sound,
         size,
+        config.language,
     );
     game.set_view_enhancements(config.view);
     game
@@ -2415,7 +2431,7 @@ fn start_game(
     // A new game, and a scenario (whose file has no fixes), plays with
     // the player's, in place before the world is set up.
     let start = start_world(dir, settings, scenario_page, &mut options, config.fixes);
-    let mut game = make_game(dir, exe, start, options, high, sound, size);
+    let mut game = make_game(dir, exe, start, options, high, sound, size, config.language);
     if scenario_page {
         game.tools.menu.start_scenario(game.world.scenario); // en 1018:015f
     }
@@ -2423,9 +2439,10 @@ fn start_game(
     game
 }
 
-/// The main screen and the forms of a game that starts from `start`.
-/// // 1020:2501, 1010:2820
-#[allow(clippy::too_many_lines)]
+/// The main screen and the forms of a game that starts from `start`,
+/// with the dates and numbers and the port's texts in the player's
+/// `language` (`game::lang`). // 1020:2501, 1010:2820
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn make_game(
     dir: &Path,
     exe: &[u8],
@@ -2434,6 +2451,7 @@ fn make_game(
     high: ScoreTable,
     sound: &sound::Shared,
     size: (i32, i32),
+    language: lang::Setting,
 ) -> Game {
     {
         let mut s = sound.borrow_mut();
@@ -2455,7 +2473,8 @@ fn make_game(
     screen.paint_map(&world, &tiles);
     let info = InfoTexts {
         months: monate(&read(dir, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
-        land: modatyp(&read(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT").land,
+        // The view's `land`: the folder's, or the forced language's.
+        land: language.land(folder_land(dir)),
         currency_factor: texts.waehrungsfaktor,
         currency: texts.texts.get(5).cloned().unwrap_or_default(), // 1020:3ea6
     };
@@ -2554,6 +2573,29 @@ fn make_game(
     }
 }
 
+/// `--help`. The command line is in English only.
+const USAGE: &str = "\
+usage: holiday [OPTIONS] [GAME_DIR]
+
+GAME_DIR holds HOLIDAY.EXE, GRAFIK, DATA and TEXTE (default: orig).
+
+  --lang=auto|de|en      the language of the dates, numbers and the port's
+                         texts (default auto: the game folder's; settings.ini
+                         language=); the folder's own texts stay as they are
+  --original             every enhancement off, as the original
+  --enhance=KEY=on|off   one enhancement on or off
+  --enhancements         list the enhancements and exit
+  --save-dir=DIR         where saved games go
+  --soundfont=FILE.sf2   the SoundFont for the music
+  --sound=hi|lo|off      the sound effects' quality
+  --films=hi|lo          the films' quality
+  --no-audio             no sound at all
+  --window-size=WxH      the window's size
+  --fullscreen, --windowed
+  --ui-scale=N           1 to 4
+  --help                 this
+";
+
 /// The command line's options.
 struct Args {
     dir: PathBuf,
@@ -2569,7 +2611,8 @@ struct Args {
 }
 
 /// The enhancements, one per line: key, whose, on or off in `config`, and
-/// what it does (`--enhancements`).
+/// what it does (`--enhancements`), in English like the rest of the
+/// command line.
 fn enhancement_list(config: &Config) -> String {
     use std::fmt::Write;
     enhance::all().fold(String::new(), |mut out, i| {
@@ -2578,7 +2621,12 @@ fn enhancement_list(config: &Config) -> String {
             enhance::Side::View => "view",
         };
         let on = if config.is_on(i.key) == Some(true) { "on" } else { "off" };
-        let _ = writeln!(out, "{:<24} {side:<5} {on:<3}  {}", i.key, i.description);
+        let _ = writeln!(
+            out,
+            "{:<24} {side:<5} {on:<3}  {}",
+            i.key,
+            i.description(lang::Language::En)
+        );
         out
     })
 }
@@ -2604,6 +2652,18 @@ fn enhance_config(settings_file: Option<&Path>, original: bool, overrides: &[(St
     config
 }
 
+/// `settings.ini`'s `language=`; `auto` without one.
+fn language_setting(settings_file: Option<&Path>) -> lang::Setting {
+    let Some(value) = settings_file.and_then(|f| platform::settings::load_value(f, "language")) else {
+        return lang::Setting::Auto;
+    };
+    lang::Setting::parse(&value).unwrap_or_else(|| {
+        eprintln!("settings.ini: language={value} isn't auto, de or en");
+        lang::Setting::Auto
+    })
+}
+
+#[allow(clippy::too_many_lines)] // One option after the other.
 fn args() -> Args {
     let mut dir = PathBuf::from("orig");
     let mut save_dir = None;
@@ -2614,6 +2674,7 @@ fn args() -> Args {
     let mut original = false;
     let mut overrides: Vec<(String, bool)> = Vec::new();
     let mut list = false;
+    let mut language = None;
     let mut window = platform::WindowOptions {
         settings_file: platform::settings::settings_file(),
         ..platform::WindowOptions::default()
@@ -2665,6 +2726,11 @@ fn args() -> Args {
             };
         } else if a == "--no-audio" {
             no_audio = true;
+        } else if let Some(l) = a.strip_prefix("--lang=") {
+            language = Some(lang::Setting::parse(l).unwrap_or_else(|| fail("--lang= takes auto, de or en")));
+        } else if a == "--help" || a == "-h" {
+            print!("{USAGE}");
+            std::process::exit(0);
         } else if a == "--original" {
             original = true;
         } else if a == "--enhancements" {
@@ -2692,7 +2758,8 @@ fn args() -> Args {
     let installed = read_opt(&dir, "SETUP.DAT").map(|d| setup::Setup::parse(&d));
     let quality = quality.unwrap_or_else(|| installed.as_ref().map_or(setup::Sound::Hi, |s| s.sound));
     let films = films.unwrap_or_else(|| installed.as_ref().map_or(setup::Film::Hi, |s| s.film));
-    let enhance = enhance_config(window.settings_file.as_deref(), original, &overrides);
+    let mut enhance = enhance_config(window.settings_file.as_deref(), original, &overrides);
+    enhance.language = language.unwrap_or_else(|| language_setting(window.settings_file.as_deref()));
     if list {
         print!("{}", enhancement_list(&enhance));
         std::process::exit(0);
@@ -4515,6 +4582,85 @@ mod tests {
         h.input(Input::KeyUp(0x20));
     }
 
+    /// The main screen with its forms, the auction, the options and the
+    /// list of enhancements on the German (`orig/`) and the English
+    /// (`orig-en/`) folder, each in its own language (`auto`) and in the
+    /// other one forced (`docs/language.md`). The view's dates, numbers
+    /// and the port's texts follow the language; the world's text (the
+    /// news archive's dates) stays the folder's. With `HOLIDAY_PNG` set,
+    /// the screens go there as `lang-<folder>[-lang-<forced>]-<screen>.png`.
+    /// Skipped for a folder that isn't there.
+    #[test]
+    fn language_screens() {
+        use formats::data::Land;
+        use lang::{Language, Setting};
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (folder, land, setting, tag) in [
+            ("orig", Land::Deutschland, Setting::Auto, "de"),
+            ("orig-en", Land::England, Setting::Auto, "en"),
+            ("orig", Land::Deutschland, Setting::Is(Language::En), "de-lang-en"),
+            ("orig-en", Land::England, Setting::Is(Language::De), "en-lang-de"),
+        ] {
+            let dir = root.join(folder);
+            if !dir.join("GRAFIK").exists() && !dir.join("Grafik").exists() {
+                eprintln!("skipping: {} not found", dir.display());
+                continue;
+            }
+            assert_eq!(folder_land(&dir), land);
+            let mut config = Config::default();
+            config.view.set(enhance::Enhancement::BigMap, false);
+            // The forms' buttons close them rather than raise them.
+            config.view.set(enhance::Enhancement::WindowStacking, false);
+            config.language = setting;
+            let mut h = holiday_in_a_game(&dir, SIZE, config);
+            let game = h.game.as_mut().unwrap();
+            let language = setting.language(land);
+            assert_eq!(game.info.language(), language);
+            assert_eq!(game.info.land, language.land(land));
+            // The world's date format is the folder's, whatever the view's.
+            assert_eq!(game.world.news.date_format.land, land as u8);
+            let date = game.world.date.text(&game.info.months, game.info.land);
+            // `6. Januar 1996`, `6th January 1996`.
+            let dot = date.iter().take_while(|b| *b != &b' ').any(|&b| b == b'.');
+            assert_eq!(dot, language == Language::De, "{}", String::from_utf8_lossy(&date));
+            assert_eq!(
+                game::money::format_money(1_234_567, 1, game.info.land),
+                language.pick(&b"1.234.567"[..], &b"1,234,567"[..])
+            );
+            write_png(&h, &format!("lang-{tag}-main"));
+            // The info bar's date and money, with the forms closed.
+            let game = h.game.as_mut().unwrap();
+            for button in [3, 4, 5] {
+                game.click_button(button);
+            }
+            let _ = game.update(Duration::ZERO);
+            assert!(!game.forms.tv.visible && !game.forms.money.shown());
+            h.repaint();
+            write_png(&h, &format!("lang-{tag}-infobar"));
+            // An auction: the item's picture, its texts and the price.
+            let game = h.game.as_mut().unwrap();
+            game.world.auction.item = 9;
+            game.world.auction.price = 12_500;
+            game.world.auction.start_price = 12_500;
+            game.open_auction();
+            assert!(game.auction.visible);
+            h.repaint();
+            write_png(&h, &format!("lang-{tag}-auction"));
+            let game = h.game.as_mut().unwrap();
+            game.auction.visible = false;
+            // The options, and from their "INFO" the enhancements.
+            game.click_button(2);
+            assert!(game.forms.options.visible);
+            h.repaint();
+            write_png(&h, &format!("lang-{tag}-options"));
+            h.input(Input::KeyDown(0x20));
+            h.input(Input::KeyUp(0x20));
+            assert!(h.game.as_ref().unwrap().forms.enhance.visible);
+            h.repaint();
+            write_png(&h, &format!("lang-{tag}-enhance"));
+        }
+    }
+
     /// The middle of `r`.
     fn middle(r: Rect) -> (i32, i32) {
         (i32::midpoint(r.left, r.right), i32::midpoint(r.top, r.bottom))
@@ -4724,16 +4870,37 @@ mod tests {
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 
-    /// Every key's German label fits its row in one line of the game's
-    /// font.
+    /// `language=` in `settings.ini`: `auto` without one or with a value
+    /// that isn't a language.
+    #[test]
+    fn language_from_settings() {
+        let tmp = std::env::temp_dir().join(format!("holiday-language-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let ini = tmp.join("settings.ini");
+        assert_eq!(language_setting(None), lang::Setting::Auto);
+        assert_eq!(language_setting(Some(&ini)), lang::Setting::Auto);
+        std::fs::write(&ini, "window_width=800\nlanguage=en\n").unwrap();
+        assert_eq!(language_setting(Some(&ini)), lang::Setting::Is(lang::Language::En));
+        std::fs::write(&ini, "language=klingon\n").unwrap();
+        assert_eq!(language_setting(Some(&ini)), lang::Setting::Auto);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Every key's label, German and English, fits its row in one line
+    /// of the game's font, and the descriptions their two lines.
     #[test]
     fn labels_fit_their_rows() {
         let Some(dir) = game_dir() else { return };
         let font = font(&dir);
         for i in enhance::all() {
-            let text: Vec<u8> = i.label.chars().map(|c| u8::try_from(u32::from(c)).unwrap()).collect();
-            // A row's text is 280 - 16 - 3 wide (`ui_radio_draw`).
-            assert_eq!(font.wrap(&text, 261, game::text::Align::Left).len(), 1, "{}", i.label);
+            for language in [lang::Language::De, lang::Language::En] {
+                let text = lang::latin1(i.label(language));
+                // A row's text is 280 - 16 - 3 wide (`ui_radio_draw`).
+                let label = i.label(language);
+                assert_eq!(font.wrap(&text, 261, game::text::Align::Left).len(), 1, "{label}");
+                let line = lang::latin1(&format!("{}: {}", i.key, i.description(language)));
+                assert!(font.wrap(&line, 616, game::text::Align::Left).len() <= 2, "{}", i.key);
+            }
         }
     }
 }

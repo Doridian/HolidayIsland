@@ -23,6 +23,7 @@ use formats::pascal::PString;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
+use crate::lang::Language;
 use crate::text::{Align, Font};
 use crate::widgets::{BitmapId, Button, CheckBox, Frame, Label, ShiftState, Skin, Sound, Widget};
 
@@ -255,12 +256,16 @@ pub fn reset_highscores(table: &mut ScoreTable, game: u8) {
     }
 }
 
-/// Today's date as Delphi 1's `DateToStr` writes it with Windows'
-/// German short date format (`dd.MM.yy`), for a new entry. The original
-/// takes the date from the clock (1008:0512); the caller passes it.
+/// Today's date as Delphi 1's `DateToStr` writes it with Windows' short
+/// date format, for a new entry. That's the Windows the game runs on,
+/// not the game's: the port takes the German Windows' `dd.MM.yy` for
+/// German and the British one's `dd/MM/yy` for English
+/// (`docs/language.md`). The original takes the date from the clock
+/// (1008:0512); the caller passes it.
 #[must_use]
-pub fn date_text(day: u32, month: u32, year: i32) -> Vec<u8> {
-    format!("{day:02}.{month:02}.{:02}", year.rem_euclid(100)).into_bytes()
+pub fn date_text(day: u32, month: u32, year: i32, language: Language) -> Vec<u8> {
+    let sep = language.pick('.', '/');
+    format!("{day:02}{sep}{month:02}{sep}{:02}", year.rem_euclid(100)).into_bytes()
 }
 
 /// `HIGHSCOR.TXT`'s 16 lines (`load_highscor_txt`); missing lines are
@@ -738,6 +743,7 @@ mod tests {
         assert_eq!(t.entries[0][3].name.as_bytes(), b"");
         assert_eq!(t.entries[0][3].name.0[1..3], *b"me", "the characters stay");
         assert_eq!(t.entries[0][4].score, 41);
-        assert_eq!(date_text(4, 9, 1996), b"04.09.96");
+        assert_eq!(date_text(4, 9, 1996, Language::De), b"04.09.96");
+        assert_eq!(date_text(4, 9, 2001, Language::En), b"04/09/01");
     }
 }

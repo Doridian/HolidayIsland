@@ -26,6 +26,13 @@
 //! enhance.window_stacking=off
 //! ```
 //!
+//! The player's language (`game::lang`, `docs/language.md`), written by
+//! hand: `auto` (the default) follows the game folder's.
+//!
+//! ```text
+//! language=en
+//! ```
+//!
 //! Writing the window's state keeps every other line of the file, and
 //! writing the switches keeps every line but theirs.
 
@@ -221,6 +228,22 @@ impl EnhanceSettings {
     }
 }
 
+/// The value of the last `key=value` line for `key` in `text`, trimmed.
+#[must_use]
+pub fn value(text: &str, key: &str) -> Option<String> {
+    text.lines()
+        .filter_map(|line| line.split_once('='))
+        .filter(|(k, _)| k.trim() == key)
+        .map(|(_, v)| v.trim().to_owned())
+        .next_back()
+}
+
+/// [`value`] in the file at `path`; none if there's no file.
+#[must_use]
+pub fn load_value(path: &Path, key: &str) -> Option<String> {
+    value(&std::fs::read_to_string(path).ok()?, key)
+}
+
 /// A switch's value: `on`/`off`, `1`/`0`, `true`/`false`, `yes`/`no`.
 #[must_use]
 pub fn switch(value: &str) -> Option<bool> {
@@ -252,6 +275,14 @@ mod tests {
         assert_eq!(WindowSettings::parse(""), WindowSettings::default());
         let odd = WindowSettings::parse("window_width=0\nwindow_height=5\n# x\nfullscreen=false\nwindow_x=3\n");
         assert_eq!(odd, WindowSettings::default());
+    }
+
+    #[test]
+    fn values() {
+        let text = "language=de\nwindow_width=3\n language = en \nnope\n";
+        assert_eq!(value(text, "language").as_deref(), Some("en"));
+        assert_eq!(value(text, "fullscreen"), None);
+        assert_eq!(load_value(Path::new("/nonexistent/settings.ini"), "language"), None);
     }
 
     #[test]

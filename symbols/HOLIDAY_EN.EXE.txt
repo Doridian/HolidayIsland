@@ -582,7 +582,7 @@
 1058:2469 func startform_scenario11_click  # new: scenario := 12
 1058:25d8 func startform_scenario12_click  # new: scenario := 13
 1058:2747 func startform_maperstbuttonclick  # de 1058:19df
-1058:2791 func startform_sprachbuttonclick  # de 1058:1a29
+1058:2791 func startform_sprachbuttonclick  # de 1058:1a29; empty, no component (a language button never made)
 1058:2798 func startform_show  # de 1058:1a30
 1058:2c38 func startform_load_texts  # de 1058:1ed0, changed
 1058:378f func startform_init  # de 1058:27e6, changed
@@ -1391,7 +1391,7 @@
 1118:66d4 data werbung_to_text  # de 1110:64b0
 1118:66d8 data renovierung_to_text  # de 1110:64b4
 1118:66dc data pointer_double_click  # de 1110:64b8
-1118:66e2 data land  # de 1110:64be
+1118:66e2 data land  # de 1110:64be; MODATYP.DAT D/A/E/F as 0/1/2/3, not saved; read by date_text, group_digits, insert_decimal_marks, dateimenue_save, dateimenue_delete (docs/language.md)
 1118:66e3 data max_lageeinfluss  # de 1110:64bf
 1118:66ea data werbungskosten  # de 1110:64c6
 1118:66ee data kreditgroesse  # de 1110:64ca

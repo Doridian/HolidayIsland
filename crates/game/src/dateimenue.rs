@@ -18,6 +18,7 @@
 //! above "Neues Spiel", "Beenden" moves down one, and the table of
 //! rectangles has two more (en `1118:1812`, [`RECTS_UPGRADE`]).
 
+use formats::data::Land;
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
@@ -157,6 +158,32 @@ const BUTTONS_UPGRADE: Buttons = &[
 ];
 
 /// `VK_*` codes the form reads.
+/// The message for a name that isn't one ([`Action::InvalidName`]):
+/// v1.0 has only the German (CS:0df0, 1040:0e03); the later build picks
+/// it by `land` (en 1040:0eef): German for `D`, French for `F`, English
+/// for `A` and `E`. The port takes the later build's, by the view's
+/// `land` (`crate::lang`).
+#[must_use]
+pub fn invalid_name_text(land: Land) -> &'static [u8] {
+    match land {
+        Land::Deutschland => b"Dateiname ung\xfcltig",        // en 1040:0eb0
+        Land::Frankreich => b"Non valable nom de fichier",    // en 1040:0ec3
+        Land::Amerika | Land::England => b"Invalid Filename", // en 1040:0ede
+    }
+}
+
+/// The later build's question before "Löschen" erases a game
+/// ([`Action::Delete`]), by `land` as [`invalid_name_text`].
+/// // en 1040:110c
+#[must_use]
+pub fn delete_question(land: Land) -> &'static [u8] {
+    match land {
+        Land::Deutschland => b"Wirklich loeschen?",        // en 1040:10d7
+        Land::Frankreich => b"Vous \xeates s\xfbr?",       // en 1040:10ea
+        Land::Amerika | Land::England => b"Are you sure?", // en 1040:10f9
+    }
+}
+
 const VK_RETURN: u16 = 0x0d;
 const VK_ESCAPE: u16 = 0x1b;
 const VK_SPACE: u16 = 0x20;
@@ -181,7 +208,8 @@ pub enum Action {
     /// // 1040:0e03
     Save(Vec<u8>),
     /// The name isn't one ([`valid_name`]): a message box says
-    /// "Dateiname ungültig" (`vcl_messagedlg`, CS:0df0). // 1040:0e03
+    /// "Dateiname ungültig" (`vcl_messagedlg`, CS:0df0), in the later
+    /// build by `land` ([`invalid_name_text`]). // 1040:0e03, en 1040:0eef
     InvalidName,
     /// "Neues Spiel" (or `N`): `back_to_start_menu` saves `Last.map` and
     /// shows the start menu. // 1010:25dc
@@ -190,7 +218,7 @@ pub enum Action {
     /// quit.
     Quit,
     /// The later build's "Löschen" (or `D`) with a game selected: after a
-    /// question ("Wirklich loeschen?", by `land`) the file is erased from
+    /// question ([`delete_question`], by `land`) the file is erased from
     /// `MAPS\` and the list filled again ([`Dateimenue::set_games`]).
     /// // en 1040:110c
     Delete(Vec<u8>),
@@ -766,6 +794,15 @@ impl Dateimenue {
 mod tests {
     use super::*;
     use formats::bmp::Bitmap;
+
+    #[test]
+    fn messages_by_land() {
+        assert_eq!(invalid_name_text(Land::Deutschland), b"Dateiname ung\xfcltig");
+        assert_eq!(invalid_name_text(Land::England), b"Invalid Filename");
+        assert_eq!(invalid_name_text(Land::Amerika), invalid_name_text(Land::England));
+        assert_eq!(delete_question(Land::England), b"Are you sure?");
+        assert_eq!(delete_question(Land::Frankreich), b"Vous \xeates s\xfbr?");
+    }
 
     fn font() -> Font {
         let (width, height) = (12, 14 * 12);

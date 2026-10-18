@@ -5,12 +5,14 @@
 //! credits, centred on the screen, drawn with the game's own bitmaps,
 //! font and widgets.
 //!
-//! Two lists of check boxes, each with a scroll bar: "Spielkorrekturen",
-//! the world's fixes ([`Fix`]), and "Anzeige und Ton", the player's view
-//! enhancements ([`Enhancement`]). Each row is a key's German label
+//! Two lists of check boxes, each with a scroll bar: "Spielkorrekturen"
+//! ("Game fixes"), the world's fixes ([`Fix`]), and "Anzeige und Ton"
+//! ("Screen and sound"), the player's view enhancements
+//! ([`Enhancement`]). Each row is a key's label
 //! ([`crate::enhance::Info::label`]); the one under the mouse has its key
 //! and description shown below the lists. Buttons switch every one on or
-//! off (the original), open the credits and close the form.
+//! off (the original), open the credits and close the form. Its texts are
+//! in the player's language ([`crate::lang`]).
 //!
 //! A fix comes back as a command ([`Action::SetFix`], through
 //! `World::apply` like any other) and as a [`Change`] for the caller,
@@ -27,6 +29,7 @@ use vcl::surface::{Rop, Surface};
 
 use crate::command;
 use crate::enhance::{Enhancement, Enhancements, Fix, Fixes, Info};
+use crate::lang::{Language, Text, latin1};
 use crate::text::{Align, Font, LINE_HEIGHT};
 use crate::widgets::{
     BitmapId, Button, CheckBox, Frame, Label, Outcome, ScrollBar, ScrollBitmaps, ShiftState, Skin, Sound, Widget,
@@ -101,32 +104,13 @@ const BLUE: i32 = 7;
 const BLACK: i32 = 9;
 const RED: i32 = 11;
 
-/// The form's own texts, in the game's language. `Schließen` is
-/// `SONSTIGE.TXT`'s, which the caller hands to [`Enhanceform::new`].
-const TITLE: &str = "ERWEITERUNGEN";
-const HEADINGS: [&str; 2] = ["Spielkorrekturen", "Anzeige und Ton"];
-const SUBHEADINGS: [&str; 2] = ["Für dieses Spiel und neue Spiele", "Ihre Einstellungen für jedes Spiel"];
-const ALL_ON: &str = "Alle an";
-const ALL_OFF: &str = "Alle aus (Original)";
-const CREDITS: &str = "Mitwirkende";
-const NOTE_SAVED: &str = "Änderungen gelten sofort und werden in settings.ini gespeichert.";
-const NOTE_NOT_SAVED: &str = "Änderungen gelten sofort, aber nur bis zum Beenden (keine settings.ini).";
-const NOTE_COMMAND_LINE: &str = "Beim nächsten Start gehen --original und --enhance wieder vor.";
-const NOTE_SCREEN_OFF: &str = "INFO zeigt nun die Mitwirkenden (zurück: enhance.enhancements_screen=on).";
-const HINT: &str = "Die Maus über einer Zeile zeigt hier, was sie ändert.";
+// The form's own texts are `Text`'s `Enhance*`; `Schließen` is
+// `SONSTIGE.TXT`'s, which the caller hands to `Enhanceform::new`.
 
 /// The keys of [`Enhanceform::key_down`].
 const VK_RETURN: u16 = 0x0d;
 const VK_ESCAPE: u16 = 0x1b;
 const VK_F4: u16 = 0x73;
-
-/// `text` in the game's Windows-1252 font: the Latin-1 letters as they
-/// are, anything else a `?`.
-fn german(text: &str) -> Vec<u8> {
-    text.chars()
-        .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
-        .collect()
-}
 
 /// What [`Enhanceform::show`] says under the lists about saving.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -203,13 +187,13 @@ struct Pane {
 }
 
 impl Pane {
-    fn new(left: i32, keys: Vec<Key>) -> Pane {
+    fn new(left: i32, keys: Vec<Key>, language: Language) -> Pane {
         let rows = keys
             .iter()
             .map(|k| {
                 let label = Label::new(
                     Frame::new(left, 0, ROW_WIDTH, 16),
-                    &german(k.info().label),
+                    &latin1(k.info().label(language)),
                     Align::Left,
                     BLACK,
                 );
@@ -284,6 +268,8 @@ pub struct Enhanceform {
     hover: Option<(usize, usize)>,
     /// The player's view enhancements (`scroll_bars`).
     pub enhance: Enhancements,
+    /// The language of its texts.
+    language: Language,
 }
 
 const CLOSE_BUTTON: usize = 0;
@@ -293,10 +279,11 @@ const CREDITS_BUTTON: usize = 3;
 const SCHLIESSEN_BUTTON: usize = 4;
 
 impl Enhanceform {
-    /// The form, not shown. `bitmaps` are those of [`BITMAP_FILES`],
-    /// `schliessen` `SONSTIGE.TXT`'s "Schließen".
+    /// The form, not shown, with its texts in `language`. `bitmaps` are
+    /// those of [`BITMAP_FILES`], `schliessen` `SONSTIGE.TXT`'s
+    /// "Schließen".
     #[must_use]
-    pub fn new(font: Font, mut bitmaps: Vec<Surface>, schliessen: &[u8]) -> Self {
+    pub fn new(font: Font, mut bitmaps: Vec<Surface>, schliessen: &[u8], language: Language) -> Self {
         // The scroll bar's trough is 200 high, the bars longer: it's
         // repeated down.
         if let Some(track) = bitmaps.get(SCROLL.track.0) {
@@ -308,7 +295,7 @@ impl Enhanceform {
             }
             bitmaps[SCROLL.track.0] = long;
         }
-        let background = Self::background(&font, &bitmaps);
+        let background = Self::background(&font, &bitmaps, language);
         let button = |n: usize, text: &[u8]| {
             Button::new(
                 Frame::new(BUTTON_LEFT[n], BUTTON_TOP, BUTTON_WIDTH, BUTTON_HEIGHT),
@@ -321,12 +308,12 @@ impl Enhanceform {
         Enhanceform {
             buttons: [
                 Button::new(Frame::new(0, 0, 16, 16), CLOSE, CLOSE_PRESSED, b"", BLACK),
-                button(0, &german(ALL_ON)),
-                button(1, &german(ALL_OFF)),
-                button(2, &german(CREDITS)),
+                button(0, &Text::EnhanceAllOn.bytes(language)),
+                button(1, &Text::EnhanceAllOff.bytes(language)),
+                button(2, &Text::EnhanceCredits.bytes(language)),
                 button(3, schliessen),
             ],
-            panes: Self::panes(),
+            panes: Self::panes(language),
             font,
             bitmaps,
             image: background.clone(),
@@ -339,13 +326,18 @@ impl Enhanceform {
             notes: Notes::default(),
             hover: None,
             enhance: Enhancements::ORIGINAL,
+            language,
         }
     }
 
-    fn panes() -> [Pane; 2] {
+    fn panes(language: Language) -> [Pane; 2] {
         [
-            Pane::new(LIST_LEFT[0], Fix::ALL.iter().map(|&f| Key::Fix(f)).collect()),
-            Pane::new(LIST_LEFT[1], Enhancement::ALL.iter().map(|&e| Key::View(e)).collect()),
+            Pane::new(LIST_LEFT[0], Fix::ALL.iter().map(|&f| Key::Fix(f)).collect(), language),
+            Pane::new(
+                LIST_LEFT[1],
+                Enhancement::ALL.iter().map(|&e| Key::View(e)).collect(),
+                language,
+            ),
         ]
     }
 
@@ -353,7 +345,7 @@ impl Enhanceform {
     /// clean top of its face, the face mirrored on down to the bottom
     /// edge; then the title, the lists' headings and a frame round each
     /// list in the colour of the form's edge.
-    fn background(font: &Font, bitmaps: &[Surface]) -> Surface {
+    fn background(font: &Font, bitmaps: &[Surface], language: Language) -> Surface {
         let mut bg = Surface::new(WIDTH as usize, HEIGHT as usize, 0);
         let clip = bg.bounds();
         if let Some(src) = bitmaps.get(BACKGROUND.0) {
@@ -379,12 +371,18 @@ impl Enhanceform {
             }
         }
         let edge_colour = bg.pixel(0, (HEIGHT / 2) as usize);
-        font.draw(&mut bg, &german(TITLE), (16, 2), WIDTH - 32, Align::Center, YELLOW);
-        for (n, &left) in LIST_LEFT.iter().enumerate() {
-            font.draw(&mut bg, &german(HEADINGS[n]), (left, 22), LIST_WIDTH, Align::Left, BLUE);
+        let title = Text::EnhanceTitle.bytes(language);
+        font.draw(&mut bg, &title, (16, 2), WIDTH - 32, Align::Center, YELLOW);
+        let headings = [
+            (Text::EnhanceFixes, Text::EnhanceFixesNote),
+            (Text::EnhanceView, Text::EnhanceViewNote),
+        ];
+        for (&left, (heading, note)) in LIST_LEFT.iter().zip(headings) {
+            let heading = heading.bytes(language);
+            font.draw(&mut bg, &heading, (left, 22), LIST_WIDTH, Align::Left, BLUE);
             font.draw(
                 &mut bg,
-                &german(SUBHEADINGS[n]),
+                &note.bytes(language),
                 (left, 38),
                 LIST_WIDTH,
                 Align::Left,
@@ -411,7 +409,7 @@ impl Enhanceform {
         self.view = view;
         self.notes = notes;
         self.hover = None;
-        self.panes = Self::panes();
+        self.panes = Self::panes(self.language);
         self.left = (screen.0 - WIDTH) / 2;
         self.top = (screen.1 - HEIGHT) / 2;
         for p in &mut self.panes {
@@ -543,28 +541,33 @@ impl Enhanceform {
         let (text, colour) = match self.hover {
             Some((p, i)) => {
                 let info = self.panes[p].keys[i].info();
-                (format!("{}: {}", info.key, info.description), BLUE)
+                (format!("{}: {}", info.key, info.description(self.language)), BLUE)
             }
-            None => (HINT.to_owned(), BLACK),
+            None => (Text::EnhanceHint.get(self.language).to_owned(), BLACK),
         };
         font.draw(
             &mut self.image,
-            &german(&text),
+            &latin1(&text),
             (TEXT_LEFT, INFO_TOP),
             TEXT_WIDTH,
             Align::Left,
             colour,
         );
-        let mut notes = vec![if self.notes.saved { NOTE_SAVED } else { NOTE_NOT_SAVED }];
+        let mut notes = vec![if self.notes.saved {
+            Text::EnhanceSaved
+        } else {
+            Text::EnhanceNotSaved
+        }];
         if !self.view.has(Enhancement::EnhancementsScreen) {
-            notes.push(NOTE_SCREEN_OFF);
+            notes.push(Text::EnhanceScreenOff);
         } else if self.notes.command_line && self.notes.saved {
-            notes.push(NOTE_COMMAND_LINE);
+            notes.push(Text::EnhanceCommandLine);
         }
         for (n, note) in (0..).zip(notes) {
-            let colour = if note == NOTE_SCREEN_OFF { RED } else { BLACK };
+            let colour = if note == Text::EnhanceScreenOff { RED } else { BLACK };
             let at = (TEXT_LEFT, NOTES_TOP + n * LINE_HEIGHT);
-            font.draw(&mut self.image, &german(note), at, TEXT_WIDTH, Align::Left, colour);
+            let text = note.bytes(self.language);
+            font.draw(&mut self.image, &text, at, TEXT_WIDTH, Align::Left, colour);
         }
     }
 
@@ -801,7 +804,7 @@ mod tests {
         let bitmaps = (0..BITMAP_FILES.len())
             .map(|i| Surface::new(640, 300, u8::try_from(i + 1).unwrap()))
             .collect();
-        let mut f = Enhanceform::new(font(), bitmaps, b"Schlie\xdfen");
+        let mut f = Enhanceform::new(font(), bitmaps, b"Schlie\xdfen", Language::De);
         let _ = f.show(
             Fixes::all_on(),
             Enhancements::all_on(),
