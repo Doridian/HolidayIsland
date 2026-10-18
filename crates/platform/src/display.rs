@@ -91,23 +91,61 @@ fn gpu(e: impl fmt::Display) -> Error {
     Error::Gpu(e.to_string())
 }
 
+/// Where the browser's display comes once its GPU is set up.
+#[cfg(target_arch = "wasm32")]
+pub(crate) type Pending = std::rc::Rc<std::cell::RefCell<Option<Result<Display, Error>>>>;
+
+fn descriptor(event_loop: &ActiveEventLoop) -> wgpu::InstanceDescriptor {
+    wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(event_loop.owned_display_handle()))
+}
+
 impl Display {
+    /// The display for `window`, waiting for the GPU.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(event_loop: &ActiveEventLoop, window: Arc<Window>) -> Result<Self, Error> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(
-            event_loop.owned_display_handle(),
-        )));
+        let instance = wgpu::Instance::new(descriptor(event_loop));
+        pollster::block_on(Display::with_instance(&instance, window))
+    }
+
+    /// In the browser, which can't wait: starts setting the GPU up for
+    /// `window` (WebGPU where the browser has it, else WebGL2) and gives
+    /// the slot the display comes to.
+    #[cfg(target_arch = "wasm32")]
+    pub fn start(event_loop: &ActiveEventLoop, window: Arc<Window>) -> Pending {
+        let slot = Pending::default();
+        let to = std::rc::Rc::clone(&slot);
+        let desc = descriptor(event_loop);
+        wasm_bindgen_futures::spawn_local(async move {
+            let instance = wgpu::util::new_instance_with_webgpu_detection(desc).await;
+            let display = Display::with_instance(&instance, window).await;
+            *to.borrow_mut() = Some(display);
+        });
+        slot
+    }
+
+    async fn with_instance(instance: &wgpu::Instance, window: Arc<Window>) -> Result<Self, Error> {
         let surface = instance.create_surface(window.clone()).map_err(gpu)?;
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            compatible_surface: Some(&surface),
-            ..Default::default()
-        }))
-        .map_err(gpu)?;
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("holiday"),
-            required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
-            ..Default::default()
-        }))
-        .map_err(gpu)?;
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                ..Default::default()
+            })
+            .await
+            .map_err(gpu)?;
+        #[cfg(target_arch = "wasm32")]
+        crate::web::log(&format!(
+            "GPU: {:?} ({})",
+            adapter.get_info().backend,
+            adapter.get_info().name
+        ));
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("holiday"),
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+                ..Default::default()
+            })
+            .await
+            .map_err(gpu)?;
 
         let size = window.inner_size();
         let mut config = surface

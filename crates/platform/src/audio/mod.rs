@@ -51,10 +51,11 @@ pub fn soundfont_dir() -> Option<PathBuf> {
 
 /// The first `*.sf2` in `dir` by name.
 fn first_sf2(dir: &Path) -> Option<PathBuf> {
-    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+    let mut found: Vec<PathBuf> = crate::fs::read_dir(dir)
         .ok()?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("sf2")) && p.is_file())
+        .into_iter()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("sf2")) && crate::fs::is_file(p))
         .collect();
     found.sort();
     found.into_iter().next()
@@ -77,7 +78,11 @@ pub fn find_soundfont(explicit: Option<&Path>) -> Option<PathBuf> {
     if let Some(p) = soundfont_dir().as_deref().and_then(first_sf2) {
         return Some(p);
     }
-    if let Some(p) = SOUNDFONT_FILES.iter().map(PathBuf::from).find(|p| p.is_file()) {
+    if let Some(p) = SOUNDFONT_FILES
+        .iter()
+        .map(PathBuf::from)
+        .find(|p| crate::fs::is_file(p))
+    {
         return Some(p);
     }
     let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -95,8 +100,10 @@ pub fn find_soundfont(explicit: Option<&Path>) -> Option<PathBuf> {
 /// # Errors
 /// If the file can't be read or isn't a `SoundFont` 2.
 pub fn load_soundfont(path: &Path) -> Result<Arc<SoundFont>, String> {
-    let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    SoundFont::new(&mut f).map(Arc::new).map_err(|e| format!("{e:?}"))
+    let bytes = crate::fs::read(path).map_err(|e| e.to_string())?;
+    SoundFont::new(&mut bytes.as_slice())
+        .map(Arc::new)
+        .map_err(|e| format!("{e:?}"))
 }
 
 /// Parses a Standard MIDI File.
@@ -129,7 +136,7 @@ pub fn midi_length_ms(midi: &MidiFile) -> u32 {
 pub struct Audio {
     engine: Option<Arc<Mutex<Engine>>>,
     #[cfg(feature = "audio-device")]
-    _stream: Option<cpal::Stream>,
+    _stream: Option<Arc<cpal::Stream>>,
 }
 
 impl Audio {
@@ -153,9 +160,12 @@ impl Audio {
                 .inspect_err(|e| eprintln!("music off: can't load the SoundFont {}: {e}", p.display()))
                 .ok()
         } else {
+            #[cfg(not(target_arch = "wasm32"))]
             eprintln!(
                 "music off: no SoundFont found (run tools/get-soundfont.sh, pass --soundfont=FILE.sf2 or set {SOUNDFONT_ENV})"
             );
+            #[cfg(target_arch = "wasm32")]
+            eprintln!("music off: no SoundFont (pick one on the start page)");
             None
         };
         Audio::with_device(font.as_ref()).unwrap_or_else(|e| {
@@ -184,6 +194,12 @@ impl Audio {
             };
             match open_stream(&device, &supported, frames, &engine) {
                 Ok(stream) => {
+                    let stream = Arc::new(stream);
+                    #[cfg(target_arch = "wasm32")]
+                    STREAMS
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .push(Arc::downgrade(&stream));
                     return Ok(Audio {
                         engine: Some(engine),
                         _stream: Some(stream),
@@ -290,11 +306,50 @@ fn open_stream(
     }
     .map_err(|e| e.to_string())?;
     stream.play().map_err(|e| e.to_string())?;
+    checked(stream, &errors, frames)
+}
+
+/// `stream` if it runs without errors for a moment.
+#[cfg(all(feature = "audio-device", not(target_arch = "wasm32")))]
+fn checked(stream: cpal::Stream, errors: &std::sync::atomic::AtomicUsize, frames: u32) -> Result<cpal::Stream, String> {
     // A broken buffer size fails at once and on every poll.
     std::thread::sleep(std::time::Duration::from_millis(150));
-    match errors.load(Ordering::Relaxed) {
+    match errors.load(std::sync::atomic::Ordering::Relaxed) {
         0 => Ok(stream),
         n => Err(format!("{n} stream errors with a buffer of {frames} frames")),
+    }
+}
+
+/// The browser can't wait; its stream reports errors later, if at all.
+#[cfg(all(feature = "audio-device", target_arch = "wasm32"))]
+#[allow(clippy::unnecessary_wraps)]
+fn checked(
+    stream: cpal::Stream,
+    _errors: &std::sync::atomic::AtomicUsize,
+    _frames: u32,
+) -> Result<cpal::Stream, String> {
+    Ok(stream)
+}
+
+/// The browser's audio streams, to start after a user gesture.
+#[cfg(all(feature = "audio-device", target_arch = "wasm32"))]
+static STREAMS: Mutex<Vec<std::sync::Weak<cpal::Stream>>> = Mutex::new(Vec::new());
+
+/// Starts the sound after the user clicked or pressed a key: a browser
+/// keeps a page's `AudioContext` suspended until then, and `cpal` asks
+/// for it to run when the stream plays. The platform calls this on every
+/// press; natively it does nothing.
+pub fn resume() {
+    #[cfg(all(feature = "audio-device", target_arch = "wasm32"))]
+    {
+        use cpal::traits::StreamTrait;
+        let mut streams = STREAMS.lock().unwrap_or_else(PoisonError::into_inner);
+        streams.retain(|s| {
+            let Some(s) = s.upgrade() else { return false };
+            // Refused again until a gesture counts; the next press retries.
+            let _ = s.play();
+            true
+        });
     }
 }
 

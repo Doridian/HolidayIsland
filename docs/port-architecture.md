@@ -3,9 +3,10 @@
 The port is written in **Rust** (stable, edition 2024), as a Cargo workspace.
 Targets are Linux (Wayland and X11), macOS, and the browser (WebAssembly).
 This started as the plan the first code followed; the port is built along
-it, and what isn't built yet is marked: there's no web build, network
-games are native only and started from the command line, and the port
-reads a folder with the game's files, not the CD image itself.
+it, and what isn't built yet is marked: network games are started from
+the command line (or the page's query in the browser), with no UI for
+them yet. The game's files come from a folder or the CD's image
+natively, and from the CD's image in the browser ([web.md](web.md)).
 
 ## What the original needs from the platform
 
@@ -31,7 +32,7 @@ From [binaries.md](binaries.md):
 | Mixing | own mixer | Reproduces WaveMix's behaviour (channels, looping, 8-bit PCM resampled to the output rate). It's small, and an exact reimplementation beats adapting a general-purpose audio engine. |
 | MIDI | `rustysynth` | Pure-Rust SoundFont synthesizer, renders into the same mixer. Which General MIDI SoundFont to use (user-supplied, or a freely licensed one we can distribute) is still open. |
 | Video | own AVI + Cinepak + MS ADPCM decoders | All three formats are small and well documented. Pure Rust keeps the web build simple. |
-| Web build | `wasm32-unknown-unknown`, `wasm-bindgen`, `trunk` | No Emscripten; `trunk serve` for development. |
+| Web build | `wasm32-unknown-unknown`, `wasm-bindgen`, `web-time` | No Emscripten. `tools/build-web.sh` runs cargo and the `wasm-bindgen` CLI (its version pinned in the crates) into `web/`, any static server serves it; WebGPU, else WebGL2; the CD image and the saves in IndexedDB ([web.md](web.md)). |
 
 Rejected:
 - SDL3: C dependency, heavier web build.
@@ -43,15 +44,18 @@ Rejected:
 
 ```
 crates/formats/    pure parsers, no I/O: NE resources, DFM (TPF0), BMP, the DATA/TEXTE
-                   tables, maps/scenarios, high scores, SETUP.DAT, AVI/Cinepak/MS ADPCM
-                   (planned: ISO9660 and the installer archive, which tools/ reads now)
+                   tables, maps/scenarios, high scores, SETUP.DAT, AVI/Cinepak/MS ADPCM,
+                   ISO 9660 and the installer archive (LZHUF)
 crates/vcl/        the subset of Delphi's VCL/RTL the game uses: components built from the
                    DFMs, TCanvas over the indexed framebuffer, timers, modal flows,
                    ShortString, Delphi's Random
 crates/game/       the decompiled game, one module per original unit; no platform deps.
                    World (simulation, commands) and View (one player's UI) kept apart
-crates/platform/   winit/wgpu/cpal glue, the data source and storage backends
-crates/holiday/    the binary (native; the wasm entry point is planned)
+crates/platform/   winit/wgpu/cpal glue; the files (platform::fs: std::fs with mount
+                   points; platform::data: the CD image, files in memory) and storage
+crates/holiday/    the binary, natively and in the browser (src/web.rs, src/web.js, the
+                   page in web/index.html)
+tools/build-web.sh the browser build into web/ (docs/web.md)
 crates/net/        network games: the transport trait, the WebRTC transport (matchbox),
                    an in-memory one for tests, the lockstep session, the wire format
                    (planned: a WebSocket relay transport as a fallback)
@@ -181,19 +185,20 @@ files, storage, clock), so they run headless in tests.
 - **Window handling like Afterlife.** A resizable window that remembers its size,
   position and fullscreen state. **Alt+Enter** or **F11** toggles fullscreen
   (borderless at the desktop resolution; Ctrl+Cmd+F on macOS; the Fullscreen
-  API on the web, with the canvas following the page otherwise, once there's a
-  web build). F11 is the original's shortcut for the button help, which the
+  API on the web, with the canvas following the page otherwise). F11 is the original's shortcut for the button help, which the
   port gives up for this. Command-line options:
   `--window-size=WxH`, `--fullscreen` / `--windowed`, `--ui-scale=N`. The port
   keeps its own settings file (`settings.ini` in the platform's config
   directory, `platform::settings`; browser storage on the web), separate from
   anything the original reads.
-- **Game data.** Players point the port at a folder with the game's files
-  (now), or the CD's ISO image, whose installer's `_FILES.1` it would read
-  itself, so players don't need the Python tools (planned; those tools do
-  it now). File lookup is case-insensitive. In the browser the user picks the ISO once and it's kept in
-  the Origin Private File System. Saves, high scores and settings go to the
-  platform's data directory natively, and to browser storage on the web.
+- **Game data.** Players point the port at a folder with the game's files,
+  or at the CD's ISO image, whose installer's `_FILES.1` it unpacks
+  itself (`platform::data::CdImage`, mounted where the folder would be
+  through `platform::fs`), so players don't need the Python tools. File
+  lookup is case-insensitive. In the browser the user picks the ISO once
+  and it's kept in IndexedDB ([web.md](web.md#storage) says why not
+  OPFS). Saves, high scores and settings go to the platform's data
+  directory natively, and to IndexedDB on the web.
 - **Assets from the EXE** (the DFMs, the VCL's button glyphs) are read from
   the user's `HOLIDAY.EXE` at runtime and never committed. The mouse
   pointers are the system's, in the shapes the game sets (`platform::Cursor`).
@@ -407,13 +412,15 @@ clients; what should happen instead isn't decided).
 Built ([networking.md](networking.md)): `crates/net` and the signaling
 server `crates/server`, wired into the binary by command-line options
 (`--host=ROOM`, `--join=ROOM`, `--signal=`, `--stun=`, `--turn=`,
-`--seat=`, `--rejoin=`), native only so far.
+`--seat=`, `--rejoin=`), and in the browser by the page's query
+(`?host=ROOM&signal=…`, [web.md](web.md#network-games)).
 
 - **Transport**: a trait that never blocks, polled once a frame:
   connect to a room as host or client, send to a peer, broadcast, poll
   messages and peers coming and going. The WebRTC transport is
   matchbox's socket on the reliable, ordered channel; natively its
-  message loop runs on a thread with a one-thread tokio runtime. The
+  message loop runs on a thread with a one-thread tokio runtime, in the
+  browser on the page's event loop (`wasm_bindgen_futures`). The
   topology is a star: each client connects to the host only, which the
   signaling server arranges per room.
 - **Session**: host-authoritative lockstep. Clients send their commands

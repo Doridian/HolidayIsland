@@ -2,8 +2,8 @@
 
 Network games: humans take the computers' seats of a game over the
 network ([port-architecture.md](port-architecture.md#seats-and-clients)
-has the seats, co-op and the 13 decisions). Built natively; the browser
-build comes later ([below](#the-browser-build)).
+has the seats, co-op and the 13 decisions). Built natively and in the
+browser ([below](#the-browser-build)).
 
 - `crates/net`: the transport trait, the WebRTC transport (matchbox),
   an in-memory transport for tests, the lockstep session and its wire
@@ -193,21 +193,33 @@ another without touching the session.
 
 ## The browser build
 
-`crates/net` is written to compile for `wasm32-unknown-unknown`: the
-trait has no blocking calls, the session is polled from the game loop,
-and tokio is a native-only, optional dependency. What the web build
-will need:
+Built ([web.md](web.md)). `crates/net` compiles for
+`wasm32-unknown-unknown`: the trait has no blocking calls, the session
+is polled from the game loop, and tokio is a native-only, optional
+dependency.
 
-- `MatchboxTransport`'s message loop spawned with
-  `wasm_bindgen_futures::spawn_local` instead of a thread with a tokio
-  runtime (`spawn` in `net::matchbox`, which on wasm returns an error
-  now). matchbox uses the browser's `RTCPeerConnection` there.
+- `MatchboxTransport`'s message loop is spawned on the page's event
+  loop with `wasm_bindgen_futures::spawn_local` instead of a thread
+  with a tokio runtime (`spawn` in `net::matchbox`); matchbox uses the
+  browser's `RTCPeerConnection` there.
+- The options come from the page's query instead of the command line,
+  each without its `--`, through the same parser:
+  `?host=ROOM&signal=wss://example.org/holiday&stun=stun:example.org:3478`,
+  `?join=ROOM&seat=3`, `?join=ROOM&rejoin=2`. `stun=` and `turn=` may
+  repeat.
+- matchbox always gives the browser's `RTCPeerConnection` one ICE server,
+  which the browser refuses without a URL. Without `stun=` or `turn=`
+  the page gives it `stun:127.0.0.1:9` (this machine's discard port),
+  so it still contacts no server the player didn't name
+  (`net::matchbox::IceServers::config`).
 - `wss://` for the signaling server when the page is served over HTTPS
   (browsers refuse `ws://` from a secure page).
-- The options from the page instead of the command line (the URL's
-  query, or a form).
-- The hash and the wire format are the same on every target already;
-  a native host and a browser client can play together.
+- What the game says about the network (`network: ...`) goes to the
+  browser's console.
+- The hash and the wire format are the same on every target; a native
+  host and a browser client play together, and the other way round.
+  Both need the same release of the game's files: the browser plays
+  the German CD's, so a native peer needs those too.
 
 ## Open
 

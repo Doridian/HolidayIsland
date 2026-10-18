@@ -10,7 +10,7 @@ publish.workspace = true
 default = ["matchbox"]
 # The WebRTC transport (matchbox). Without it only the in-memory transport
 # is there.
-matchbox = ["dep:matchbox_socket", "dep:tokio"]
+matchbox = ["dep:matchbox_socket", "dep:tokio", "dep:wasm-bindgen-futures"]
 
 [dependencies]
 formats = { path = "../formats" }
@@ -18,10 +18,13 @@ game = { path = "../game" }
 matchbox_socket = { version = "0.14", optional = true }
 
 # Natively the socket's message loop runs on a thread of its own, on a
-# small tokio runtime. The browser build will spawn it with
+# small tokio runtime. The browser build spawns it with
 # wasm-bindgen-futures instead (docs/networking.md).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.53", features = ["rt", "time"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = { version = "0.4", optional = true }
 
 [dev-dependencies]
 server = { path = "../server" }

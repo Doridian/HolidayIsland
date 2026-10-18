@@ -64,12 +64,12 @@ fn load_waves(dir: &Path, sub: &str, auction_calls: bool) -> Vec<Option<Wave>> {
         .map(|name| {
             let mut path = find(dir, sub, name);
             // BUG(original): the auctioneer's calls are looked for in `SOUND\`, but they're in `SPRADEUn\`.
-            if auction_calls && !path.is_file() {
+            if auction_calls && !platform::fs::is_file(&path) {
                 path = find(dir, &speech_dir(dir, 1), name);
             }
             // A missing file is a null wave, which `WaveMixPlay`
             // refuses (the auctioneer's `zum1.wav` to `zum3.wav`).
-            let bytes = std::fs::read(&path).ok()?;
+            let bytes = platform::fs::read(&path).ok()?;
             Wave::open(&bytes)
                 .inspect_err(|e| eprintln!("{}: {e}", path.display()))
                 .ok()
@@ -82,7 +82,7 @@ fn load_waves(dir: &Path, sub: &str, auction_calls: bool) -> Vec<Option<Wave>> {
 /// mixed: `Sprache1\`, `Abgeld.avi`), else as given.
 fn find(dir: &Path, sub: &str, name: &str) -> PathBuf {
     let upper = dir.join(sub).join(name.to_ascii_uppercase());
-    if upper.is_file() {
+    if platform::fs::is_file(&upper) {
         return upper;
     }
     crate::forms::find(dir, &format!("{sub}/{name}")).unwrap_or_else(|| dir.join(sub).join(name))
@@ -92,7 +92,7 @@ fn find(dir: &Path, sub: &str, name: &str) -> PathBuf {
 /// `Sprache<n>\` as the later build does (`init_paths`, en 1000:196d).
 fn speech_dir(dir: &Path, n: u8) -> String {
     let german = format!("SPRADEU{n}");
-    if crate::forms::find(dir, &german).is_some_and(|p| p.is_dir()) {
+    if crate::forms::find(dir, &german).is_some_and(platform::fs::is_dir) {
         german
     } else {
         format!("SPRACHE{n}")
@@ -188,7 +188,7 @@ impl Sound {
             .entry(name.to_owned())
             .or_insert_with(|| {
                 let path = find(dir, "MUSIK", name);
-                let bytes = std::fs::read(&path).ok()?;
+                let bytes = platform::fs::read(&path).ok()?;
                 audio::load_midi(&bytes)
                     .inspect_err(|e| eprintln!("{}: {e}", path.display()))
                     .ok()
@@ -282,7 +282,7 @@ impl Sound {
                 Media::OpenSpeaker { dir, file } => {
                     let name = String::from_utf8_lossy(file).into_owned();
                     let path = find(&self.dir, &speech_dir(&self.dir, *dir), &name);
-                    let wav = std::fs::read(&path).ok().and_then(|b| {
+                    let wav = platform::fs::read(&path).ok().and_then(|b| {
                         WavFile::parse(&b)
                             .inspect_err(|e| eprintln!("{}: {e}", path.display()))
                             .ok()

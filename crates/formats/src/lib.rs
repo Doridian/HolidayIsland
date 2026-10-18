@@ -7,6 +7,8 @@ pub mod cinepak;
 pub mod data;
 pub mod dfm;
 pub mod highscore;
+pub mod install;
+pub mod iso;
 pub mod msadpcm;
 pub mod ne;
 pub mod pascal;

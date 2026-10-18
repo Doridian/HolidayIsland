@@ -13,15 +13,35 @@
 //! remembered in the port's settings file ([`settings`]). The mouse
 //! pointer is the system's, in the shape the frame asks for ([`Cursor`]).
 
+//!
+//! In the browser (`wasm32`, `docs/web.md`) the window is the page's
+//! `<canvas id="holiday">`, the GPU set up asynchronously (WebGPU, else
+//! WebGL2), the files come from what's mounted ([`fs`], [`data`]), and
+//! what would go to the terminal goes to the console ([`web`]).
+
+/// In the browser `std`'s standard error goes nowhere: what the platform
+/// says goes to the console.
+#[cfg(target_arch = "wasm32")]
+macro_rules! eprintln {
+    ($($t:tt)*) => {
+        $crate::web::log(&format!($($t)*))
+    };
+}
+
 pub mod audio;
+pub mod data;
 mod display;
+pub mod fs;
 mod keys;
 pub mod settings;
 pub mod storage;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+
+use web_time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -250,6 +270,10 @@ struct Runner<A> {
     remembered: WindowSettings,
     /// The pointer last set on the window.
     cursor: Cursor,
+    /// The browser's window while its GPU is being set up, and where the
+    /// display comes when it is.
+    #[cfg(target_arch = "wasm32")]
+    pending: Option<(Arc<Window>, display::Pending)>,
 }
 
 impl<A: App> Runner<A> {
@@ -276,6 +300,33 @@ impl<A: App> Runner<A> {
             self.desktop = desktop;
             self.app.resize(desktop.0, desktop.1);
             window.request_redraw();
+        }
+    }
+
+    /// Stops on `error`, which `run` returns natively and the page
+    /// shows in the browser.
+    fn fail(&mut self, event_loop: &ActiveEventLoop, error: Error) {
+        #[cfg(target_arch = "wasm32")]
+        web::show_error(&error.to_string());
+        self.error = Some(error);
+        event_loop.exit();
+    }
+
+    /// In the browser: takes the display once its GPU is set up.
+    #[cfg(target_arch = "wasm32")]
+    fn take_display(&mut self, event_loop: &ActiveEventLoop) {
+        let Some((_, slot)) = &self.pending else { return };
+        let Some(result) = slot.borrow_mut().take() else {
+            return;
+        };
+        let Some((window, _)) = self.pending.take() else { return };
+        match result {
+            Ok(d) => {
+                self.window = Some((window, d));
+                self.update_desktop();
+                self.last = Instant::now();
+            }
+            Err(e) => self.fail(event_loop, e),
         }
     }
 
@@ -313,6 +364,69 @@ impl<A: App> ApplicationHandler for Runner<A> {
         if self.window.is_some() {
             return;
         }
+        #[cfg(target_arch = "wasm32")]
+        self.resumed_web(event_loop);
+        #[cfg(not(target_arch = "wasm32"))]
+        self.resumed_native(event_loop);
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        #[cfg(target_arch = "wasm32")]
+        self.take_display(event_loop);
+        self.handle(event_loop, event);
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(target_arch = "wasm32")]
+        self.take_display(event_loop);
+        let now = Instant::now();
+        if now >= self.last + FRAME {
+            self.app.update(now - self.last);
+            self.last = now;
+            if let Some((w, _)) = &self.window {
+                w.request_redraw();
+            }
+        }
+        if self.app.finished() {
+            event_loop.exit();
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.last + FRAME));
+    }
+}
+
+impl<A: App> Runner<A> {
+    /// In the browser: the page's canvas as the window, which follows
+    /// the page's layout; the GPU is set up asynchronously and the
+    /// display taken when it's there ([`Runner::take_display`]).
+    #[cfg(target_arch = "wasm32")]
+    fn resumed_web(&mut self, event_loop: &ActiveEventLoop) {
+        use winit::platform::web::WindowAttributesExtWebSys;
+
+        if self.pending.is_some() {
+            return;
+        }
+        let canvas = web::canvas();
+        let append = canvas.is_none();
+        let attrs = Window::default_attributes()
+            .with_title(self.title.clone())
+            .with_canvas(canvas)
+            .with_append(append)
+            .with_prevent_default(true)
+            .with_focusable(true);
+        match event_loop.create_window(attrs) {
+            Ok(w) => {
+                let w = Arc::new(w);
+                w.focus_window();
+                let slot = display::Display::start(event_loop, Arc::clone(&w));
+                self.pending = Some((w, slot));
+            }
+            Err(e) => self.fail(event_loop, Error::Window(e.to_string())),
+        }
+        self.last = Instant::now();
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn resumed_native(&mut self, event_loop: &ActiveEventLoop) {
         let saved = self
             .options
             .settings_file
@@ -355,8 +469,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
         match result {
             Ok(w) => self.window = Some(w),
             Err(e) => {
-                self.error = Some(e);
-                event_loop.exit();
+                self.fail(event_loop, e);
                 return;
             }
         }
@@ -364,7 +477,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
         self.last = Instant::now();
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+    fn handle(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
         let button = |b| match b {
             MouseButton::Right => Some(Button::Right),
             MouseButton::Middle => Some(Button::Middle),
@@ -400,6 +513,9 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 }
             }
             WindowEvent::MouseInput { state, button: b, .. } => {
+                if state == ElementState::Pressed {
+                    audio::resume();
+                }
                 if let Some(button) = button(b) {
                     let (x, y) = self.mouse;
                     self.app.input(match state {
@@ -416,6 +532,9 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed {
+                    audio::resume();
+                }
                 if let PhysicalKey::Code(code) = event.physical_key {
                     self.key(code, event.state == ElementState::Pressed, event.repeat);
                 }
@@ -428,8 +547,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
                         w.set_cursor(frame.cursor.icon());
                     }
                     if let Err(e) = d.draw(&frame) {
-                        self.error = Some(e);
-                        event_loop.exit();
+                        self.fail(event_loop, e);
                     }
                 }
             }
@@ -439,21 +557,6 @@ impl<A: App> ApplicationHandler for Runner<A> {
             event_loop.exit();
         }
     }
-
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let now = Instant::now();
-        if now >= self.last + FRAME {
-            self.app.update(now - self.last);
-            self.last = now;
-            if let Some((w, _)) = &self.window {
-                w.request_redraw();
-            }
-        }
-        if self.app.finished() {
-            event_loop.exit();
-        }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(self.last + FRAME));
-    }
 }
 
 /// Opens a window as `options` say and runs `app` until it finishes or
@@ -461,9 +564,9 @@ impl<A: App> ApplicationHandler for Runner<A> {
 ///
 /// # Errors
 /// If no window or GPU device can be set up.
-pub fn run<A: App>(title: &str, options: WindowOptions, app: A) -> Result<(), Error> {
+pub fn run<A: App + 'static>(title: &str, options: WindowOptions, app: A) -> Result<(), Error> {
     let event_loop = EventLoop::new().map_err(|e| Error::Window(e.to_string()))?;
-    let mut runner = Runner {
+    let runner = Runner {
         app,
         title: title.to_owned(),
         options,
@@ -477,7 +580,24 @@ pub fn run<A: App>(title: &str, options: WindowOptions, app: A) -> Result<(), Er
         swallowed: Vec::new(),
         remembered: WindowSettings::default(),
         cursor: Cursor::Default,
+        #[cfg(target_arch = "wasm32")]
+        pending: None,
     };
+    // The browser's event loop runs from the page's events after this
+    // returns; nothing is remembered at the end, the page has no window
+    // to place.
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::EventLoopExtWebSys;
+        event_loop.spawn_app(runner);
+        Ok(())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    run_native(event_loop, runner)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_native<A: App>(event_loop: EventLoop<()>, mut runner: Runner<A>) -> Result<(), Error> {
     event_loop
         .run_app(&mut runner)
         .map_err(|e| Error::Window(e.to_string()))?;

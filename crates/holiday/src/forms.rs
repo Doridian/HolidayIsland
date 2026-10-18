@@ -174,10 +174,10 @@ pub(crate) struct Forms {
 pub(crate) fn find(dir: &Path, name: &str) -> Option<PathBuf> {
     let mut path = dir.to_path_buf();
     for part in name.split('/') {
-        let found = std::fs::read_dir(&path)
+        let found = platform::fs::read_dir(&path)
             .ok()?
-            .filter_map(Result::ok)
-            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(part))?;
+            .into_iter()
+            .find(|e| e.file_name().eq_ignore_ascii_case(part))?;
         path = found.path();
     }
     Some(path)
@@ -186,7 +186,7 @@ pub(crate) fn find(dir: &Path, name: &str) -> Option<PathBuf> {
 /// The bitmap `GRAFIK/name`, if it's there.
 fn picture(dir: &Path, name: &str) -> Option<Surface> {
     let path = find(dir, &format!("GRAFIK/{name}"))?;
-    let bitmap = Bitmap::parse(&std::fs::read(path).ok()?).ok()?;
+    let bitmap = Bitmap::parse(&platform::fs::read(path).ok()?).ok()?;
     Some(Surface::from_bitmap(&bitmap))
 }
 
@@ -199,7 +199,7 @@ fn bitmaps(dir: &Path, files: &[&str]) -> Vec<Surface> {
 
 /// A data or text file the forms read, whatever the case of its name.
 fn text(dir: &Path, name: &str) -> Vec<u8> {
-    find(dir, name).map_or_else(|| read(dir, name), |p| std::fs::read(&p).unwrap_or_default())
+    find(dir, name).map_or_else(|| read(dir, name), |p| platform::fs::read(&p).unwrap_or_default())
 }
 
 /// The high scores: the player's file, else the CD's; with the later
@@ -207,21 +207,21 @@ fn text(dir: &Path, name: &str) -> Vec<u8> {
 /// `HIGHSCO2.WAV` next to `own`, else `UPGRADE\HIGHSCO2.WAV`.
 /// // 1040:1ae0, en 1068:1adf
 pub(crate) fn high_scores(dir: &Path, own: &Path) -> ScoreTable {
-    let first = std::fs::read(own)
+    let first = platform::fs::read(own)
         .ok()
         .and_then(|d| HighScores::parse(&d))
         .or_else(|| {
             ["SOUND/HIGHSCOR.WAV", "SOUNDLO/HIGHSCOR.WAV"]
                 .iter()
-                .find_map(|n| HighScores::parse(&std::fs::read(find(dir, n)?).ok()?))
+                .find_map(|n| HighScores::parse(&platform::fs::read(find(dir, n)?).ok()?))
         })
         .expect("HIGHSCOR.WAV");
     let second = crate::upgrade::present(dir)
         .then(|| {
-            std::fs::read(second_high_scores(own))
+            platform::fs::read(second_high_scores(own))
                 .ok()
                 .and_then(|d| HighScores::parse(&d))
-                .or_else(|| HighScores::parse(&std::fs::read(find(dir, "UPGRADE/HIGHSCO2.WAV")?).ok()?))
+                .or_else(|| HighScores::parse(&platform::fs::read(find(dir, "UPGRADE/HIGHSCO2.WAV")?).ok()?))
         })
         .flatten();
     ScoreTable::new(&first, second.as_ref())
@@ -282,8 +282,8 @@ fn left(input: Input) -> bool {
 /// Today's date (the system's, as the original's `GetDate`), for the
 /// high scores: day, month, year.
 fn today() -> (u32, u32, i32) {
-    let days = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let days = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() / 86_400);
     // Howard Hinnant's `civil_from_days`.
     let z = i64::try_from(days).unwrap_or(0) + 719_468;

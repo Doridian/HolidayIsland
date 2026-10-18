@@ -176,7 +176,11 @@ symbols/        what we know about HOLIDAY.EXE, as text
   and record that as well.
 - Parse all data files field by field, little-endian, with bounds checks:
   no `unsafe` in the parsers or the game crate.
-- `cargo fmt` and `cargo clippy` clean.
+- `cargo fmt` and `cargo clippy` clean, natively
+  (`cargo clippy --workspace --all-targets -- -D warnings`) and for the
+  browser build ([web.md](web.md)): `cargo clippy -p formats -p vcl -p game
+  -p platform -p net -p holiday --target wasm32-unknown-unknown -- -D warnings`
+  (the libraries and the binary; the tests and `server` are native only).
 
 ## Suggested order
 

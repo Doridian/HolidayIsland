@@ -93,7 +93,7 @@ impl WindowSettings {
     /// or it can't be read.
     #[must_use]
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path).map_or_else(|_| WindowSettings::default(), |t| WindowSettings::parse(&t))
+        crate::fs::read_to_string(path).map_or_else(|_| WindowSettings::default(), |t| WindowSettings::parse(&t))
     }
 
     /// Writes the settings to `path`, making its directory.
@@ -102,18 +102,18 @@ impl WindowSettings {
     /// If the directory or the file can't be written.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+            crate::fs::create_dir_all(dir)?;
         }
         // The other lines (the enhancements, comments) stay as they are.
-        let others: String = std::fs::read_to_string(path)
+        let others: String = crate::fs::read_to_string(path)
             .unwrap_or_default()
             .lines()
             .filter(|l| !l.split_once('=').is_some_and(|(k, _)| WINDOW_KEYS.contains(&k.trim())))
             .flat_map(|l| [l, "\n"])
             .collect();
         let temp = path.with_extension("ini.tmp");
-        std::fs::write(&temp, others + &self.to_text())?;
-        std::fs::rename(&temp, path)
+        crate::fs::write(&temp, others + &self.to_text())?;
+        crate::fs::rename(&temp, path)
     }
 }
 
@@ -157,7 +157,7 @@ impl EnhanceSettings {
     /// The switches in the file at `path`; none if there's no file.
     #[must_use]
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path).map_or_else(|_| EnhanceSettings::default(), |t| EnhanceSettings::parse(&t))
+        crate::fs::read_to_string(path).map_or_else(|_| EnhanceSettings::default(), |t| EnhanceSettings::parse(&t))
     }
 
     /// `text` with switches changed: `original=true|false` if `original`
@@ -219,12 +219,12 @@ impl EnhanceSettings {
     /// If the directory or the file can't be written.
     pub fn save(path: &Path, original: Option<bool>, set: &[(&str, bool)], remove: &[&str]) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+            crate::fs::create_dir_all(dir)?;
         }
-        let text = std::fs::read_to_string(path).unwrap_or_default();
+        let text = crate::fs::read_to_string(path).unwrap_or_default();
         let temp = path.with_extension("ini.tmp");
-        std::fs::write(&temp, Self::edit(&text, original, set, remove))?;
-        std::fs::rename(&temp, path)
+        crate::fs::write(&temp, Self::edit(&text, original, set, remove))?;
+        crate::fs::rename(&temp, path)
     }
 }
 
@@ -241,7 +241,7 @@ pub fn value(text: &str, key: &str) -> Option<String> {
 /// [`value`] in the file at `path`; none if there's no file.
 #[must_use]
 pub fn load_value(path: &Path, key: &str) -> Option<String> {
-    value(&std::fs::read_to_string(path).ok()?, key)
+    value(&crate::fs::read_to_string(path).ok()?, key)
 }
 
 /// A switch's value: `on`/`off`, `1`/`0`, `true`/`false`, `yes`/`no`.

@@ -50,6 +50,27 @@
 //! `FILMLO`: `--films`, else `SETUP.DAT`'s choice if there is one), and
 //! play with their sound (`docs/films.md`).
 
+/// In the browser `std`'s standard output and error go nowhere: what the
+/// game says goes to the console (`platform::web::log`).
+#[cfg(target_arch = "wasm32")]
+macro_rules! eprintln {
+    ($($t:tt)*) => {
+        platform::web::log(&format!($($t)*))
+    };
+}
+#[cfg(target_arch = "wasm32")]
+macro_rules! println {
+    ($($t:tt)*) => {
+        platform::web::log(&format!($($t)*))
+    };
+}
+#[cfg(target_arch = "wasm32")]
+macro_rules! print {
+    ($($t:tt)*) => {
+        platform::web::log(&format!($($t)*))
+    };
+}
+
 mod film;
 mod forms;
 mod loading;
@@ -57,12 +78,14 @@ mod network;
 mod sound;
 mod stacking;
 mod upgrade;
+#[cfg(target_arch = "wasm32")]
+mod web;
 mod windows;
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use formats::bmp::Bitmap;
 use formats::data::{
@@ -145,12 +168,14 @@ impl Saves {
     fn files(&self) -> Vec<Vec<u8>> {
         let mut names: Vec<Vec<u8>> = Vec::new();
         for dir in [&self.dir, &self.game_maps] {
-            let Ok(entries) = std::fs::read_dir(dir) else { continue };
-            for e in entries.flatten() {
-                if !e.file_type().is_ok_and(|t| t.is_file()) {
+            let Ok(entries) = platform::fs::read_dir(dir) else {
+                continue;
+            };
+            for e in entries {
+                if !e.is_file() {
                     continue;
                 }
-                let name = e.file_name().to_string_lossy().as_bytes().to_vec();
+                let name = e.file_name().into_bytes();
                 if !names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
                     names.push(name);
                 }
@@ -169,12 +194,9 @@ impl Saves {
     /// The file called `name` (any case), the player's first.
     fn find(&self, name: &[u8]) -> Option<PathBuf> {
         [&self.dir, &self.game_maps].into_iter().find_map(|dir| {
-            std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+            platform::fs::read_dir(dir).ok()?.into_iter().find_map(|e| {
                 let n = e.file_name();
-                n.to_string_lossy()
-                    .as_bytes()
-                    .eq_ignore_ascii_case(name)
-                    .then(|| e.path())
+                n.as_bytes().eq_ignore_ascii_case(name).then(|| e.path())
             })
         })
     }
@@ -183,7 +205,7 @@ impl Saves {
     fn read(&self, name: &[u8]) -> Result<SaveGame, String> {
         let shown = String::from_utf8_lossy(name).into_owned();
         let path = self.find(name).ok_or_else(|| format!("{shown}: not found"))?;
-        let data = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let data = platform::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         SaveGame::parse(&data).map_err(|e| format!("{}: {e}", path.display()))
     }
 
@@ -200,20 +222,20 @@ impl Saves {
     /// file. // en 1040:110c
     fn delete(&self, name: &[u8]) -> std::io::Result<Option<PathBuf>> {
         match self.find(name) {
-            Some(p) if p.starts_with(&self.dir) => std::fs::remove_file(&p).map(|()| Some(p)),
+            Some(p) if p.starts_with(&self.dir) => platform::fs::remove_file(&p).map(|()| Some(p)),
             _ => Ok(None),
         }
     }
 
     fn write(&self, name: &[u8], map: &SaveGame) -> std::io::Result<PathBuf> {
-        std::fs::create_dir_all(&self.dir)?;
+        platform::fs::create_dir_all(&self.dir)?;
         let path = match self.find(name) {
             Some(p) if p.starts_with(&self.dir) => p,
             _ => self.dir.join(String::from_utf8_lossy(name).as_ref()),
         };
         let temp = path.with_extension("map.tmp");
-        std::fs::write(&temp, map.to_bytes())?;
-        std::fs::rename(&temp, &path)?;
+        platform::fs::write(&temp, map.to_bytes())?;
+        platform::fs::rename(&temp, &path)?;
         Ok(path)
     }
 }
@@ -1981,7 +2003,7 @@ impl Holiday {
                         files.push((forms::second_high_scores(&path), table.second_file()));
                     }
                     for (path, scores) in files {
-                        if let Err(e) = std::fs::write(&path, scores.to_bytes()) {
+                        if let Err(e) = platform::fs::write(&path, scores.to_bytes()) {
                             eprintln!("can't save {}: {e}", path.display());
                         }
                     }
@@ -2719,9 +2741,9 @@ fn inside_rect(r: Rect, (x, y): (i32, i32)) -> bool {
 
 /// [`read`], `None` for a file that isn't there.
 fn read_opt(dir: &Path, name: &str) -> Option<Vec<u8>> {
-    std::fs::read(dir.join(name))
+    platform::fs::read(dir.join(name))
         .ok()
-        .or_else(|| std::fs::read(forms::find(dir, name)?).ok())
+        .or_else(|| platform::fs::read(forms::find(dir, name)?).ok())
 }
 
 /// The text file `name` (`TEXTE/NAMEN.TXT`) in `language`, from the
@@ -2919,8 +2941,8 @@ fn world_tables(dir: &Path, language: lang::Language) -> Arc<Tables> {
 
 /// `Randomize` (1108:1e21): `RandSeed` from the clock.
 fn seed() -> u32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
         .map_or(0, |d| {
             d.subsec_nanos() ^ u32::try_from(d.as_secs() & 0xffff_ffff).unwrap_or(0)
         })
@@ -3084,7 +3106,8 @@ const USAGE: &str = "\
 usage: holiday [OPTIONS] [GAME_DIR]
 
 GAME_DIR holds HOLIDAY.EXE, GRAFIK, DATA, the films and sounds (default:
-orig). The texts are the port's own, in German or English.
+orig), or is the game's CD image (.iso). The texts are the port's own, in
+German or English.
 
   --lang=auto|de|en      the language of every text (default auto: the game
                          folder's; settings.ini language=); the speech stays
@@ -3188,9 +3211,33 @@ fn language_setting(settings_file: Option<&Path>) -> lang::Setting {
     })
 }
 
+/// Where the game's files are when the command line doesn't say: `orig`
+/// natively, where the browser build mounts the CD image in the browser
+/// (`web`).
+#[cfg(not(target_arch = "wasm32"))]
+const DEFAULT_DIR: &str = "orig";
+#[cfg(target_arch = "wasm32")]
+const DEFAULT_DIR: &str = web::CD;
+
+/// Ends the program with `code`. The browser build can't: the page
+/// shows that it stopped, and the module stops by panicking.
+fn exit(code: i32) -> ! {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if code != 0 {
+            platform::web::show_error("The game stopped; the console (F12) says why.");
+        }
+        panic!("the game stopped ({code})");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    std::process::exit(code)
+}
+
+/// The options in `given`: the command line's arguments, or in the
+/// browser the page's query as such (`web::query_args`).
 #[allow(clippy::too_many_lines)] // One option after the other.
-fn args() -> Args {
-    let mut dir = PathBuf::from("orig");
+fn args(given: impl IntoIterator<Item = std::ffi::OsString>) -> Args {
+    let mut dir = PathBuf::from(DEFAULT_DIR);
     let mut save_dir = None;
     let mut soundfont = None;
     let mut quality = None;
@@ -3207,9 +3254,11 @@ fn args() -> Args {
     let mut net = network::Options::default();
     let fail = |message: &str| -> ! {
         eprintln!("{message}");
-        std::process::exit(2);
+        #[cfg(target_arch = "wasm32")]
+        platform::web::show_error(message);
+        exit(2);
     };
-    for arg in std::env::args_os().skip(1) {
+    for arg in given {
         let a = arg.to_str().unwrap_or_default();
         if net.take(a).unwrap_or_else(|e| fail(&e)) {
             continue;
@@ -3239,19 +3288,13 @@ fn args() -> Args {
                 "hi" => Some(setup::Sound::Hi),
                 "lo" => Some(setup::Sound::Lo),
                 "off" => Some(setup::Sound::Off),
-                _ => {
-                    eprintln!("--sound= takes hi, lo or off");
-                    std::process::exit(2);
-                }
+                _ => fail("--sound= takes hi, lo or off"),
             };
         } else if let Some(q) = a.strip_prefix("--films=") {
             films = match q {
                 "hi" => Some(setup::Film::Hi),
                 "lo" => Some(setup::Film::Lo),
-                _ => {
-                    eprintln!("--films= takes hi or lo");
-                    std::process::exit(2);
-                }
+                _ => fail("--films= takes hi or lo"),
             };
         } else if a == "--no-audio" {
             no_audio = true;
@@ -3259,7 +3302,7 @@ fn args() -> Args {
             language = Some(lang::Setting::parse(l).unwrap_or_else(|| fail("--lang= takes auto, de or en")));
         } else if a == "--help" || a == "-h" {
             print!("{USAGE}");
-            std::process::exit(0);
+            exit(0);
         } else if a == "--original" {
             original = true;
         } else if a == "--enhancements" {
@@ -3281,6 +3324,15 @@ fn args() -> Args {
             dir = PathBuf::from(arg);
         }
     }
+    // The game's CD image instead of its folder: the image's files, with
+    // the installer's archive unpacked, are the folder.
+    #[cfg(not(target_arch = "wasm32"))]
+    if dir.is_file() {
+        match platform::data::CdImage::open_file(&dir) {
+            Ok(cd) => platform::fs::mount(&dir, Arc::new(cd)),
+            Err(e) => fail(&e),
+        }
+    }
     // The installer's choices (`SETUP.DAT`, 1000:17bc), if there are
     // any; else the full quality: its fifth line for the sound, its
     // fourth for the films (`film_dir`, 1110:502a).
@@ -3291,7 +3343,7 @@ fn args() -> Args {
     enhance.language = language.unwrap_or_else(|| language_setting(window.settings_file.as_deref()));
     if list {
         print!("{}", enhancement_list(&enhance));
-        std::process::exit(0);
+        exit(0);
     }
     let net = net.finish().unwrap_or_else(|e| fail(&e));
     Args {
@@ -3308,7 +3360,27 @@ fn args() -> Args {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    if let Err(e) = start(args(std::env::args_os().skip(1))) {
+        eprintln!("{e}");
+        exit(1);
+    }
+}
+
+/// The browser build: `web` sets up the files and then [`start`]s.
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    web::main();
+}
+
+/// Starts the game as `args` say: the sound, the saves, the network
+/// game, the window. Natively it returns when the game ends; in the
+/// browser at once, the page's events running the game from then on.
+///
+/// # Errors
+/// If the window or the GPU can't be set up.
+fn start(args: Args) -> Result<(), platform::Error> {
     let Args {
         dir,
         save_dir,
@@ -3320,7 +3392,7 @@ fn main() {
         enhance,
         command_line,
         net,
-    } = args();
+    } = args;
     let audio = if no_audio {
         platform::audio::Audio::silent()
     } else {
@@ -3347,16 +3419,13 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("network: can't join: {e}");
-                std::process::exit(1);
+                exit(1);
             }
         }
     }
     holiday.net_args = net;
     holiday.start_intro();
-    if let Err(e) = platform::run("Holiday Island", window, holiday) {
-        eprintln!("{e}");
-        std::process::exit(1);
-    }
+    platform::run("Holiday Island", window, holiday)
 }
 
 impl Holiday {

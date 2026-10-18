@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- The browser build's page (docs/web.md). tools/build-web.sh copies it
+     into web/ beside holiday.js and holiday_bg.wasm. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Holiday Island</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #eee; overflow: hidden;
+    font: 15px/1.4 system-ui, sans-serif; }
+  /* The game's window: the whole page; winit follows its size. */
+  canvas#holiday { display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }
+  #setup { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #0a2a3a; }
+  #setup[hidden] { display: none; }
+  #setup form { max-width: 34em; margin: 16px; padding: 1.5em 2em; background: #123c52;
+    border-radius: 8px; box-shadow: 0 4px 24px #0008; }
+  #setup h1 { margin: 0 0 .5em; font-size: 1.6em; }
+  #setup label { display: block; margin: 1em 0 .3em; font-weight: 600; }
+  #setup input[type=file] { max-width: 100%; }
+  #setup .note { color: #bcd; font-size: .9em; }
+  #setup .stored { margin: .3em 0; color: #cfe; }
+  #setup-error { color: #ffb4a8; font-weight: 600; }
+  #start { margin-top: 1.3em; padding: .5em 2em; font-size: 1.1em; }
+  #status { position: fixed; left: 0; right: 0; bottom: 0; padding: .4em 1em; background: #000c;
+    white-space: pre-wrap; }
+  #status.error { background: #800c; }
+</style>
+</head>
+<body>
+<canvas id="holiday" oncontextmenu="return false"></canvas>
+<div id="setup" hidden>
+  <form onsubmit="return false">
+    <h1>Holiday Island</h1>
+    <p id="setup-error" hidden></p>
+    <label for="cd-file">The game's CD image (.iso)</label>
+    <p id="cd-stored" class="stored" hidden>Kept from last time: <span id="cd-name"></span>.
+      Pick another to replace it.</p>
+    <input type="file" id="cd-file" accept=".iso,.bin,.img">
+    <label for="sf-file">A SoundFont for the music (.sf2, optional)</label>
+    <p id="sf-stored" class="stored" hidden>Kept from last time: <span id="sf-name"></span>.</p>
+    <input type="file" id="sf-file" accept=".sf2">
+    <p class="note">The files stay in this browser's storage and aren't sent anywhere. Without a
+      SoundFont the music is silent.</p>
+    <button id="start" type="submit" disabled>Start</button>
+  </form>
+</div>
+<div id="status" style="display:none"></div>
+<script type="module">
+  import init from "./holiday.js";
+  init().catch((e) => {
+    const s = document.getElementById("status");
+    s.textContent = String(e);
+    s.className = "error";
+    s.style.display = "";
+  });
+</script>
+</body>
+</html>

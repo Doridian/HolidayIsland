@@ -28,7 +28,7 @@ const NEEDED: [&str; 3] = ["SONSTIGE.TXT", "SZENARIO.TXT", "SCHLUSS.TXT"];
 pub fn present(dir: &Path) -> bool {
     NEEDED
         .iter()
-        .all(|f| crate::forms::find(dir, &format!("UPGRADE/{f}")).is_some_and(|p| p.is_file()))
+        .all(|f| crate::forms::find(dir, &format!("UPGRADE/{f}")).is_some_and(platform::fs::is_file))
 }
 
 /// The text file `UPGRADE\name` in `language` if the game's folder has
@@ -67,7 +67,7 @@ pub fn bitmaps(dir: &Path, files: &[&str]) -> Vec<Surface> {
         .iter()
         .map(|f| {
             crate::forms::find(dir, &format!("UPGRADE/{f}"))
-                .and_then(|p| std::fs::read(p).ok())
+                .and_then(|p| platform::fs::read(p).ok())
                 .and_then(|b| Bitmap::parse(&b).ok())
                 .map_or_else(|| Surface::new(0, 0, 0), |b| Surface::from_bitmap(&b))
         })

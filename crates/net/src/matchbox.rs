@@ -5,10 +5,10 @@
 //!
 //! The socket's message loop is a future that must run all the time.
 //! Natively it gets a thread of its own with a small tokio runtime (the
-//! WebRTC stack wants tokio); the socket itself stays with the game, and
-//! [`Transport::poll`] reads it without blocking. The browser build
-//! will spawn the future with `wasm-bindgen-futures` instead, the one
-//! part of this that isn't written yet.
+//! WebRTC stack wants tokio); in the browser it's spawned on the page's
+//! event loop with `wasm-bindgen-futures`, and matchbox uses the
+//! browser's `RTCPeerConnection`. Either way the socket itself stays
+//! with the game, and [`Transport::poll`] reads it without blocking.
 //!
 //! The room is the signaling server's path: `<signal>/<room>` for a
 //! client and `<signal>/<room>~host` for the host, which the server
@@ -23,6 +23,10 @@ use crate::transport::{PeerId, Role, Transport, TransportEvent};
 
 /// The host's suffix on the room's path.
 pub const HOST_SUFFIX: &str = "~host";
+
+/// The browser's stand-in when no ICE server is given
+/// ([`IceServers::config`]).
+const NO_ICE_SERVER: &str = "stun:127.0.0.1:9";
 
 /// The ICE servers: STUN to find a way through the players' routers,
 /// TURN (coturn) to relay for those who can't connect directly.
@@ -61,8 +65,17 @@ impl IceServers {
     }
 
     fn config(&self) -> RtcIceServerConfig {
+        let mut urls: Vec<String> = self.stun.iter().chain(&self.turn).cloned().collect();
+        // In the browser matchbox always hands `RTCPeerConnection` one ICE
+        // server, which can't be without a URL. Without a server the
+        // player named, that one is on this machine (the discard port),
+        // so nothing outside is contacted and the peers connect directly
+        // as natively.
+        if cfg!(target_arch = "wasm32") && urls.is_empty() {
+            urls.push(NO_ICE_SERVER.to_owned());
+        }
         RtcIceServerConfig {
-            urls: self.stun.iter().chain(&self.turn).cloned().collect(),
+            urls,
             username: self.username.clone(),
             credential: self.credential.clone(),
         }
@@ -238,11 +251,21 @@ fn spawn(message_loop: MessageLoopFuture) -> Result<mpsc::Receiver<String>, Stri
     Ok(rx)
 }
 
-/// The browser build will spawn the message loop with
-/// `wasm_bindgen_futures::spawn_local` (`docs/networking.md`).
+/// Runs the socket's message loop on the browser's event loop
+/// (`wasm_bindgen_futures::spawn_local`); the receiver gets why it
+/// ended.
 #[cfg(target_arch = "wasm32")]
-fn spawn(_message_loop: MessageLoopFuture) -> Result<mpsc::Receiver<String>, String> {
-    Err("the browser build can't connect yet".to_owned())
+#[allow(clippy::unnecessary_wraps)] // The same as the native one.
+fn spawn(message_loop: MessageLoopFuture) -> Result<mpsc::Receiver<String>, String> {
+    let (tx, rx) = mpsc::channel();
+    wasm_bindgen_futures::spawn_local(async move {
+        let why = match message_loop.await {
+            Ok(()) => "the signaling server closed the connection".to_owned(),
+            Err(e) => format!("{e}"),
+        };
+        let _ = tx.send(why);
+    });
+    Ok(rx)
 }
 
 #[cfg(test)]

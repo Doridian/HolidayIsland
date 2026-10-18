@@ -32,7 +32,7 @@ impl Film {
     /// # Errors
     /// If the file isn't there, isn't an AVI, or isn't Cinepak.
     pub fn open(path: &Path, panel: Rect) -> Result<Film, String> {
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let bytes = platform::fs::read(path).map_err(|e| e.to_string())?;
         let avi = Avi::parse(bytes).map_err(|e| e.to_string())?;
         let f = &avi.video.format;
         if &f.compression != b"cvid" {

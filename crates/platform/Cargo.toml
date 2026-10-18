@@ -8,15 +8,33 @@ publish.workspace = true
 
 [features]
 default = ["audio-device"]
-# Sound output through cpal (ALSA on Linux). Without it the game is silent.
+# Sound output through cpal (ALSA on Linux, WebAudio in the browser).
+# Without it the game is silent.
 audio-device = ["dep:cpal"]
 
 [dependencies]
 cpal = { version = "0.18", optional = true }
-pollster = "1"
+formats = { path = "../formats" }
 rustysynth = "1.3"
+# `std::time` natively; the browser's clock on wasm, where `std::time`
+# panics.
+web-time = "1.1"
 wgpu = "30"
 winit = "0.30"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "1"
+
+# The browser build (docs/web.md): WebGPU, falling back to WebGL2;
+# WebAudio through cpal.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+cpal = { version = "0.18", optional = true, features = ["wasm-bindgen"] }
+# The version of the wasm-bindgen CLI that builds the page
+# (tools/build-web.sh): the two must match exactly.
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["console", "Document", "Element", "HtmlCanvasElement", "Window"] }
+wgpu = { version = "30", features = ["webgl"] }
 
 [dev-dependencies]
 # The shader's validation, with wgpu's own WGSL front end.

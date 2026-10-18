@@ -43,3 +43,6 @@ __pycache__/
 /.venv/
 
 .playwright-mcp
+
+# The browser build (tools/build-web.sh)
+/web/
