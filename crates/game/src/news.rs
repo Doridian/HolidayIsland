@@ -129,6 +129,22 @@ fn longint_at(r: &[u8], at: usize) -> i32 {
 }
 
 impl Entry {
+    /// The entry's date for a view in `language`, in a world whose
+    /// language is `world` ([`crate::world::World::language`]). The
+    /// archive keeps the date as the text the world wrote, as the map
+    /// file does; the view reads the date back from it
+    /// ([`crate::monate::Date::parse`]) and writes it in its own language,
+    /// and an empty entry's `kein Datum` too. A text no language writes
+    /// (a file's own) shows as it is.
+    #[must_use]
+    pub fn date_in(&self, world: Language, language: Language) -> Vec<u8> {
+        if Language::ALL.iter().any(|l| self.date == l.bytes(Text::NoDate)) {
+            return language.bytes(Text::NoDate).to_vec();
+        }
+        crate::monate::Date::parse(&self.date, world)
+            .map_or_else(|| self.date.clone(), |d| d.text(language.months(), language))
+    }
+
     /// Whether the entry is empty: its day is -1. // 1048:0a54
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -559,6 +575,22 @@ mod tests {
         assert_eq!(w.news.entries[4].origin, (77, 88));
         // The world's language's date (German by default).
         assert_eq!(w.news.entries[0].date, b"1. Januar 1996");
+        // A view in English reads it back and writes it its way; the map
+        // file keeps the world's text.
+        let e = &w.news.entries[0];
+        assert_eq!(e.date_in(Language::De, Language::En), b"1st January 1996");
+        assert_eq!(e.date_in(Language::De, Language::De), b"1. Januar 1996");
+        assert_eq!(Entry::from_record(&e.to_record()).unwrap().date, b"1. Januar 1996");
+        let empty = Entry::empty(Language::De);
+        assert_eq!(
+            empty.date_in(Language::De, Language::En),
+            Language::En.bytes(Text::NoDate)
+        );
+        let odd = Entry {
+            date: b"Ostern".to_vec(),
+            ..Entry::empty(Language::De)
+        };
+        assert_eq!(odd.date_in(Language::De, Language::En), b"Ostern");
     }
 
     #[test]

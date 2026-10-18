@@ -51,6 +51,7 @@
 
 mod film;
 mod forms;
+mod loading;
 mod sound;
 mod stacking;
 mod upgrade;
@@ -350,7 +351,7 @@ impl Game {
         let mut ticked = false;
         let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         let mut changed = self.forms_timers(ms);
-        self.end_music_tick();
+        self.end_music_tick(ms);
         self.sound.borrow_mut().music_frame(&mut self.forms.settings);
         changed |= self.apply_commands();
         while self.since_tick >= tick {
@@ -449,6 +450,7 @@ impl Game {
         self.desktop = desktop;
         let (left, top) = (self.screen.left, self.screen.top);
         let filled_before = self.screen.size() != (hauptschirm::WIDTH, hauptschirm::HEIGHT);
+        let kept = self.screen.quake_kept;
         self.place_main();
         let filled = self.screen.size() != (hauptschirm::WIDTH, hauptschirm::HEIGHT);
         let delta = if filled || filled_before {
@@ -459,6 +461,17 @@ impl Game {
             (now.0 - was.0, now.1 - was.1)
         } else {
             (self.screen.left - left, self.screen.top - top)
+        };
+        // Where the end of an earthquake puts the main screen: where it
+        // fills the window, or moved as the centred main screen moves.
+        self.screen.quake_kept = if filled {
+            (0, 0)
+        } else {
+            let (was, now) = (
+                Hauptschirm::position(old.0, old.1),
+                Hauptschirm::position(size.0, size.1),
+            );
+            (kept.0 + now.0 - was.0, kept.1 + now.1 - was.1)
         };
         let follow = |bounds: Rect, l: &mut i32, t: &mut i32| {
             let moved = Rect::new(
@@ -717,6 +730,10 @@ impl Game {
         self.show_tools();
         if t.loaded {
             self.stack.loaded();
+            // BUG(original): the main screen's place for the end of an earthquake isn't saved; after a game loaded in the middle of one, its end puts the main screen where an earlier one began.
+            if self.world.earthquake && self.screen.enhance.has(enhance::Enhancement::QuakeScreen) {
+                self.screen.quake_began();
+            }
             // `game_show_state` (1010:26fa): the view from the file.
             if let Some(s) = self.forms.loading_settings.take() {
                 self.forms.settings = s;
@@ -750,6 +767,7 @@ impl Game {
         }
         self.tick_sounds(t);
         let mut changed = !t.status.is_empty() || t.pointer_tool;
+        changed |= self.quake(t);
         changed |= if t.redraw_all {
             self.screen.paint_map(&self.world, &self.tiles);
             true
@@ -768,6 +786,25 @@ impl Game {
             changed = true;
         }
         changed | self.forms_tick(t)
+    }
+
+    /// The earthquake's part of a tick: its end puts the main screen back
+    /// where its start kept it, and the TV where it was last hidden
+    /// (en 1028:05f7); its start keeps the main screen's position
+    /// (en 1028:02b1); and while it goes on the main screen moves by the
+    /// world's shake (en 1020:2367). Whether anything moved.
+    fn quake(&mut self, t: &Tick) -> bool {
+        if t.quake_ended {
+            self.screen.quake_ended();
+            self.forms.tv.quake_ended();
+        }
+        if t.quake_began {
+            self.screen.quake_began();
+        }
+        if let Some(d) = t.shake {
+            self.screen.shake(d);
+        }
+        t.quake_ended || t.shake.is_some()
     }
 
     /// A tick's sounds (`play_sound`, 10a0:30b6), with the countdown at
@@ -1247,26 +1284,8 @@ enum Pending {
 /// // en 1010:0591
 struct Loading {
     form: WasNunForm,
-    step: LoadStep,
-    /// The game to start, until the work is done.
-    pending: Option<Pending>,
-    /// The game, once it's set up.
-    game: Option<Game>,
-}
-
-/// Where states 1200 to 1500 are.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LoadStep {
-    /// State 1200: the window shown, empty.
-    Shown,
-    /// State 1210: the map made or cleared (`generate_island_busy`,
-    /// en 1038:35f1); the port's work is done after this frame.
-    Map,
-    /// State 1220: the game's data loaded (`load_game_data`,
-    /// en 1038:3615).
-    Data,
-    /// State 1500: the map loaded and the main screen set up.
-    Setup,
+    /// The game's set-up, its steps still to do.
+    setup: loading::Setup,
 }
 
 /// An open message box (`MessageDlg`), over everything, with the input
@@ -2155,77 +2174,45 @@ impl Holiday {
             &self.font,
             self.size,
         );
-        self.loading = Some(Loading {
-            form,
-            step: LoadStep::Shown,
-            pending: Some(pending),
-            game: None,
-        });
+        let setup = self.set_up_game(pending);
+        self.loading = Some(Loading { form, setup });
         self.repaint();
     }
 
-    /// One step of states 1210 to 1500 a frame, each shown on the
-    /// progress window as the original shows it when its work is done
-    /// (`docs/startup.md`). The port's work takes a frame or so, all of
-    /// it after the step of state 1210 is drawn: its page stays on the
-    /// screen while the game is set up. Then the window goes and the main
+    /// One step of states 1210 to 1500 a frame (`loading::Setup::step`),
+    /// shown on the progress window as the original shows it when its
+    /// work is done (`docs/startup.md`). Then the window goes and the main
     /// screen shows. // en 1010:0591
     fn advance_loading(&mut self) {
         let Some(mut loading) = self.loading.take() else { return };
-        match loading.step {
-            LoadStep::Shown => {
-                // State 1210: `Screen.Cursor := crNoDrop` around
-                // `generate_island` (en 1038:35f1), which shows page 1 and
-                // 5 % before it makes an island, page 3 and 100 % once it
-                // has cleared the map for a scenario or a saved game
-                // (en 10b8:52d4).
-                self.cursor = Cursor::NoDrop;
-                let new_island = match &loading.pending {
-                    Some(Pending::Start { scenario }) => {
-                        hintergrund::new_island(self.start.menu.settings(), *scenario) == Island::Generated
-                    }
-                    _ => false,
-                };
-                if new_island {
-                    loading.form.set_page(wasnunform::page::NEW_MAP, &self.font);
-                    loading.form.set_percent(5, &self.font);
-                } else {
-                    loading.form.set_page(wasnunform::page::INIT_MAP, &self.font);
-                    loading.form.set_percent(100, &self.font);
-                }
-                loading.step = LoadStep::Map;
+        let Some((step, shows)) = loading.setup.step() else {
+            // The window hides and goes, the main screen shows
+            // (`wasnun_hide`, en 1028:3baa; `hauptschirm_show`).
+            self.game = loading.setup.finish();
+            // `big_map`'s main screen fills the desktop, which can be a
+            // little bigger or smaller than the screen size.
+            let (size, desktop) = (self.size, self.desktop);
+            let notes = self.enhance_notes();
+            if let Some(game) = &mut self.game {
+                game.resize(size, desktop);
+                game.forms.enhance_notes = notes;
             }
-            LoadStep::Map => {
-                // The port's work, then state 1220's page 2 at 100 %
-                // (`load_game_data`, en 1038:3615, with `crNoDrop` in
-                // `load_game_rest`, en 1038:33c8).
-                loading.game = loading.pending.take().map(|p| self.set_up_game(p));
-                loading.form.set_page(wasnunform::page::INIT_GAME, &self.font);
-                loading.form.set_percent(100, &self.font);
-                loading.step = LoadStep::Data;
-            }
-            LoadStep::Data => {
-                // State 1500: page 0 at 100 % around `load_map`; the cursor
-                // is back (en 1038:357f).
-                self.cursor = Cursor::Default;
-                loading.form.set_page(wasnunform::page::LOAD_MAP, &self.font);
-                loading.form.set_percent(100, &self.font);
-                loading.step = LoadStep::Setup;
-            }
-            LoadStep::Setup => {
-                // The window hides and goes, the main screen shows
-                // (`wasnun_hide`, en 1028:3baa; `hauptschirm_show`).
-                self.game = loading.game.take();
-                // `big_map`'s main screen fills the desktop, which can be
-                // a little bigger or smaller than the screen size.
-                let (size, desktop) = (self.size, self.desktop);
-                let notes = self.enhance_notes();
-                if let Some(game) = &mut self.game {
-                    game.resize(size, desktop);
-                    game.forms.enhance_notes = notes;
-                }
-                self.repaint();
-                return;
+            self.repaint();
+            return;
+        };
+        match step {
+            // State 1210: `Screen.Cursor := crNoDrop` around
+            // `generate_island` (en 1038:35f1), and in `load_game_rest`
+            // (en 1038:33c8).
+            loading::Step::Island(0) | loading::Step::MapCleared => self.cursor = Cursor::NoDrop,
+            // State 1500: the cursor is back (en 1038:357f).
+            loading::Step::LoadMap => self.cursor = Cursor::Default,
+            _ => {}
+        }
+        for show in shows {
+            match show {
+                loading::Show::Page(n) => loading.form.set_page(n, &self.font),
+                loading::Show::Percent(p) => loading.form.set_percent(p, &self.font),
             }
         }
         self.loading = Some(loading);
@@ -2240,41 +2227,23 @@ impl Holiday {
         }
     }
 
-    /// The game `pending` sets up: a new island or a scenario from the
-    /// start menu's settings, or a saved game. // en 1010:0591
-    fn set_up_game(&mut self, pending: Pending) -> Game {
+    /// The set-up of the game `pending`: a new island or a scenario from
+    /// the start menu's settings, or a saved game. // en 1010:0591
+    fn set_up_game(&self, pending: Pending) -> loading::Setup {
         let high = forms::high_scores(&self.dir, &self.saves.high_scores());
         let seed = (self.seed)();
-        match pending {
-            Pending::Start { scenario } => start_game_seeded(
-                &self.dir,
-                &self.exe,
-                self.start.menu.settings(),
-                scenario,
-                self.options,
-                high,
-                &self.sound,
-                self.size,
-                &self.enhance,
-                seed,
-            ),
-            Pending::Load(map) => {
-                let settings = self.start.menu.settings().clone();
-                let options = self.options.with_map(&map);
-                load_game(
-                    &self.dir,
-                    &self.exe,
-                    &map,
-                    &settings,
-                    options,
-                    high,
-                    &self.sound,
-                    self.size,
-                    &self.enhance,
-                    seed,
-                )
-            }
-        }
+        loading::Setup::new(
+            &self.dir,
+            &self.exe,
+            pending,
+            self.start.menu.settings(),
+            self.options,
+            high,
+            &self.sound,
+            self.size,
+            &self.enhance,
+            seed,
+        )
     }
 
     /// State 420: the intro's film stops and closes.
@@ -2761,6 +2730,7 @@ fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &m
 /// [`start_world`] with `RandSeed` as `Randomize` left it (`seed`), and
 /// the world's text in `language`, the player's when the game is created
 /// ([`World::language`]).
+#[cfg(test)]
 fn start_world_seeded(
     dir: &Path,
     settings: &Settings,
@@ -2771,95 +2741,74 @@ fn start_world_seeded(
     language: lang::Language,
 ) -> Start {
     match hintergrund::new_island(settings, scenario_page) {
-        Island::Scenario(path) => {
-            let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
-            let mut world =
-                hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
-            // A scenario's file has no fixes: the player's.
-            world.set_loaded_fixes(fixes);
-            world.random = Random::new(seed);
-            world.tables = world_tables(dir, language);
-            // A scenario is a new game: the world's text is in the
-            // player's language (the names are the scenario's).
-            world.language = language;
-            world.folder_language = lang::Language::of_land(folder_land(dir));
-            // The rest of state 1500: the scenario's events, its build
-            // menu and the computers.
-            if scenario_page {
-                let events = hintergrund::scenario_events(world.scenario, |name| read_opt(dir, name))
-                    .unwrap_or_else(|e| panic!("{e}"));
-                hintergrund::start_scenario(&mut world, events.as_deref());
-            }
-            *options = options.with_map(&map);
-            // State 1500 for a scenario: the music and the speech on.
-            options.music = true;
-            options.speech = true;
-            let view = MapView::from_map(&map);
-            let camera = Camera {
-                parity: 0,
-                ..view.camera(&world)
-            };
-            (world, camera, Some(camera.origin), view.unported)
-        }
+        Island::Scenario(path) => scenario_start(dir, &path, settings, scenario_page, options, fixes, seed, language),
         Island::Generated => {
             let data =
                 hintergrund::GameData::load(|name| read_opt(dir, name), language).unwrap_or_else(|e| panic!("{e}"));
             // States 100, 1210 and 1220.
             let world = hintergrund::new_world(settings, &data, seed, fixes);
-            // The options as the initialised data has them (1000:1ea0).
-            let camera = Camera {
-                view: 0,
-                origin: world.viewpoint.origin,
-                parity: world.viewpoint.parity,
-                owner_pointers: options.owner_pointers,
-                occupancy_pointers: options.occupancy_pointers,
-            };
-            (world, camera, None, Fields::default())
+            generated_start(world, options)
         }
     }
 }
 
-/// States 1000 to 1500 with `hintergrund+0x190`: the saved game `map`
-/// over a newly set up game, and the main screen at the file's view.
-/// // 1000:2466
+/// What a scenario's game starts from: its map file `path`'s world, with
+/// the player's `fixes`, `RandSeed` (`seed`) and `language`, and the
+/// rest of state 1500 (its events, build menu and computers, from the
+/// start menu's scenario page); the `options` from the map, with the
+/// music and the speech on. // 1000:2466
 #[allow(clippy::too_many_arguments)]
-fn load_game(
+fn scenario_start(
     dir: &Path,
-    exe: &[u8],
-    map: &SaveGame,
+    path: &str,
     settings: &Settings,
-    options: Options,
-    high: ScoreTable,
-    sound: &sound::Shared,
-    size: (i32, i32),
-    config: &Config,
+    scenario_page: bool,
+    options: &mut Options,
+    fixes: Fixes,
     seed: u32,
-) -> Game {
-    // The set-up's text is in the player's language; the file's world
-    // keeps the language it names, or takes the folder's (`World::load_map`).
-    let language = config.language.language(folder_land(dir));
-    let data = hintergrund::GameData::load(|name| read_opt(dir, name), language).unwrap_or_else(|e| panic!("{e}"));
-    // The file's fixes; the player's for those it doesn't name (all of
-    // them in an original file).
-    let world = hintergrund::load_saved_game(map, settings, &data, seed, config.fixes)
-        .unwrap_or_else(|e| panic!("the saved game: {e}"));
-    let view = MapView::from_map(map);
-    let camera = view.camera(&world);
-    let mut game = make_game(
-        dir,
-        exe,
-        (world, camera, Some(camera.origin), view.unported),
-        options,
-        high,
-        sound,
-        size,
-        config.language,
-    );
-    // With `fix.saved_state`, the world's records the view's own people
-    // had in the file get back what they held.
-    game.world.take_saved_free_people(&map.trailing);
-    game.set_view_enhancements(config.view);
-    game
+    language: lang::Language,
+) -> Start {
+    let map = SaveGame::parse(&read(dir, path)).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut world = hintergrund::load_world(&map, settings, scenario_page).unwrap_or_else(|e| panic!("{path}: {e}"));
+    // A scenario's file has no fixes: the player's.
+    world.set_loaded_fixes(fixes);
+    world.random = Random::new(seed);
+    world.tables = world_tables(dir, language);
+    // A scenario is a new game: the world's text is in the player's
+    // language (the names are the scenario's).
+    world.language = language;
+    world.folder_language = lang::Language::of_land(folder_land(dir));
+    // The rest of state 1500: the scenario's events, its build menu and
+    // the computers.
+    if scenario_page {
+        let events =
+            hintergrund::scenario_events(world.scenario, |name| read_opt(dir, name)).unwrap_or_else(|e| panic!("{e}"));
+        hintergrund::start_scenario(&mut world, events.as_deref());
+    }
+    *options = options.with_map(&map);
+    // State 1500 for a scenario: the music and the speech on.
+    options.music = true;
+    options.speech = true;
+    let view = MapView::from_map(&map);
+    let camera = Camera {
+        parity: 0,
+        ..view.camera(&world)
+    };
+    (world, camera, Some(camera.origin), view.unported)
+}
+
+/// What a generated island's game starts from: its `world`, and the main
+/// screen's camera with the `options` as the initialised data has them
+/// (1000:1ea0).
+fn generated_start(world: World, options: &Options) -> Start {
+    let camera = Camera {
+        view: 0,
+        origin: world.viewpoint.origin,
+        parity: world.viewpoint.parity,
+        owner_pointers: options.owner_pointers,
+        occupancy_pointers: options.occupancy_pointers,
+    };
+    (world, camera, None, Fields::default())
 }
 
 /// What hintergrund's timer does from state 1200 to 1500 once Start is
@@ -2894,173 +2843,26 @@ fn start_game(
     )
 }
 
-/// [`start_game`] with `RandSeed` as `Randomize` left it (`seed`).
+/// [`start_game`] with `RandSeed` as `Randomize` left it (`seed`): the
+/// set-up's steps (`loading::Setup`) one after the other.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn start_game_seeded(
     dir: &Path,
     exe: &[u8],
     settings: &Settings,
     scenario_page: bool,
-    mut options: Options,
+    options: Options,
     high: ScoreTable,
     sound: &sound::Shared,
     size: (i32, i32),
     config: &Config,
     seed: u32,
 ) -> Game {
-    // A new game, and a scenario (whose file has no fixes), plays with
-    // the player's, in place before the world is set up.
-    let language = config.language.language(folder_land(dir));
-    let start = start_world_seeded(dir, settings, scenario_page, &mut options, config.fixes, seed, language);
-    let mut game = make_game(dir, exe, start, options, high, sound, size, config.language);
-    if scenario_page {
-        game.tools.menu.start_scenario(game.world.scenario); // en 1018:015f
-    }
-    game.set_view_enhancements(config.view);
-    game
-}
-
-/// The main screen and the forms of a game that starts from `start`,
-/// with the dates and numbers and the port's texts in the player's
-/// `language` (`game::lang`). // 1020:2501, 1010:2820
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-fn make_game(
-    dir: &Path,
-    exe: &[u8],
-    (mut world, camera, origin, view_rest): Start,
-    mut options: Options,
-    high: ScoreTable,
-    sound: &sound::Shared,
-    size: (i32, i32),
-    language: lang::Setting,
-) -> Game {
-    // Every text of the view is in the player's language.
-    let language = language.language(folder_land(dir));
-    {
-        let mut s = sound.borrow_mut();
-        s.music.init_playlist(&mut options); // 1018:37de, from 1030:36e5
-        // A scenario's or a saved game's `game_start_setup` (1010:2820).
-        if origin.is_some() {
-            s.game_start(&options);
-        }
-    }
-    let font = font(dir);
-    let texts = upgrade::sonstige(dir, language);
-    let frame = bitmaps(dir, &hauptschirm::BITMAP_FILES);
-    let title = texts.texts.first().cloned().unwrap_or_default();
-    let mut screen = match origin {
-        Some(origin) => Hauptschirm::new(camera, origin, frame, &font, &title),
-        None => Hauptschirm::new_game(camera, frame, &font, &title),
+    let pending = Pending::Start {
+        scenario: scenario_page,
     };
-    // With `fix.view_people` the file's spectators and the like are the
-    // view's own.
-    screen.people = game::people::view::ViewPeople::new(seed());
-    let handed = world.split_off_view_people();
-    screen.people.adopt(&handed);
-    let tiles = load_tiles(dir);
-    screen.paint_map(&world, &tiles);
-    let info = InfoTexts {
-        months: monate(&lang_text(language, "TEXTE/MONATE.TXT")).expect("MONATE.TXT"),
-        language,
-        currency_factor: texts.waehrungsfaktor,
-        currency: texts.texts.get(5).cloned().unwrap_or_default(), // 1020:3ea6
-    };
-    screen.show_info(&world, &font, &info);
-
-    // 1020:1ce9 and 1020:283b: centred, laid out and shown.
-    let mut form = load_form(exe, "THAUPTSCHIRM");
-    screen.layout(size);
-    form.components[0].bounds = screen.bounds();
-    form.components[0].visible = true;
-    for (name, bounds) in hauptschirm::LAYOUT {
-        if let Some(c) = form.component_mut(name) {
-            c.bounds = bounds;
-            c.visible = true;
-        }
-    }
-    let auction_bitmaps = auktionsform::BITMAP_FILES
-        .iter()
-        .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
-        .collect();
-    let auction = Auktionsform::new(auction_bitmaps, auktion(&lang_text(language, "TEXTE/AUKTION.TXT")));
-    let mut auction_form = load_form(exe, "TAUKTIONSFORM");
-    for (name, bounds) in auktionsform::LAYOUT {
-        if let Some(c) = auction_form.component_mut(name) {
-            c.bounds = bounds;
-            c.visible = true;
-        }
-    }
-    // 1030:36e5 (1018:2fa2) and `game_start_setup` (1010:2820): the
-    // build menu, and the tools from the map.
-    let names = hausname(&lang_text(language, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
-    let menu = Baumenue::new(
-        baumenu_txt(&lang_text(language, "TEXTE/BAUMENU.TXT")).expect("BAUMENU.TXT"),
-        &baumenu_dat(&lang_text(language, "DATA/BAUMENU.DAT")).expect("BAUMENU.DAT"),
-        names,
-        auswahl(&lang_text(language, "TEXTE/AUSWAHL.TXT")),
-        bitmaps(dir, &baumenue::BITMAP_FILES),
-        size,
-    );
-    let mut tools = Tools::new(
-        menu,
-        fehler(&lang_text(language, "TEXTE/FEHLER.TXT")).expect("FEHLER.TXT"),
-    );
-    tools.sabowin = Some(Forms::sabowin(dir, &font, &info));
-    tools.start(&view_rest, &world, &font, &tiles, &info, screen.camera().view);
-    screen.draw_buttons(&tools.down);
-    tools.buttons_changed = false;
-    let mut menu_form = load_form(exe, "TBAUMENUE");
-    menu_form.components[0].visible = false;
-    // The other forms, and what the map holds of them.
-    let mut forms = Forms::load(dir, exe, &font, &info, options, high, &screen, size);
-    // 10b8:50de, from `load_map` only: a generated island's overview map
-    // keeps what its constructor (10b8:4538) set, no button down and the
-    // land by heights, where the missing fields' zeros would put button 0
-    // down and draw a picture over the menu's left scroll arrow.
-    if origin.is_some() {
-        forms.overview.load(&view_rest);
-    }
-    forms.overview.game_start(&world);
-    forms.tv.load_fields(&view_rest);
-    // 1010:0ac1: the TV closes, which lets the game go on.
-    let closed = forms.tv.close();
-    sound.borrow_mut().tv_media(&closed.media, &forms.settings);
-    let commands = closed
-        .actions
-        .into_iter()
-        .map(|action| Command { player: 1, action })
-        .collect();
-    forms.compass.draw_knob(&mut screen.corner);
-    let _ = forms.money.loaded(&world);
-    Game {
-        lights_random: Random::new(seed()),
-        forms,
-        // The caller sets the player's (`start_game`, `load_game`).
-        stack: Stack::new(enhance::Enhancements::ORIGINAL),
-        tools,
-        menu_form,
-        menu_captured: false,
-        captured: None,
-        mouse: (0, 0),
-        world,
-        tiles,
-        screen,
-        font,
-        info,
-        since_tick: Duration::ZERO,
-        form,
-        auction,
-        auction_form,
-        pictures: message_media_names(&read(dir, "DATA/FILENAME.DAT")),
-        dir: dir.to_path_buf(),
-        auction_captured: false,
-        commands,
-        file_menu: file_menu(dir, exe, language),
-        view_rest,
-        sound: Rc::clone(sound),
-        size,
-        desktop: size,
-    }
+    loading::Setup::new(dir, exe, pending, settings, options, high, sound, size, config, seed).run()
 }
 
 /// `--help`. The command line is in English only.
@@ -3390,6 +3192,8 @@ impl Holiday {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod leftovers;
 
     /// The screen the older tests lay out for.
     const SIZE: (i32, i32) = (800, 600);
@@ -5670,12 +5474,24 @@ mod tests {
             assert_eq!(h.frame().cursor, Cursor::NoDrop);
             assert!(h.game.is_none());
             write_png(&h, &format!("step4-progress-{tag}"));
-            h.update(Duration::ZERO);
-            assert_eq!(
-                form(&h),
-                Some((texts[wasnunform::page::INIT_GAME].clone(), 100)),
-                "state 1220"
-            );
+            // A frame each: the generator's stages, then state 1220's
+            // loaders, then state 1500.
+            let page = |n: usize, percents: &[i32]| percents.iter().map(|&p| (texts[n].clone(), p)).collect::<Vec<_>>();
+            let mut expected = page(wasnunform::page::NEW_MAP, &[26, 32, 48, 51, 70, 74, 100]);
+            expected.extend(page(
+                wasnunform::page::INIT_GAME,
+                &[
+                    1, 7, 50, 0x37, 0x41, 0x43, 0x48, 0x4b, 0x4d, 0x50, 0x52, 0x55, 0x60, 0x62, 0x63, 100,
+                ],
+            ));
+            let mut seen = Vec::new();
+            while seen.len() < expected.len() {
+                h.update(Duration::ZERO);
+                seen.extend(form(&h));
+                assert!(h.game.is_none());
+                assert_eq!(h.frame().cursor, Cursor::NoDrop);
+            }
+            assert_eq!(seen, expected, "states 1210 and 1220");
             h.update(Duration::ZERO);
             assert_eq!(
                 form(&h),

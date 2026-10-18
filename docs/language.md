@@ -171,18 +171,23 @@ language too. The world makes in it:
   en 1000:27f3, `GameData::load`); saved in the map file. A scenario's
   names are its map file's;
 - the news archive's dates (`news::Entry::date`): `post_message` writes
-  each entry's date as text with the language's months and `[format]`;
-  saved in the map file and shown by the TV as written, so a player
-  with another language sees the world's dates in the world's language;
-- `kein Datum` for an empty entry (`news.no_date`) and the computers'
-  status texts (`[computer]`), the same in both languages;
+  each entry's date as text with the language's months and `[format]`,
+  as the original does; saved in the map file as written. The TV reads
+  the date back from the text (`monate::Date::parse`, the world's
+  language first, then the others) and writes it in its player's
+  language (`news::Entry::date_in`): `6. Januar 1996` in a German world
+  shows as `6th January 1996` to an English player. A text no language
+  writes for a date (a file's own) shows as it is;
+- `kein Datum` for an empty entry (`news.no_date`, which the TV shows in
+  its player's language too) and the computers' status texts
+  (`[computer]`), the same in both languages;
 - the sabotage's costs and the piranhas' pools from `SABOTAGE.TXT`. The
   two releases' files differ in one number the game never reads (the
   shark diver's target, 254 in German, 255 in English), so the world
   plays the same in either language (`lang_data` checks it).
 
 The view's formatting (the info bar's date and money, the forms, the
-TV's money) follows each player's language. In multiplayer each player
+TV's dates and money) follows each player's language. In multiplayer each player
 can have their own, and the world's text comes with the world.
 
 ### Screens

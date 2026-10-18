@@ -229,6 +229,7 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 1090:2373, 1088:7fb1, 1088:0324, 1098:109f, 1050:245b | The people follow the human's view: the spectators, builders, taxiing planes and jetty boats come only to its squares, the doors, pictures and a ship's drift go by its rotation, and some random numbers (the sounds' picks, a waiting walker's `Random(100)`) are drawn only where it looks, so scrolling and turning change the world and its `RandSeed` ([people.md](people.md#who-is-whose-fixview_people)) | `view_people`: those kinds are each view's own, with its own random numbers, and the world's people go by no view. Single player only off |
 | 10a0:19d2, 1098:109f | The shark's diver is a boat (kind 3) whose time running out takes one off the boats' count (`1110:6ff0`) that it never added, so each shark lets one more boat onto the sea | `shark_boat_count`: the diver counts in when it comes |
 | 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speech option and on how long the speech plays | `tv_lights`: the view's TV draws its own. Kept, the view's TV tells the world (`Action::Speaker`), which draws them in its tick (`World::tv_lights`) ([sound.md](sound.md#the-tvs-speaker)) |
+| 1020:1e9b (en 1020:2367) | An earthquake's damage runs outside the clock's pause on every tick whose hour counter is 1, and the TV's pause stops the counter: a TV opened at an hour's first tick (an earthquake's own message comes on one, so a news option that opens the TV for it does this) has the earthquake demolish 100 more squares every tick until it closes ([simulation.md](simulation.md#earthquakes-10a00d1c)) | `quake_pause`: only on an hour's first tick that isn't paused |
 
 ## UI quirks
 
@@ -312,6 +313,7 @@ The widgets' are described in
 | 10b8:1349, 1110:3d80 | The overview map's frame for the main screen's view is a 40 × 25 box in every rotation; turned a quarter that view covers about 50 × 20 of the map ([overview-map.md](overview-map.md#the-frame)) | yes (`big_map` draws its own frame, the right shape, only for its bigger view) |
 | 1018:2fa2 | The build menu's first position is `(screen_height - 480) div 2 + 59`, one row above the island (the main screen is 479 high, centred with `div 2` of each half) | `form_positions` |
 | 1110:54fc users | The sabotage window and the file menu open where the DFM put them (300, 167 and 305, 139), so on a desktop bigger than 640×480 they aren't over the centred main screen ([layout.md](layout.md#the-other-forms)) | `form_positions`: moved with the centred main screen |
+| en 1028:02b1, en 1028:05f7 | Where the main screen was when an earthquake began (en 1118:6764) isn't saved: after a game loaded in the middle of one, its end puts the main screen where an earlier earthquake of the session began, or at 0, 0 ([simulation.md](simulation.md#the-shaking)) | `quake_screen`: the load keeps where the main screen is |
 
 ## Sound
 

@@ -278,8 +278,8 @@ fn the_archive_saves_and_loads() {
     }
     let (mut tv, _) = make_tv((800, 600));
     tv.cursor = 7;
-    tv.left = 33;
-    tv.top = 44;
+    // Where the hidden TV shows next (`1110:664a`).
+    tv.kept = (33, 44);
     tv.centred = true;
     let mut view = MapView {
         news: [true, false, true, false],
@@ -295,6 +295,7 @@ fn the_archive_saves_and_loads() {
     let (mut other, _) = make_tv((800, 600));
     other.load_fields(&MapView::from_map(&file).unported);
     assert_eq!((other.cursor, other.left, other.top, other.centred), (7, 33, 44, true));
+    assert_eq!(other.kept, (33, 44));
     // A new game's archive is empty; so is the scenario's.
     assert!(World::default().news.nothing_yet);
 }

@@ -5,10 +5,11 @@
 //!
 //! Each subsystem is named after what it does, with its address, and
 //! draws its random numbers from [`World::random`] in the original's
-//! order; the one exception is the screen's shaking in an earthquake,
-//! which is the view's (see [`World::tick`]).
+//! order, the screen's shaking in an earthquake too, whose moves the
+//! world draws and each view makes ([`Tick::shake`]).
 
 use crate::auction::Change;
+use crate::enhance::Fix;
 use crate::news::Message;
 use crate::world::{Pos, World};
 
@@ -167,6 +168,19 @@ pub struct Tick {
     /// The TV's lights while its speaker reads ([`World::tv_lights`]): the
     /// lower one's frame, and the upper one's if it changes.
     pub tv_lights: Option<(u16, Option<u16>)>,
+    /// The earth shook (step 7): the original moves the main screen by
+    /// `Random(7) - 3` across, then down, from `RandSeed`, every tick of
+    /// an earthquake, paused or not (en 1020:2367). The world draws them
+    /// in the original's order; each view moves its own main screen
+    /// (`crate::hauptschirm::Hauptschirm::shake`).
+    pub shake: Option<(i32, i32)>,
+    /// An earthquake began: the original remembers where the main screen
+    /// is (en 1028:02b1), the view's.
+    pub quake_began: bool,
+    /// An earthquake ended: the original puts the main screen back where
+    /// it was remembered and the TV where it was last hidden
+    /// (en 1028:05f7), the view's.
+    pub quake_ended: bool,
 }
 
 /// A sound of the people's from a square, with `fix.view_people`: a view
@@ -212,8 +226,9 @@ impl World {
     ///
     /// Left to the view: re-enabling the forms (1010:2a0c), the status bar
     /// message's timeout and the tooltips (before the clock), scrolling
-    /// while a scroll arrow is held, shaking the screen in an earthquake,
-    /// the TV (1048:1b3e) and drawing the people.
+    /// while a scroll arrow is held, moving the main screen in an
+    /// earthquake ([`Tick::shake`]), the TV (1048:1b3e) and drawing the
+    /// people.
     ///
     /// The auction form's timers run first, every tick
     /// ([`World::auction_tick`]); while the form is open the timer stands
@@ -254,11 +269,17 @@ impl World {
         }
         self.clock.slice = (self.clock.slice.wrapping_add(1)) % 30;
         self.building_slice(self.clock.slice, tick);
-        // The original shakes the screen here during an earthquake, with
-        // two `Random(7)`s; the port leaves that to the view, so its random
-        // numbers part from the original's while the earth shakes.
-        if self.earthquake && self.clock.hour_ticks == 1 {
-            self.quake_damage(tick);
+        if self.earthquake {
+            // The screen shakes: the main screen's `Left`, then `Top`, by
+            // `Random(7) - 3`, which the view makes. // en 1020:2367
+            let dx = i32::from(self.random.random(7)) - 3;
+            let dy = i32::from(self.random.random(7)) - 3;
+            tick.shake = Some((dx, dy));
+            // BUG(original): the hour's counter stands while the game is paused (the TV), and every paused tick at its first takes another 100 squares.
+            let paused = self.clock.paused && self.fixes.has(Fix::QuakePause);
+            if self.clock.hour_ticks == 1 && !paused {
+                self.quake_damage(tick); // 10a0:0d1c
+            }
         }
         self.tv_lights(tick); // 1048:1b3e
         if self.options.animations {
@@ -316,6 +337,67 @@ mod tests {
         // The events ran once, on the day's first tick.
         assert_eq!(w.days, 1);
         assert_eq!(w.clock.slice, 24);
+    }
+
+    /// The earth shakes every tick of an earthquake, paused or not: two
+    /// `Random(7) - 3` from the world's numbers, before the hour's damage
+    /// (en 1020:2367).
+    #[test]
+    fn earthquake_shakes() {
+        let mut world = World {
+            earthquake: true,
+            ..World::default()
+        };
+        world.clock.speed = 1000;
+        // No people, whose steps draw numbers too.
+        world.options.animations = false;
+        let mut numbers = world.random;
+        let tick = world.tick();
+        let dx = i32::from(numbers.random(7)) - 3;
+        let dy = i32::from(numbers.random(7)) - 3;
+        assert_eq!(tick.shake, Some((dx, dy)));
+        // The first tick of the hour: the damage's 200 numbers after them.
+        for _ in 0..200 {
+            numbers.random(250);
+        }
+        assert_eq!(world.random.seed, numbers.seed);
+        let tick = world.tick();
+        let (dx, dy) = (numbers.random(7), numbers.random(7));
+        assert_eq!(tick.shake, Some((i32::from(dx) - 3, i32::from(dy) - 3)));
+        assert_eq!(world.random.seed, numbers.seed, "no damage after the hour's first tick");
+        world.earthquake = false;
+        assert_eq!(world.tick().shake, None);
+    }
+
+    /// Paused at an hour's first tick, the original takes 100 squares on
+    /// every tick of an earthquake; `fix.quake_pause` only on the first.
+    #[test]
+    fn fix_quake_pause() {
+        for fixed in [false, true] {
+            let mut w = World {
+                earthquake: true,
+                ..World::default()
+            };
+            w.fixes.set(Fix::QuakePause, fixed);
+            w.clock.speed = 1000;
+            // No people, whose steps draw numbers too.
+            w.options.animations = false;
+            w.tick();
+            w.clock.paused = true;
+            let mut r = w.random;
+            for _ in 0..3 {
+                assert!(w.tick().shake.is_some(), "it shakes while paused");
+                r.random(7);
+                r.random(7);
+                if !fixed {
+                    for _ in 0..200 {
+                        r.random(250);
+                    }
+                }
+            }
+            assert_eq!(w.clock.hour_ticks, 1);
+            assert_eq!(w.random.seed, r.seed, "fixed: {fixed}");
+        }
     }
 
     #[test]

@@ -398,6 +398,55 @@ fn the_money_menu() {
     assert!(f.key_down(0x73, ShiftState::ALT).closed);
 }
 
+/// The page, the roll-up and the rest of the form's fields go into the
+/// map file and come back from it (unit 1070:3bf8): a loaded game's money
+/// menu takes them over.
+#[test]
+#[allow(clippy::many_single_char_names)] // Three forms and the world.
+fn the_saved_fields() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let mut w = world();
+    let mut f = form();
+    let r = f.show(3, 4);
+    apply(&mut w, &mut f, &r);
+    // Rolled up by a double click on the title bar.
+    let _ = f.mouse_down(100, 5, true, ShiftState::LEFT | ShiftState::DOUBLE);
+    let _ = f.mouse_up(100, 5, true);
+    assert!(f.rolled_up() && f.height == 16);
+    let mut fields = game::savegame::Fields::default();
+    f.store_fields(&mut fields);
+    assert_eq!(fields.get("[1110:6f04]+0x188", 0), Some(&[3][..]));
+    assert_eq!(fields.get("[1110:6f04]+0x696", 0), Some(&[1][..]));
+    assert_eq!(fields.get("[1110:6f04]+0x20e", 0), Some(&[4][..]));
+
+    // Another game's money menu, shown on page 0, loads them.
+    let mut g = form();
+    let r = g.show(0, 4);
+    apply(&mut w, &mut g, &r);
+    let full = g.height;
+    g.load_fields(&fields);
+    let _ = g.loaded(&w);
+    assert_eq!(g.page(), 3);
+    assert!(g.rolled_up() && g.height == 16);
+    assert_eq!(paint(&g).pixels, paint(&f).pixels);
+    let mut again = game::savegame::Fields::default();
+    g.store_fields(&mut again);
+    assert_eq!(again, fields);
+    // A file without them: page 0, not rolled up, unrolled.
+    g.load_fields(&game::savegame::Fields::default());
+    let _ = g.loaded(&w);
+    assert_eq!(g.page(), 0);
+    assert!(!g.rolled_up());
+    assert!(g.height > full - 3, "unrolled");
+    // Hidden, it stays hidden.
+    let mut h = form();
+    h.load_fields(&fields);
+    assert_eq!((h.page(), h.height), (3, 0));
+}
+
 #[test]
 fn deterministic_commands() {
     if !orig().join("SZENARIO").exists() {

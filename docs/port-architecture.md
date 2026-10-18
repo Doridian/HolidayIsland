@@ -256,12 +256,14 @@ in the design points above:
 - Save games store seats and keep the original format readable. Single-player
   saves of the original load as a game with one human seat.
 - Language is each player's view setting. The world's own text (the
-  computers' names, the news archive's dates) is in the world's language,
+  computers' names, the news archive's dates as the map file keeps them)
+  is in the world's language,
   `World::language`: the one the game was created in, in the world's hash
   and saved with it (the port's chunk; a file without it takes the
   folder's `land`), so every peer and every reload makes the same text
   ([language.md](language.md#the-worlds-text)). The view formats the
-  rest (dates, money, forms) in each player's own language.
+  rest (dates, money, forms; the archive's dates read back from the
+  world's text) in each player's own language.
 
 Not in scope: matchmaking, accounts, or play with the original Windows version.
 

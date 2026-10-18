@@ -322,37 +322,60 @@ struct Generator<'a> {
     land: i16,
 }
 
+/// The gauge of the progress window (`crate::wasnunform`) after each of
+/// [`World::generate_island`]'s stages: the map cleared (5 %), the
+/// island's shape (26), smoothed (32), the squares' forms (48), decorated
+/// (51), the rivers (70), the plots numbered (74) and the location map
+/// (100). // en 10b8:52d4
+pub const STAGES: [i32; 8] = [5, 0x1a, 0x20, 0x30, 0x33, 0x46, 0x4a, 100];
+
 impl World {
     /// Makes a new island from the start menu's `settings` with
     /// `MAPERSTE.DAT`'s `tables`: every layer, the plot map and its
     /// number of plots ([`World::plots`] isn't made here, see
     /// [`World::create_plots`]) and the location map. The tables must be
-    /// loaded: the palms and grounds read them. // 10b0:52d4
+    /// loaded: the palms and grounds read them. Its stages, one after the
+    /// other ([`World::generate_stage`]). // 10b0:52d4
     ///
     /// The original also shows the progress window's steps and, for a
     /// game that's loaded rather than made (`hintergrund+0x190` or
     /// `+0x191`), only clears the map.
     pub fn generate_island(&mut self, settings: &Settings, tables: &Maperste) -> u16 {
+        let mut plots = 0;
+        for stage in 0..STAGES.len() {
+            self.generate_stage(stage, settings, tables, &mut plots);
+        }
+        plots
+    }
+
+    /// Stage `stage` (0 to 7) of [`World::generate_island`], after which
+    /// the original sets the progress window's gauge to [`STAGES`]'s
+    /// percentage, which it returns; the plots numbered go into `plots`.
+    /// // 10b0:52d4, en 10b8:52d4
+    pub fn generate_stage(&mut self, stage: usize, settings: &Settings, tables: &Maperste, plots: &mut u16) -> i32 {
         let mut g = Generator {
             w: self,
             t: tables,
             relief: settings.relief,
             land: settings.land,
         };
-        g.clear(); // 10b0:3030
-        match settings.island {
-            0 => g.atoll(),               // 10b0:3c5c
-            1 => g.group(GROUP_CLUSTERS), // 10b0:41b5
-            2 => g.one_island(),          // 10b0:412c
+        match stage {
+            0 => g.clear(), // 10b0:3030
+            1 => match settings.island {
+                0 => g.atoll(),               // 10b0:3c5c
+                1 => g.group(GROUP_CLUSTERS), // 10b0:41b5
+                2 => g.one_island(),          // 10b0:412c
+                _ => {}
+            },
+            2 => g.smooth(),                // 10b0:4fd1
+            3 => g.shape_squares(),         // 10b0:354c
+            4 => g.decorate(),              // 10b0:4dae
+            5 => g.rivers(settings.rivers), // 10b0:4d79
+            6 => *plots = g.number_plots(), // 10b0:29c0
+            7 => g.location(),              // 10b0:52a4
             _ => {}
         }
-        g.smooth(); // 10b0:4fd1
-        g.shape_squares(); // 10b0:354c
-        g.decorate(); // 10b0:4dae
-        g.rivers(settings.rivers); // 10b0:4d79
-        let plots = g.number_plots(); // 10b0:29c0
-        g.location(); // 10b0:52a4
-        plots
+        STAGES.get(stage).copied().unwrap_or(100)
     }
 }
 

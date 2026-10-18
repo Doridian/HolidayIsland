@@ -259,6 +259,10 @@ enhancements! {
     /// last record. A game loaded from such a file goes on as the one
     /// that was saved (1048:2a19, 1048:2bae).
     SavedState = "saved_state";
+    /// An earthquake's damage comes on the first tick of each hour only,
+    /// not again on every tick the game stands there paused (the TV),
+    /// which takes another 100 squares each time (1020:1e9b).
+    QuakePause = "quake_pause";
 }
 
 enhancements! {
@@ -385,6 +389,11 @@ enhancements! {
     /// builders, taxiing planes, the jetties' boats) come all over the
     /// island, not only where the view looks (1090:2373).
     PeopleEverywhere = "people_everywhere";
+    /// A game loaded in the middle of an earthquake keeps where the main
+    /// screen is for the earthquake's end, which the original doesn't
+    /// save: its end puts the main screen where an earlier one began
+    /// (en 1028:02b1, en 1028:05f7).
+    QuakeScreen = "quake_screen";
 }
 
 /// The world fixes that may only be off with one human in the game: off,

@@ -106,7 +106,8 @@ widgets shown (1070:1d1f).
 
 The main screen's timer shows the tabs' tooltips (1020:1e9b, with
 `1110:0060`, while the form or the help is active and it isn't rolled
-up): `SONSTIGE.TXT`'s short texts 0x1d–0x22 (`1110:1630`), under the tab.
+up): `SONSTIGE.TXT`'s short texts 0x1d–0x22 (`1110:1630`), under the tab
+(`Geldmenuform::tooltip`).
 
 ## World and view
 
@@ -145,8 +146,13 @@ the loaded insurance and redraws the menu bar
 The map saves the form's page (`+0x188`), pressed element (`+0x205`),
 drag offsets (`+0x206`, `+0x20a`), `+0x20e` and the roll-up (`+0x696`)
 with the books (unit 1070:3bf8): the view's, kept in
-`savegame::MapView::unported`; the port's form doesn't take them over
-from a loaded game yet (it keeps its page).
+`savegame::MapView::unported`. A loaded game's form takes them over
+(`Geldmenuform::load_fields`, before `loaded` draws the page) and a
+saved game gets the form's (`store_fields`). The original leaves the
+form's height to the saved window (1010:08d7), which the port doesn't
+apply ([layout.md](layout.md#not-done)): a shown form keeps showing,
+rolled up to its title bar if the file's was, and a hidden one stays
+hidden. A page past 5 (a broken file) leaves the form's page.
 
 ## Open questions
 

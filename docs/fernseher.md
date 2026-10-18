@@ -72,7 +72,8 @@ comes back up):
 
 - the pause (`1110:0067` := 1), the button bar's third button down;
 - `667d`, `667a` (the speaker started), `6672` (the film's state) := 0;
-- the form at its position; for the announcement of a building's sale
+- the form at its kept position (`664a`, `664c`), also when it was shown
+  and dragged meanwhile; for the announcement of a building's sale
   (message 0x15) the people of kind 0x46 on each square of the building
   on the entry's square (`add_person`, `HAUSNR.DAT` columns 3 and 4) and
   the form at the screen's left edge;
@@ -137,7 +138,8 @@ random numbers are in [sound.md](sound.md#the-tvs-speaker).
 
 ## Closing (1048:077a)
 
-If the form is shown: its position kept (`664a`, `664c`), its size 0, the
+If the form is shown: its position kept (`664a`, `664c`;
+`Fernseher::kept`), its size 0, the
 button bar's third button up, the film and the speaker stopped, the form
 hidden, sound 0xe, the main screen shown. Then, shown or not, the pause
 off (`1110:0067` := 0) and, with "Geräusche" on, the WaveMix effects
@@ -178,6 +180,11 @@ Unit 1048:25ea/2524 saves `6664`, `667c`, `6638`, the archive, `664a`
 (4 bytes), `662e`, `664e`, `6662`, `6663`. In the port the archive,
 `6664` and `667c` are the world's (`World::news`); the rest are the TV's
 (`Fernseher::load_fields`, `store_fields`, through `MapView::unported`).
+`664a` is the kept position, not where a shown TV is.
+
+The end of an earthquake puts the TV at its kept position, shown or not
+(en 1028:061f, `Fernseher::quake_ended`,
+[simulation.md](simulation.md#the-shaking)).
 The news options `005c`..`005f` (unit 1000:0c6a) are the view's too
 (`MapView::news`).
 

@@ -200,7 +200,6 @@ the build menu is no modal dialog.
 
 ## Open questions
 
-- The status bar's sounds and the tools' sounds aren't played yet.
 - `1110:7044`..`704c` (saved) are the mouse on `Hauptbild` and the button
   bar and the one before, which the tooltips (1018:394e) use.
 - The pointer's frame `1110:6fd4` and the preview's globals

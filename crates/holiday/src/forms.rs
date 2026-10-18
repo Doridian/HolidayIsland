@@ -58,6 +58,8 @@ const OVERVIEW_BUTTON: u8 = 5;
 /// How often the overview map's scroll timers fire while an arrow is
 /// held (`Interval` 25 ms).
 const SCROLL_TIMER_MS: u32 = 25;
+/// How often `TSchlussform.Timer1` fires (`Interval` 1000 ms).
+const TIMER1_MS: u32 = 1000;
 
 /// The form that has the keyboard, besides the modal ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +151,8 @@ pub(crate) struct Forms {
     pub now: u32,
     /// Time since the overview map's scroll timers last fired.
     since_scroll: u32,
+    /// The ms since `TSchlussform.Timer1` last fired.
+    timer1_ms: u32,
     /// The money menu's page needs the world again once the commands
     /// are applied ([`geldmenu::Response::update`]).
     money_update: bool,
@@ -298,28 +302,193 @@ fn today() -> (u32, u32, i32) {
     )
 }
 
+/// The forms the game's set-up makes one at a time, each a step of the
+/// progress window's gauge, in `load_game_rest`'s order (en 1038:33c8):
+/// the TV (`init_messages`, 0x48 %), the overview map (0x50), the info
+/// box and the buildings' overview (0x52), the money menu (0x55), the
+/// tooltip (0x62) and the high scores (0x63); then the rest, which the
+/// original makes when it starts (the pause, the options, the compass,
+/// the end forms, the credits and the port's list of enhancements).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FormStep {
+    Tv,
+    Overview,
+    Infobox,
+    Money,
+    Help,
+    HighScores,
+}
+
+/// The forms made so far ([`FormStep`]), until [`Forms::assemble`] makes
+/// the rest.
+pub(crate) struct FormParts {
+    high_scores: Option<ScoreTable>,
+    tv: Option<Fernseher>,
+    overview: Option<Uebersichtsmap>,
+    infobox: Option<Infobox>,
+    umenu: Option<Umenuform>,
+    money: Option<Geldmenuform>,
+    help: Option<Helpform>,
+    high: Option<Highscoreform>,
+}
+
+impl FormParts {
+    /// None made yet; `high_scores` for the high scores' form.
+    pub fn new(high_scores: ScoreTable) -> FormParts {
+        FormParts {
+            high_scores: Some(high_scores),
+            tv: None,
+            overview: None,
+            infobox: None,
+            umenu: None,
+            money: None,
+            help: None,
+            high: None,
+        }
+    }
+
+    /// Makes the forms of `step`, on the main screen `screen` (for the
+    /// overview's scroll position and view).
+    #[allow(clippy::too_many_lines)] // One form after the other.
+    pub fn make(
+        &mut self,
+        step: FormStep,
+        dir: &Path,
+        font: &Font,
+        info: &hauptschirm::InfoTexts,
+        screen: &Hauptschirm,
+        size: (i32, i32),
+    ) {
+        // The view's texts are in the player's language.
+        let language = info.language;
+        let texts = crate::upgrade::sonstige(dir, language);
+        match step {
+            FormStep::Tv => {
+                // 1048:1ffd: the messages' pictures, by `FILENAME.DAT`.
+                let pictures = message_media_names(&text(dir, "DATA/FILENAME.DAT"))
+                    .iter()
+                    .map(|name| picture(dir, &auktionsform::picture_file(name)))
+                    .collect();
+                let mut tv = Fernseher::new(
+                    font.clone(),
+                    bitmaps(dir, &fernseher::BITMAP_FILES),
+                    pictures,
+                    nachrich(&crate::lang_text(language, "TEXTE/NACHRICH.TXT")),
+                    message_media_names(&text(dir, "DATA/FILMNAME.DAT")),
+                    size,
+                );
+                tv.set_speech(message_media_names(&text(dir, "DATA/SOUNNAME.DAT")));
+                self.tv = Some(tv);
+            }
+            FormStep::Overview => {
+                let modatyp = modatyp(&text(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT");
+                // 10b8:4e9e, 1038:3557
+                let (wo, ns) = screen.scroll_position();
+                self.overview = Some(Uebersichtsmap::new(
+                    font.clone(),
+                    bitmaps(dir, &uebersichtsmap::BITMAP_FILES),
+                    &uebermap_dat(&text(dir, "DATA/UEBERMAP.DAT")).expect("UEBERMAP.DAT"),
+                    &uebermap_txt(&crate::lang_text(language, "TEXTE/UEBERMAP.TXT")).expect("UEBERMAP.TXT"),
+                    texts.texts.get(13).map_or(&[][..], |t| &t[..]),
+                    modatyp.max_grueneinfluss,
+                    (wo, ns, screen.camera().view),
+                ));
+            }
+            FormStep::Infobox => {
+                let (short_names, long_names) =
+                    hausname(&crate::lang_text(language, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
+                // 1038:3c2b, 1080:0ea8
+                let ib_texts = infobox_txt(&crate::lang_text(language, "TEXTE/INFOBOX.TXT")).expect("INFOBOX.TXT");
+                let short_texts = ib_texts.short_texts.clone();
+                self.infobox = Some(Infobox::new(
+                    infobox_dat(&crate::lang_text(language, "DATA/INFOBOX.DAT")).expect("INFOBOX.DAT"),
+                    ib_texts,
+                    long_names,
+                    texts.texts.clone(),
+                    bitmaps(dir, &infobox::BITMAP_FILES),
+                ));
+                self.umenu = Some(Umenuform::new(
+                    bitmaps(dir, &umenuform::BITMAP_FILES),
+                    text_lines(&crate::lang_text(language, "TEXTE/UMENU.TXT")),
+                    short_texts,
+                    short_names,
+                ));
+            }
+            FormStep::Money => {
+                // 1070:2e6c
+                let (geldmenu_texts, close) =
+                    geldmenu_txt(&crate::lang_text(language, "TEXTE/GELDMENU.TXT")).expect("GELDMENU.TXT");
+                let (advertising, renovation) = modatyp_txt(&crate::lang_text(language, "TEXTE/MODATYP.TXT"));
+                self.money = Some(Geldmenuform::new(
+                    font.clone(),
+                    bitmaps(dir, &geldmenu::BITMAP_FILES),
+                    geldmenu_dat(&crate::lang_text(language, "DATA/GELDMENU.DAT")).expect("GELDMENU.DAT"),
+                    geldmenu::Texts {
+                        geldmenu: geldmenu_texts,
+                        close,
+                        sonstige: texts.texts.clone(),
+                        short: texts.short_texts.clone(),
+                        advertising,
+                        renovation,
+                        info: info.clone(),
+                    },
+                    size.0,
+                ));
+            }
+            FormStep::Help => {
+                self.help = Some(Helpform::new(
+                    font.clone(),
+                    picture(dir, helpform::BITMAP_FILE).expect("Help.bmp"),
+                    texts.short_texts.clone(),
+                ));
+            }
+            FormStep::HighScores => {
+                let mut high_bitmaps = bitmaps(dir, &highscoreform::BITMAP_FILES);
+                let upgrade = crate::upgrade::present(dir);
+                if upgrade {
+                    high_bitmaps.extend(crate::upgrade::bitmaps(dir, &highscoreform::UPGRADE_BITMAP_FILES));
+                }
+                let mut high = Highscoreform::new(
+                    font.clone(),
+                    high_bitmaps,
+                    highscoreform::highscor_lines(&crate::lang_text(language, "TEXTE/HIGHSCOR.TXT")),
+                    self.high_scores.take().unwrap_or_default(),
+                );
+                if upgrade {
+                    // en 1068:2493: `UPGRADE\HIGHSCO2.TXT`'s six names.
+                    let names = text_lines(&crate::upgrade::file(
+                        dir,
+                        language,
+                        "HIGHSCO2.TXT",
+                        "TEXTE/HIGHSCOR.TXT",
+                    ));
+                    high = high.with_upgrade(names.into_iter().take(6).collect());
+                }
+                self.high = Some(high);
+            }
+        }
+    }
+}
+
 impl Forms {
-    /// The forms of a game, as the game's set-up creates them, on the
-    /// main screen `screen` (for the overview's scroll position and view),
-    /// with the view's fields of the map `fields`.
+    /// The forms of a game, as the game's set-up creates them: those of
+    /// `parts` and the rest, which the original makes when it starts: the pause, the options, the compass, the end forms, the
+    /// credits and the port's list of enhancements; and the VCL forms.
+    ///
+    /// # Panics
+    /// If a step of `parts` wasn't made.
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One form after the other.
-    pub fn load(
+    pub fn assemble(
+        mut parts: FormParts,
         dir: &Path,
         exe: &[u8],
         font: &Font,
         info: &hauptschirm::InfoTexts,
         settings: Settings,
-        high_scores: ScoreTable,
-        screen: &Hauptschirm,
         size: (i32, i32),
     ) -> Forms {
-        // The view's texts are in the player's language.
         let language = info.language;
         let texts = crate::upgrade::sonstige(dir, language);
-        let modatyp = modatyp(&text(dir, "DATA/MODATYP.DAT")).expect("MODATYP.DAT");
-        let (short_names, long_names) =
-            hausname(&crate::lang_text(language, "TEXTE/HAUSNAME.TXT")).expect("HAUSNAME.TXT");
-
         // 1040:3a45, 1060:0789
         let pause = Pauseform::new(bitmaps(dir, &pauseform::BITMAP_FILES));
         let options = Optionenform::new(
@@ -327,67 +496,7 @@ impl Forms {
             bitmaps(dir, &optionen::BITMAP_FILES),
             text_lines(&crate::lang_text(language, "TEXTE/OPTIONEN.TXT")),
         );
-        // 1048:1ffd: the messages' pictures, by `FILENAME.DAT`.
-        let pictures = message_media_names(&text(dir, "DATA/FILENAME.DAT"))
-            .iter()
-            .map(|name| picture(dir, &auktionsform::picture_file(name)))
-            .collect();
-        let mut tv = Fernseher::new(
-            font.clone(),
-            bitmaps(dir, &fernseher::BITMAP_FILES),
-            pictures,
-            nachrich(&crate::lang_text(language, "TEXTE/NACHRICH.TXT")),
-            message_media_names(&text(dir, "DATA/FILMNAME.DAT")),
-            size,
-        );
-        tv.set_speech(message_media_names(&text(dir, "DATA/SOUNNAME.DAT")));
-        // 1070:2e6c
-        let (geldmenu_texts, close) =
-            geldmenu_txt(&crate::lang_text(language, "TEXTE/GELDMENU.TXT")).expect("GELDMENU.TXT");
-        let (advertising, renovation) = modatyp_txt(&crate::lang_text(language, "TEXTE/MODATYP.TXT"));
-        let money = Geldmenuform::new(
-            font.clone(),
-            bitmaps(dir, &geldmenu::BITMAP_FILES),
-            geldmenu_dat(&crate::lang_text(language, "DATA/GELDMENU.DAT")).expect("GELDMENU.DAT"),
-            geldmenu::Texts {
-                geldmenu: geldmenu_texts,
-                close,
-                sonstige: texts.texts.clone(),
-                short: texts.short_texts.clone(),
-                advertising,
-                renovation,
-                info: info.clone(),
-            },
-            size.0,
-        );
-        // 10b8:4e9e, 1038:3557
-        let (wo, ns) = screen.scroll_position();
-        let overview = Uebersichtsmap::new(
-            font.clone(),
-            bitmaps(dir, &uebersichtsmap::BITMAP_FILES),
-            &uebermap_dat(&text(dir, "DATA/UEBERMAP.DAT")).expect("UEBERMAP.DAT"),
-            &uebermap_txt(&crate::lang_text(language, "TEXTE/UEBERMAP.TXT")).expect("UEBERMAP.TXT"),
-            texts.texts.get(13).map_or(&[][..], |t| &t[..]),
-            modatyp.max_grueneinfluss,
-            (wo, ns, screen.camera().view),
-        );
         let compass = Kompassform::new(font.clone(), bitmaps(dir, &kompassform::BITMAP_FILES), size.0);
-        // 1038:3c2b, 1080:0ea8
-        let ib_texts = infobox_txt(&crate::lang_text(language, "TEXTE/INFOBOX.TXT")).expect("INFOBOX.TXT");
-        let short_texts = ib_texts.short_texts.clone();
-        let infobox = Infobox::new(
-            infobox_dat(&crate::lang_text(language, "DATA/INFOBOX.DAT")).expect("INFOBOX.DAT"),
-            ib_texts,
-            long_names,
-            texts.texts.clone(),
-            bitmaps(dir, &infobox::BITMAP_FILES),
-        );
-        let umenu = Umenuform::new(
-            bitmaps(dir, &umenuform::BITMAP_FILES),
-            text_lines(&crate::lang_text(language, "TEXTE/UMENU.TXT")),
-            short_texts,
-            short_names,
-        );
         let ende = Endeform::new(font.clone(), bitmaps(dir, &endeform::BITMAP_FILES), texts.texts.clone());
         let schluss = Schlussform::new(
             font.clone(),
@@ -403,32 +512,6 @@ impl Forms {
             } else {
                 schlussform::schluss_lines(&crate::lang_text(language, "TEXTE/SCHLUSS.TXT"))
             },
-        );
-        let mut high_bitmaps = bitmaps(dir, &highscoreform::BITMAP_FILES);
-        let upgrade = crate::upgrade::present(dir);
-        if upgrade {
-            high_bitmaps.extend(crate::upgrade::bitmaps(dir, &highscoreform::UPGRADE_BITMAP_FILES));
-        }
-        let mut high = Highscoreform::new(
-            font.clone(),
-            high_bitmaps,
-            highscoreform::highscor_lines(&crate::lang_text(language, "TEXTE/HIGHSCOR.TXT")),
-            high_scores,
-        );
-        if upgrade {
-            // en 1068:2493: `UPGRADE\HIGHSCO2.TXT`'s six names.
-            let names = text_lines(&crate::upgrade::file(
-                dir,
-                language,
-                "HIGHSCO2.TXT",
-                "TEXTE/HIGHSCOR.TXT",
-            ));
-            high = high.with_upgrade(names.into_iter().take(6).collect());
-        }
-        let help = Helpform::new(
-            font.clone(),
-            picture(dir, helpform::BITMAP_FILE).expect("Help.bmp"),
-            texts.short_texts.clone(),
         );
         // 1030:3c42: "Schließen", `SONSTIGE.TXT`'s 14th text.
         let schliessen = texts.texts.get(13).cloned().unwrap_or_default();
@@ -455,35 +538,36 @@ impl Forms {
             pause_form: load_form(exe, "TPAUSEFORM"),
             options,
             options_form: load_form(exe, "TOPTIONENFORM"),
-            tv,
+            tv: parts.tv.take().expect("the TV is made"),
             tv_form: load_form(exe, "TFERNSEHER"),
-            money,
+            money: parts.money.take().expect("the money menu is made"),
             money_form: load_form(exe, "TGELDMENUFORM"),
-            overview,
+            overview: parts.overview.take().expect("the overview map is made"),
             overview_form: load_form(exe, "TUEBERSICHTSMAP2"),
             compass,
             compass_form: load_form(exe, "TKOMPASSFORM"),
             sabowin_form: load_form(exe, "TSABOWIN"),
-            infobox,
+            infobox: parts.infobox.take().expect("the info box is made"),
             infobox_form: load_form(exe, "TINFOBOX2"),
-            umenu,
+            umenu: parts.umenu.take().expect("the buildings' overview is made"),
             umenu_form: load_form(exe, "TUMENUFORM"),
             ende,
             ende_form: load_form(exe, "TENDEFORM"),
             schluss,
             schluss_form: load_form(exe, "TSCHLUSSFORM"),
-            high,
+            high: parts.high.take().expect("the high scores are made"),
             high_form: load_form(exe, "THIGHSCOREFORM"),
             credits,
             credits_form: load_form(exe, "TCREDITFORM"),
             enhance,
             enhance_notes: enhanceform::Notes::default(),
-            help,
+            help: parts.help.take().expect("the tooltip is made"),
             help_form: load_form(exe, "THELPFORM"),
             focus: Focus::Main,
             grab: None,
             now: 0,
             since_scroll: 0,
+            timer1_ms: 0,
             money_update: false,
             infobox_redraw: false,
             umenu_redraw: None,
@@ -540,6 +624,10 @@ impl Forms {
         follow(o.bounds(), &mut o.left, &mut o.top);
         let t = &mut self.tv;
         follow(t.bounds(), &mut t.left, &mut t.top);
+        // Where it shows next moves along.
+        let (mut kl, mut kt) = t.kept;
+        follow(Rect::new(kl, kt, t.bounds().width(), t.height), &mut kl, &mut kt);
+        t.kept = (kl, kt);
         let m = &mut self.money;
         follow(m.bounds(), &mut m.left, &mut m.top);
         let o = &mut self.overview;
@@ -924,6 +1012,7 @@ impl Game {
             let r = self.forms.tv.close();
             self.tv_response(r);
             self.forms.umenu.hide();
+            self.forms.money.load_fields(&rest);
             let r = self.forms.money.loaded(&self.world);
             self.money_response(r);
             self.main_view_changed();
@@ -1071,7 +1160,7 @@ impl Game {
                 .forms
                 .money
                 .tooltip(self.mouse.0, self.mouse.1, focus == Some(Focus::Money))
-                .and_then(|(t, l, tp)| Some((u8::try_from(t).ok()?, tp, l)));
+                .map(|(t, l, tp)| (t, tp, l));
         }
         if ready && focus == Some(Focus::Overview) && self.forms.overview.visible() {
             let o = &self.forms.overview;
@@ -1453,15 +1542,20 @@ impl Game {
         sound.play_all(r.sounds.iter().map(|s| s.number()), &self.forms.settings);
     }
 
-    /// `TSchlussform.Timer1`: when the end's music is over it plays the
-    /// loop. // 1068:1872
-    pub(crate) fn end_music_tick(&mut self) {
+    /// `TSchlussform.Timer1`, once a second (`Interval` 1000) of the `ms`
+    /// that passed: the film's end, and when the end's music is over it
+    /// plays the loop. // 1068:187f
+    pub(crate) fn end_music_tick(&mut self, ms: u32) {
+        self.forms.timer1_ms = self.forms.timer1_ms.saturating_add(ms);
+        if self.forms.timer1_ms < TIMER1_MS {
+            return;
+        }
+        self.forms.timer1_ms %= TIMER1_MS;
         if !self.forms.schluss.visible() {
             return;
         }
-        // The film's end: `Position = Length` (1068:187f). `Timer1` looks
-        // once a second, so the original holds the last frame up to a
-        // second longer; the port looks every frame.
+        // The film's end: `Position = Length`, so the last frame stays up
+        // to a second.
         if self.forms.schluss.film_panel().is_some() && self.sound.borrow().film_done() {
             let r = self.forms.schluss.film_ended(self.size);
             self.schluss_response(r);
@@ -2013,5 +2107,6 @@ impl Game {
     pub(crate) fn forms_save(&self, rest: &mut Fields) {
         self.forms.overview.save(rest);
         self.forms.tv.store_fields(rest);
+        self.forms.money.store_fields(rest);
     }
 }

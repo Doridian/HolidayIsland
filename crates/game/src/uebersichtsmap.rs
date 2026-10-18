@@ -178,10 +178,6 @@ const SCROLL_KEYS: [(u16, u16, i32, i32); 8] = [
     (0x21, 0x69, -0x14, 0x14),  // Page Up
 ];
 
-/// The help texts of the colourings' buttons, for the tooltips (1020:1fe2).
-/// // 1110:1636
-pub const HELP_TEXTS: [u8; 5] = [0x18, 0x19, 0x1a, 0x1b, 0x1c];
-
 /// The main screen's frame on the map for each rotation of the view: its
 /// size, where its mask and picture are in `UeRecht.BMP`, how far up and
 /// left of the main screen's scroll position it's drawn, and where in it
@@ -1893,7 +1889,7 @@ impl Uebersichtsmap {
         }
         (part::OWNERS..=part::OCCUPANCY).find(|&n| self.hit(n, x, y)).map(|n| {
             let [left, _, _, bottom] = self.r(n);
-            (HELP_TEXTS[n - part::OWNERS], left, bottom)
+            (crate::helpform::OVERVIEW_TEXTS[n - part::OWNERS], left, bottom)
         })
     }
 

@@ -85,11 +85,59 @@ impl Date {
         s.truncate(255);
         s
     }
+
+    /// The date that `text` is, as [`Date::text`] writes it in one of the
+    /// languages (`first` tried first) with that language's months: what
+    /// the news archive keeps of a message's date (`crate::news::Entry`),
+    /// read back so a view can write it in its own language. None for a
+    /// text no language writes for any day (`kein Datum`).
+    #[must_use]
+    pub fn parse(text: &[u8], first: Language) -> Option<Date> {
+        // The year is one of the text's runs of digits.
+        let years: Vec<u16> = text
+            .split(|b| !b.is_ascii_digit())
+            .filter_map(|run| std::str::from_utf8(run).ok()?.parse().ok())
+            .collect();
+        let languages = std::iter::once(first).chain(Language::ALL.into_iter().filter(|&l| l != first));
+        for language in languages {
+            for &year in &years {
+                for month in 1..=12 {
+                    for day in 1..=31 {
+                        let date = Date { day, month, year };
+                        if date.text(language.months(), language) == text {
+                            return Some(date);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A date reads back from its text in either language.
+    #[test]
+    fn parse() {
+        let date = Date {
+            day: 23,
+            month: 11,
+            year: 1998,
+        };
+        for language in Language::ALL {
+            let text = date.text(language.months(), language);
+            for first in Language::ALL {
+                assert_eq!(Date::parse(&text, first), Some(date), "{text:?}");
+            }
+        }
+        assert_eq!(Date::parse(b"1. Januar 1996", Language::En), Some(START));
+        assert_eq!(Date::parse(b"1st January 1996", Language::De), Some(START));
+        assert_eq!(Date::parse(b"kein Datum", Language::De), None);
+        assert_eq!(Date::parse(b"32. Januar 1996", Language::De), None);
+    }
 
     #[test]
     fn advance() {

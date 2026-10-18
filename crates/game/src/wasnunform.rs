@@ -19,8 +19,11 @@
 //! | State 1200: shown (en 1028:3b3c) | none | 0 |
 //! | 1210, a new island (`generate_island`, en 10b8:52d4) | 1 | 5, 26, 32, 48, 51, 70, 74, 100 between its stages |
 //! | 1210, a scenario or a saved game | 3 | 100 once the map is cleared |
-//! | 1220 (`load_game_data`, en 1038:3615) | 2 | 1, 7, 50 (and more within each loader), 100 |
+//! | 1220 (`load_game_data`, en 1038:3615) | 2 | 1, 7, 50, `load_game_rest`'s 0x37 to 0x63 (en 1038:33c8), 100 |
 //! | 1500 | 0 | 100, `load_map`, 100 |
+//!
+//! The `holiday` binary's set-up (`loading`) does a step a frame and
+//! drives these at the same points.
 //!
 //! The form's DFM gives it the cursor `crNoDrop`, which states 1210 and
 //! 1220 also set for the whole screen (`Screen.Cursor := crNoDrop`,

@@ -183,8 +183,12 @@ price) − price) × Random(1000) div 999`.
 - A bid without the money shows `FEHLER.TXT`'s error 0xe on the main
   screen's status bar with sound 0xc (`show_error_message`, 1030:232d,
   from 1028:1e23, en 1028:301f), not a message box: the view's
-  (`Auktionsform::status_error`), no command. Not ported: the build
-  menu's part of `make_available`.
+  (`Auktionsform::status_error`), no command.
+- The won item's `make_available` (10a0:0691) puts the type on the end
+  of its kind's submenu of the build menu (1018:23f8,
+  `World::add_to_build_menu`), which is the world's
+  ([player-tools.md](player-tools.md)); the original doesn't redraw an
+  open build menu for it, and neither does the port.
 
 The bugs kept are in [original-bugs.md](original-bugs.md).
 

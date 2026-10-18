@@ -148,12 +148,29 @@ a line of text. Its DFM gives it the cursor `crNoDrop`, which
 the file menu's work uses `crHourGlass`, -11). The DFM of
 `THintergrund` has `crNoDrop` too, but its picture covers it.
 
-The port's set-up takes a frame or so, so the `holiday` binary shows the
-window one step a frame (state 1200 empty; 1210 with page 1 at 5 % for a
-new island, page 3 at 100 % otherwise, under `crNoDrop`; 1220 page 2 at
-100 %; 1500 page 0 at 100 %), the work done after the frame of state
-1210 is drawn, then the main screen. The gauge's steps within the
-generator and the loaders aren't shown one by one.
+The `holiday` binary sets the game up a step a frame (`loading::Setup`)
+and shows each step's page and gauge as the original does once its work
+is done, then the main screen:
+
+| State | Work | Page | Gauge after it |
+|---|---|---|---|
+| 1200 | the window shown | none | 0 |
+| 1210, a new island | `generate_island` (en 10b8:52d4), a stage a frame (`World::generate_stage`): the map cleared, the island's shape, smoothed, the squares' forms, decorated, the rivers, the plots, the location map; state 100's set-up before the first | 1 | 5, 26, 32, 48, 51, 70, 74, 100 |
+| 1210, a scenario or a saved game | the map cleared | 3 | 100 |
+| 1220 (`load_game_data`, en 1038:3615) | | 2 | 1 |
+| | `load_tables`: the world's tables and set-up (`hintergrund::set_up_finish`; a scenario's or a saved game's world from its map) | | 7 |
+| | `load_game_bitmaps`: the main screen and the island's tiles | | 50 |
+| | `load_game_rest` (en 1038:33c8), a loader a frame: the dates' texts, the sabotage window, the file menu, the TV, the auction form, the build menu, the overview map, the info box, the money menu, the playlist, the tooltip, the high scores | | 0x37, 0x41, 0x43, 0x48, 0x4b, 0x4d, 0x50, 0x52, 0x55, 0x60, 0x62, 0x63 |
+| | the other forms, the game put together | | 100 |
+| 1500 | `load_map` (en 1038:357f), the cursor back | 0 | 100 |
+
+The screen has `crNoDrop` from state 1210 to 1500. Two places differ
+from the original's order: the port loads a scenario's or a saved
+game's world at `load_tables` rather than in state 1500, since its view
+is made from the world, and `load_game_rest`'s loaders of the world
+(`create_people`, `create_computers`, `init_players`, `load_ereignis`,
+the sabotage's slots) are part of that set-up, so their percentages
+(0x39, 0x3c, 0x3e, 0x46, 0x5a, 0x5c, 0x5e) pass with the next step's.
 
 ### A scenario's start
 

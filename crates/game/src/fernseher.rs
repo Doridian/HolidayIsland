@@ -251,10 +251,13 @@ pub struct Fernseher {
     media: Vec<Media>,
     /// The form is shown. // +0x29
     pub visible: bool,
-    /// The form's top left on the screen, kept while it's hidden.
-    /// // 1110:664a, 1110:664c
+    /// The form's top left on the screen. `Left`, `Top`
     pub left: i32,
     pub top: i32,
+    /// Where the form shows: kept when it's hidden, where showing it puts
+    /// it (and the end of an earthquake, [`Fernseher::quake_ended`]).
+    /// Saved. // 1110:664a, 1110:664c (en 1118:686e, en 1118:6870)
+    pub kept: (i32, i32),
     /// `ClientHeight`.
     pub height: i32,
     /// The archive's entry on the TV. // 1110:6638
@@ -406,6 +409,7 @@ impl Fernseher {
             visible: false,
             left: 0,
             top: 0,
+            kept: (0, 0),
             height: 0,
             cursor: 0,
             centred: false,
@@ -499,6 +503,7 @@ impl Fernseher {
     pub fn new_game(&mut self, (w, h): (i32, i32)) {
         self.left = (w - WIDTH) / 2;
         self.top = (h - CENTRE_HEIGHT) / 2;
+        self.kept = (self.left, self.top);
         self.cursor = 0;
         self.ready = true;
         self.closing = false;
@@ -520,6 +525,7 @@ impl Fernseher {
         self.cursor = word("1110:6638", 0);
         self.left = i32::from(word("1110:664a", 0));
         self.top = i32::from(word("1110:664a", 2));
+        self.kept = (self.left, self.top);
         self.centred = byte("1110:662e") != 0;
         self.pressed = byte("1110:664e");
         self.closing = byte("1110:6662") != 0;
@@ -531,7 +537,7 @@ impl Fernseher {
     pub fn store_fields(&self, fields: &mut crate::savegame::Fields) {
         let short = |v: i32| i16::try_from(v).unwrap_or(0).to_le_bytes();
         fields.set("1110:6638", 0, &self.cursor.to_le_bytes());
-        fields.set("1110:664a", 0, &[short(self.left), short(self.top)].concat());
+        fields.set("1110:664a", 0, &[short(self.kept.0), short(self.kept.1)].concat());
         fields.set("1110:662e", 0, &[u8::from(self.centred)]);
         fields.set("1110:664e", 0, &[self.pressed]);
         fields.set("1110:6662", 0, &[u8::from(self.closing)]);
@@ -566,8 +572,10 @@ impl Fernseher {
             let from = Rect::new(0, 0, BUTTON_SIZE, BUTTON_SIZE);
             self.image.blit(l, t, &self.bitmaps[KNOPF], from, Rop::Copy, clip);
         }
+        // The date as the world wrote it, in the player's language.
+        let date = entry.date_in(world.language, info.language);
         self.font
-            .draw(&mut self.image, &entry.date, (0xc0, 0x26), 0x87, Align::Center, 9);
+            .draw(&mut self.image, &date, (0xc0, 0x26), 0x87, Align::Center, 9);
         let t = entry.text;
         let line = usize::try_from(t / 3)
             .ok()
@@ -586,8 +594,8 @@ impl Fernseher {
 
     /// The view's part of `fernseher_show` (1048:12e9) for `entry`, the
     /// archive's entry `n`: unless nothing was posted yet, the form is
-    /// shown at its position (at the screen's left edge for the
-    /// announcement of a building's sale), full size, with the title and
+    /// shown where it was kept, also when it was shown and dragged (at
+    /// the screen's left edge for the announcement of a building's sale), full size, with the title and
     /// the entry, and sound 0xd plays. The world's part is
     /// [`World::tv_shown`]. Nothing was posted yet: the button bar's
     /// button comes back up.
@@ -602,6 +610,7 @@ impl Fernseher {
         self.speaker_started = false;
         self.cursor = n;
         r.actions.push(Action::ShowTv(n));
+        (self.left, self.top) = self.kept;
         if entry.number == crate::news::BUILDING_SALE_NEWS {
             self.left = 0;
         }
@@ -822,6 +831,12 @@ impl Fernseher {
         }
     }
 
+    /// An earthquake ended: the TV goes where it was last hidden, also
+    /// while it shows. // en 1028:061f
+    pub fn quake_ended(&mut self) {
+        (self.left, self.top) = self.kept;
+    }
+
     /// Hides the TV (1048:077a): the form keeps its position for the next
     /// time, the film stops, sound 0xe plays, and the game goes on
     /// (`Action::TvPause(false)`), which the original does even when the
@@ -839,6 +854,7 @@ impl Fernseher {
             ..Response::default()
         };
         if self.visible {
+            self.kept = (self.left, self.top);
             self.visible = false;
             self.height = 0;
             self.auto = false;

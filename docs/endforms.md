@@ -61,8 +61,10 @@ film: a fair win (won, `1110:0071`, and not cheated, `1110:006f`) plays
 3 `ABking`, 4 `ABluxus`, 5 `ABsurfer`, 6 `ABoeko`); otherwise
 `pleite.mid` and `ABPleite.avi`.
 
-`Timer1` (1068:187f) ends the film when its position reaches its length,
-and when the music is over plays `endeloop.mid` (again and again). A key
+`Timer1` (1068:187f, every second) ends the film when its position
+reaches its length, so the last frame stays up to a second, and when the
+music is over plays `endeloop.mid` (again and again); the port runs it
+once a second too (`Game::end_music_tick`). A key
 (`FormKeyDown`, 1068:198a), a click on `Panel1` (1068:199b) or any event
 on the background form while this one shows (1000:3d0c) skip the film
 (1068:17ad). After the end-of-game film the results page shows
@@ -173,6 +175,12 @@ Step 3 of `AnimationsTimer` (1020:1e9b), with the tooltips option
    number), the bubble at the form's top + 59 and the button's left edge.
 4. If none of them showed the bubble, it hides.
 
+So when the mouse is over several, the last one wins. The port's main
+screen clock asks the three in that order (`Game::tooltips` in the
+`holiday` binary): `Geldmenuform::tooltip`, `Uebersichtsmap::help_text_at`
+and `helpform::button_bar_tooltip`, with the form's focus for "active"
+(the build menu and the sabotage window take it from the main screen).
+
 ## The later build
 
 The later build ([versions.md](versions.md)), which the port follows,
@@ -208,15 +216,13 @@ changes the end form and the high scores for its six scenarios of
 | `TEndeform` | `game::endeform` | `Endeform::new(font, bitmaps, sonstige_texts)`, `open(screen)`, `mouse_down/move/up`, `key_down`, `image()`, `bounds()`; `Action` `Close`/`Quit`; `main_screen_opens(key, shift)` |
 | `TSchlussform` | `game::schlussform` | `Schlussform::new(font, bitmaps, schluss_lines(..))`, `open_end(Results::of(..), music_on, screen)`, `open_quit(screen)`, `film_ended`, `key_down`, `music_ended`, `mouse_down/up`, `components()`, `bounds()`; `Action` `Continue`/`HighScores`/`NewGame`/`Exit` |
 | `Thighscoreform` | `game::highscoreform` | `Highscoreform::new(font, bitmaps, highscor_lines(..), table)`, `add(..)`, `show(scenario, from_options, screen)`, `mouse_down/up`, `image()`, `bounds()`, `table`; `Response::save` |
-| `THelpform` | `game::helpform` | `Helpform::new(font, Help.bmp, short_texts)`, `show(text, top, left, screen)`, `hide()`, `image()`, `bounds()`; `button_bar_tooltip(..)`, `MONEY_MENU_TEXTS`, `OVERVIEW_TEXTS` |
+| `THelpform` | `game::helpform` | `Helpform::new(font, Help.bmp, short_texts)`, `show(text, top, left, screen)`, `hide()`, `image()`, `bounds()`; `button_bar_tooltip(..)`, `MONEY_MENU_TEXTS` (`Geldmenuform::tooltip`), `OVERVIEW_TEXTS` (`Uebersichtsmap::help_text_at`) |
 
 None of them issues a world command. The clock stops while the quit
 question and the end form are up (single human: the simulation waits on
 these dialogs; see [original-bugs.md](original-bugs.md#design-issues-for-multiplayer)).
 
-Not ported: `game_done`'s freeing (the port drops the game). The money
-menu's and the overview map's tooltips aren't hooked to those forms yet,
-though both forms are ported.
+Not ported: `game_done`'s freeing (the port drops the game).
 
 ## Open questions
 

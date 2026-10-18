@@ -8,9 +8,13 @@
 //!
 //! [`Helpform::show`] and [`Helpform::hide`] are the bubble; the forms'
 //! lookups give the text and where it goes: [`button_bar_tooltip`] for
-//! the button bar, and the text tables of the money menu
-//! ([`MONEY_MENU_TEXTS`]) and the overview map ([`OVERVIEW_TEXTS`]),
-//! which aren't hooked to those forms yet.
+//! the button bar, [`crate::geldmenu::Geldmenuform::tooltip`] for the money menu's tabs
+//! (texts [`MONEY_MENU_TEXTS`]) and
+//! [`crate::uebersichtsmap::Uebersichtsmap::help_text_at`] for
+//! the overview map's colourings (texts [`OVERVIEW_TEXTS`]). The main
+//! screen's clock asks them in that order, the last one found winning:
+//! the money menu (1020:1e9b), the overview map (1020:1fe2) and the
+//! button bar (1020:2115).
 
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};

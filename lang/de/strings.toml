@@ -228,6 +228,10 @@ description = "Der Taucher des Hais zählt bei den Booten mit, so kommt kein Boo
 label = "Spielstand speichert alles"
 description = "Ein Spielstand behält auch Zufallszahlen, Ölpest, Auktion und Leute, so spielt ein geladenes Spiel genau weiter wie das gespeicherte"
 
+[enhance.quake_pause]
+label = "Erdbeben einmal pro Stunde"
+description = "Ein Erdbeben richtet nur einmal pro Stunde Schaden an, nicht in jedem Takt, den das Spiel angehalten ist (Fernseher)"
+
 [enhance.window_stacking]
 label = "Fenster stapeln wie unter Windows"
 description = "Fenster stapeln sich wie unter Windows: ein Klick holt eines nach vorn (auch den Hauptschirm), nur modale bleiben oben"
@@ -343,3 +347,7 @@ description = "Das Mausrad scrollt die Insel (mit Umschalt quer), die Übersicht
 [enhance.people_everywhere]
 label = "Leute auf der ganzen Insel"
 description = "Mit jedem seinen eigenen Leuten kommen die Leute des Bildschirms auf der ganzen Insel, nicht nur wo die Ansicht ist"
+
+[enhance.quake_screen]
+label = "Erdbeben nach dem Laden"
+description = "Ein mitten im Erdbeben geladenes Spiel merkt sich den Platz des Hauptschirms, so stellt das Ende des Bebens ihn dorthin zurück"

@@ -215,8 +215,9 @@ impl World {
                             self.earthquake = true;
                             self.quake_start(); // 10a0:0d09
                             // The original remembers the main screen's
-                            // position (1110:6540) for the end of the
-                            // shaking.
+                            // position (en 1118:6764) for the end of the
+                            // shaking: the view's (`Tick::quake_began`).
+                            tick.quake_began = true;
                         }
                         5 => {
                             self.oil_slick = true;
@@ -279,8 +280,11 @@ impl World {
                         6 => {
                             self.earthquake = false;
                             self.disaster_end(tick); // 10a0:0ddc
-                            // The original puts the main screen and the TV
-                            // back where they were before the shaking.
+                            // The original puts the main screen back where
+                            // it was when the shaking began, and the TV
+                            // where it was last hidden (en 1028:05f7): the
+                            // view's (`Tick::quake_ended`).
+                            tick.quake_ended = true;
                         }
                         5 => {
                             self.oil_slick = false;
@@ -618,6 +622,7 @@ mod tests {
         w.player_count = 1;
         let tick = day(&mut w);
         assert!(w.earthquake);
+        assert!(tick.quake_began && !tick.quake_ended);
         assert!(w.damage.insured);
         assert_eq!(tick.messages[0].number, 6);
         w.damage.amount = 1234;
@@ -626,6 +631,7 @@ mod tests {
         }
         let tick = day(&mut w);
         assert!(!w.earthquake);
+        assert!(tick.quake_ended && !tick.quake_began);
         assert_eq!(tick.messages[0].number, 39);
         assert_eq!(w.finances.money[0], 1234);
     }

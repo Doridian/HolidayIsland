@@ -188,7 +188,7 @@ it up, which is the order of the random numbers:
 | Start | 1058:021a | The menu's name for player 1; colours, opponents, difficulty are the menu's globals |
 | State 1210 | 10b0:52d4 | The island |
 | State 1220 | 1030:2e48 | The tables (`HAUSNR.DAT`, ...) again |
-| | 1010:2fa9 | `1110:651a`..`6530` (not ported) |
+| | 1010:2fa9 | The button bar's buttons (`1110:651a`..`6530`) up but the pointer's: the view's (`Tools::new`) |
 | | 1030:000d | The date, 1 January 1996 |
 | | 1008:57dc | `ABRECHNE.DAT`; the accounting step and day 0 |
 | | 1088:868c | The people: records 1 to 0x640 cleared with `+0x1a` 100 and kind 6 for 1 to 0x23, `+0x14` 1 in all; `layer_551c`, `layer_5520` 255; `ANIMDAT*.DAT`, `NEINTRAG.DAT`; `last` 0x2f |
@@ -204,10 +204,13 @@ changes it, the human after. The economy (1078:0692) is `Round(Sin(day
 / 6fb0) * 90 + 127 + Sin(day / 6fb2) * 37)`, worked out in `Real`s and on
 the FPU, but only ever for day 0, which gives 127.
 
-Not set up, as the port's world doesn't have them yet: `1110:651a` to
-`1110:6530`, `1110:6ef2` to `6efe` (1018:37de), `1110:65b4` to `65b9`
-(1028:2449), `1110:54fa` and `65ba` (1028:361f), and what only the forms
-keep. Heap blocks the original doesn't clear (the people records' last
+Not the world's: the button bar's buttons (`1110:651a` to `6530`,
+1010:2fa9, `Tools::new`), the playlist (`1110:6ef2` to `6efe`,
+1018:37de, `optionen::Settings::playlist`), the auctioneer's frames
+(`1110:65b4` to `65b9`, 1028:2449, which the world's auction keeps,
+[auction.md](auction.md)), the sabotage window's kind and flag
+(`1110:65ba`, `54fa`, 1028:361f, `Sabowin`) and what only the forms
+keep: the view sets them up. Heap blocks the original doesn't clear (the people records' last
 bytes and record 0, the planes' unused track rows, the events' 13th
 value) are 0 in the port.
 

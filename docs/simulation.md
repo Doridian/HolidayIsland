@@ -27,7 +27,7 @@ whole simulation stands then ([auction.md](auction.md)).
 | 4 | Unless paused (`1110:0067`): the game clock, [below](#the-clock-step-4) | inline | | world |
 | 5 | `1110:009e := (1110:009e + 1) mod 30`, then `building_slice(1110:009e)`, [below](#the-buildings-tick-10780002) | 1078:0002 | 330 | world |
 | 6 | Scrolls the view by the timer's `Tag`: 1–4 `scroll_ns` by −1, −16, 16, 1; 5–8 `scroll_wo` by −1, −18, 18, 1 | 1020:0cf7, 1020:147f | | view |
-| 7 | During an earthquake (`1110:0087` = 1): moves the form by `Random(7) - 3` in x and y; on the first tick of each hour also `quake_damage` | inline; 10a0:0d1c | 192 | view; world |
+| 7 | During an earthquake (`1110:0087` = 1), paused or not: moves the form by `Random(7) - 3` in x, then y (en 1020:2367); on the first tick of each hour also `quake_damage`, [below](#earthquakes-10a00d1c) | inline; 10a0:0d1c | 192 | world draws, view moves; world |
 | 8 | With the TV (`fernseher`) visible: its tick, which starts the speaker after 3 s, then plays the news film or closes the TV after 6 s (`GetTickCount`, [fernseher.md](fernseher.md#the-timer-fernseher_tick-10481b3e)) | 1048:1b3e | 1107 | view |
 | 9 | Without animations (`1110:0054` = 0) just refreshes `Hauptbild`. With them: `people_tick`, and with `1110:0056` the rest of the animation group (new people, drawing them), [below](#animations-step-9) | 1090:5293 | ~3850 | world and view |
 
@@ -300,6 +300,38 @@ beach life, 255 none) lose their people (1088:6975) and building
 (`demolish(0, ...)`, 1078:280b, [above](#demolishing-1078280b));
 player 1's count half their price (`HAUSPREI` column 0) as damage. The
 flood (10a0:0b49) uses the same set, also on the building.
+
+The step that runs it (step 7) is outside the clock's pause: while the
+TV pauses the game (`1110:0067`) the hour's counter stands, and if it
+stands at 1, every tick takes another 100 squares. An earthquake's own
+message comes on the day's first tick, which is the hour's first too, so
+a TV that opens for it (the news options) has the earthquake demolish
+for as long as the TV stays open. `fix.quake_pause` only lets the hour's
+first tick that isn't paused do it
+([original-bugs.md](original-bugs.md#simulation-logic)).
+
+#### The shaking
+
+Every tick of an earthquake, paused or not, the main screen moves by
+`Random(7) - 3` across, then down (en 1020:2367: `Left := Left +
+Random(7) - 3`, then `Top`), from wherever it is, with nothing keeping it
+on the screen: a random walk. The numbers come from `RandSeed`, before
+the hour's damage. The earthquake's start (en 1028:02b1, in
+`events_tick`) keeps the main screen's `Left` and `Top` (en 1118:6764,
+6766), and its end (en 1028:05f7) puts it back there and the TV where it
+was last hidden (`1110:664a`, [fernseher.md](fernseher.md)), also when
+it shows and was dragged. The kept place isn't saved: after a game
+loaded in the middle of an earthquake, its end puts the main screen
+where an earlier one began, or at 0, 0.
+
+The port's world draws the two numbers in the original's order and
+gives them to the views (`Tick::shake`), with the start and the end
+(`Tick::quake_began`, `quake_ended`); each view moves its own main
+screen (`Hauptschirm::shake`, `quake_began`, `quake_ended`) and its TV
+(`Fernseher::quake_ended`). With several views each shakes its own by
+the same numbers. `enhance.quake_screen` keeps the main screen's place
+when a game is loaded in the middle of an earthquake. A resize (the
+port's) moves the kept place with the centred main screen.
 
 ### Animations (step 9)
 
@@ -664,10 +696,8 @@ oil's marker outside the layer
 1108:1de9) and returns `(RandSeed * n) shr 32` with `n` as a `Word`.
 The port's `World` has its own `Random` (`vcl::random`), seeded by whoever creates the
 game. Every `Random` the world's routines call must come from it, in the
-original's order. The earthquake's shaking (step 7) also calls `Random`
-in the original, between `building_slice` and `quake_damage`; the port
-gives that to the view, so during a quake the port's numbers part from
-the original's.
+original's order, the earthquake's shaking (step 7) too, between
+`building_slice` and `quake_damage`, whose moves the views make.
 
 ## Port status
 
@@ -714,7 +744,8 @@ the auction form ([auction.md](auction.md)), whose timers
 file menu, which stops the clock while it's open ([savegame.md](savegame.md)),
 the TV and its news ([fernseher.md](fernseher.md)), the button bar's
 tooltips, the music ([sound.md](sound.md)) and the other forms; the
-screen's shaking in an earthquake isn't ported; the status bar's
+main screen's shaking in an earthquake, by the world's numbers
+([above](#the-shaking)); the status bar's
 messages time out (step 2). Everything a player does to the world is a
 command (`command::Action`, `World::apply`): the auction's buttons,
 loading a game, the main screen's tools (building, raising and
@@ -734,9 +765,7 @@ the view, is the command `Action::ViewMoved`, which carries the view
 ([people.md](people.md#after-the-view-moves-10887fb1)). The money menu's refresh (1070:2617) after a
 booking is `Tick::books`, and the year's total it works out while the
 menu is shown runs at the end of the tick or command
-([geldmenu.md](geldmenu.md#world-and-view)). Where a stub
-stands for code that draws random numbers, the port's numbers part from
-the original's once it runs.
+([geldmenu.md](geldmenu.md#world-and-view)).
 
 ## Open questions
 
@@ -754,7 +783,7 @@ the original's once it runs.
   ([computer.md](computer.md#levelling-and-roads)).
 - The sounds' countdown `1110:723c` (people_tick's first loop) stops a
   sound from playing again while it still plays; the port leaves it to
-  the view, which doesn't play the sounds yet.
+  the view (`Tick::sound_countdown`, `sound::Effects::count_down`).
 - The people code reads the human's view (`World::viewpoint`): where
   people appear, their pictures, and the sounds' `Random`s. The view
   hands it over before each tick, and with `Action::ViewMoved` when it

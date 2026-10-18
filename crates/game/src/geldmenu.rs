@@ -305,9 +305,6 @@ const NEXT_PAGE: [u8; 6] = [1, 2, 3, 4, 5, 0];
 /// The charts' titles, `SONSTIGE.TXT`'s short texts by page (pages 2–5:
 /// "Guthaben", "Gesamtvermögen", "Urlauber", "Ruf"). // 1110:328e
 const CHART_TITLES: [usize; 6] = [0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22];
-/// The tabs' tooltips, short texts by tab 9–0xe ("Schreibtisch",
-/// "Bilanz", then the charts'). // 1110:1630
-const TAB_TOOLTIPS: [usize; 6] = [0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22];
 
 /// The size of one of the four rings of the books' history, and where its
 /// scale, months and first month are. // 1070:210a
@@ -801,6 +798,57 @@ impl Geldmenuform {
         self.draw_values(world);
         self.draw_chart(world);
         self.draw_widgets(world);
+    }
+
+    /// The form's fields a map file holds (unit 1070:3bf8), from the
+    /// view's `fields` (`crate::savegame::MapView::unported`): the page,
+    /// the pressed element, the drag's hold, the button that opened it
+    /// and the roll-up. The books (`+0x191`, `+0x24b`) are the world's.
+    /// The original reads them into the form and leaves its height to
+    /// the saved window (1010:08d7), which the port doesn't apply: a shown
+    /// form keeps showing, rolled up to its title bar if the file's was.
+    /// [`Geldmenuform::loaded`] then draws the page. // 1070:3bf8
+    pub fn load_fields(&mut self, fields: &crate::savegame::Fields) {
+        let byte = |dest| fields.get(dest, 0).and_then(|d| d.first().copied()).unwrap_or(0);
+        let longint = |dest| {
+            fields
+                .get(dest, 0)
+                .and_then(|d| d.get(..4))
+                .map_or(0, |d| i32::from_le_bytes([d[0], d[1], d[2], d[3]]))
+        };
+        // A broken file's page past the six: the port keeps its own.
+        let page = byte("[1110:6f04]+0x188");
+        if page <= 5 {
+            self.page = page;
+        }
+        self.pressed = byte("[1110:6f04]+0x205");
+        self.grab = (longint("[1110:6f04]+0x206"), longint("[1110:6f04]+0x20a"));
+        self.opener = byte("[1110:6f04]+0x20e");
+        self.rolled_up = byte("[1110:6f04]+0x696") != 0;
+        if self.shown() && self.rolled_up {
+            self.height = 0x10;
+        } else if self.shown() && self.height == 0x10 {
+            // Unrolled as a drag lets it go.
+            self.height = self.rect(FORM).3 + 1;
+        }
+    }
+
+    /// Puts the form's fields into the view's `fields` for `save_map`.
+    /// // 1070:3bf8
+    pub fn store_fields(&self, fields: &mut crate::savegame::Fields) {
+        fields.set("[1110:6f04]+0x188", 0, &[self.page]);
+        fields.set("[1110:6f04]+0x205", 0, &[self.pressed]);
+        fields.set("[1110:6f04]+0x206", 0, &self.grab.0.to_le_bytes());
+        fields.set("[1110:6f04]+0x20a", 0, &self.grab.1.to_le_bytes());
+        fields.set("[1110:6f04]+0x20e", 0, &[self.opener]);
+        fields.set("[1110:6f04]+0x696", 0, &[u8::from(self.rolled_up)]);
+    }
+
+    /// Whether the form is rolled up to its title bar (a double click on
+    /// it). // Self+0x696
+    #[must_use]
+    pub fn rolled_up(&self) -> bool {
+        self.rolled_up
     }
 
     /// After a game was loaded (`game_show_state`, 1010:26fa): the check
@@ -1399,7 +1447,7 @@ impl Geldmenuform {
     /// rolled up, the tab's short text (`SONSTIGE.TXT`) and where the help
     /// goes (its left, top: under the tab). // 1020:1e9b, 1070:0294
     #[must_use]
-    pub fn tooltip(&self, x: i32, y: i32, focused: bool) -> Option<(usize, i32, i32)> {
+    pub fn tooltip(&self, x: i32, y: i32, focused: bool) -> Option<(u8, i32, i32)> {
         if !focused || self.rolled_up {
             return None;
         }
@@ -1408,7 +1456,9 @@ impl Geldmenuform {
         (FIRST_TAB..=LAST_TAB).find(|&t| self.hit(t, mx, my)).map(|t| {
             let (l, _, _, b) = self.rect(t);
             (
-                TAB_TOOLTIPS[usize::from(t - FIRST_TAB)],
+                // The tabs' short texts ("Schreibtisch", "Bilanz", then
+                // the charts'). // 1110:1630
+                crate::helpform::MONEY_MENU_TEXTS[usize::from(t - FIRST_TAB)],
                 l + ml + self.left,
                 b + self.top + mt,
             )

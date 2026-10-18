@@ -520,10 +520,12 @@ const NAME_STEPS: [i16; 10] = [53, 59, 61, 67, 71, 73, 79, 83, 87, 89];
 /// order). State 1500 only sets up the main screen, whose first view
 /// is [`crate::hauptschirm::start_viewpoint`]. // 1000:2466
 ///
-/// Not set up, as the world doesn't have them yet: `1110:651a` to
-/// `1110:6530` (1010:2fa9), `1110:6ef2` to `1110:6efe` (1018:37de),
-/// `1110:65b4` to `1110:65b9` (1028:2449), `1110:54fa` and `1110:65ba`
-/// (1028:361f), and what only the forms keep.
+/// Not the world's, which the view sets up: the button bar's buttons
+/// (`1110:651a` to `1110:6530`, 1010:2fa9), the playlist (`1110:6ef2` to
+/// `1110:6efe`, 1018:37de), the sabotage window's `1110:54fa` and
+/// `1110:65ba` (1028:361f), and what only the forms keep. The
+/// auctioneer's frames (`1110:65b4` to `1110:65b9`, 1028:2449) start at 0
+/// in the world's auction.
 #[must_use]
 ///
 /// The game plays with `fixes` (`crate::enhance`), which are in place
@@ -536,6 +538,25 @@ pub fn new_world(settings: &Settings, data: &GameData, seed: u32, fixes: Fixes) 
 /// generated in state 1210 (`generate`) or, for a map file, only
 /// cleared. // 1000:2466
 fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool, fixes: Fixes) -> World {
+    let mut w = set_up_begin(settings, data, seed, fixes);
+    // State 1210: for a map file, `clear_map` (10b0:3030) leaves the
+    // empty island `World::default` has.
+    let mut plots = 0;
+    if generate {
+        for stage in 0..crate::generator::STAGES.len() {
+            w.generate_stage(stage, settings, &data.maperste, &mut plots); // 10b0:52d4
+        }
+    }
+    set_up_finish(&mut w, data, plots);
+    w
+}
+
+/// State 100 of [`new_world`] with `fixes`: the game's data and the
+/// start menu's settings, before state 1210 makes the island
+/// ([`World::generate_stage`], which the progress window shows a stage
+/// at a time) and [`set_up_finish`] the rest. // 1000:2466
+#[must_use]
+pub fn set_up_begin(settings: &Settings, data: &GameData, seed: u32, fixes: Fixes) -> World {
     let mut w = World {
         random: Random::new(seed),
         tables: Arc::clone(&data.tables),
@@ -559,13 +580,12 @@ fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool, fixes
     if let Some(name) = w.player_names.get_mut(1) {
         name.clone_from(&settings.name);
     }
-    // State 1210: for a map file, `clear_map` (10b0:3030) leaves the
-    // empty island `World::default` has.
-    let plots = if generate {
-        w.generate_island(settings, &data.maperste) // 10b0:52d4
-    } else {
-        0
-    };
+    w
+}
+
+/// States 1220 and 1500 of [`new_world`], after [`set_up_begin`] and the
+/// island's `plots`: the game's set-up and the first view. // 1000:2466
+pub fn set_up_finish(w: &mut World, data: &GameData, plots: u16) {
     // State 1220, 1030:36e5.
     w.settlement = Settlement::new_game(&data.abrechnung, &data.modatyp); // 1008:57dc
     w.accounting = crate::simulation::Accounting::default();
@@ -583,7 +603,6 @@ fn set_up(settings: &Settings, data: &GameData, seed: u32, generate: bool, fixes
     w.championships = Default::default();
     // State 1500: hauptschirm_init (1020:2501).
     w.viewpoint = crate::hauptschirm::start_viewpoint();
-    w
 }
 
 /// The world after states 1000 to 1500 have loaded the saved game `map`

@@ -221,6 +221,10 @@ description = "The shark's diver counts with the boats, so it doesn't let one mo
 label = "Saved games keep everything"
 description = "A saved game also keeps the random numbers, the oil slick, the auction and the people, so a loaded game plays on exactly as the one saved"
 
+[enhance.quake_pause]
+label = "Earthquakes once an hour"
+description = "An earthquake does its damage once an hour, not on every tick the game stands paused (the TV)"
+
 [enhance.window_stacking]
 label = "Windows stack as in Windows"
 description = "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top"
@@ -336,3 +340,7 @@ description = "The mouse wheel scrolls the island (with Shift across), the overv
 [enhance.people_everywhere]
 label = "People all over the island"
 description = "With everyone their own people, the screen's own people come all over the island, not just where the view looks"
+
+[enhance.quake_screen]
+label = "Earthquakes after loading"
+description = "A game loaded in the middle of an earthquake remembers where the main screen is, so the earthquake's end puts it back there"

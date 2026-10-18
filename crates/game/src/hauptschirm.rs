@@ -394,6 +394,11 @@ pub struct Hauptschirm {
     /// The last press on the title bar was a double click, which leaves
     /// the form rolled up to its title bar. // +0x1da
     pub rolled_up: bool,
+    /// Where the form was when the last earthquake began, where its end
+    /// puts it back ([`Hauptschirm::quake_ended`]). Not saved, so after
+    /// a game loaded in the middle of one it's where an earlier one began,
+    /// or 0, 0. // en 1118:6764, en 1118:6766
+    pub quake_kept: (i32, i32),
     /// The `big_map` enhancement is on: [`Hauptschirm::place`] lets the
     /// form fill a screen bigger than [`BIG_FROM`].
     pub big_map: bool,
@@ -602,6 +607,7 @@ impl Hauptschirm {
             height: HEIGHT,
             grab: (0, 0),
             rolled_up: false,
+            quake_kept: (0, 0),
             big_map: false,
             width: WIDTH,
             full_height: HEIGHT,
@@ -1500,6 +1506,27 @@ impl Hauptschirm {
         (self.left, self.top) = Hauptschirm::position(screen.0, screen.1);
         self.height = HEIGHT;
         self.rolled_up = false;
+    }
+
+    /// The earth shakes: the form moves by `dx` across and `dy` down, the
+    /// world's `Random(7) - 3` each ([`crate::simulation::Tick::shake`]),
+    /// from wherever it is, with nothing to keep it on the screen.
+    /// // en 1020:2367
+    pub fn shake(&mut self, (dx, dy): (i32, i32)) {
+        self.left = self.left.wrapping_add(dx);
+        self.top = self.top.wrapping_add(dy);
+    }
+
+    /// An earthquake began: the form's position is kept for its end.
+    /// // en 1028:02b1
+    pub fn quake_began(&mut self) {
+        self.quake_kept = (self.left, self.top);
+    }
+
+    /// An earthquake ended: the form goes back where it was kept, also
+    /// when it was dragged meanwhile. // en 1028:05f7
+    pub fn quake_ended(&mut self) {
+        (self.left, self.top) = self.quake_kept;
     }
 
     /// The form's bounds on the screen.

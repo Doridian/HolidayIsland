@@ -113,9 +113,6 @@ film's length), and its end comes back to the forms as before:
   clock's position and decodes every frame up to it. Picture and sound
   are timed apart (the view's clock, the device), so they can drift by
   the output's latency.
-- `TSchlussform.Timer1` looks once a second; the port sees the end
-  every frame, so it doesn't hold the last frame for up to a second.
 - A film that doesn't open raises an exception in the original; the port
   ends it at once ([original-bugs.md](original-bugs.md#crashes-and-hangs)).
 - Seeking, `idx1` and palette changes: nothing uses them.
-- The progress window (`TWasNunForm`) after `titel.avi`.

@@ -130,7 +130,8 @@ mark for the screen's bottom edge beside it
   goes to the main screen's `FormKeyDown`; Alt+F4 closes.
 - Tooltips: the main screen's clock (1020:1fe2) shows the help texts
   `1110:1636` (0x18–0x1c) for the colourings' buttons under the mouse,
-  while the form is active and its title bar wasn't double clicked.
+  while the form is active and its title bar wasn't double clicked
+  (`Uebersichtsmap::help_text_at`, [endforms.md](endforms.md#thelpform-the-tooltips-10403d0210403ead)).
 
 ### Redraws the world asks for
 
