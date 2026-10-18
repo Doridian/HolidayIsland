@@ -411,6 +411,18 @@ impl Schlussform {
         self.results = results;
     }
 
+    /// `TCustomForm.Show` without anything else, as loading a game whose
+    /// file has the form shown does (1010:08d7): the form has no
+    /// `OnShow`, so it shows the results page as it was last drawn, the
+    /// background's black in a session that hasn't drawn it, where it is.
+    /// The original's buttons on it are another game's or were never made
+    /// (a click on them goes through their freed or nil fields); the
+    /// port's are the last ones made, which click as they did.
+    // BUG(original): a Last.map saved by the end form's "Neues Spiel" has it shown, and loading it shows the form again over the game, without its results.
+    pub fn show_saved(&mut self) {
+        self.stage = Stage::Results;
+    }
+
     /// The results the form shows.
     #[must_use]
     pub fn results(&self) -> Option<&Results> {

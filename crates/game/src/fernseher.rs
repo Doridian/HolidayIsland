@@ -513,7 +513,9 @@ impl Fernseher {
 
     /// The TV's fields a map file holds (unit 1048:25ea), from the view's
     /// `fields` (`crate::savegame::MapView::unported`): the page, the
-    /// position, the first button and the state of the buttons.
+    /// position it shows at next (`664a`, [`Fernseher::kept`]), the first
+    /// button and the state of the buttons. The form's own place is its
+    /// saved window's (1010:08d7), which the caller gives it.
     pub fn load_fields(&mut self, fields: &crate::savegame::Fields) {
         let word = |dest, at: usize| {
             fields
@@ -523,9 +525,7 @@ impl Fernseher {
         };
         let byte = |dest| fields.get(dest, 0).and_then(|d| d.first().copied()).unwrap_or(0);
         self.cursor = word("1110:6638", 0);
-        self.left = i32::from(word("1110:664a", 0));
-        self.top = i32::from(word("1110:664a", 2));
-        self.kept = (self.left, self.top);
+        self.kept = (i32::from(word("1110:664a", 0)), i32::from(word("1110:664a", 2)));
         self.centred = byte("1110:662e") != 0;
         self.pressed = byte("1110:664e");
         self.closing = byte("1110:6662") != 0;

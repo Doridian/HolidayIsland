@@ -351,3 +351,15 @@ description = "Mit jedem seinen eigenen Leuten kommen die Leute des Bildschirms 
 [enhance.quake_screen]
 label = "Erdbeben nach dem Laden"
 description = "Ein mitten im Erdbeben geladenes Spiel merkt sich den Platz des Hauptschirms, so stellt das Ende des Bebens ihn dorthin zurück"
+
+[enhance.saved_windows]
+label = "Gespeicherte Fenster passen"
+description = "Die Fenster eines geladenen Spiels bleiben, wo sie über dem Hauptschirm waren, und ganz auf dem Bildschirm, wie groß er beim Speichern auch war"
+
+[enhance.loaded_forms]
+label = "Keine leeren Fenster nach dem Laden"
+description = "Das Laden zeigt das Spielende, die Infobox und den Tooltip nicht wieder, die es nicht füllen kann"
+
+[enhance.loaded_pause]
+label = "Keine Pause nach dem Laden"
+description = "Ein mit offenem Fernseher gespeichertes Spiel lädt nicht angehalten ohne Fernseher: das Laden beendet dessen Pause"

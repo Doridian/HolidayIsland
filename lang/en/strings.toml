@@ -344,3 +344,15 @@ description = "With everyone their own people, the screen's own people come all 
 [enhance.quake_screen]
 label = "Earthquakes after loading"
 description = "A game loaded in the middle of an earthquake remembers where the main screen is, so the earthquake's end puts it back there"
+
+[enhance.saved_windows]
+label = "Saved windows fit"
+description = "A loaded game's windows stay where they were over the main screen, and whole on the screen, whatever screen it was saved on"
+
+[enhance.loaded_forms]
+label = "No empty windows after loading"
+description = "Loading doesn't show the end form, the info box and the tooltip again, which it can't fill"
+
+[enhance.loaded_pause]
+label = "No pause after loading"
+description = "A game saved with the TV open doesn't load paused without its TV: loading ends the TV's pause"

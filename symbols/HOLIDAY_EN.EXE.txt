@@ -1292,6 +1292,7 @@
 1118:1478 data computer_opponents  # de 1110:1478
 1118:1479 data player_count  # de 1110:1479
 1118:147a data name_steps  # de 1110:147a
+1118:148e data window_keep_place  # de 1110:148e
 1118:1492 data ui_label_vmt  # de 1110:1492
 1118:14ae data ui_edit_vmt  # de 1110:14ae
 1118:14c5 data menu_previous  # de 1110:14c5

@@ -625,7 +625,14 @@ pub fn load_saved_game(
     fixes: Fixes,
 ) -> Result<World, world::Error> {
     let fresh = set_up(settings, data, seed, false, fixes);
-    fresh.load_map(map)
+    let mut w = fresh.load_map(map)?;
+    // `game_start_setup` (1010:2820): with the money menu shown by its
+    // saved window, 1070:2630 works this year's total out.
+    w.geldmenu_refresh(&crate::simulation::Tick {
+        loaded: true,
+        ..crate::simulation::Tick::default()
+    });
+    Ok(w)
 }
 
 /// `MODATYP.DAT`'s values the world keeps. // 1010:000e

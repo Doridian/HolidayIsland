@@ -180,7 +180,11 @@ Unit 1048:25ea/2524 saves `6664`, `667c`, `6638`, the archive, `664a`
 (4 bytes), `662e`, `664e`, `6662`, `6663`. In the port the archive,
 `6664` and `667c` are the world's (`World::news`); the rest are the TV's
 (`Fernseher::load_fields`, `store_fields`, through `MapView::unported`).
-`664a` is the kept position, not where a shown TV is.
+`664a` is the kept position, not where a shown TV is; the form's own
+place is its saved window's. Loading closes a shown TV and never shows
+one the file has open, though the file's pause (`1110:0067`) and button
+3 are those of the open TV ([layout.md](layout.md#saved-windows),
+`loaded_pause`).
 
 The end of an earthquake puts the TV at its kept position, shown or not
 (en 1028:061f, `Fernseher::quake_ended`,

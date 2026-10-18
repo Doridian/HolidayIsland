@@ -63,6 +63,7 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   player's view tells the world, as any input does, never how the world
   reacts: `road_drag` (where `Action::RoadDragEnd` ends), `tv_form` and
   `tv_sound` (when the TV sends `Action::TvPause` and `Action::Speaker`),
+  `loaded_pause` (the TV's `Action::TvPause` after a load),
   `overview_scrolling` (the viewpoint the people code reads).
 - Each has a stable key, a short label (for the in-game list) and a
   one-line description, both in German and English
@@ -177,6 +178,7 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 1068:1016 | A fairly won scenario past 6 sets no film, so the film player opens whatever file name it had (the later build, en 1070:128d: the tutorial's 7 and past 13) | Shows the results at once |
 | 10c8:1810 from 1000:2466, 1048:01bd, 1068:1016, 1068:0e68 | A film that doesn't open (a missing or broken file) raises an exception out of the handler; the TV's then never closes by itself ([films.md](films.md)) | Ends the film at once |
 | 1068:0288 | A scenario past 7 leaves the end form's reason text as it was (the later build's `UPGRADE\SCHLUSS.TXT`, en 1070:0294: past 13) | Leaves it empty |
+| 1010:08d7, 1068:1613, 1068:16e0 | A `Last.map` saved by the end form's "Neues Spiel" has the end form shown, and loading it shows the form again (`loaded_forms` below); in a new session its buttons were never made, after the last game they're freed, and a click on them goes through those fields | Its buttons are the last ones made and click as they did (`Schlussform::show_saved`); the clock stands while it's shown, as with any end form |
 
 ## Simulation logic
 
@@ -314,6 +316,9 @@ The widgets' are described in
 | 1018:2fa2 | The build menu's first position is `(screen_height - 480) div 2 + 59`, one row above the island (the main screen is 479 high, centred with `div 2` of each half) | `form_positions` |
 | 1110:54fc users | The sabotage window and the file menu open where the DFM put them (300, 167 and 305, 139), so on a desktop bigger than 640×480 they aren't over the centred main screen ([layout.md](layout.md#the-other-forms)) | `form_positions`: moved with the centred main screen |
 | en 1028:02b1, en 1028:05f7 | Where the main screen was when an earthquake began (en 1118:6764) isn't saved: after a game loaded in the middle of one, its end puts the main screen where an earlier earthquake of the session began, or at 0, 0 ([simulation.md](simulation.md#the-shaking)) | `quake_screen`: the load keeps where the main screen is |
+| 1010:08d7 | A map file's windows go where they were on the screen it was saved on, the main screen too: from a bigger screen they're moved up and left only as far as the right and bottom edges need (`KOENIG.HIS`, saved on 1024×768, has the main screen at 160, 121 on 800×600), from a smaller one they stay up and left of the centre; nothing keeps a window off the left or top edge ([layout.md](layout.md#saved-windows)) | `saved_windows`: the main screen stays where the screen has it, the others keep their places over it, whole on the screen |
+| 1010:08d7 | The end form, the info box and the tooltip a file has shown are shown again as they were last drawn: another game's results, square or text, or nothing; the end form over a game whose clock runs ([layout.md](layout.md#saved-windows)) | `loaded_forms`: not shown |
+| 1010:08d7, 1048:077a | A game saved with the TV open loads with the game paused (`1110:0067`) and the TV's button down, but loading never shows the TV, and only hides one that's shown (whose pause it ends): from the start menu, or the file menu while the TV is closed, the game stands until the TV is opened and closed again ([layout.md](layout.md#saved-windows)) | `loaded_pause`: loading closes the TV either way, which ends the pause and lets the button up |
 
 ## Sound
 

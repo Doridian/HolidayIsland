@@ -183,13 +183,119 @@ build menu, file menu, quit question, money menu, tooltip, high scores,
 info box, compass, TV, two empty slots, sabotage window, main screen, end
 form, buildings' overview and overview map. `save_window_positions`
 (1010:0799) writes each one's `Top`, `Left`, `Width`, `Height`, `Visible`
-and `Enabled` (not the file menu's; the empty slots as zeros), and
-`load_window_positions` (1010:08d7) reads them back and keeps each on the
-screen it's loaded on: `Top = min(screen_height - max(16, Height), Top)`
-and `Left = min(screen_width - Width, Left)`. Nothing keeps a window off
-the top or left edge. That clamp is `savegame::keep_on_screen`. The port
-doesn't apply the saved windows yet; it keeps them as read
-(`MapView::unported`) and writes them back.
+and `Enabled` (not the file menu's; the empty slots as zeros: the CD's
+files have windows there, from a version before v1.0, which loading
+reads and drops).
+
+`load_window_positions` (1010:08d7, en 1000:2cb6, the same code) is
+`load_map`'s third unit, so it runs for a scenario and a saved game from
+the start menu (states 1000–1500) and for a game the file menu loads.
+For each form in turn, the file menu and the empty slots skipped:
+
+1. `Top`, `Left`, `Width` and `Height` become the saved ones, but for the
+   quit question, the compass and the end form, which read and drop
+   theirs (the set constant at `1110:148e`, `[2, 3, 8, 10, 11, 14]`,
+   `savegame::KEEP_PLACE`).
+2. It's kept on the screen it's loaded on: `Top = min(screen_height -
+   max(16, Height), Top)` and `Left = min(screen_width - Width, Left)`,
+   the forms that kept their place too. Nothing keeps a window off the
+   top or left edge. That clamp is `savegame::keep_on_screen`.
+3. If the file has it shown, `Show` (`Visible`, `BringToFront`, and the
+   form's `OnShow` if it was hidden), but never the TV or the buildings'
+   overview: those are hidden instead if they're shown (1048:077a: their
+   place kept, the button bar's button up, the pause off; 1080:0e92 and
+   1080:1b24). A form the file has hidden stays as it is.
+4. `Enabled` becomes the saved one. The clock's first step (1010:2a0c)
+   enables them all again, the file menu's `FormHide` and
+   `game_start_setup` (1010:2820) put back what `disable_forms` kept in
+   `1110:645a`, also from the file; the port has no `Enabled`: the modal
+   forms that are shown decide which forms take the mouse.
+
+Most forms are closed by their height, not `Visible`: the build menu,
+money menu, tooltip, info box, compass and overview map are always shown
+(the CD's files have them `Visible` and 0 high), so the saved height
+opens or closes them, with what the file's own units put into them. Per
+form:
+
+| Form | Loading |
+|---|---|
+| Auction (0) | Placed. A file can't have it shown: an auction disables the forms, so the file menu can't open |
+| Build menu (1) | Placed, its height: open or closed as saved; its unit (1018:34a0) and 1018:2a17 draw it |
+| Quit question (3) | Stays. A file can't have it shown: `Last.map` is saved after it hides |
+| Money menu (4) | Placed, its height: open or closed as saved, which the books follow (1070:2617, `World::money_menu_shown` from the file); its unit (1070:3bf8) and 1070:2630 draw the page |
+| Tooltip (5) | Placed, its height: one saved open shows what it last drew until the clock's tooltip step hides it |
+| High scores (6) | Placed. A file can't have them shown: the forms they open from disable the file menu's button |
+| Info box (7) | Placed and sized: one saved open shows what it last drew, without its square or buttons, until the pointer's next release hides it |
+| Compass (8) | Stays, kept on the screen |
+| TV (9) | Placed; hidden if it's shown, which ends its pause. One saved open isn't shown, but the game's pause (`1110:0067`) and the button bar's button 3 come from the file |
+| Sabotage window (12) | Placed; one saved open is shown, its `FormShow` (1028:34a2) drawing it with sound 0xd, and takes the keyboard |
+| Main screen (13) | Placed and sized: from the file menu rolled up to its title bar if it was; from the start menu `hauptschirm_show` (1020:283b) gives it its height |
+| End form (14) | Stays; one saved shown (`Last.map` from its "Neues Spiel", 1010:25dc saves before it hides the forms) is shown again as it was last drawn, another game's results or nothing, over the game |
+| Buildings' overview (15) | Placed; hidden if it's shown (opening it sets it up and centres it again) |
+| Overview map (16) | Placed and sized: open or closed as saved; `game_start` (10b8:3fab) lays a shown one out |
+
+Each `Show` raises its form, in that order; then `game_show_state`
+(1010:2819) or `game_start_setup` (en 1010:39be) raises the main screen.
+
+So the windows go where they were on the screen the file was saved on,
+the main screen too. A file from a bigger screen puts them further right
+and down, until the right and bottom edges stop them: `KOENIG.HIS`, saved
+on 1024×768 with the main screen at 196, 132, has it at 160, 121 on
+800×600 instead of centred at 80, 61. One from a smaller screen leaves
+them up and left of a centred main screen: the tutorial's on 1280×1024
+has the main screen at 80, 61, the background showing below and right
+of it.
+
+In the port (`holiday::windows`, `game::savegame::Windows`):
+`Game::load_windows` does the above for the view's forms, from the file's
+windows among the view's fields (`MapView::unported`), on the screen the
+game lays out for. The file menu's load runs it in `Game::show` before
+the file's view fields go into the forms (the tools, the TV, the overview
+map, the money menu), as `load_map`'s units come after it; a start from
+the start menu (`Game::start_from_file`, from `Setup::assemble`) once the
+view's enhancements have placed the main screen, then the TV's, the
+overview map's and the money menu's fields and `game_start_setup`'s
+drawing. `Game::stack_loaded` raises the forms shown in their order and
+the main screen last ([below](#stacking)). The world isn't touched, but
+for the TV's pause, which the TV's closing ends by command as it always
+does, and the money menu's height, which `World::load_map` takes from the
+file as the books need it (`savegame::money_menu_shown`). With `big_map`'s
+main screen filling the window the main screen isn't moved; the forms go
+where the file has them. A file without windows (all zeros: the port's
+own before it saved them) changes nothing.
+
+Saving (`Game::save_windows`): each form's place, and the size of a
+shown one; a hidden one keeps the size the file had (a new game's, the
+form's own), the forms closed by their height are `Visible` and 0 high
+when closed, the others `Visible` as shown. `Enabled` is 0 but for the
+form that disabled the others (the file menu while it saves, the quit
+question, the end form). With `big_map` the main screen is saved as the
+original's, centred and 640 × 479, so the original can load the file;
+`1110:645a` of a new game is all set but the empty slots. A file loaded
+and saved again at once on the screen it was saved on gets its windows
+back but the compass's (where it is now), those the loading kept on the
+screen (the tutorial's money menu, a column past the right edge) and the
+empty slots, as the original's would.
+
+Three enhancements ([original-bugs.md](original-bugs.md#ui-quirks)):
+
+- `saved_windows`: the main screen stays where the port lays it out
+  (centred, or filling the window), and the others keep their places
+  over it, moved by as much as the file's main screen is off the centred
+  one, then kept whole on the screen (`keep_on_screen` and off the top
+  and left edges, as resizing does).
+- `loaded_forms`: the end form, the info box and the tooltip a file has
+  shown aren't shown again (an info box or tooltip that's shown is
+  hidden).
+- `loaded_pause`: the TV closes whether it's shown or not, which ends the
+  pause and lets the button bar's button 3 up, so a game saved with the
+  TV open doesn't load paused without its TV.
+
+The tests: `tests::saved_windows` (the tutorial's windows over a running
+game and saved again; `KOENIG.HIS` on 800×600 both ways; a file with
+forms saved open both ways, and the order; the TV's pause from the start
+menu and the file menu; a new game's windows, saved and loaded again),
+`savegame::tests::windows_in_the_fields`.
 
 ## Stacking
 
@@ -262,7 +368,9 @@ gave a press to the first of a fixed list.
 
 With every enhancement off it does what's above: the two tiers, the
 main screen raised when those forms close (the end form too, for
-"Weiterspielen") and after a load, the background's raise and 1010:2a5a.
+"Weiterspielen") and after a load (the forms the load showed raised
+before it, in `window_forms`' order, [above](#saved-windows)), the
+background's raise and 1010:2a5a.
 The start of a game needs nothing: the main screen is shown first, so
 the forms shown after it lie over it. Space in the build menu, money menu
 and overview map raises the main screen in both modes.
@@ -521,6 +629,4 @@ size); `dragging_the_main_screen`.
 
 ## Not done
 
-- Applying the saved windows of a map file (1010:08d7) when a game is
-  loaded.
 - The web build's Fullscreen API and canvas sizing (no web build yet).

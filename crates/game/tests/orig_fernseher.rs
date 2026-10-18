@@ -293,9 +293,12 @@ fn the_archive_saves_and_loads() {
     assert!(!loaded.news.nothing_yet);
     assert_eq!(MapView::from_map(&file).news, [true, false, true, false]);
     let (mut other, _) = make_tv((800, 600));
+    let (left, top) = (other.left, other.top);
     other.load_fields(&MapView::from_map(&file).unported);
-    assert_eq!((other.cursor, other.left, other.top, other.centred), (7, 33, 44, true));
+    assert_eq!((other.cursor, other.centred), (7, true));
     assert_eq!(other.kept, (33, 44));
+    // The form's own place is its saved window's (1010:08d7).
+    assert_eq!((other.left, other.top), (left, top));
     // A new game's archive is empty; so is the scenario's.
     assert!(World::default().news.nothing_yet);
 }

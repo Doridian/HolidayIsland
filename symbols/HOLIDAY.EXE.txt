@@ -60,7 +60,7 @@
 1010:0414 func load_modatyp_txt_and_namen
 1010:064a func init_game_globals  # allocates the Klassenmischung/text buffers, loads MODATYP, fills window_forms
 1010:0799 func save_window_positions  # Top, Left, Width, Height, +0x29, +0x2a of the forms in 1110:646c but 2; 10 and 11 as zeros
-1010:08d7 func load_window_positions
+1010:08d7 func load_window_positions  # each form of 1110:646c but 2, 10, 11: Top/Left/Width/Height unless in 1110:148e, kept on the screen, Show if saved Visible (not 9 and 15, hidden if shown), Enabled; docs/layout.md#saved-windows
 1010:0f96 func clear_game_flags  # 1110:1334, 1110:133c, 1110:133e := 0; from 1048:2a05 (back to the start menu)
 1010:0faa func score
 1010:1129 func plant_palm  # (j, i): counts it on the square's plot (+0x354), location effect, part := part * stages + 8, redraws; game::vegetation
@@ -1260,6 +1260,7 @@
 1110:1478 data computer_opponents  # Byte 0..7, initially 7
 1110:1479 data player_count  # Byte: computer_opponents + 1
 1110:147a data name_steps  # array[0..9] of Integer: 53, 59, ... 89, the step through NAMEN.TXT's names (1010:0414)
+1110:148e data window_keep_place  # set of Byte (3 bytes): 2, 3, 8, 10, 11, 14, the forms whose saved Top/Left/Width/Height load_window_positions drops (1010:08d7)
 1110:1492 data ui_label_vmt  # VMT of plain labels. Ghidra shows wrong bytes here: DGROUP is stored as iterated data in the NE file and the loader does not expand it
 1110:14ae data ui_edit_vmt  # VMT of the start screen edit field (same caveat as ui_label_vmt)
 1110:14c5 data menu_previous  # array[9..20] of Byte (from 14ce): the submenu left of each, for the build menu's Left key

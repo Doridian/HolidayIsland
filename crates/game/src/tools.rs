@@ -751,8 +751,10 @@ impl Tools {
         self.sabowin.as_ref().map_or(0, |f| f.kind)
     }
 
-    /// `TCustomForm.Show(sabowin)`, which takes the keyboard. // 1010:2c8b
-    fn show_sabowin(&mut self) {
+    /// `TCustomForm.Show(sabowin)`, which takes the keyboard: from the
+    /// button bar, and for a loaded game's saved window. // 1010:2c8b,
+    /// 1010:08d7
+    pub fn show_sabowin(&mut self) {
         if let Some(f) = &mut self.sabowin {
             let r = f.show(); // 1028:34a2
             self.sounds.extend(r.sounds);

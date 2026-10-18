@@ -29,7 +29,7 @@ behind the far pointer the global holds. A file is 765–805 KB.
 |---|---|
 | 1000:0c6a, 1000:032e | The options (`0054`..`0066`), the clock's slice and speed, the colours, the view's rotation and origin (twice) and parity, flood and earthquake, the start menu's island settings (`008a`..`0092`), `0102` (8 strings, unknown) and the players' names (`0902`, 9 strings), the nine map layers, the location and plot maps, the plot count, the squares `spawn_people` looks at, the main screen's tool and mouse state (`5fb2`..`6090`), the view's size, the difficulty, the road drag, the scenario's flags |
 | 1068:32b5, 1068:32df | Four lists, each a `Word` count and the records: the plots (0x364), the houses (0x2c), the other buildings (0x1b), the building sites (0xd). The records hold their own far pointers to the next one, which mean nothing in the file |
-| 1010:0d4c, 1010:0b02 | `MODATYP.DAT`'s values (but `Strassenbaukosten`), the players and opponents, the renovations, `Klassenmischung`, the computers' budgets, the forms' `Enabled` (`645a`), then each form's window but form 2's (1010:08d7, 1010:0799): `Top`, `Left`, `Width`, `Height`, the bytes at `+0x29` (`Visible`) and `+0x2a` (`Enabled`); forms 10 and 11 are saved as zeros and skipped on loading |
+| 1010:0d4c, 1010:0b02 | `MODATYP.DAT`'s values (but `Strassenbaukosten`), the players and opponents, the renovations, `Klassenmischung`, the computers' budgets, the forms' `Enabled` (`645a`), then each form's window but form 2's (1010:08d7, 1010:0799): `Top`, `Left`, `Width`, `Height`, the bytes at `+0x29` (`Visible`) and `+0x2a` (`Enabled`); forms 10 and 11 are saved as zeros and skipped on loading. Loading puts the forms there and opens or closes them ([layout.md](layout.md#saved-windows)) |
 | 1008:539f, 1008:54c0 | `ABRECHNE.DAT`, the accounting schedule, the month's sums |
 | 1088:8a07, 1088:8950 | The people, their paths, entries and tracks |
 | 1028:2506, 1028:25f4 | The auction ([auction.md](auction.md#state-unit-10282506)) |
@@ -127,6 +127,14 @@ side uses yet are kept as they were read (`Fields`, about 20 of the
 world's and 150 of the view's in the CD's files) and written back, so a
 loaded game saves as it came. A new game has none of them, and writes
 zeros there.
+
+The forms' windows ([layout.md](layout.md#saved-windows)) are the
+view's: loading puts the player's forms where the file has them, and
+saving writes where they are (`savegame::Windows`, `holiday::windows`).
+The world takes one thing from them: whether the money menu is open (its
+saved height), which decides when the year's total is worked out
+(`World::money_menu_shown`, 1070:2617; a file without windows leaves it
+as it was).
 
 Saving only reads the world, so any player can save their copy; it isn't
 a command. Loading in the middle of a game is the command
@@ -344,5 +352,3 @@ after it.
 
 - What `1110:0102` (8 strings), `0x15e` bytes of the CD's files in unit
   10a0:23c9, and the other unported fields are.
-- Whether anything of the forms' windows matters to the port, which lays
-  out its own.

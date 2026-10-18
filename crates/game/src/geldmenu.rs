@@ -804,10 +804,10 @@ impl Geldmenuform {
     /// view's `fields` (`crate::savegame::MapView::unported`): the page,
     /// the pressed element, the drag's hold, the button that opened it
     /// and the roll-up. The books (`+0x191`, `+0x24b`) are the world's.
-    /// The original reads them into the form and leaves its height to
-    /// the saved window (1010:08d7), which the port doesn't apply: a shown
-    /// form keeps showing, rolled up to its title bar if the file's was.
-    /// [`Geldmenuform::loaded`] then draws the page. // 1070:3bf8
+    /// The form's height is its saved window's, which loading gave it
+    /// before (1010:08d7): a form shown by it is rolled up to its title
+    /// bar if the file's was. [`Geldmenuform::loaded`] then draws the
+    /// page. // 1070:3bf8
     pub fn load_fields(&mut self, fields: &crate::savegame::Fields) {
         let byte = |dest| fields.get(dest, 0).and_then(|d| d.first().copied()).unwrap_or(0);
         let longint = |dest| {

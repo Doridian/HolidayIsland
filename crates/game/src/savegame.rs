@@ -93,8 +93,9 @@ pub struct MapView {
     /// options (`crate::optionen::Settings::news`), which the original
     /// saves with the game (unit 1000:0c6a). // 1110:005c..1110:005f
     pub news: [bool; 4],
-    /// The view's fields the port doesn't use yet: the forms' windows
-    /// (1010:08d7), the main screen's and the other forms' fields, the
+    /// The view's fields the port doesn't use yet, or uses through
+    /// the forms that read them: the forms' windows (1010:08d7,
+    /// [`Windows`]), the main screen's and the other forms' fields, the
     /// tool and the mouse (`1110:5fb2`..), the TV (1048:25ea, but the news
     /// archive, which is the world's), the drawing's tables (1050:313a), the pressed buttons
     /// (`1110:651a`).
@@ -225,6 +226,166 @@ pub const WINDOW_FORMS: [Option<&str>; 17] = [
     Some("umenuform"),
     Some("Uebersichtsmap2"),
 ];
+
+/// The slots of [`WINDOW_FORMS`]. // 1110:646c
+pub mod window {
+    pub const AUCTION: usize = 0;
+    pub const BUILD_MENU: usize = 1;
+    pub const FILE_MENU: usize = 2;
+    pub const QUIT_QUESTION: usize = 3;
+    pub const MONEY_MENU: usize = 4;
+    pub const TOOLTIP: usize = 5;
+    pub const HIGH_SCORES: usize = 6;
+    pub const INFO_BOX: usize = 7;
+    pub const COMPASS: usize = 8;
+    pub const TV: usize = 9;
+    pub const SABOTAGE: usize = 12;
+    pub const MAIN_SCREEN: usize = 13;
+    pub const END_FORM: usize = 14;
+    pub const BUILDINGS_OVERVIEW: usize = 15;
+    pub const OVERVIEW_MAP: usize = 16;
+}
+
+/// The forms whose saved `Top`, `Left`, `Width` and `Height`
+/// `load_window_positions` reads and drops: the quit question, the
+/// compass and the end form, which keep where and how big they are. The
+/// set constant at `1110:148e` (`0c 4d 00`, `[2, 3, 8, 10, 11, 14]`, the
+/// same in the later build) also holds the file menu and the empty
+/// slots, which the loop skips before. // 1010:08d7, en 1000:2cb6
+pub const KEEP_PLACE: [usize; 3] = [window::QUIT_QUESTION, window::COMPASS, window::END_FORM];
+
+/// The forms `load_window_positions` doesn't show even when the file has
+/// them shown: the TV and the buildings' overview, which it hides
+/// instead if they're shown (the file menu isn't read). // 1010:0a65
+pub const NEVER_SHOWN: [usize; 2] = [window::TV, window::BUILDINGS_OVERVIEW];
+
+/// The destinations of a window's six fields. // 1010:0799, 1010:08d7
+const WINDOW_DESTS: [&str; 6] = [
+    "[1110:646c[i]].Top",
+    "[1110:646c[i]].Left",
+    "[1110:646c[i]].Width",
+    "[1110:646c[i]].Height",
+    "[1110:646c[i]].Visible",
+    "[1110:646c[i]].Enabled",
+];
+
+/// A form's window as a map file keeps it: `Top`, `Left`, `Width`,
+/// `Height` and the bytes at `+0x29` (`Visible`) and `+0x2a`
+/// (`Enabled`). // 1010:0799
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Window {
+    pub top: i16,
+    pub left: i16,
+    pub width: i16,
+    pub height: i16,
+    pub visible: u8,
+    pub enabled: u8,
+}
+
+impl Window {
+    /// The window on the screen.
+    #[must_use]
+    pub fn rect(&self) -> vcl::Rect {
+        vcl::Rect::new(
+            i32::from(self.left),
+            i32::from(self.top),
+            i32::from(self.width),
+            i32::from(self.height),
+        )
+    }
+
+    /// Its `Visible`.
+    #[must_use]
+    pub fn shown(&self) -> bool {
+        self.visible != 0
+    }
+}
+
+/// The windows of the 17 forms of [`WINDOW_FORMS`], as a map file keeps
+/// them: none for the file menu (2), zeros for the empty slots (10, 11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Windows(pub [Window; 17]);
+
+impl Windows {
+    /// The `n`th window of the file, which is form `n` but the file
+    /// menu's that isn't saved.
+    fn occurrence(form: usize) -> Option<usize> {
+        match form {
+            window::FILE_MENU => None,
+            f if f < window::FILE_MENU => Some(f),
+            f => Some(f - 1),
+        }
+    }
+
+    /// The windows `get` gives the bytes of (a destination of
+    /// [`WINDOW_DESTS`] and its occurrence), none if no window has
+    /// anything but zeros: a file the port wrote before it kept the
+    /// windows, which loading leaves alone. // 1010:08d7
+    fn read(get: impl Fn(&str, usize) -> Option<Vec<u8>>) -> Option<Windows> {
+        let mut out = Windows::default();
+        let mut any = false;
+        for (form, w) in out.0.iter_mut().enumerate() {
+            let Some(n) = Windows::occurrence(form) else { continue };
+            let bytes: Vec<Vec<u8>> = WINDOW_DESTS.iter().map(|d| get(d, n).unwrap_or_default()).collect();
+            let word = |k: usize| bytes[k].get(..2).map_or(0, |b| i16::from_le_bytes([b[0], b[1]]));
+            let byte = |k: usize| bytes[k].first().copied().unwrap_or(0);
+            *w = Window {
+                top: word(0),
+                left: word(1),
+                width: word(2),
+                height: word(3),
+                visible: byte(4),
+                enabled: byte(5),
+            };
+            any |= *w != Window::default();
+        }
+        any.then_some(out)
+    }
+
+    /// The windows among the view's `fields` (`MapView::unported`).
+    #[must_use]
+    pub fn from_fields(fields: &Fields) -> Option<Windows> {
+        Windows::read(|dest, n| fields.get(dest, n).map(<[u8]>::to_vec))
+    }
+
+    /// The windows of `save`.
+    #[must_use]
+    pub fn from_map(save: &SaveGame) -> Option<Windows> {
+        Windows::read(|dest, n| save.fields(dest).nth(n).map(<[u8]>::to_vec))
+    }
+
+    /// Puts the windows into the view's `fields` for `save_map`: the file
+    /// menu's isn't saved, the empty slots are zeros. // 1010:0799
+    pub fn store(&self, fields: &mut Fields) {
+        for (form, w) in self.0.iter().enumerate() {
+            let Some(n) = Windows::occurrence(form) else { continue };
+            let w = if WINDOW_FORMS[form].is_some() {
+                *w
+            } else {
+                Window::default()
+            };
+            let values = [
+                w.top.to_le_bytes().to_vec(),
+                w.left.to_le_bytes().to_vec(),
+                w.width.to_le_bytes().to_vec(),
+                w.height.to_le_bytes().to_vec(),
+                vec![w.visible],
+                vec![w.enabled],
+            ];
+            for (dest, v) in WINDOW_DESTS.into_iter().zip(values) {
+                fields.set(dest, n, &v);
+            }
+        }
+    }
+}
+
+/// Whether `save` has the money menu shown: `load_window_positions`
+/// gives the form its saved height, which 1070:2617 asks for. None for
+/// a file without windows. // 1010:08d7
+#[must_use]
+pub fn money_menu_shown(save: &SaveGame) -> Option<bool> {
+    Windows::from_map(save).map(|w| w.0[window::MONEY_MENU].height > 0)
+}
 
 /// Where `load_window_positions` puts a form whose saved window is
 /// `form` on the `screen` the game lays out for: its saved top left,
@@ -859,7 +1020,9 @@ impl World {
         // BUG(original): an oil slick going on (1110:0088) isn't saved; the loaded game takes the flag of the one in memory (fix.saved_state: the chunk's).
         self.oil_slick = before.oil_slick;
         self.finances.frozen = before.finances.frozen;
-        // The money menu stays as it is.
+        // A file without windows (the port's before it kept them) leaves
+        // the money menu as it is; [`World::load_map`] gives it the
+        // file's.
         self.money_menu_shown = before.money_menu_shown;
         // BUG(original): the people's lane, 1110:6fce, last building, beach and 1110:3c42 aren't saved (fix.saved_state: the chunk's).
         let (p, q) = (&mut self.people, &before.people);
@@ -908,6 +1071,11 @@ impl World {
     pub fn load_map(&self, save: &SaveGame) -> Result<World, crate::world::Error> {
         let mut w = World::from_map(save)?;
         w.keep_unsaved(self);
+        // The money menu has the height of its saved window
+        // (`load_window_positions`, 1010:08d7).
+        if let Some(shown) = money_menu_shown(save) {
+            w.money_menu_shown = shown;
+        }
         // A file without the port's chunk leaves the fixes as they are,
         // and takes the game folder's language.
         w.set_loaded_fixes(crate::enhance::fixes_in(&save.trailing, self.fixes));
@@ -1072,6 +1240,42 @@ mod tests {
         assert_eq!(keep_on_screen(r(-5, -5, 200, 100), (800, 600)), (-5, -5));
         assert_eq!(keep_on_screen(r(320, 272, 640, 479), (800, 600)), (160, 121));
     }
+
+    #[test]
+    fn windows_in_the_fields() {
+        // Nothing but zeros: no windows.
+        assert_eq!(Windows::from_fields(&Fields::default()), None);
+        let mut w = Windows::default();
+        for (form, x) in w.0.iter_mut().enumerate() {
+            let n = i16::try_from(form).unwrap();
+            *x = Window {
+                top: n,
+                left: 100 + n,
+                width: 200 + n,
+                height: -n,
+                visible: 1,
+                enabled: u8::try_from(form % 2).unwrap(),
+            };
+        }
+        let mut fields = Fields::default();
+        w.store(&mut fields);
+        // The file menu's isn't saved: the 4th window is form 4's.
+        assert_eq!(fields.get("[1110:646c[i]].Left", 3), Some(&104i16.to_le_bytes()[..]));
+        // 16 windows, the empty slots as zeros.
+        assert_eq!(fields.get("[1110:646c[i]].Top", 9), None);
+        assert!(fields.get("[1110:646c[i]].Top", 15).is_some());
+        let back = Windows::from_fields(&fields).unwrap();
+        for form in 0..17 {
+            let expected = if [window::FILE_MENU, 10, 11].contains(&form) {
+                Window::default()
+            } else {
+                w.0[form]
+            };
+            assert_eq!(back.0[form], expected, "form {form}");
+        }
+        assert_eq!(back.0[window::MONEY_MENU].rect(), vcl::Rect::new(104, 4, 204, -4));
+    }
+
     use crate::world::{BuildingSite, Facility, House, Plot};
 
     #[test]

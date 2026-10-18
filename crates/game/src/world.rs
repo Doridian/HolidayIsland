@@ -1163,8 +1163,9 @@ pub struct World {
     /// while it is, every booking works out this year's total
     /// ([`World::geldmenu_refresh`]). The view's state, which the books
     /// follow, so it's the world's and changes by command
-    /// (`crate::geldmenu::Action::Shown`). Not in the map file. Single
-    /// human: player 1's form.
+    /// (`crate::geldmenu::Action::Shown`). A map file has it as the
+    /// form's saved window, whose height loading gives the form
+    /// (1010:08d7). Single human: player 1's form.
     pub money_menu_shown: bool,
     /// The news archive (`crate::news`). Which news open the TV is the
     /// player's view's (`crate::optionen::Settings::news`).
@@ -1607,7 +1608,9 @@ impl World {
             tables: Arc::default(),
             random: Random::default(),
             unported: Fields::default(),
-            money_menu_shown: false,
+            // `load_window_positions` gives the money menu its saved
+            // height (1010:08d7).
+            money_menu_shown: crate::savegame::money_menu_shown(save).unwrap_or(false),
             news: news(save)?,
             // The port's chunk, if the file has one; else the original.
             // Whoever starts the game from a file without it gives the

@@ -532,6 +532,16 @@ impl Forms {
             &schliessen,
             info.language,
         );
+        // The quit question and the end form are where their DFMs put
+        // them until they're first shown, which a map file keeps of them
+        // (1010:0799).
+        let ende_form = load_form(exe, "TENDEFORM");
+        let schluss_form = load_form(exe, "TSCHLUSSFORM");
+        let mut ende = ende;
+        let mut schluss = schluss;
+        let at = |f: &Form| f.components.first().map_or((0, 0), |c| (c.bounds.left, c.bounds.top));
+        (ende.left, ende.top) = at(&ende_form);
+        (schluss.left, schluss.top) = at(&schluss_form);
         Forms {
             settings,
             pause,
@@ -552,9 +562,9 @@ impl Forms {
             umenu: parts.umenu.take().expect("the buildings' overview is made"),
             umenu_form: load_form(exe, "TUMENUFORM"),
             ende,
-            ende_form: load_form(exe, "TENDEFORM"),
+            ende_form,
             schluss,
-            schluss_form: load_form(exe, "TSCHLUSSFORM"),
+            schluss_form,
             high: parts.high.take().expect("the high scores are made"),
             high_form: load_form(exe, "THIGHSCOREFORM"),
             credits,
@@ -1007,11 +1017,10 @@ impl Game {
                 self.forms.settings = s;
             }
             let rest = self.view_rest.clone();
+            // The TV and the buildings' overview were closed with the
+            // windows (`Game::load_windows`, 1010:08d7).
             self.forms.overview.load(&rest);
             self.forms.tv.load_fields(&rest);
-            let r = self.forms.tv.close();
-            self.tv_response(r);
-            self.forms.umenu.hide();
             self.forms.money.load_fields(&rest);
             let r = self.forms.money.loaded(&self.world);
             self.money_response(r);
@@ -2105,6 +2114,7 @@ impl Game {
 
     /// What the forms add to the view's fields of the map file.
     pub(crate) fn forms_save(&self, rest: &mut Fields) {
+        self.save_windows(rest);
         self.forms.overview.save(rest);
         self.forms.tv.store_fields(rest);
         self.forms.money.store_fields(rest);

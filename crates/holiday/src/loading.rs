@@ -329,6 +329,9 @@ impl Setup {
             _ => {}
         }
         game.set_view_enhancements(self.config.view);
+        if !matches!(self.kind, Kind::Island) {
+            game.start_from_file();
+        }
         game
     }
 
@@ -542,27 +545,28 @@ impl GameParts {
         let (tools, menu_form) = tools.expect("the build menu is made");
         // The other forms, and what the map holds of them.
         let mut forms = Forms::assemble(forms, dir, exe, &font, &info, options, size);
-        // 10b8:50de, from `load_map` only: a generated island's overview
-        // map keeps what its constructor (10b8:4538) set, no button down
-        // and the land by heights, where the missing fields' zeros would
-        // put button 0 down and draw a picture over the menu's left scroll
+        let mut commands = Vec::new();
+        // A scenario's or a saved game's forms get the file's windows
+        // and fields once the view's enhancements are set
+        // (`Game::start_from_file`). A generated island's overview map
+        // keeps what its constructor (10b8:4538) set, no button down and
+        // the land by heights, where the missing fields' zeros would put
+        // button 0 down and draw a picture over the menu's left scroll
         // arrow.
-        if origin.is_some() {
-            forms.overview.load(&view_rest);
+        if origin.is_none() {
+            forms.overview.game_start(&world);
+            forms.tv.load_fields(&view_rest);
+            let closed = forms.tv.close();
+            sound.borrow_mut().tv_media(&closed.media, &forms.settings);
+            commands = closed
+                .actions
+                .into_iter()
+                .map(|action| Command { player: 1, action })
+                .collect();
+            forms.money.load_fields(&view_rest);
+            let _ = forms.money.loaded(&world);
         }
-        forms.overview.game_start(&world);
-        forms.tv.load_fields(&view_rest);
-        // 1010:0ac1: the TV closes, which lets the game go on.
-        let closed = forms.tv.close();
-        sound.borrow_mut().tv_media(&closed.media, &forms.settings);
-        let commands = closed
-            .actions
-            .into_iter()
-            .map(|action| Command { player: 1, action })
-            .collect();
         forms.compass.draw_knob(&mut screen.corner);
-        forms.money.load_fields(&view_rest);
-        let _ = forms.money.loaded(&world);
         Game {
             lights_random: Random::new(seed()),
             forms,

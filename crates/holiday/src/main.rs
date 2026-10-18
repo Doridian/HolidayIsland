@@ -55,6 +55,7 @@ mod loading;
 mod sound;
 mod stacking;
 mod upgrade;
+mod windows;
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -729,7 +730,8 @@ impl Game {
             .world_changed(t, 1, &self.world, &self.font, &self.tiles, &self.info, view, self.size);
         self.show_tools();
         if t.loaded {
-            self.stack.loaded();
+            // `load_map`'s windows (1010:08d7), before the units after it.
+            let shown = self.load_windows(windows::Loading::FileMenu);
             // BUG(original): the main screen's place for the end of an earthquake isn't saved; after a game loaded in the middle of one, its end puts the main screen where an earlier one began.
             if self.world.earthquake && self.screen.enhance.has(enhance::Enhancement::QuakeScreen) {
                 self.screen.quake_began();
@@ -754,12 +756,17 @@ impl Game {
             let rest = self.view_rest.clone();
             self.tools
                 .start(&rest, &self.world, &self.font, &self.tiles, &self.info, camera.view);
+            if self.screen.enhance.has(enhance::Enhancement::LoadedPause) && !self.forms.tv.visible {
+                // The TV's button comes up with its pause.
+                self.tools.down[3] = false;
+            }
             self.screen.draw_buttons(&self.tools.down);
             self.show_tools();
             self.screen
                 .show_people(&self.world, &self.tiles, &self.font, &self.info);
             self.screen.show_info(&self.world, &self.font, &self.info);
             self.forms_tick(t);
+            self.stack_loaded(&shown);
             return true;
         }
         if t.load_failed {
@@ -3194,6 +3201,7 @@ mod tests {
     use super::*;
 
     mod leftovers;
+    mod saved_windows;
 
     /// The screen the older tests lay out for.
     const SIZE: (i32, i32) = (800, 600);
@@ -3680,21 +3688,23 @@ mod tests {
 
     /// The main screen with the TV, the money menu, the overview map and
     /// the compass open on four desktops: the original's 640×480, 800×600
-    /// and 1024×768, and 1366×700, which has no pictures. With
-    /// `HOLIDAY_PPM` set, each goes there as `layout-WxH.ppm`.
+    /// and 1024×768, and 1366×700, which has no pictures. The main screen
+    /// is where the scenario's file has it (80, 61, saved on 800×600),
+    /// kept on the screen (1010:08d7). With `HOLIDAY_PPM` set, each goes
+    /// there as `layout-WxH.ppm`.
     #[test]
     fn layouts() {
         let Some(dir) = game_dir() else { return };
         for (size, main_at, background) in [
             ((640, 480), (0, 1), true),
             ((800, 600), (80, 61), true),
-            ((1024, 768), (192, 145), true),
-            ((1366, 700), (363, 111), false),
+            ((1024, 768), (80, 61), true),
+            ((1366, 700), (80, 61), false),
         ] {
             let h = holiday_in_a_game(&dir, size, Config::ORIGINAL);
             assert_eq!(h.size, size, "{size:?} is laid out for as it is");
             let game = h.game.as_ref().unwrap();
-            assert_eq!((game.screen.left, game.screen.top), main_at, "centred");
+            assert_eq!((game.screen.left, game.screen.top), main_at, "the file's");
             // The money menu and the compass at the top right edge
             // (1070:2e6c, 1038:2c04); the TV where the scenario's file
             // put it.
@@ -3944,17 +3954,19 @@ mod tests {
         let f = f_h.game.as_mut().unwrap();
         let main = Hauptschirm::position(SIZE.0, SIZE.1);
 
-        // `form_positions`: the money menu a column further left, whole on
-        // the screen, and two pixels higher; the build menu a row lower,
-        // level with the island; the sabotage window and the file menu
-        // over the main screen.
+        // `form_positions`: the money menu two pixels higher; the file
+        // menu over the main screen. The money menu, the build menu and
+        // the sabotage window are where the scenario's file has them
+        // both ways (1010:08d7), which `saved_windows` keeps over the
+        // main screen, centred on 800×600 as in the file: the money menu
+        // whole on the screen, the build menu at 119, the sabotage window
+        // at the DFM's place.
         let (om, fm) = (o.forms.money.bounds(), f.forms.money.bounds());
-        assert_eq!((om.right, fm.right), (SIZE.0 + 1, SIZE.0));
+        assert_eq!((om.right, fm.right), (SIZE.0, SIZE.0));
         assert_eq!(fm.height(), om.height() + 2);
-        assert_eq!(f.tools.menu.top, o.tools.menu.top + 1);
-        assert_eq!(f.tools.menu.top, main.1 + 0x3b);
+        assert_eq!((o.tools.menu.top, f.tools.menu.top), (119, 119));
         let (os, fs) = (o.tools.sabowin.as_ref().unwrap(), f.tools.sabowin.as_ref().unwrap());
-        assert_eq!((fs.left, fs.top), (os.left + main.0, os.top + main.1));
+        assert_eq!((os.left, os.top), (fs.left, fs.top));
         assert_eq!(
             (f.file_menu.menu.left, f.file_menu.menu.top),
             (o.file_menu.menu.left + main.0, o.file_menu.menu.top + main.1)
@@ -4091,7 +4103,7 @@ mod tests {
     }
 
     /// `big_map` on 1024×768 and 1280×1024, on and off: off, the
-    /// original's main screen, centred; on, one filling the screen whose
+    /// original's main screen, where the scenario's file has it; on, one filling the screen whose
     /// map view has the original's in its middle, square for square and
     /// almost pixel for pixel in every rotation, with the same scroll
     /// position, camera and viewpoint for the world; the scroll bars'
@@ -4108,8 +4120,8 @@ mod tests {
             write_png(&on_h, &format!("bigmap-{}x{}-on", size.0, size.1));
             let off = off_h.game.as_mut().unwrap();
             let on = on_h.game.as_mut().unwrap();
-            let (left, top) = Hauptschirm::position(size.0, size.1);
-            assert_eq!(off.screen.bounds(), Rect::new(left, top, 640, 479));
+            // Where the scenario's file has it (1010:08d7).
+            assert_eq!(off.screen.bounds(), Rect::new(80, 61, 640, 479));
             assert_eq!(off.screen.view_size(), darstellung::ViewSize::ORIGINAL);
             assert_eq!(on.screen.bounds(), Rect::new(0, 0, size.0, size.1));
             let view = on.screen.view_size();

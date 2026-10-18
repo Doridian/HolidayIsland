@@ -394,6 +394,20 @@ enhancements! {
     /// save: its end puts the main screen where an earlier one began
     /// (en 1028:02b1, en 1028:05f7).
     QuakeScreen = "quake_screen";
+    /// A loaded game's windows keep their places over the main screen,
+    /// which stays where the screen has it (centred, or filling it with
+    /// `big_map`), and stay whole on the screen, whatever screen the file
+    /// was saved on (1010:08d7, `docs/layout.md`, "Saved windows").
+    SavedWindows = "saved_windows";
+    /// Loading a game doesn't show a form again that it can't fill: the
+    /// end form, the info box and the tooltip a file saved shown come
+    /// back empty or with another game's contents in the original
+    /// (1010:08d7).
+    LoadedForms = "loaded_forms";
+    /// Loading a game ends the TV's pause, and the TV's button comes up:
+    /// a game saved with the TV open no longer loads paused without its
+    /// TV, until the TV is opened and closed again (1010:08d7, 1048:077a).
+    LoadedPause = "loaded_pause";
 }
 
 /// The world fixes that may only be off with one human in the game: off,
