@@ -332,6 +332,90 @@ front, but those whose `HAUSPOS.DAT` row's last column is 1 (or 2, for
 walkers). The port draws the island first and the people over it,
 instead of keeping what's under them.
 
+## Does it change the world? (audit)
+
+The plan was to take the people out of the `World` into a simulation of
+each player's view, keeping only the records that are real game state.
+Before doing that, every reader and writer of the table and of the two
+marker layers was checked, in the port and in the English build
+(`GH_PROGRAM=HOLIDAY_EN.EXE tools/gh xrefs` of `people`, en `1118:7802`,
+and the layers, en `1118:5740` and `1118:5744`). Addresses are the
+German build's, "en" the English build's. The answer: much more than
+the oil reads them, so the move is on hold.
+
+### Who reads them outside the people's own code
+
+| Reader | Reads | What it changes |
+|---|---|---|
+| Raising land, `check_raise` (10b0:0291, en 10b8:0291; the port's `terrain.rs`) | `551c` on the square | Any marker fails the raise with error 0x1c. Ships, boats, surfers, walkers, oil and a landing plane's runway all mark their squares, so a ship sailing by decides whether the player's raise works and what it costs. The raise and lower tools (`raise_tool`, `lower_tool`, 1028:3b7c, 1028:3a68, en 1018:3ccf) also clear record 0's kind |
+| The rentals, settlement step 0x78 (1008:15dd, 1008:16be, en 1008:19ab, 1008:1a8c) | `551c` at the rental: how many of its people are out | Sends one more (`add_person`) or calls one back (`remove_first_at_home`, 1088:2c3b). The settlement draws `Random(2)` for the kind whatever happens, and `add_person` more for some kinds |
+| `find_road`, `find_sea` (1010:1f8f, 1010:20e0) through `road_square_free` and `open_sea` (1010:1efa, 1010:1f2d) and `markers_free` (1010:1ea5) | Both layers | Where a rental's person and a surfing championship's surfers (`send_surfers`, 10a0:10c6) go, and whether they come at all: anyone already on a square, a passing boat too, keeps them off it |
+| The oil slick, `oil_slick_start` (10a0:074d, en 10a8:074d) | `anyone_at` (1088:4b93) on each square of the walk | A square with anyone on it gets no oil and no `Random(3)` for its kind, so the people on the sea change the world's random numbers and where the oil goes |
+| The oil slick's end (10a0:0915) | The oil records | Expected: the oil is the event's state |
+| `send_person` (1090:1a25), from `building_slice` (1078:0002) in the buildings' slice of the tick | `person_at` (1088:4ae2) at the building | Whether a building sends someone. It draws from the world's RNG (`Random(35)`, `Random(30)`, `Random(3)` and the kinds' own) only when nobody of the kind is there. `building_slice` draws its `Random(100)` per building before that. These people come from every building on the island, not only near the view |
+| The planes' landing (1090:2ce5) | Sabotage 5 (soft soap) on the runway | A plane landing on soapy runway skids, ends the sabotage (10a0:0e17) and crashes: the square past the runway is demolished (1078:280b, en 1098:515d and 1098:51ee call en 1080:280b). The planes are sent by the airports through `send_person`, island-wide |
+| `replace_building`, `clear_property`, `flood_start` (10a0:0026, 10a0:09ea, 10a0:0b49) | The records on the squares | Writers: they take people away (and `clear_property`, `flood_start` demolish), nothing they do depends on who was there |
+| The saves (`load_globals`, `save_globals`, 1000; `save_people`, `load_people`, 1088:8950, 1088:8a07) | Everything | The table, its tables and both layers are in the original's file |
+
+### What adds them
+
+| Who | Kinds | From |
+|---|---|---|
+| `spawn_people` (1090:2373), every tick while people move | Ships (2) and boats (3) anywhere on the map (`Random(250)` twice each, every tick); near the view: tennis and stage spectators, builders, taxiing planes, jetty boats, a harbour's sound | The view's `1110:5536` squares for the second part only |
+| `send_person` from `building_slice` | Everything at the buildings' doors, planes (7–9), harbour ships (0x22–0x24), the helicopter | Every building, the world's RNG |
+| The rentals (settlement) | Walkers 0x11–0x16, surfers 0x20, 0x21 | The world's RNG; counted in `551c` |
+| A surfing championship (sabotage's countdowns, 10a0:10c6) | Surfers | Counted on the beach |
+| The oil slick (10a0:074d) | Oil 0x2b–0x2d | An event |
+| Sabotage (`sabotage_starts`, 10a0:19d2; `sabotage_blow_up`, 10a0:1000) | The shark's diver (kind 3, a boat's kind), the explosion | Sabotage |
+| The TV (`fernseher_show`, 1048:12e9) | The sale sign 0x46 | The news |
+| Raising and lowering, at an error (10b0:069f, 10b0:1907) | 0x2a, a picture by the square's form | The terrain tools |
+| Demolishing (`remove_people_from`, 1088:6975), the walkers' end (1090:5293), the planes | 0x25, 0x19 | Writers |
+
+### What it means for the plan
+
+Only the oil and the event-made records (the shark's diver, the
+explosion, the sale sign, the championship's surfers) were expected to
+matter. Besides them:
+
+1. **Every marking kind blocks raising land** (`check_raise`). Ships and
+   boats come from `spawn_people` every tick anywhere on the sea; with
+   them in a view's simulation, the same raise command would succeed
+   for one peer and fail for another, or the world would have to stop
+   checking for them.
+2. **The planes are sent by the buildings' tick, island-wide, and with
+   soft soap they demolish a building.** They aren't near-view
+   decoration; one crash is world state (a building, the sabotage's
+   end).
+3. **The rentals' people are the settlement's.** It counts them in the
+   layer and adds or takes one each month-step, drawing from the
+   world's RNG; their walking (they leave at a road's end, which lets
+   the rental send another) feeds back into that.
+4. **Who stands where changes the world's random numbers** in
+   `send_person` (from `building_slice`), the oil slick, `find_road`
+   and `find_sea`. Taking any kind out of the world changes those
+   draws, and so everything after them.
+5. The view isn't what drives most of it: of the adding, only the second
+   half of `spawn_people` (spectators, builders, taxiing planes, jetty
+   boats) and `people_refresh` use the view's squares; `people_tick`
+   moves every record wherever it is. What the view does change is where
+   the pictures go (the fields set from `Viewpoint`), which sounds play,
+   and the walkers' `Random(100)` and `Random(3)` and a few kinds'
+   sound `Random`s, drawn only for squares the player sees.
+
+So the near-view part could go to the view on its own (spectators,
+builders, taxiing planes, jetty boats, the harbour sounds, and the
+walkers' and sounds' seen-only draws), but the ships, boats, planes,
+rentals' people and everyone the buildings send are part of the world
+as the original runs it. Which of those to keep in the world, and
+whether the raise check and the RNG draws above may change with the
+fix on, is a decision for later.
+
+Found on the way, not yet checked against the code: the shark's diver
+is kind 3, the boats' kind, and when its time is up `person_animate`
+takes one off the boats' count (`1110:6ff0`) it never added, so each
+shark lets one more boat come (1098:109f; it looks like a bug of the
+original).
+
 ## Open questions
 
 - What `+0x14` is; what the planes' second halves are (a shadow on the
