@@ -100,6 +100,9 @@ enhance_not_saved = "Änderungen gelten sofort, aber nur bis zum Beenden (keine 
 enhance_command_line = "Beim nächsten Start gehen --original und --enhance wieder vor."
 enhance_screen_off = "INFO zeigt nun die Mitwirkenden (zurück: enhance.enhancements_screen=on)."
 enhance_hint = "Die Maus über einer Zeile zeigt hier, was sie ändert."
+# The host's option for games with several players (crate::simulation).
+auction_timeout = "Wartezeit der Auktion (Sekunden)"
+auction_timeout_description = "Mit mehreren Spielern und \"Auktion wartet\": wie lange eine Auktion wartet, bis jeder Spieler sie gestartet oder gepasst hat. Wer dann nicht hat, gilt als ausgestiegen."
 
 # The enhancements' short names and one-line descriptions, by their keys
 # (crate::enhance).

@@ -348,6 +348,11 @@ texts! {
     EnhanceScreenOff = "port.enhance_screen_off",
     /// Before the mouse is over a row.
     EnhanceHint = "port.enhance_hint",
+    /// The host's option of how long an auction waits for the human
+    /// seats (`crate::simulation::Options::auction_timeout`), its label
+    /// and what it does.
+    AuctionTimeout = "port.auction_timeout",
+    AuctionTimeoutDescription = "port.auction_timeout_description",
 }
 
 impl Text {

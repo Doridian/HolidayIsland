@@ -33,6 +33,13 @@ pub struct Clock {
     /// The game is paused while the TV shows a message (1048:12e9 sets it,
     /// 1048:077a clears it). // 1110:0067
     pub paused: bool,
+    /// The host's pause: the pause form stopped the clock for everyone
+    /// (`AnimationsTimer` off, 1020:24a0), and nothing of the world
+    /// runs. A port extension for several human clients
+    /// ([`crate::command::Action::Pause`], the host's): with one, the
+    /// view just doesn't tick while its pause form is up, as the
+    /// original, and this stays off. Not in the map file.
+    pub stopped: bool,
 }
 
 impl Default for Clock {
@@ -44,6 +51,7 @@ impl Default for Clock {
             speed: 4,
             slice: 0,
             paused: false,
+            stopped: false,
         }
     }
 }
@@ -64,7 +72,18 @@ pub struct Options {
     /// "Auktion wartet": an auction stands until the player starts it.
     /// // 1110:0063
     pub auction_waits: bool,
+    /// With several human seats and "Auktion wartet", how many ticks an
+    /// auction waits for the seats to start it or pass; then the seats
+    /// that haven't count as passed (`crate::auction`). The host's
+    /// ([`crate::command::Action::AuctionTimeout`]), in world ticks so
+    /// every peer counts the same. A port extension: the original's one
+    /// human starts it whenever they like. Saved in the port's chunk
+    /// (`options.auction_timeout`).
+    pub auction_timeout: u16,
 }
+
+/// [`Options::auction_timeout`]'s default: 30 s of [`TICK_MS`].
+pub const AUCTION_TIMEOUT: u16 = 300;
 
 impl Default for Options {
     /// // 1000:1ea0
@@ -74,6 +93,7 @@ impl Default for Options {
             people_move: true,
             people_spawn: true,
             auction_waits: true,
+            auction_timeout: AUCTION_TIMEOUT,
         }
     }
 }
@@ -121,7 +141,14 @@ pub struct Tick {
     pub view_people: Vec<crate::people::Person>,
     /// The scenario was won or lost ([`World::january_second`]): the
     /// original shows the end of the game (`schlussform`, 1068:1016).
+    /// With several human seats the game's end for everyone: the first
+    /// winner's results, or a loss for all (seat 0) when every human seat
+    /// is out; each view shows its seat's from [`Tick::seat_results`]
+    /// ([`Tick::results_for`]).
     pub game_over: Option<GameOver>,
+    /// With several human seats, each seat's own results as the game
+    /// ends or as the seat goes out (decision 9). Empty with one human.
+    pub seat_results: Vec<GameOver>,
     /// The books changed: the original refreshes the money menu
     /// (1070:2617), working out this year's total (1070:1452) if it's
     /// shown.
@@ -144,11 +171,13 @@ pub struct Tick {
     /// only has messages for player 1.
     pub status: Vec<(u8, Status)>,
     /// The build menu's submenus the player's building took a type off
-    /// (1018:26b9): the original selects their first row again.
-    pub build_menu_removed: Vec<u8>,
+    /// (1018:26b9), with the seat whose menu it is: the original selects
+    /// their first row again. Single human: the menu is player 1's.
+    pub build_menu_removed: Vec<(u8, u8)>,
     /// The human built a type there's only one of: the original presses
-    /// the pointer's button (1078:1d21, 1010:2c8b).
-    pub pointer_tool: bool,
+    /// the pointer's button (1078:1d21, 1010:2c8b). The seat that built
+    /// it; single human: player 1.
+    pub pointer_tool: Option<u8>,
     /// The year ended ([`World::year_end`]): with the player's option
     /// `1110:0064` (the view's `crate::optionen::Settings::year_balance`)
     /// the original then shows the money menu's balance sheet (1070:2b11
@@ -210,6 +239,9 @@ pub enum Status {
 /// How a game ended. // 1008:0512
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GameOver {
+    /// Whose results these are: 1 for the original's human; with several
+    /// human seats the seat, or 0 in [`Tick::game_over`] when all lost.
+    pub seat: u8,
     /// Won, or lost. // 1110:0071
     pub won: bool,
     /// For a won game without cheating, the score (0–100) the original
@@ -218,6 +250,20 @@ pub struct GameOver {
     pub score: Option<i32>,
     /// The player's net worth for the high scores (1008:0c6e).
     pub net_worth: i32,
+}
+
+impl Tick {
+    /// What the end form of a view of `seat` shows: the seat's own
+    /// results ([`Tick::seat_results`]) or, with one human or for a seat
+    /// that has none (a spectator's), the game's end ([`Tick::game_over`]).
+    #[must_use]
+    pub fn results_for(&self, seat: u8) -> Option<GameOver> {
+        self.seat_results
+            .iter()
+            .find(|r| r.seat == seat)
+            .copied()
+            .or(self.game_over)
+    }
 }
 
 impl World {
@@ -235,6 +281,15 @@ impl World {
     /// (1020:24a0) and nothing else runs.
     pub fn tick(&mut self) -> Tick {
         let mut tick = Tick::default();
+        // BUG(original): one player's dialog stops the clock for everyone (1020:24a0; design issue for multiplayer: with several humans only the host's pause, a command, decisions 8 and 11).
+        // Single human: the pause form, the options, the quit question
+        // and the end form stop the view's clock, which then doesn't
+        // tick. With several human clients a client's dialog stops
+        // nothing, and only the host's pause stops the world for
+        // everyone, as a command (`Clock::stopped`).
+        if self.clock.stopped {
+            return tick;
+        }
         self.auction_tick(&mut tick);
         if !self.auction.open {
             self.animations_timer(&mut tick);

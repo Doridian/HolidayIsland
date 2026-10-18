@@ -363,3 +363,471 @@ fn one_human_is_the_original() {
     assert_eq!(a, b);
     assert_eq!(a.fixes, Fixes::ORIGINAL);
 }
+
+// Small worlds of no game folder: the multiplayer behaviours of phase 2,
+// each on a few peers that must stay the same world.
+
+/// Peers of `world`, each fed the same clients' commands and ticks, whose
+/// worlds are checked to stay the same after every step.
+struct Peers(Vec<World>);
+
+impl Peers {
+    fn new(world: &World, n: usize) -> Self {
+        Peers(vec![world.clone(); n])
+    }
+
+    /// The clients' `commands`, then `ticks` ticks; the ticks' results of
+    /// the first peer.
+    fn step(&mut self, commands: &[ClientCommand], ticks: usize) -> Vec<game::simulation::Tick> {
+        let mut out = Vec::new();
+        for (k, w) in self.0.iter_mut().enumerate() {
+            let mut ticks_out = Vec::new();
+            for c in commands {
+                ticks_out.push(w.apply_client(c.clone()));
+            }
+            for _ in 0..ticks {
+                ticks_out.push(w.tick());
+            }
+            if k == 0 {
+                out = ticks_out;
+            }
+        }
+        self.check();
+        out
+    }
+
+    fn check(&self) {
+        let h = hash(&self.0[0]);
+        assert!(self.0.iter().all(|w| hash(w) == h), "the peers differ");
+    }
+
+    fn world(&self) -> &World {
+        &self.0[0]
+    }
+
+    fn each(&mut self, f: impl Fn(&mut World)) {
+        for w in &mut self.0 {
+            f(w);
+        }
+        self.check();
+    }
+}
+
+fn join(client: Client, seat: u8) -> ClientCommand {
+    from(HOST, Action::Seat(SeatChange::Join { client, seat }))
+}
+
+/// A world of four players without computers' turns, at the default
+/// speed, as a game folder isn't needed for: the host in seat 1, a
+/// partner of theirs in seat 1 (co-op) and a client in seat 2.
+fn small() -> Peers {
+    let mut w = World {
+        player_count: 4,
+        computers_play: false,
+        ..World::default()
+    };
+    w.options.animations = false;
+    let mut peers = Peers::new(&w, 3);
+    peers.step(&[join(PARTNER, 1), join(SEAT_2, 2)], 0);
+    assert!(peers.world().seats.multiplayer());
+    peers
+}
+
+/// Decision 5: with several humans neither the news' TV nor its button
+/// pause the game; with one, the TV pauses it as the original's.
+#[test]
+fn the_tv_pauses_nothing_with_several_humans() {
+    let mut alone = World {
+        computers_play: false,
+        ..World::default()
+    };
+    let mut tick = game::simulation::Tick::default();
+    alone.post_message(game::news::Message::default(), &mut tick);
+    alone.apply_client(from(HOST, Action::ShowTv(0)));
+    assert!(alone.clock.paused);
+    alone.apply_client(from(HOST, Action::TvPause(false)));
+    assert!(!alone.clock.paused);
+
+    let mut peers = small();
+    peers.each(|w| {
+        let mut tick = game::simulation::Tick::default();
+        w.post_message(game::news::Message::default(), &mut tick);
+    });
+    let date = peers.world().date;
+    peers.step(
+        &[
+            from(HOST, Action::ShowTv(0)),
+            from(SEAT_2, Action::ShowTv(0)),
+            from(PARTNER, Action::TvPause(true)),
+        ],
+        30,
+    );
+    assert!(!peers.world().clock.paused);
+    assert_ne!(peers.world().date, date, "the clock went on");
+}
+
+/// Pause and speed are the host's world commands: the host's pause stops
+/// the world for every peer, another client's does nothing, and with one
+/// human the command does nothing (the view stops its own clock).
+#[test]
+fn the_hosts_pause_stops_the_world() {
+    let mut alone = World::default();
+    alone.apply_client(from(HOST, Action::Pause(true)));
+    assert!(!alone.clock.stopped);
+
+    let mut peers = small();
+    peers.step(
+        &[from(SEAT_2, Action::Pause(true)), from(PARTNER, Action::Pause(true))],
+        1,
+    );
+    assert!(!peers.world().clock.stopped);
+    peers.step(&[from(HOST, Action::Pause(true))], 0);
+    let stopped = peers.world().clone();
+    peers.step(&[], 50);
+    assert_eq!(peers.world(), &stopped, "nothing runs while paused");
+    peers.step(&[from(HOST, Action::Pause(false))], 30);
+    assert_ne!(peers.world().clock, stopped.clock);
+    // The last other client leaving takes the pause with it.
+    peers.step(&[from(HOST, Action::Pause(true))], 0);
+    peers.step(
+        &[
+            from(SEAT_2, Action::Seat(SeatChange::Leave(SEAT_2))),
+            from(PARTNER, Action::Seat(SeatChange::Leave(PARTNER))),
+        ],
+        0,
+    );
+    assert!(!peers.world().clock.stopped);
+}
+
+/// An auction of item 7 at 10 000 opening on the next tick, with money
+/// for everyone.
+fn auction(peers: &mut Peers, waits: bool, timeout: u16) {
+    peers.each(|w| {
+        w.options.auction_waits = waits;
+        w.options.auction_timeout = timeout;
+        w.finances.money = [1_000_000; 8];
+        w.auction.price = 10_000;
+        w.auction.start_price = 10_000;
+        w.auction.item = 7;
+        w.auction.opening = Some(1);
+    });
+}
+
+/// Decision 7: with "Auktion wartet" the auction waits for every human
+/// seat, at most the host's timeout in ticks; then the seats that didn't
+/// start it count as passed, and it begins.
+#[test]
+fn the_auction_waits_for_the_seats() {
+    let mut peers = small();
+    // Only the host sets the timeout.
+    peers.step(&[from(SEAT_2, Action::AuctionTimeout(1))], 0);
+    assert_eq!(peers.world().options.auction_timeout, game::simulation::AUCTION_TIMEOUT);
+    auction(&mut peers, true, 300);
+    peers.step(&[from(HOST, Action::AuctionTimeout(5))], 0);
+    assert_eq!(peers.world().options.auction_timeout, 5);
+    peers.step(&[], 1);
+    let a = &peers.world().auction;
+    assert!(a.open && !a.joined);
+    assert_eq!(a.waiting, Some(5));
+    // Seat 2 bids with its money, as the human, not as a computer.
+    assert_eq!(a.limits[..2], [1_000_000, 1_000_000]);
+    // Seat 1 starts it; seat 2 says nothing.
+    peers.step(&[from(HOST, Action::Auction(auction::Action::Bid))], 3);
+    let a = &peers.world().auction;
+    assert!(!a.joined);
+    assert_eq!(a.started, auction::seat_bit(1));
+    peers.step(&[], 2);
+    let a = &peers.world().auction;
+    assert!(a.joined, "the timeout ran out");
+    assert_eq!(a.passed, auction::seat_bit(2));
+    // Seat 2 can't bid now; seat 1 can.
+    peers.step(&[from(SEAT_2, Action::Auction(auction::Action::Bid))], 0);
+    assert_eq!(peers.world().auction.bidder, 0);
+    peers.step(&[from(HOST, Action::Auction(auction::Action::Bid))], 0);
+    assert_eq!(peers.world().auction.bidder, 1);
+}
+
+/// When every human seat has started it, the auction begins at once;
+/// without "Auktion wartet" it begins as it opens.
+#[test]
+fn the_auction_begins_when_all_have_started() {
+    let mut peers = small();
+    auction(&mut peers, true, 300);
+    peers.step(&[], 1);
+    peers.step(
+        &[
+            from(SEAT_2, Action::Auction(auction::Action::Bid)),
+            from(PARTNER, Action::Auction(auction::Action::Bid)),
+        ],
+        0,
+    );
+    assert!(peers.world().auction.joined);
+
+    let mut peers = small();
+    auction(&mut peers, false, 300);
+    peers.step(&[], 1);
+    let a = &peers.world().auction;
+    assert!(a.open && a.joined && a.waiting.is_none());
+}
+
+/// Co-op: either client of seat 1 starts, bids and passes for it; any
+/// human holding a button keeps the computers from bidding; the item
+/// goes to the computers only when every human seat has passed.
+#[test]
+fn co_op_bids_and_the_seats_passing() {
+    let mut peers = small();
+    auction(&mut peers, true, 300);
+    peers.step(&[], 1);
+    peers.step(
+        &[
+            from(PARTNER, Action::Auction(auction::Action::Bid)),
+            from(SEAT_2, Action::Auction(auction::Action::Bid)),
+        ],
+        0,
+    );
+    assert_eq!(
+        peers.world().auction.started,
+        auction::seat_bit(1) | auction::seat_bit(2)
+    );
+    // The partner bids for seat 1, in seat 1's colour, at seat 1's limit.
+    peers.step(&[from(PARTNER, Action::Auction(auction::Action::Bid))], 0);
+    assert_eq!(peers.world().auction.bidder, 1);
+    assert_eq!(peers.world().auction.price, 10_500);
+    // Seat 2 holds a button: no computer bids meanwhile.
+    peers.step(&[from(SEAT_2, Action::Auction(auction::Action::Hold(true)))], 0);
+    assert!(peers.world().auction.held);
+    // The host passes for seat 1; the auction goes on for seat 2.
+    peers.step(&[from(HOST, Action::Auction(auction::Action::Pass))], 0);
+    let a = &peers.world().auction;
+    assert!(a.open && a.held);
+    assert_eq!(a.passed, auction::seat_bit(1));
+    // The partner's bid doesn't count any more: seat 1 passed.
+    peers.step(&[from(PARTNER, Action::Auction(auction::Action::Bid))], 0);
+    assert_eq!(peers.world().auction.price, 10_500);
+    // Seat 2 passes too: no button is held, the form closes for everyone
+    // and the computers bid among themselves.
+    let t = peers.step(&[from(SEAT_2, Action::Auction(auction::Action::Leave))], 0);
+    let a = &peers.world().auction;
+    assert!(!a.open && !a.held);
+    assert!(t[0].auction_changes.contains(&auction::Change::Closed));
+}
+
+/// Everyone passing before it begins hands it to the computers at once.
+#[test]
+fn the_auction_with_everyone_passed() {
+    let mut peers = small();
+    auction(&mut peers, true, 300);
+    peers.step(&[], 1);
+    peers.step(
+        &[
+            from(HOST, Action::Auction(auction::Action::Pass)),
+            from(SEAT_2, Action::Auction(auction::Action::Close)),
+        ],
+        0,
+    );
+    let a = &peers.world().auction;
+    assert!(!a.open && !a.joined);
+}
+
+/// A human in seat 2 plays as a human, not with the computers'
+/// handicaps: their money is checked, they get nothing back on the
+/// harder levels, they keep books, pay the human's costs, bid with their
+/// money, and are checked for bankruptcy as player 1 (decision 9): out,
+/// they spectate.
+#[test]
+fn a_human_in_seat_2() {
+    let mut peers = small();
+    peers.each(|w| {
+        w.difficulty = 2;
+        w.finances.money = [0, -1, -1, 0, 0, 0, 0, 0];
+    });
+    let w = peers.world();
+    assert!(w.is_human(2) && !w.is_human(3));
+    // The money checks: building in the red. The computers don't need
+    // the money.
+    assert_eq!(w.can_build((30, 30), 0, 2).0, game::construction::NOT_ENOUGH_MONEY);
+    assert_ne!(w.can_build((30, 30), 0, 3).0, game::construction::NOT_ENOUGH_MONEY);
+    peers.each(|w| w.finances.money = [0; 8]);
+    // Paying: the computer gets a third back on hard, the human nothing,
+    // and the human's books have it.
+    peers.each(|w| {
+        w.add_money(2, -300);
+        w.add_money(3, -300);
+        w.book_for(2, game::accounts::BOOK_OTHER, -300);
+    });
+    let w = peers.world();
+    assert_eq!(w.finances.money[1], -300);
+    assert_eq!(w.finances.money[2], -200);
+    assert_eq!(w.book_value_of(2, game::accounts::BOOK_OTHER), -300);
+    assert_eq!(w.book_value(game::accounts::BOOK_OTHER), 0);
+    // Seat 2's insurance is its own.
+    peers.step(&[from(SEAT_2, Action::MoneyMenu(geldmenu::Action::Insurance(true)))], 0);
+    assert!(peers.world().insured_of(2) && !peers.world().insured);
+    // Bankrupt on the 2nd of January: in the red past the debt limit and
+    // last year's books negative.
+    peers.each(|w| {
+        w.finances.max_debt = 1000;
+        w.finances.money[1] = -5000;
+        w.date = game::monate::Date {
+            day: 1,
+            month: 1,
+            year: 2003,
+        };
+        w.accounting.last_day = 1;
+        w.accounting.step = 4;
+        w.clock.hour_ticks = u16::try_from(w.clock.speed - 1).unwrap();
+        w.clock.day_ticks = 6;
+    });
+    assert!(!peers.world().bankrupt(2), "last year's books aren't negative");
+    peers.each(|w| w.book_for(2, 0x5e, -1));
+    assert!(peers.world().bankrupt(2));
+    let t = peers.step(&[], 1);
+    let w = peers.world();
+    assert_eq!(w.player_out(2), 1);
+    assert_eq!(w.player_out(1), 0);
+    assert!(t[0].game_over.is_none(), "seat 1 is still in");
+    let lost = t[0].results_for(2).unwrap();
+    assert!(!lost.won && lost.seat == 2);
+    assert!(w.spectates(2) && !w.spectates(1));
+    // A spectator sends no commands; it may still leave.
+    let level = w.advertising_level(2);
+    peers.step(
+        &[from(
+            SEAT_2,
+            Action::MoneyMenu(geldmenu::Action::Advertising { more: true }),
+        )],
+        0,
+    );
+    assert_eq!(peers.world().advertising_level(2), level);
+    peers.step(&[from(SEAT_2, Action::Seat(SeatChange::Leave(SEAT_2)))], 0);
+    assert!(peers.world().seats.member(SEAT_2).is_none());
+}
+
+/// The months' check of the computers' bankruptcy (settlement step 0x64)
+/// leaves a human seat to the 2nd of January.
+#[test]
+fn a_human_seat_isnt_a_computers_bankruptcy() {
+    let mut peers = small();
+    peers.each(|w| {
+        w.finances.max_debt = 1000;
+        w.finances.money = [0, -5000, -5000, 0, 0, 0, 0, 0];
+        w.events = vec![game::events::Event::default(); game::events::EVENTS];
+        // Past the month's first day, which starts the steps again.
+        w.date.day = 2;
+        w.accounting.step = 0x63;
+        w.accounting.last_day = 2;
+        w.clock.hour_ticks = u16::try_from(w.clock.speed - 1).unwrap();
+    });
+    peers.step(&[], 1);
+    let w = peers.world();
+    assert_eq!(w.player_out(3), 1, "a computer goes out");
+    assert_eq!(w.player_out(2), 0, "a human seat doesn't");
+}
+
+/// Decision 9 and 10: in 2056 the human seats still in have won; the
+/// first ends the game for everyone, each seat has its results, and a
+/// cheat by any human takes everyone's score.
+#[test]
+fn the_first_winner_ends_the_game_for_all() {
+    for cheat in [false, true] {
+        let mut peers = small();
+        peers.each(|w| {
+            w.date = game::monate::Date {
+                day: 1,
+                month: 1,
+                year: 0x808,
+            };
+            w.accounting.last_day = 1;
+            w.accounting.step = 4;
+            w.clock.hour_ticks = u16::try_from(w.clock.speed - 1).unwrap();
+            w.clock.day_ticks = 6;
+        });
+        if cheat {
+            peers.step(&[from(SEAT_2, Action::Cheat)], 0);
+            let w = peers.world();
+            assert!(w.cheated);
+            assert_eq!(w.finances.money[1], 1_000_000_000);
+            assert_eq!(w.finances.money[0], 0);
+        }
+        let t = peers.step(&[], 1);
+        let over = t[0].game_over.expect("over");
+        assert!(over.won && over.seat == 1);
+        for seat in [1, 2] {
+            let r = t[0].results_for(seat).unwrap();
+            assert!(r.won && r.seat == seat);
+            assert_eq!(r.score.is_some(), !cheat, "seat {seat}");
+        }
+        assert!(peers.world().won);
+        // Nothing stops: the clock goes on (decision 8), and no second end.
+        let t = peers.step(&[], 200);
+        assert!(t.iter().all(|t| t.game_over.is_none()));
+    }
+}
+
+/// Each human seat drags its own road: seat 2's drag leaves seat 1's,
+/// the original's one flag, alone.
+#[test]
+fn each_seat_drags_its_own_road() {
+    let mut peers = small();
+    peers.step(&[from(SEAT_2, Action::RoadDragStart((10, 10)))], 0);
+    let w = peers.world();
+    assert!(w.road_drag(2).on && !w.road_drag(1).on && !w.road_dragging);
+    peers.step(&[from(PARTNER, Action::RoadDragStart((20, 20)))], 0);
+    peers.step(&[from(SEAT_2, Action::RoadDragCancel)], 0);
+    let w = peers.world();
+    assert!(!w.road_drag(2).on && w.road_drag(1).on && w.road_dragging);
+}
+
+/// Decision 12: a save keeps every client's view in the port's chunk and
+/// the saving client's in the original's fields, and the seats' slots;
+/// only the host loads a game in the middle of one.
+#[test]
+fn every_clients_view_saved_and_only_the_host_loads() {
+    let mut peers = small();
+    peers.step(
+        &[
+            from(SEAT_2, Action::MoneyMenu(geldmenu::Action::Insurance(true))),
+            from(HOST, Action::AuctionTimeout(77)),
+        ],
+        0,
+    );
+    let w = peers.world().clone();
+    let view = |origin: (i16, i16), scroll: (i16, i16)| MapView {
+        scroll,
+        origin: Some(origin),
+        news: [true, false, true, false],
+        ..MapView::default()
+    };
+    let (host, partner, two) = (view((1, 2), (10, 20)), view((3, 4), (30, 40)), view((5, 6), (50, 60)));
+    // The client in seat 2 saves: their view in the original's fields.
+    let map = w.to_map_with_views(&two, &[(HOST, &host), (PARTNER, &partner), (SEAT_2, &two)]);
+    let map = Arc::new(SaveGame::parse(&map.to_bytes()).unwrap());
+    assert_eq!(MapView::from_map(&map).scroll, (50, 60));
+    for (client, v) in [(HOST, &host), (PARTNER, &partner), (SEAT_2, &two)] {
+        let (back, _) = game::savegame::client_view(&map, client).unwrap();
+        assert_eq!(back.scroll, v.scroll);
+        assert_eq!(back.origin, v.origin);
+        assert_eq!(back.news, v.news);
+    }
+    assert!(game::savegame::client_view(&map, 42).is_none());
+    // Loaded as it was: the seats, their slots and the timeout.
+    let back = w.load_map(&map).unwrap();
+    assert_eq!(back.seats, w.seats);
+    assert_eq!(back.seat_slots, w.seat_slots);
+    assert!(back.insured_of(2));
+    assert_eq!(back.options.auction_timeout, 77);
+    // Only the host loads it.
+    peers.step(&[from(HOST, Action::RoadDragStart((10, 10)))], 0);
+    let before = hash(peers.world());
+    peers.step(
+        &[
+            from(SEAT_2, Action::Load(Arc::clone(&map))),
+            from(PARTNER, Action::Load(Arc::clone(&map))),
+        ],
+        0,
+    );
+    assert_eq!(hash(peers.world()), before);
+    let t = peers.step(&[from(HOST, Action::Load(Arc::clone(&map)))], 0);
+    assert!(t[0].loaded);
+    assert!(!peers.world().road_dragging);
+}

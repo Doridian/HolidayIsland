@@ -93,6 +93,9 @@ enhance_not_saved = "Changes apply at once, but only until you quit (no settings
 enhance_command_line = "At the next start --original and --enhance come first again."
 enhance_screen_off = "CREDITS (INFO) now opens the credits (back: enhance.enhancements_screen=on)."
 enhance_hint = "Hold the mouse over a row to see here what it changes."
+# The host's option for games with several players (crate::simulation).
+auction_timeout = "Auction wait (seconds)"
+auction_timeout_description = "With several players and \"Auction waits\": how long an auction waits for every player to start it or pass. Then whoever hasn't counts as passed."
 
 # The enhancements' short names and one-line descriptions, by their keys
 # (crate::enhance).

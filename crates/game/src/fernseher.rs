@@ -202,8 +202,10 @@ pub struct Response {
     /// The TV closed (1048:077a), or didn't open: the button bar's third
     /// button comes up (1010:2b60) and the main screen gets the focus back.
     pub hidden: bool,
-    /// The commands the caller applies for player 1, in order: the pause
-    /// while the TV is open, and what its speaker does. Single human.
+    /// The commands the caller applies for its seat, in order: the pause
+    /// while the TV is open, and what its speaker does. Single human:
+    /// with several human clients the world ignores the pause
+    /// ([`crate::world::World::tv_shown`]) and the speaker.
     pub actions: Vec<Action>,
     /// What the sound does, in order, before [`Response::sounds`].
     pub media: Vec<Media>,

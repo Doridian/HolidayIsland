@@ -142,8 +142,13 @@ human clients the world ignores `SetFix`, the speed and the world's
 options from any other client, a co-op partner in seat 1 too
 (`game::seats`, `World::apply_client`), and the fixes of
 `enhance::SINGLE_PLAYER_ONLY` stay on
-([port-architecture.md](port-architecture.md#decided)). Whose the pause
-and the options' own clock stop are is still to come (decisions 5 and 8).
+([port-architecture.md](port-architecture.md#decided)). With several
+human clients the options form stops no clock; the host's pause form
+stops the world for everyone (`Action::Pause`), another client's
+nothing. The host also sets how long an auction waits for the human
+seats (`Action::AuctionTimeout`, `Options::auction_timeout`, in ticks,
+default 300, a port extension saved in the port's chunk; labelled
+`port.auction_timeout` in `lang/*/strings.toml`).
 
 ## Open questions
 

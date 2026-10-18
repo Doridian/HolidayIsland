@@ -19,7 +19,9 @@
 //! bar (`MenuImage`). It isn't modal and doesn't stop the clock: while it's
 //! shown every booking redraws the page ([`Tick::books`]).
 //!
-//! Single human: the form and the books are player 1's.
+//! Single human: the form and the books are player 1's. A human in seats
+//! 2 to 8 has books, insurance and a shown flag of their own
+//! (`crate::seats::SeatSlots`); the original's fields stay seat 1's.
 
 #![allow(clippy::many_single_char_names)]
 
@@ -43,7 +45,7 @@ pub enum Action {
     /// and the balance at once) or hidden (1070:2bb4). While it's shown,
     /// every booking works the total out again (1070:2617,
     /// [`World::geldmenu_refresh`]). Single human: only player 1's form
-    /// counts.
+    /// counts; a human seat's of 2 to 8 for their own books.
     Shown(bool),
     /// "Geld leihen": borrow `Kreditgroesse` (1078:05c6), unless the loan
     /// would pass `MaxSchulden`; then the bank says no
@@ -59,7 +61,8 @@ pub enum Action {
     /// [`RENOVATION_LESS`]. // 1070:04d3
     Renovation { more: bool },
     /// The insurance check box: insured or not (`1110:0072`). Single
-    /// human: one flag, player 1's. // 1070:01fc
+    /// human: one flag, player 1's; a human seat's of 2 to 8 its own.
+    /// // 1070:01fc
     Insurance(bool),
 }
 
@@ -92,16 +95,22 @@ impl World {
             return;
         };
         match action {
-            // Single human: the form whose state the books follow is player 1's.
+            // Single human: the form whose state the books follow is
+            // player 1's; a human seat's of 2 to 8 has its own.
             Action::Shown(shown) => {
+                let human = self.is_human(player);
                 if player == 1 {
                     self.money_menu_shown = shown;
-                    // With `fix.year_total` the total is always up to
-                    // date as of the last booking, and showing the menu
-                    // changes nothing.
-                    if shown && !self.fixes.has(Fix::YearTotal) {
-                        self.geldmenu_year_total(); // 1070:2b3a
-                    }
+                } else if let Some(s) = self.slots_mut(player).filter(|_| human) {
+                    s.money_menu_shown = shown;
+                } else {
+                    return;
+                }
+                // With `fix.year_total` the total is always up to date as
+                // of the last booking, and showing the menu changes
+                // nothing.
+                if shown && !self.fixes.has(Fix::YearTotal) {
+                    self.geldmenu_year_total(player); // 1070:2b3a
                 }
             }
             Action::TakeLoan => {
@@ -131,9 +140,13 @@ impl World {
                 }
             }
             Action::Insurance(on) => {
-                // Single human: `1110:0072` is one flag, the insurance of player 1.
+                // Single human: `1110:0072` is one flag, the insurance of
+                // player 1; a human seat's of 2 to 8 is in its slot.
+                let human = self.is_human(player);
                 if player == 1 {
                     self.insured = on;
+                } else if let Some(s) = self.slots_mut(player).filter(|_| human) {
+                    s.insured = on;
                 }
             }
         }
@@ -141,29 +154,34 @@ impl World {
 
     /// The books' total of this year (kind 0x6b) from its kinds 0x5f to
     /// 0x6a, then the balance ([`World::geldmenu_balance`]). The original
-    /// then redraws the form's page (1070:1eeb), the view's part.
-    /// // 1070:1452
-    pub(crate) fn geldmenu_year_total(&mut self) {
+    /// then redraws the form's page (1070:1eeb), the view's part. The
+    /// books are `player`'s ([`World::books_of`]; single human: player
+    /// 1's). // 1070:1452
+    pub(crate) fn geldmenu_year_total(&mut self, player: u8) {
         let first = usize::from(BOOK_THIS_YEAR - FIRST_BOOK);
         let last = usize::from(BOOK_THIS_YEAR_LAST - FIRST_BOOK);
-        let total = self.books.year[first..=last]
-            .iter()
-            .fold(0i32, |s, &v| s.wrapping_add(v));
-        self.books.year[usize::from(BOOK_THIS_YEAR_TOTAL - FIRST_BOOK)] = total;
-        self.geldmenu_balance(1);
+        let Some(y) = self.books_of_mut(player) else {
+            return;
+        };
+        let total = y[first..=last].iter().fold(0i32, |s, &v| s.wrapping_add(v));
+        y[usize::from(BOOK_THIS_YEAR_TOTAL - FIRST_BOOK)] = total;
+        self.geldmenu_balance(player);
     }
 
     /// Kinds 0x6c to 0x6e: player 1's money (1078:0191, 99 999 999 while
     /// it's frozen), their loan negated and the difference. They're only
     /// shown and saved. Single human: the books are player 1's, so the
-    /// port does nothing for another `player`. // 1070:2ab8
+    /// port does nothing for another `player`; with a human in seats 2 to
+    /// 8 their own books. // 1070:2ab8
     fn geldmenu_balance(&mut self, player: u8) {
-        if player != 1 {
+        if player != 1 && !self.is_human(player) {
             return;
         }
-        let money = self.money_of(1);
-        let loan = self.loan_of(1); // 1078:057a
-        let y = &mut self.books.year;
+        let money = self.money_of(player);
+        let loan = self.loan_of(player); // 1078:057a
+        let Some(y) = self.books_of_mut(player) else {
+            return;
+        };
         y[usize::from(BOOK_MONEY - FIRST_BOOK)] = money;
         y[usize::from(BOOK_LOAN - FIRST_BOOK)] = loan.wrapping_neg();
         y[usize::from(BOOK_BALANCE - FIRST_BOOK)] = money.wrapping_sub(loan);
@@ -180,10 +198,23 @@ impl World {
     /// With `fix.year_total` it's as if the menu were always shown, so the
     /// books don't follow one player's form.
     pub(crate) fn geldmenu_refresh(&mut self, tick: &Tick) {
-        // BUG(original): the year's total follows whether the human's money menu is shown (fix.year_total: as if it always were).
-        let shown = self.money_menu_shown || self.fixes.has(Fix::YearTotal);
-        if shown && (tick.books || tick.loaded) {
-            self.geldmenu_year_total();
+        if !(tick.books || tick.loaded) {
+            return;
+        }
+        // Single human: player 1's books; here each human seat's, by
+        // whether its own menu is shown.
+        let seats: Vec<u8> = self.human_seats().collect();
+        for p in seats {
+            let menu = if p == 1 {
+                self.money_menu_shown
+            } else {
+                self.slots(p).is_some_and(|s| s.money_menu_shown)
+            };
+            // BUG(original): the year's total follows whether the human's money menu is shown (fix.year_total: as if it always were).
+            let shown = menu || self.fixes.has(Fix::YearTotal);
+            if shown {
+                self.geldmenu_year_total(p);
+            }
         }
     }
 
@@ -212,11 +243,21 @@ impl World {
     }
 
     /// What the human's insurance costs a month: a 120th of their
-    /// buildings' value if they're insured, else 0. Single human.
-    /// // 1008:062c
+    /// buildings' value if they're insured, else 0. Single human: player
+    /// 1's ([`World::insurance_cost_of`]). // 1008:062c
     #[must_use]
     pub fn insurance_cost(&self) -> i32 {
-        if self.insured { self.assets(1) / 120 } else { 0 }
+        self.insurance_cost_of(1)
+    }
+
+    /// [`World::insurance_cost`] of the human in seat `player`.
+    #[must_use]
+    pub fn insurance_cost_of(&self, player: u8) -> i32 {
+        if self.insured_of(player) {
+            self.assets(player) / 120
+        } else {
+            0
+        }
     }
 }
 
@@ -455,6 +496,9 @@ pub struct Geldmenuform {
     /// The player's view enhancements (`form_positions`,
     /// `mouse_buttons`).
     pub enhance: Enhancements,
+    /// The seat whose books, insurance, advertising and renovation the
+    /// form shows. Single human: player 1 ([`crate::seats::HOST_SEAT`]).
+    pub seat: u8,
 }
 
 impl Geldmenuform {
@@ -516,6 +560,7 @@ impl Geldmenuform {
             texts,
             bitmaps,
             enhance: Enhancements::ORIGINAL,
+            seat: crate::seats::HOST_SEAT,
         };
         f.left = f.first_left(screen_width);
         f.draw_title(); // 1070:1f3f
@@ -866,7 +911,7 @@ impl Geldmenuform {
     /// 1070:2630), and the menu bar always. // 1010:26fa, 1070:2630
     pub fn loaded(&mut self, world: &World) -> Response {
         let mut r = Response::default();
-        if self.insurance.checked() != world.insured {
+        if self.insurance.checked() != world.insured_of(self.seat) {
             let out = self.insurance.toggle(); // 10c0:07fa
             r.sounds.extend(out.sound.map(Sound::number));
         }
@@ -913,7 +958,7 @@ impl Geldmenuform {
     /// The books' `kind` in element `kind`, red when it's negative.
     /// // 1070:270f
     fn put_book(&mut self, world: &World, kind: u8) {
-        let value = world.book_value(kind);
+        let value = world.book_value_of(self.seat, kind);
         let info = &self.texts.info;
         let text = format_money(value, info.currency_factor, info.language); // 1030:11a0
         self.put(&text, if value < 0 { 7 } else { 4 }, kind);
@@ -925,13 +970,15 @@ impl Geldmenuform {
     fn draw_values(&mut self, world: &World) {
         match self.page {
             0 => {
-                let level = usize::from(world.advertising_level(1));
+                // Single human: player 1's; the form's seat's.
+                let level = usize::from(world.advertising_level(self.seat));
                 let text = Texts::get(&self.texts.advertising, level).to_vec();
                 self.put(&text, 5, ADVERTISING_TEXT);
-                let cost = self.money(world.advertising_cost(1), b' ');
+                let cost = self.money(world.advertising_cost(self.seat), b' ');
                 self.put(&cost, 4, ADVERTISING_COST);
                 // BUG(original): an interval past 5 reads past `RenovierungToText`; the port shows nothing.
-                let years = usize::from(world.renovation_years[0]);
+                let seat = usize::from(self.seat.clamp(1, 8) - 1);
+                let years = usize::from(world.renovation_years[seat]);
                 let text = Texts::get(&self.texts.renovation, years).to_vec();
                 self.put(&text, 5, RENOVATION_TEXT);
                 for kind in BOOK_MONEY..=BOOK_BALANCE {
@@ -954,7 +1001,7 @@ impl Geldmenuform {
         if self.page != 0 {
             return;
         }
-        self.cost.text = self.money(world.insurance_cost(), b'_');
+        self.cost.text = self.money(world.insurance_cost_of(self.seat), b'_');
         let Geldmenuform {
             font,
             bitmaps,

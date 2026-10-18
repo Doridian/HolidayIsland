@@ -92,6 +92,25 @@ without them (every original file) is the host alone in seat 1. Loading
 they are; the file's others come back away, so a computer plays their
 seats until they rejoin, and they still count for the forced fixes.
 
+Then each of seats 2 to 8 whose slots (`seats::SeatSlots`, what the
+original keeps once for player 1) aren't a new game's:
+`seat.<p>.books=` the 29 sums, `.insured=1`, `.money_menu=1`, `.drag=`
+on, ground, form, `.damage=` amount, insured, and `.build_menu=` its
+three fields' bytes in hex (`World::seat_lines`; `SeatSlots::from_chunk`
+reads them, and a file without them has none). Then
+`options.auction_timeout=` the host's auction timeout in ticks
+(`savegame::auction_timeout_in`; a file without it gets 300, or from the
+file menu the running game's).
+
+A save made by whoever knows every client's view
+(`World::to_map_with_views`) has each one's as `view.<client>.` lines:
+`.scroll=`, `.pointers=`, `.news=`, `.origin=` (if it has one),
+`.viewpoint=` rotation, i, j, parity (with `fix.view_people`), and
+`.fields=` the view's other fields, `dest#n#hex` apart by spaces.
+`savegame::client_view` gives a client theirs back; the view's own
+people aren't kept, each view makes its own. The original's fields have
+the saving client's view, as for one player.
+
 With `fix.view_news`, `news.nowhere=` lists the archive's entries whose
 square (`p`) or way back (`o`) is nowhere in the world (`3po 7o`), and
 `events.nowhere=` the events whose square is; the original's fields have
@@ -113,6 +132,7 @@ byte list hex without its trailing zeros:
 | `state.auction.limits` | The eight players' limits (`1110:654e`), comma-separated |
 | `state.auction.joined`, `.open`, `.opening`, `.sold`, `.bid_pause`, `.since_call` | Whether the player joined (`1110:65ae`), the form's open state, its timers (`Timer2`, `Timer1`), the paddle's pause and the ticks since the last call (`1110:65aa`) |
 | `state.auction.frames` | The auctioneer's nine frame values (`auction::Frames::values`) |
+| `state.auction.seats` | With several human seats: the seats that started, passed and hold a button (bits), and the wait's ticks left (`-` none) |
 | `state.computers.<p>.road_ends`, `.roads` | The road candidates (`*[1110:70e2[i]]`, `*[1110:70e6[i]]`) of each computer `p` past the file's player count: three hex lists |
 | `state.people.view_rotation` | With `fix.view_people`: the file's people are a view's, placed for this rotation ([below](#the-people-with-fixview_people)) |
 | `state.people.homes` | Then: the world's people whose `+0x22` the file's lack (the door people's buildings), `n:i,j` apart by spaces |
@@ -157,12 +177,16 @@ as it was).
 
 Saving only reads the world, so any player can save their copy; it isn't
 a command. Loading in the middle of a game is the command
-`command::Action::Load`, the host's (`game::seats`). The original saves
-the one player's screen with the world, and the port does the same: the
-saving client's. A save that keeps a view per seat or client is the
-multiplayer work still to come (decision 12 in
-[port-architecture.md](port-architecture.md#decided)); the seats
-themselves are in the port's chunk ([above](#the-ports-chunk)).
+`command::Action::Load`, the host's (`game::seats`; another client's
+does nothing). The original saves the one player's screen with the
+world, and the port does the same: the saving client's, its view origin
+for the news that point nowhere and, with `fix.view_people`, its
+viewpoint and people. The seats, the seats' slots and, from
+`World::to_map_with_views`, every client's view are in the port's chunk
+([above](#the-ports-chunk); decision 12 in
+[port-architecture.md](port-architecture.md#decided)). The world's
+seat-1 fields stay the host's seat's whoever saves: the file is the
+world's, and a client of seat 2 finds their seat's books in its slot.
 
 Each of the CD's seven files, loaded and saved again, gives the same
 fields but the bytes behind the players' names and the computers' status

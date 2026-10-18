@@ -14,6 +14,16 @@
 //! talks), that's ticks too. The human's clicks and keys are commands
 //! ([`Action`], [`World::auction_command`]); the form itself is the view's
 //! (`crate::auktionsform`). `docs/auction.md` has the whole flow.
+//!
+//! Single human: the form is player 1's. With several human clients
+//! (decision 7) every human seat has the form; a co-op seat's clients act
+//! for it together (any one's bid or pass is the seat's). With "Auktion
+//! wartet" the auction stands until every human seat has started it or
+//! passed, or [`crate::simulation::Options::auction_timeout`] ticks have
+//! gone by, after which the others count as passed. Any seat holding a
+//! button keeps the computers from bidding, and the item goes to the
+//! computers only when every human seat has passed
+//! ([`Auction::started`], [`Auction::passed`], [`Auction::held_by`]).
 
 use crate::accounts::BOOK_NEW_BUILDINGS;
 use crate::construction::BUILDING_SITE;
@@ -135,8 +145,9 @@ impl Frames {
 /// The auction an event started, and how it stands. // unit 1028:2506
 ///
 /// While it's [`Auction::open`], the simulation's clock stands for
-/// everyone (`AnimationsTimer` off, 1020:24a0): a multiplayer game will
-/// have to decide whether that stays so (docs/auction.md).
+/// everyone (`AnimationsTimer` off, 1020:24a0). That stays so with
+/// several humans: the auction ends by its timers, and its wait for the
+/// seats by [`Auction::waiting`], in world ticks.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Auction {
     /// The price: the start price, then the last bid. // 1110:654a
@@ -185,6 +196,30 @@ pub struct Auction {
     /// when the form opens. // 1110:65aa
     pub since_call: u16,
     pub frames: Frames,
+    /// With several human seats, those that started the auction, a bit
+    /// for each (`1 << (p - 1)`): [`Auction::joined`] for each seat. A
+    /// port extension (decision 7), as the three after it.
+    pub started: u8,
+    /// The human seats that passed (or closed their form): the item goes
+    /// to the computers once every one has.
+    pub passed: u8,
+    /// The human seats holding a button down on their form: any one keeps
+    /// the computers from bidding ([`Auction::held`]).
+    pub held_by: u8,
+    /// With "Auktion wartet": the ticks left until the seats that haven't
+    /// started the auction or passed count as passed
+    /// ([`crate::simulation::Options::auction_timeout`]).
+    pub waiting: Option<u16>,
+}
+
+/// Seat `p`'s bit in [`Auction::started`], [`Auction::passed`] and
+/// [`Auction::held_by`]; 0 for no seat.
+#[must_use]
+pub fn seat_bit(p: u8) -> u8 {
+    match p {
+        1..=8 => 1 << (p - 1),
+        _ => 0,
+    }
 }
 
 /// What happened to the auction in a tick or command, for the view.
@@ -296,6 +331,11 @@ impl World {
     fn open_auction(&mut self, tick: &mut Tick) {
         self.computer_bids(self.auction.price); // 10a8:0373
         let seller = self.events.get(SALE_EVENT).map_or(0, |e| e.arg);
+        // BUG(original): the form is player 1's, who alone starts the auction, holds the computers and passes for everyone (design issue for multiplayer: a form for each human seat, decision 7).
+        if self.seats.multiplayer() {
+            self.open_auction_seats(seller, tick);
+            return;
+        }
         if self.auction.item == BUILDING_SALE && seller == 1 {
             self.sell_to_computers(false, tick); // 1028:0c82
             return;
@@ -313,6 +353,103 @@ impl World {
         tick.auction_changes.push(Change::Opened);
     }
 
+    /// The human seats that take part in an auction: those a client plays
+    /// that are still in, as bits ([`seat_bit`]).
+    #[must_use]
+    pub fn auction_seats(&self) -> u8 {
+        self.human_seats()
+            .filter(|&p| self.player_out(p) == 0)
+            .fold(0, |bits, p| bits | seat_bit(p))
+    }
+
+    /// [`World::open_auction`] with several human seats (decision 7):
+    /// every human seat gets the form. A seat that sells its own building
+    /// has passed from the start, as the original's human, who gets no
+    /// form for it (1028:0c82); with no other human seat the computers
+    /// bid among themselves at once. With "Auktion wartet" the auction
+    /// waits for the seats, at most [`Options::auction_timeout`] ticks;
+    /// without, it starts at once, as the original's.
+    ///
+    /// [`Options::auction_timeout`]: crate::simulation::Options::auction_timeout
+    fn open_auction_seats(&mut self, seller: i32, tick: &mut Tick) {
+        let passed = match u8::try_from(seller) {
+            Ok(p) if self.auction.item == BUILDING_SALE && self.is_human(p) => seat_bit(p),
+            _ => 0,
+        };
+        if self.auction_seats() & !passed == 0 {
+            self.sell_to_computers(false, tick); // 1028:0c82
+            return;
+        }
+        let waits = self.options.auction_waits;
+        let timeout = self.options.auction_timeout;
+        let a = &mut self.auction;
+        a.joined = !waits;
+        a.open = true; // 1020:24a0: the clock stands.
+        a.colour = 1;
+        a.bidder = 0;
+        a.going = NO_BID;
+        a.held = false;
+        a.ticks = 0;
+        a.wait = 0;
+        a.since_call = u16::MAX;
+        a.started = 0;
+        a.passed = passed;
+        a.held_by = 0;
+        a.waiting = waits.then_some(timeout);
+        tick.auction_changes.push(Change::Opened);
+    }
+
+    /// With several human seats, before the auction has begun: its wait
+    /// counts down a tick, and once it has run out every seat that hasn't
+    /// started the auction counts as passed; then whether the seats have
+    /// decided ([`World::auction_decided`]).
+    fn auction_wait(&mut self, tick: &mut Tick) {
+        if let Some(n) = &mut self.auction.waiting {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                self.auction.waiting = None;
+                let seats = self.auction_seats();
+                let a = &mut self.auction;
+                a.passed |= seats & !a.started;
+            }
+        }
+        self.auction_decided(tick);
+    }
+
+    /// With several human seats, before the auction has begun: once every
+    /// human seat has started it or passed it begins, or with all passed
+    /// the form closes and the computers bid among themselves (1028:0c82).
+    fn auction_decided(&mut self, tick: &mut Tick) {
+        let seats = self.auction_seats();
+        let a = &mut self.auction;
+        if seats & !(a.started | a.passed) != 0 {
+            return;
+        }
+        if seats & !a.passed == 0 {
+            self.close_auction(tick); // 1028:0476
+            self.sell_to_computers(true, tick); // 1028:0c82
+        } else {
+            a.joined = true;
+            a.waiting = None;
+            tick.auction_changes.push(Change::Joined);
+        }
+    }
+
+    /// With several human seats, once a step: a seat whose clients have
+    /// all gone holds no button, and with every human seat passed (one
+    /// that had not has gone) the item goes to the computers, until it's
+    /// sold.
+    fn auction_seats_step(&mut self, tick: &mut Tick) {
+        let seats = self.auction_seats();
+        let a = &mut self.auction;
+        a.held_by &= seats;
+        a.held = a.held_by != 0;
+        if a.sold.is_none() && seats & !a.passed == 0 {
+            self.close_auction(tick); // 1028:0476
+            self.sell_to_computers(true, tick); // 1028:0c82
+        }
+    }
+
     /// A step of the auction (`Timer3`): nothing until the player has
     /// started it. After a bid, once 10 steps have passed, one time in 20
     /// (`Random(20)`) the auctioneer calls, with his sound and hammer, and
@@ -323,7 +460,16 @@ impl World {
     /// holds no button. Then the auctioneer's animation. // 1028:1973
     fn auction_step(&mut self, tick: &mut Tick) {
         if !self.auction.joined {
+            if self.seats.multiplayer() {
+                self.auction_wait(tick);
+            }
             return;
+        }
+        if self.seats.multiplayer() {
+            self.auction_seats_step(tick);
+            if !self.auction.open {
+                return;
+            }
         }
         let a = &mut self.auction;
         a.ticks = a.ticks.wrapping_add(1);
@@ -504,8 +650,9 @@ impl World {
         let (winner, price, item) = (self.auction.bidder, self.auction.price, self.auction.item);
         let w = player_byte(winner);
         self.add_money(w, price.wrapping_neg()); // 1078:01e7
-        if winner == 1 {
-            self.book(BOOK_NEW_BUILDINGS, price.wrapping_neg()); // 1070:1419
+        // Single human: player 1's books; a human seat's own here.
+        if winner == 1 || self.is_human(w) {
+            self.book_for(w, BOOK_NEW_BUILDINGS, price.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
         }
         let event = |n: usize| self.events.get(n).map_or((0, (0, 0)), |e| (e.arg, e.pos));
@@ -627,8 +774,15 @@ impl World {
     /// open. The original's form is the human's, player 1; a bid's limit
     /// here is the commanding player's. // 1028:1e23, 1028:2208,
     /// 1028:1b77, 1028:1ce0, en 1028:3620
+    ///
+    /// Single human: with several human seats each seat's form is its own
+    /// ([`World::auction_seat_command`]).
     pub(crate) fn auction_command(&mut self, player: u8, action: Action, tick: &mut Tick) {
         if !self.auction.open {
+            return;
+        }
+        if self.seats.multiplayer() {
+            self.auction_seat_command(player, action, tick);
             return;
         }
         match action {
@@ -656,6 +810,62 @@ impl World {
             Action::Leave => {
                 self.close_auction(tick);
                 self.sell_to_computers(true, tick);
+            }
+        }
+    }
+
+    /// [`World::auction_command`] with several human seats (decision 7),
+    /// for the seat `player`, whichever of its clients sent it. A button
+    /// held keeps the computers from bidding while any seat holds one. A
+    /// bid before the auction has begun starts it for the seat; after, it
+    /// bids, unless the seat passed. Passing, closing the form and leaving
+    /// it are the seat's pass: its form closes (the view's) and it holds
+    /// no button; once every human seat has passed the form closes for
+    /// everyone and the computers bid among themselves (1028:0c82).
+    fn auction_seat_command(&mut self, player: u8, action: Action, tick: &mut Tick) {
+        let bit = seat_bit(player);
+        if bit & self.auction_seats() == 0 {
+            return;
+        }
+        let a = &mut self.auction;
+        match action {
+            Action::Hold(held) => {
+                if held && a.passed & bit == 0 {
+                    a.held_by |= bit;
+                } else {
+                    a.held_by &= !bit;
+                }
+                a.held = a.held_by != 0;
+            }
+            Action::Bid => {
+                if a.sold.is_some() || a.passed & bit != 0 {
+                    return;
+                }
+                if !a.joined {
+                    a.started |= bit;
+                    self.auction_decided(tick);
+                    return;
+                }
+                let limit = a.limits.get(usize::from(player.wrapping_sub(1))).copied().unwrap_or(0);
+                // The view shows error 0xe (1030:232d) for the mouse.
+                if a.price.wrapping_add(a.price / 20) > limit {
+                    return;
+                }
+                self.auction_bid(i16::from(player), tick); // 1028:15ef
+            }
+            Action::Pass | Action::Close | Action::Leave => {
+                if a.passed & bit != 0 {
+                    return;
+                }
+                a.passed |= bit;
+                a.held_by &= !bit;
+                a.held = a.held_by != 0;
+                if !a.joined {
+                    self.auction_decided(tick);
+                } else if self.auction_seats() & !self.auction.passed == 0 {
+                    self.close_auction(tick); // 1028:0476
+                    self.sell_to_computers(true, tick); // 1028:0c82
+                }
             }
         }
     }

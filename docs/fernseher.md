@@ -196,15 +196,19 @@ The news options `005c`..`005f` (unit 1000:0c6a) are the view's too
 
 Decided ([port-architecture.md](port-architecture.md#decided)):
 
-- The pause, not built yet (decision 5): the TV pauses the game for
-  everyone, and the options that open it are one player's, so the
-  simulation waits on that player's dialog. For one player the port
-  pauses exactly as the original. With more than one human client the
-  news options stay each player's view setting (they already are), and
-  neither the news nor the TV's button pause the game, since each player
-  can dismiss their own TV: the view doesn't send `Action::ShowTv`'s
-  pause (nor `TvPause`), only the world's part without it (the sale's
-  people).
+- The pause, built (decision 5): the TV pauses the game for everyone,
+  and the options that open it are one player's, so the simulation
+  waits on that player's dialog. For one player the port pauses exactly
+  as the original. With more than one human client the news options stay
+  each player's view setting, each client has a TV of their own, and
+  neither the news nor the TV's button pause the game: `World::tv_shown`
+  (`Action::ShowTv`) does only the world's part without the pause (the
+  sale's people), and `World::tv_pause` (`Action::TvPause`) does nothing.
+  A pause the TV left from before the second client joined, or a loaded
+  file's, the seats clear (`World::follow_seats`). Not a fix: it's only
+  on with several humans, and one human pauses as the original. Each
+  client's TV still sends `ShowTv`, so a sale's people come again for
+  each TV that opens on it, as for one player who opens it again.
 - Built, `fix.view_news`: a message without a square of its own, the
   archive's view origin (`+0x118`) and the bankruptcy and net worth
   events (settlement step 0x64) point at no square of the world

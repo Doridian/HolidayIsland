@@ -306,6 +306,30 @@ whether each is connected (`World::seats`, in its hash).
   seats. An original file loads as the host alone in seat 1; loading
   keeps the running game's clients and brings the file's others back
   disconnected.
+- A human plays as the human in any seat (`World::is_human`): where the
+  original means "the human" by player 1 (the money checks, the books,
+  the costs, the computers' handicaps, the build menu, the insurance, the
+  info box's and the overview's buttons, a disaster's damage, the road
+  drag), the port asks whether a client is at the seat. With one human
+  client that's `p == 1`. What the original keeps once, for player 1,
+  each of seats 2 to 8 has again (`seats::SeatSlots`,
+  `World::seat_slots`: the books' sums, the insurance, the money menu
+  shown, the road drag, the damage and a build menu, a copy of seat 1's
+  when a client first takes the seat); seat 1 keeps the original's
+  fields. Saved in the port's chunk (`seat.<p>.` lines) when they aren't
+  a new game's. The views take a `seat` (the tools, the info box, the
+  buildings' overview, the money menu, the auction form), 1 for the one
+  human.
+- With several humans a seat that goes out (bankrupt) is a spectator's
+  (`World::spectates`): its clients keep their views and send no
+  commands but their own leaving, and the host's own commands.
+- With several humans no client's dialog stops the world: the host's
+  pause is a command (`Action::Pause`, `Clock::stopped`), which stops
+  every peer's world on the same tick; the other clients' pause forms,
+  every options form, the file menu, the quit question, the end form and
+  the high scores stop nothing. With one human the view stops its own
+  clock while they're up, as the original, and `Action::Pause` does
+  nothing.
 - The tests run several clients in one process: one world per peer and
   a view per client, fed the same commands
   (`crates/game/tests/multiplayer.rs`).
@@ -323,23 +347,36 @@ only for one human, as the original.
 | 2 | The computers ignore every human's road drag: they don't wait on `1110:634c` and don't use `704e`'s ground. Forced on | Built: `fix.computer_road_drag`, `fix.computer_road_ground` ([computer.md](computer.md#open-questions)) |
 | 3 | The overview map's scroll arrows don't touch the world's new people flag `1110:0056` | Built: `fix.overview_arrows`, forced on ([overview-map.md](overview-map.md)) |
 | 4 | The year's total is worked out as if the money menu were shown (`World::money_menu_shown`). Forced on | Built: `fix.year_total` ([geldmenu.md](geldmenu.md#world-and-view)) |
-| 5 | Neither the news nor the TV's button pause the game | Phase 2 ([fernseher.md](fernseher.md#multiplayer)) |
+| 5 | Neither the news nor the TV's button pause the game | Built: with more than one human client `World::tv_shown` and `tv_pause` leave `1110:0067` alone, and the seats clear it as the second client joins ([fernseher.md](fernseher.md#multiplayer)) |
 | 6 | The TV speaker's lights draw from the view's random numbers, not the world's `RandSeed`, and the auction doesn't wait for the speaker (`Action::Speaker`). Forced on | Built: `fix.tv_lights`, `fix.auction_speaker` |
-| 7 | The auction gets a multiplayer form: every seat bids, the world waits for them, with a timeout. Within a co-op seat any client's bid or pass counts for the seat | Phase 2 ([auction.md](auction.md#open-questions)) |
-| 8 | The quit question, the end form and the high scores don't stop the clock | Phase 2 ([endforms.md](endforms.md)) |
-| 9 | Winning, losing and bankruptcy per seat (all of a co-op seat's clients win or lose together) | Phase 3 |
-| 10 | If any human cheats, the whole game counts as cheated | Phase 3 |
-| 11 | The host (a client, in seat 1) owns the world's options: speed, pause, animations, "Auktion wartet", disasters and the fixes; the world ignores commands that change them from any other client, deterministically. Other humans take computer seats (2..=8), or join a seat for co-op. A computer plays a seat while all its clients are away, until one rejoins; quitting hands a seat over only when its last client leaves | Built for the world's commands (`World::apply_client`: the speed, `SetOption`, `SetFix`, `Load`, `Seat`). The pause form stops only the host's view's clock today; making it the world's is phase 2 with decisions 5 and 8 |
-| 12 | Saves get a per-seat section (each seat's, and each client's, view) | Phase 3; the seats and the clients' seats are already in the port's chunk |
-| 13 | All of this is built before any networking; tests run several clients in one process | Built for 1–4, 6 and 11 (`crates/game/tests/multiplayer.rs`) |
+| 7 | The auction gets a multiplayer form: every seat bids, the world waits for them, with a timeout. Within a co-op seat any client's bid or pass counts for the seat | Built: every human seat has the form; with "Auktion wartet" the world waits until each has started or passed, at most the host's `Options::auction_timeout` ticks (default 300, 30 s; `Action::AuctionTimeout`, saved as `options.auction_timeout`), then the undecided count as passed; without it the auction starts at once. Any seat holding a button stops the computers' bids, and the item goes to the computers only when every human seat has passed (`Auction::started`, `passed`, `held_by`, `waiting`; [auction.md](auction.md#multiplayer)) |
+| 8 | The quit question, the end form and the high scores don't stop the clock | Built: with more than one human client they stop nothing, and the end of a game doesn't stop the world; quitting is the client's `SeatChange::Leave`, so a computer plays the seat once its last client has gone ([endforms.md](endforms.md#the-port)) |
+| 9 | Winning, losing and bankruptcy per seat (all of a co-op seat's clients win or lose together) | Built for the normal game (scenario 0): each human seat is checked as the original checks player 1 (`World::january_second_seats`); a bankrupt one is out and its clients spectate; the first winner ends the game for all (`Tick::game_over`, each seat's results in `Tick::seat_results`). Scenarios 1–13 still check player 1: phase 3 ([simulation.md](simulation.md#the-scenarios-end-10080512)) |
+| 10 | If any human cheats, the whole game counts as cheated | Built: the main screen's cheat is a command (`Action::Cheat`, 1020:3195, en 1020:3194) of any seat, and `1110:006f` is one flag for the game, which takes every seat's score |
+| 11 | The host (a client, in seat 1) owns the world's options: speed, pause, animations, "Auktion wartet", disasters and the fixes; the world ignores commands that change them from any other client, deterministically. Other humans take computer seats (2..=8), or join a seat for co-op. A computer plays a seat while all its clients are away, until one rejoins; quitting hands a seat over only when its last client leaves | Built (`World::apply_client`: the speed, the pause, `SetOption`, the auction timeout, `SetFix`, `Load`, `Seat`). The host's pause form stops the world for everyone (`Action::Pause`, `Clock::stopped`) |
+| 12 | Saves get a per-seat section (each seat's, and each client's, view) | Built: any client saves their own copy with their view in the original's fields; the seats' slots (`seat.<p>.`) are in the port's chunk, and with `World::to_map_with_views` every client's view (`view.<client>.`, `savegame::client_view`). Only the host loads in the middle of a game ([savegame.md](savegame.md#the-ports-chunk)) |
+| 13 | All of this is built before any networking; tests run several clients in one process | Built for 1–12 (`crates/game/tests/multiplayer.rs`) |
 | Co-op | Two or more clients may play one seat: commands come from a client and act for its seat, each client has its own view, host-only is by client, and the forced fixes count clients | Built ([above](#seats-and-clients)) |
 
-Still open, for later phases: much of the code still treats player 1
-as the human and 2..8 as computers (`p == 1` checks for the money
-checks, the books, sabotage, the year end's costs, the build menu, the
-info box's buttons); with humans in other seats those become per seat.
-The road drag (`1110:634c`, `704e`) is one flag in the world, which two
-humans dragging at once would share.
+Built in phase 2 too: the `p == 1` places now ask `World::is_human`
+(the money checks, the books, sabotage, the year end's and the month's
+costs, the computers' handicaps, the build menu, the info box's and the
+overview's buttons, `Shown`, the insurance), and each human seat has its
+own road drag (`World::road_drag`). None of this needed a new fix: each
+is gated by more than one human client, or is the same as the original's
+with one.
+
+Still open, for phase 3: the scenarios 1–13's goals and losses
+(`World::scenario_won`, `scenario_lost`) read player 1; Monopolus (3)
+needs players 2–8 out, which a human seat only is when it goes out on
+the 2nd of January, and the tutorial's, 10's and 12's bankruptcy check
+player 1 only. The net worth events of settlement step 0x64 (12, 16, 18)
+are player 1's, and a bankrupt human seat's property isn't auctioned as
+a computer's is (event 10). A human seat that joins mid-game keeps the
+money its computer had (the original's human starts with half the
+`Startgeld` as a loan, 1078:3271). The high scores are each view's to
+enter, from its seat's results. The host's own quitting and the
+networking itself are phase 3.
 
 ## Open questions
 

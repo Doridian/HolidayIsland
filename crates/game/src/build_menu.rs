@@ -7,8 +7,10 @@
 //! 1018:34a0). The form itself, the selected rows and the scrolling are
 //! the view's ([`crate::baumenue`]).
 //!
-//! Single human: the original has one build menu, player 1's. In a game
-//! with several humans each would need their own lists.
+//! Single human: the original has one build menu, player 1's. A human in
+//! seats 2 to 8 has their own lists ([`crate::seats::SeatSlots::build_menu`],
+//! [`World::build_menu_of`]), a copy of seat 1's when a client first takes
+//! the seat; what an event gives everyone goes onto every human's.
 
 use formats::data::BaumenuData;
 use formats::savegame::SaveGame;
@@ -90,17 +92,35 @@ impl BuildMenu {
                 .filter(|d| d.len() == size)
                 .ok_or(Error::Field(dest))
         };
-        let mut menu = BuildMenu::default();
-        menu.counts.copy_from_slice(field("*[1110:6516]+0x180", MENUS)?);
+        let counts = field("*[1110:6516]+0x180", MENUS)?;
         let rows = field("*[1110:6516]+0x184", MENUS * ROWS * 8)?;
+        let lengths = field("[1110:6516]+0x1c6", MENUS * 2)?;
+        Ok(Self::from_bytes(counts, rows, lengths).unwrap_or_default())
+    }
+
+    /// The lists from their three fields' bytes ([`BuildMenu::bytes`]),
+    /// none if a size is wrong.
+    #[must_use]
+    pub fn from_bytes(counts: &[u8], rows: &[u8], lengths: &[u8]) -> Option<Self> {
+        if counts.len() != MENUS || rows.len() != MENUS * ROWS * 8 || lengths.len() != MENUS * 2 {
+            return None;
+        }
+        let mut menu = BuildMenu::default();
+        menu.counts.copy_from_slice(counts);
         for (n, cell) in rows.as_chunks::<2>().0.iter().enumerate() {
             menu.rows[n / (ROWS * 4)][n / 4 % ROWS][n % 4] = i16::from_le_bytes(*cell);
         }
-        let lengths = field("[1110:6516]+0x1c6", MENUS * 2)?;
         for (k, n) in lengths.as_chunks::<2>().0.iter().enumerate() {
             menu.lengths[k] = i16::from_le_bytes(*n);
         }
-        Ok(menu)
+        Some(menu)
+    }
+
+    /// The bytes of the three fields `save_map` writes: the counts, the
+    /// rows and the lengths. // 1018:3350
+    #[must_use]
+    pub fn bytes(&self) -> [Vec<u8>; 3] {
+        ["*[1110:6516]+0x180", "*[1110:6516]+0x184", "[1110:6516]+0x1c6"].map(|d| self.field(d).unwrap_or_default())
     }
 
     /// The bytes `save_map` writes for the field at `dest`, if it's one of
@@ -145,20 +165,21 @@ impl World {
     /// looks: the hotels of [`FOUR_LOOKS`] with the three types after
     /// them, a type that turns into another with the view (`HAUSNR.DAT`
     /// column 1) with that one and itself again, others alone. Nothing
-    /// when the submenu is full. // 1018:23f8
-    pub(crate) fn add_to_build_menu(&mut self, building: u8) {
+    /// when the submenu is full. The menu is seat `p`'s
+    /// ([`World::build_menu_of`]). // 1018:23f8
+    pub(crate) fn add_to_build_menu(&mut self, p: u8, building: u8) {
         let menu = self.kind_menu(building);
         // BUG(original): kind 7 has no submenu (-1) and the original writes before the lists; the port leaves them.
         let Some(k) = slot(menu) else {
             return;
         };
-        let m = &mut self.build_menu;
+        let turned = self.tables.hausnr(building, 1);
+        let m = self.build_menu_mut(p);
         let count = m.counts[k];
         if count >= 0x14 {
             return;
         }
         let b = i16::from(building);
-        let turned = self.tables.hausnr(building, 1);
         m.rows[k][usize::from(count)] = if FOUR_LOOKS.contains(&building) {
             [b, b + 1, b + 2, b + 3]
         } else if turned == b {
@@ -174,12 +195,12 @@ impl World {
     /// in any look, the rows after it moving up. Returns the submenu if it
     /// was there, whose selected row the original puts back to the first
     /// (the view's, [`crate::simulation::Tick::build_menu_removed`]).
-    /// // 1018:26b9
-    pub(crate) fn remove_from_build_menu(&mut self, building: u8) -> Option<u8> {
+    /// The menu is seat `p`'s ([`World::build_menu_of`]). // 1018:26b9
+    pub(crate) fn remove_from_build_menu(&mut self, p: u8, building: u8) -> Option<u8> {
         let menu = self.kind_menu(building);
         // BUG(original): kind 7 has no submenu (-1) and the original reads before the lists; the port leaves them.
         let k = slot(menu)?;
-        let m = &mut self.build_menu;
+        let m = self.build_menu_mut(p);
         let count = usize::from(m.counts[k]);
         let b = i16::from(building);
         let found = m.rows[k].iter().take(count).position(|row| row.contains(&b))?;
@@ -192,6 +213,15 @@ impl World {
         m.counts[k] = m.counts[k].wrapping_sub(1);
         m.lengths[k] = m.lengths[k].wrapping_sub(1);
         u8::try_from(menu).ok()
+    }
+
+    /// The seats whose build menus what an event gives everyone (or a
+    /// scenario takes off) changes: seat 1's, the original's one, and
+    /// each of seats 2 to 8 that has its own. Single human: only seat 1's.
+    pub(crate) fn build_menu_seats(&self) -> Vec<u8> {
+        std::iter::once(1)
+            .chain((2..=8).filter(|&p| self.slots(p).is_some_and(|s| s.build_menu.is_some())))
+            .collect()
     }
 }
 
@@ -226,22 +256,33 @@ mod tests {
     #[test]
     fn adding_and_removing() {
         let mut w = world();
-        w.add_to_build_menu(3);
-        w.add_to_build_menu(13);
-        w.add_to_build_menu(0x60);
-        w.add_to_build_menu(5);
+        w.add_to_build_menu(1, 3);
+        w.add_to_build_menu(1, 13);
+        w.add_to_build_menu(1, 0x60);
+        w.add_to_build_menu(1, 5);
         let m = &w.build_menu;
         assert_eq!((m.counts[2], m.lengths[2]), (1, 1));
         assert_eq!(m.rows[2][0], [3, -1, -1, -1]);
         assert_eq!(m.rows[0][0], [13, 14, 13, 14]);
         assert_eq!(m.rows[1][0], [0x60, 0x61, 0x62, 0x63]);
-        w.add_to_build_menu(4); // kind 0: houses
+        w.add_to_build_menu(1, 4); // kind 0: houses
         assert_eq!(w.build_menu.counts[0], 2);
         // Found by another look.
-        assert_eq!(w.remove_from_build_menu(14), Some(9));
+        assert_eq!(w.remove_from_build_menu(1, 14), Some(9));
         assert_eq!(w.build_menu.rows[0][0][0], 4);
         assert_eq!(w.build_menu.rows[0][1], [-1; 4]);
         assert_eq!(w.build_menu.counts[0], 1);
-        assert_eq!(w.remove_from_build_menu(13), None);
+        assert_eq!(w.remove_from_build_menu(1, 13), None);
+        // A human in seat 2 has their own lists, a copy of seat 1's when
+        // they first take the seat.
+        w.apply_client(crate::seats::ClientCommand {
+            client: crate::seats::HOST,
+            action: crate::command::Action::Seat(crate::seats::SeatChange::Join { client: 4, seat: 2 }),
+        });
+        assert_eq!(w.build_menu_of(2), &w.build_menu);
+        w.remove_from_build_menu(2, 4);
+        assert_eq!(w.build_menu.counts[0], 1);
+        assert_eq!(w.build_menu_of(2).counts[0], 0);
+        assert_eq!(w.build_menu_seats(), [1, 2]);
     }
 }

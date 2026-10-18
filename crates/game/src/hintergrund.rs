@@ -293,14 +293,14 @@ pub fn start_scenario(world: &mut World, events: Option<&[[i32; 12]]>) {
     }
     if BANNING_SCENARIOS.contains(&world.scenario) {
         for building in SCENARIO_BANNED {
-            world.remove_from_build_menu(building); // 1018:26b9
+            world.remove_from_build_menu(1, building); // 1018:26b9
         }
     }
     match world.scenario {
         10 => world.computers.cut_type_list(BB_ONLY_CATEGORY, BB_ONLY_TYPES), // en 10b0:0002
         11 => {
             for building in SCENARIO_11_BANNED {
-                world.remove_from_build_menu(building); // en 1010:01d5
+                world.remove_from_build_menu(1, building); // en 1010:01d5
             }
         }
         _ => {}

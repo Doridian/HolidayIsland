@@ -591,8 +591,9 @@ impl World {
             .checked_div(i32::from(t.hausdata(site.building, 0)))
             .unwrap_or(0);
         self.add_money(player, refund.wrapping_neg());
-        if player == 1 {
-            self.book(BOOK_OTHER, refund.wrapping_neg()); // 1070:1419
+        // Single human: player 1's books; every human seat's here.
+        if self.is_human(player) {
+            self.book_for(player, BOOK_OTHER, refund.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
             self.float_money(refund, site.pos); // 1088:0153
         }
@@ -604,16 +605,18 @@ impl World {
     /// its squares are emptied. // 1078:280b
     fn demolish_building(&mut self, player: u8, building: u8, pos: Pos, tick: &mut Tick) -> Result<(), u8> {
         let cost = self.tables.hausprei(building, 0) / 20;
-        if self.money_of(player) < cost && player == 1 {
+        // Single human: only player 1 needs the money and has books; here
+        // every human seat ([`World::is_human`]).
+        if self.money_of(player) < cost && self.is_human(player) {
             return Err(NOT_ENOUGH_MONEY);
         }
         self.add_money(player, cost.wrapping_neg());
-        if player == 1 {
-            self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+        if self.is_human(player) {
+            self.book_for(player, BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
         }
         let origin = self.building_origin(pos); // 1030:154c
-        if player == 1 {
+        if self.is_human(player) {
             self.float_money(cost, origin); // 1088:0153
         }
         self.remove_house_beach_life(origin, tick); // 1078:267e
@@ -669,13 +672,14 @@ impl World {
     /// next to it get their pieces again. // 1078:280b
     fn demolish_road(&mut self, player: u8, pos: Pos, tick: &mut Tick) -> Result<(), u8> {
         let cost = self.road_demolition_cost;
-        if self.money_of(player) < cost && player == 1 {
+        // Single human: player 1's money and books; every human seat's.
+        if self.money_of(player) < cost && self.is_human(player) {
             return Err(NOT_ENOUGH_MONEY);
         }
         self.add_money(player, cost.wrapping_neg());
         self.remove_people_from(pos, tick); // 1088:6975
-        if player == 1 {
-            self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+        if self.is_human(player) {
+            self.book_for(player, BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
             self.float_money(cost, pos); // 1088:0153
         }
@@ -731,12 +735,12 @@ impl World {
             };
             let squares = 1 + along(self, back) + along(self, on);
             let cost = self.road_demolition_cost.wrapping_mul(squares);
-            if self.money_of(player) < cost && player == 1 {
+            if self.money_of(player) < cost && self.is_human(player) {
                 return Err(NOT_ENOUGH_MONEY);
             }
             self.add_money(player, cost.wrapping_neg());
-            if player == 1 {
-                self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+            if self.is_human(player) {
+                self.book_for(player, BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
                 tick.books = true; // 1070:2617
                 self.float_money(cost, pos); // 1088:0153
             }
@@ -880,8 +884,9 @@ impl World {
             return (OFF_THE_MAP, 0, (i, j));
         }
         let mut cost = t.hausprei(building, 0);
-        // Single human: only player 1 needs the money.
-        let poor = |w: &World, cost: i32| player == 1 && w.money_of(player) < cost;
+        // Single human: only player 1 needs the money; here every human
+        // seat ([`World::is_human`]), not the computers.
+        let poor = |w: &World, cost: i32| w.is_human(player) && w.money_of(player) < cost;
         if poor(self, cost) {
             return (NOT_ENOUGH_MONEY, cost, (i, j));
         }
@@ -987,7 +992,8 @@ impl World {
     /// For player 1 and a type of which there's one (`HAUSDATA.DAT` column
     /// 6 is 1), it also comes off the build menu (1018:26b9) and the
     /// pointer's button is pressed (1010:2c8b, the view's:
-    /// [`Tick::pointer_tool`]). Single human: the build menu is player 1's.
+    /// [`Tick::pointer_tool`]). Single human: the build menu is player 1's;
+    /// a human in seats 2 to 8 has their own ([`World::build_menu_of`]).
     pub fn start_building(&mut self, cost: i32, budget: i8, player: u8, building: u8, pos: Pos, tick: &mut Tick) {
         if building == crate::world::PALM {
             self.plant_palm(pos, tick); // 1010:1129
@@ -995,17 +1001,19 @@ impl World {
             self.place_site(budget, player, pos, building, tick); // 1078:1b5e
         }
         self.add_money(player, cost.wrapping_neg());
-        if player == 1 {
+        // Single human: player 1's books and build menu; every human
+        // seat's own here ([`World::is_human`]).
+        if self.is_human(player) {
             let price = self.tables.hausprei(building, 0);
-            self.book(BOOK_NEW_BUILDINGS, price.wrapping_neg()); // 1070:1419
+            self.book_for(player, BOOK_NEW_BUILDINGS, price.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
             self.float_money(cost, pos); // 1088:0153
         }
-        if self.tables.hausdata(building, 6) == 1 && player == 1 {
-            if let Some(menu) = self.remove_from_build_menu(building) {
-                tick.build_menu_removed.push(menu); // 1018:26b9
+        if self.tables.hausdata(building, 6) == 1 && self.is_human(player) {
+            if let Some(menu) = self.remove_from_build_menu(player, building) {
+                tick.build_menu_removed.push((player, menu)); // 1018:26b9
             }
-            tick.pointer_tool = true; // 1110:5fbe := 0x16, 1010:2c8b
+            tick.pointer_tool = Some(player); // 1110:5fbe := 0x16, 1010:2c8b
         }
     }
 

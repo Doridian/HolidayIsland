@@ -180,5 +180,7 @@ the buttons there; with `fix.nobodys_buildings` the player's only). The world's 
 
 Single human: the buttons are for squares of player 1 (or nobody), the
 overview lists player 1's buildings, the errors, books and money rising
-are player 1's. The box with buttons disables the other forms but
+are player 1's. Here the box and the overview are for their view's seat
+(`Infobox::seat`, `Umenuform::seat`), and every human seat gets the
+errors, books and money rising (`World::is_human`). The box with buttons disables the other forms but
 doesn't stop the clock: the simulation never waits for it.

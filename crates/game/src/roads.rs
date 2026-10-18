@@ -58,6 +58,20 @@ const SEA_BRIDGE: u8 = 0x34;
 /// road. See the module's documentation.
 pub const NO_DRAG_GROUND: u8 = 0;
 
+/// A seat's road drag: whether it's on, and the ground and form of the
+/// square it started on. Seat 1's are the original's
+/// [`World::road_dragging`], [`World::road_drag_ground`] and
+/// [`World::road_drag_form`]; the other seats' a port extension
+/// (`crate::seats::SeatSlots::drag`, [`World::road_drag`]), so two
+/// humans dragging at once each have their own. // 1110:634c, 1110:704e,
+/// 1110:704f
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct RoadDrag {
+    pub on: bool,
+    pub ground: u8,
+    pub form: u8,
+}
+
 /// The sound of a road being built, for player 1. // 1080:3216
 const ROAD_SOUND: u8 = 0x11;
 
@@ -125,7 +139,10 @@ impl World {
     ///
     /// Player 1 also needs the money for a road as long as the drag,
     /// books the cost and sees it rise from `to`; the original redraws the
-    /// area on the main screen and the overview map.
+    /// area on the main screen and the overview map. Single human: here
+    /// every human seat does ([`World::is_human`]), and a road ends the
+    /// builder's drag, the original's one flag for player 1 and the
+    /// computers ([`World::end_road_drag`]).
     ///
     /// # Errors
     /// [`RoadError`] when nothing was built.
@@ -138,21 +155,21 @@ impl World {
         tick: &mut Tick,
     ) -> Result<Pos, RoadError> {
         if !on_map(from) || !on_map(to) {
-            self.road_dragging = false;
+            self.end_road_drag(player);
             return Err(RoadError::NotBuilt);
         }
-        if player == 1 {
+        if self.is_human(player) {
             let span = |a: i16, b: i16| i32::from(a.max(b)) - i32::from(a.min(b)) + 1;
             let longest = span(from.1, to.1).max(span(from.0, to.0));
-            if self.money_of(1) < longest.wrapping_mul(self.tables.road_cost) {
+            if self.money_of(player) < longest.wrapping_mul(self.tables.road_cost) {
                 // `show_error_message(0xe)`, the view's.
                 debug_assert_eq!(NOT_ENOUGH_MONEY, 0xe);
-                self.road_dragging = false;
+                self.end_road_drag(player);
                 return Err(RoadError::NotEnoughMoney);
             }
         }
         let Some((end, squares)) = self.plan_road(player, from, to, start_ground, tick) else {
-            if player != 1 {
+            if !self.is_human(player) {
                 return Err(RoadError::NotBuilt);
             }
             let building = self.island.buildings.at(from);
@@ -177,8 +194,8 @@ impl World {
         }
         let cost = squares.wrapping_mul(self.tables.road_cost);
         self.add_money(player, cost.wrapping_neg()); // 1078:01e7
-        if player == 1 {
-            self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+        if self.is_human(player) {
+            self.book_for(player, BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
             self.float_money(cost, to); // 1088:0153
         }
@@ -268,10 +285,10 @@ impl World {
                 result = Some((end, squares));
             }
         }
-        if player == 1 && result.is_some() {
+        if self.is_human(player) && result.is_some() {
             tick.sounds.push(ROAD_SOUND); // 10a0:30b6
         }
-        self.road_dragging = false;
+        self.end_road_drag(player);
         // BUG(original): turns the "new people" option on whatever the player chose.
         self.options.people_spawn = true;
         result

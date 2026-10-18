@@ -932,6 +932,7 @@ impl Game {
                 self.screen.draw_buttons(&self.tools.down);
                 self.forms.help.hide();
                 self.forms.pause.show(size);
+                self.pause_world(true);
             }
             OPTIONS_BUTTON => {
                 if !self.forms.options.visible {
@@ -1060,7 +1061,8 @@ impl Game {
             self.money_response(r);
             changed = true;
         }
-        if let Some(over) = t.game_over {
+        // The view's seat's results (with one human, the game's end).
+        if let Some(over) = t.results_for(game::seats::HOST_SEAT) {
             self.game_over(&over);
             changed = true;
         }
@@ -2023,9 +2025,23 @@ impl Game {
         }
     }
 
+    /// With several human clients the pause form stops the world for
+    /// everyone, a command (`Action::Pause`, the host's); with one the
+    /// form stops this view's clock (`Game::clock_stopped`), as the
+    /// original (1020:24a0).
+    fn pause_world(&mut self, on: bool) {
+        if self.world.seats.multiplayer() {
+            self.commands.push(game::command::Command {
+                player: game::seats::HOST_SEAT,
+                action: game::command::Action::Pause(on),
+            });
+        }
+    }
+
     /// The pause ends (1040:3bac): the form hides, the button comes up,
     /// the clock runs again.
     fn close_pause(&mut self) {
+        self.pause_world(false);
         self.forms.pause.visible = false;
         self.tools.down[usize::from(PAUSE_BUTTON)] = false;
         self.screen.draw_buttons(&self.tools.down);

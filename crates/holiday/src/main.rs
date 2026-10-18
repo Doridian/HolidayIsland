@@ -427,8 +427,15 @@ impl Game {
         changed | self.forms_after_commands()
     }
 
-    /// A form is up that stops the clock.
+    /// A form is up that stops the clock. Single human: with several
+    /// human clients no client's dialog stops it; the host's pause stops
+    /// the world itself (`Action::Pause`, `Clock::stopped`), and the quit
+    /// question, the end form and the high scores stop nothing
+    /// (decision 8).
     fn clock_stopped(&self) -> bool {
+        if self.world.seats.multiplayer() {
+            return false;
+        }
         self.file_menu.visible || self.forms.clock_stopped()
     }
 
@@ -776,7 +783,7 @@ impl Game {
             eprintln!("the saved game couldn't be loaded");
         }
         self.tick_sounds(t);
-        let mut changed = !t.status.is_empty() || t.pointer_tool;
+        let mut changed = !t.status.is_empty() || t.pointer_tool.is_some();
         changed |= self.quake(t);
         changed |= if t.redraw_all {
             self.screen.paint_map(&self.world, &self.tiles);
@@ -1182,6 +1189,13 @@ impl Game {
             }
             KeyResult::Button(hauptschirm::FILE_MENU_BUTTON) => self.forms.requests.push(Request::FileMenu),
             KeyResult::Button(b) => self.click_button(b),
+            KeyResult::Cheat => {
+                self.commands.push(Command {
+                    player: 1,
+                    action: command::Action::Cheat,
+                });
+                self.apply_commands();
+            }
             KeyResult::Ignored => {}
         }
     }

@@ -106,6 +106,11 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   left; meanwhile `Action::SetFix` can't switch them off. Two people in
   one seat (co-op) count as two. It's the only constraint of its kind
   so far ([port-architecture.md](port-architecture.md#seats-and-clients)).
+  The other multiplayer behaviours (decisions 5 and 7 to 12) aren't
+  fixes: one human plays the original whatever the fixes, and they're
+  on only with more than one human client (`Seats::multiplayer`), or they
+  ask `World::is_human`, which is `p == 1` with one; their rows below say
+  "one human: yes".
 - Crashes and hangs have no "original" mode, because the port can't
   crash. It does the fallback listed below. The option there would be
   a better fallback, where one makes sense.
@@ -242,6 +247,15 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 1028:1940 | The auction doesn't open while the TV's speaker is open (`1110:662d`): one player's speech and option hold it up (design issue for multiplayer) | `auction_speaker`: it doesn't wait; with `tv_lights` too the world keeps no speaker. Single player only off |
 | 1048:0a54, settlement step 0x64 | A message without a square, the archive's way back (`+0x118`) and the bankruptcy and net worth events take the human's view origin (`1110:5530`), which several players don't share (design issue for multiplayer) | `view_news`: they point at no square (`news::NOWHERE`) and each TV takes its own view; a save writes the saving player's ([fernseher.md](fernseher.md#multiplayer)). Single player only off |
 | 1070:2617, 1070:2b3a | The year's total and balance (kinds 0x6b–0x6e) are worked out only while the human's money menu is shown, and when it opens (design issue for multiplayer) | `year_total`: on every booking, as if it were always shown ([geldmenu.md](geldmenu.md#world-and-view)). Single player only off |
+| 1048:12e9, 1048:077a | The TV a message or the button bar opens pauses the game (`1110:0067`) until it closes: one player's TV, options and film stop everyone (design issue for multiplayer) | one human: yes. Several: nothing pauses, each client has their own TV (decision 5, `World::tv_shown`, `World::tv_pause`; [fernseher.md](fernseher.md#multiplayer)) |
+| 1020:24a0 | The pause, the options, the file menu, the quit question, the end form and the high scores stop the clock: one player's dialog stops the game (design issue for multiplayer) | one human: yes, the view stops its own clock. Several: only the host's pause stops the world, a command (`Action::Pause`, `Clock::stopped`); the rest stop nothing (decisions 8 and 11; [endforms.md](endforms.md#the-port)) |
+| 1028:0dde, 1028:1973, 1028:1e23, 1028:0c82 | The auction form is player 1's: "Auktion wartet" waits for them to start it, their held button stops the computers' bids, their pass hands the item to the computers (design issue for multiplayer) | one human: yes. Several: every human seat's form, a co-op seat's clients acting for it; the wait ends when all have started or passed or after the host's timeout in ticks; any seat's button stops the computers; the computers get the item once all have passed (decision 7, [auction.md](auction.md#multiplayer)) |
+| 1008:0512, 1008:0297, 1008:042b | The scenario's end checks player 1 only: their bankruptcy (with last year's books) and their goal end the game (design issue for multiplayer) | one human: yes. Several, in the normal game: each human seat is checked as player 1, a bankrupt one is out and spectates, the first winner ends the game for all (decision 9, `World::january_second_seats`); scenarios 1–13: player 1 still (phase 3) |
+| Settlement step 0x64 | The month's bankruptcy puts players 2 and up out as computers (and auctions their property); the net worth events are player 1's | one human: yes. A human seat of 2 to 8 isn't put out there, but on the 2nd of January as player 1 (decision 9); its property isn't auctioned and the net worth events stay player 1's (phase 3) |
+| 1020:3195 (en 1020:3194) | Ctrl+Alt+Shift+G gives player 1 1 000 000 000 and marks the game cheated (`1110:006f`), which takes the score off a win | yes: `Action::Cheat`, for the seat that sends it; one flag for the whole game, so one human's cheat counts for everyone (decision 10) |
+| 1078:01e7, 1008:4f64, settlement steps 4, 0x20, 0x4e, 0x82, 0x84, 1030:04e3, 10b0:069f, 10b0:1907, 1078:2396, 1078:280b, 1078:1d21, 10a0:1f65, 10a0:1d5e, 1010:1931, 1010:19f1, 10a8:0221, 10a0:0691, 10a0:0d1c, 10a0:0b49, 10a0:074d | Player 1 is the human and 2 and up the computers: only player 1 needs the money, keeps books, pays advertising, insurance, the cost of living, the whole interest and renovations, gets the errors and the money rising, sets their own rents, bids with their money, gets a prize on the build menu and a disaster's damage back; players 2 and up get a refund on the harder levels (design issue for multiplayer) | one human: yes. Every human seat as the human (`World::is_human`); what the original keeps once for player 1 (the books' sums, `1110:0072`, the shown flag, the damage, the build menu) each of seats 2 to 8 has again (`seats::SeatSlots`, in the port's chunk) |
+| 1110:634c, 1110:704e, 1110:704f | One road drag in the world, the human's: two humans dragging at once would share it (design issue for multiplayer) | one human: yes. Each human seat has its own (`World::road_drag`); seat 1's is the original's |
+| 1048:2bae | A save holds the one player's view (design issue for multiplayer) | one human: yes. The saving client's in the original's fields, and each client's in the port's chunk (`World::to_map_with_views`, decision 12) |
 | 1020:1e9b (en 1020:2367) | An earthquake's damage runs outside the clock's pause on every tick whose hour counter is 1, and the TV's pause stops the counter: a TV opened at an hour's first tick (an earthquake's own message comes on one, so a news option that opens the TV for it does this) has the earthquake demolish 100 more squares every tick until it closes ([simulation.md](simulation.md#earthquakes-10a00d1c)) | `quake_pause`: only on an hour's first tick that isn't paused |
 
 ## UI quirks
@@ -367,9 +381,9 @@ below are on in any game with more than one human client:
   length and skipping are one player's, [films.md](films.md)), and the
   archive keeps the human's view origin. The news options are each player's view
   setting (`optionen::Settings::news`, saved with the view); for one
-  player the port pauses as the original does. Decided (5), not built
-  yet: neither the news nor the TV's button pause the game, since each
-  player can dismiss their own TV. Decided (1), built: the archive's
+  player the port pauses as the original does. Decided (5), built:
+  neither the news nor the TV's button pause the game, since each
+  player can dismiss their own TV (`World::tv_shown`). Decided (1), built: the archive's
   origin points nowhere (`view_news`, [fernseher.md](fernseher.md#multiplayer));
 - the animation options: decided (11), the host's world options; other
   clients' commands for them are ignored (`World::apply_client`);
@@ -390,15 +404,17 @@ below are on in any game with more than one human client:
 - the road drag state (`1110:634c`, `704e`), which the computers read
   ([player-tools.md](player-tools.md#world-and-view)): decided (2),
   built, the computers ignore it (`computer_road_drag`,
-  `computer_road_ground`). Two humans dragging at once still share the
-  one flag; left for later;
-- the build menu's lists, player 1's: still to come, with the other
-  `p == 1` places, when humans play other seats;
+  `computer_road_ground`), and each human seat drags its own
+  (`World::road_drag`);
+- the build menu's lists, player 1's: each human seat has its own
+  (`World::build_menu_of`), a copy of seat 1's when a client first takes
+  the seat;
 - the money menu: the books, its balance, the insurance (`1110:0072`) and
   whether it's shown (which decides when the year's total is worked
   out, `World::money_menu_shown`) are player 1's
   ([geldmenu.md](geldmenu.md#world-and-view)): decided (4), built, the
-  total is worked out as if it were shown (`year_total`);
+  total is worked out as if it were shown (`year_total`), and each human
+  seat has its own books, insurance and shown flag (`seats::SeatSlots`);
 - the overview map's scroll arrows, which switch the "new people" option
   (`1110:0056`, the world's) off while held and on when let go: in the
   port `Action::SetOption(WorldOption::PeopleSpawn, ..)`
@@ -406,27 +422,30 @@ below are on in any game with more than one human client:
   it alone (`overview_arrows`);
 - sabotage: only player 1's money is checked, and only player 1 gets the
   books and the rising money (10a0:1f65, 10a0:1d5e); the computers never
-  sabotage: per seat, still to come with the other `p == 1` places;
+  sabotage: built, every human seat's (`World::is_human`);
 - the info box with buttons, which disables the other forms (not the
   clock) while it's open, and its and the overview's buttons, which are
   for player 1's squares ([infobox.md](infobox.md)): the box is each
-  view's; its buttons per seat are still to come;
+  view's, for its seat (`Infobox::seat`, `Umenuform::seat`);
 - the auction form, which stops the simulation while one human bids and
-  waits for them to start it ([auction.md](auction.md#open-questions)), and
-  whose held buttons stop the computers' bids: decided (7), not built
-  yet, a form per seat with waiting and a timeout;
+  waits for them to start it ([auction.md](auction.md#multiplayer)), and
+  whose held buttons stop the computers' bids: decided (7), built, a
+  form per seat with waiting and a timeout in ticks;
 - the pause (`TPauseform`) and the options (`TOptionenform`), which stop
   the clock (1020:24a0) for the one player ([options.md](options.md)):
-  decided (11), the host's; the world's side is still to come;
+  decided (11), built, the host's pause is a command that stops the
+  world (`Action::Pause`), the rest stop nothing;
 - the options' speed, animations, "Auktion wartet" and disasters, one
   player's settings that change everyone's world: decided (11), built,
   the host's (`World::apply_client` ignores them from other clients, a
   co-op partner in seat 1 too);
 - the quit question (`TEndeform`), which stops the clock while one human
-  is asked ([endforms.md](endforms.md)): decided (8), not built yet, it
-  doesn't stop the clock;
+  is asked ([endforms.md](endforms.md)): decided (8), built, it doesn't
+  stop the clock, and quitting is the client's leaving;
 - the end of a game (`TSchlussform`), which stops the clock for everyone
   until the one human picks a button, shows player 1's results, and enters
-  only player 1's score in the high scores: decided (8, 9, 10), not built
-  yet: it doesn't stop the clock, winning and losing are per seat, and
-  one human's cheat counts for the whole game.
+  only player 1's score in the high scores: decided (8, 9, 10), built for
+  the normal game: it doesn't stop the clock, each human seat is checked
+  and gets its own results, the first winner ends the game for all, and
+  one human's cheat counts for the whole game; scenarios 1–13 per seat
+  are phase 3.

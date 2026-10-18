@@ -137,6 +137,10 @@ pub struct Tools {
     /// The player's view enhancements (`build_menu`, `modifier_clicks`,
     /// `road_drag`).
     pub enhance: Enhancements,
+    /// The seat the tools are for: whose money the pictures check and
+    /// whose road drag they show. Single human: player 1
+    /// ([`crate::seats::HOST_SEAT`]).
+    pub seat: u8,
 }
 
 /// One step towards `stop` along a line of squares (the road planner's
@@ -176,6 +180,7 @@ impl Tools {
             view: ViewSize::ORIGINAL,
             hauptbild: crate::hauptschirm::LAYOUT[3].1,
             enhance: Enhancements::ORIGINAL,
+            seat: crate::seats::HOST_SEAT,
         }
     }
 
@@ -313,7 +318,7 @@ impl Tools {
             self.button_down(POINTER);
             self.close_menu();
         }
-        drag_cancel(world)
+        drag_cancel(world, self.seat)
     }
 
     /// `button_bar_click` for button `b` (`1110:5fbe`): a button that's up
@@ -351,7 +356,7 @@ impl Tools {
                 }
                 actions = self.release_tool(world, font, tiles, info, view, screen);
                 if b == 0x11 {
-                    actions.extend(drag_cancel(world));
+                    actions.extend(drag_cancel(world, self.seat));
                 }
             }
         } else {
@@ -475,7 +480,7 @@ impl Tools {
         if self.tool == POINTER && !self.pointer_double {
             self.info_box = Some(infobox::Request::Hide);
         }
-        if self.tool == ROAD && left && world.road_dragging && self.enhance.has(Enhancement::RoadDrag) {
+        if self.tool == ROAD && left && world.road_drag(self.seat).on && self.enhance.has(Enhancement::RoadDrag) {
             // The original's end is the last tick's (`preview_squares`).
             self.square = darstellung::square_at_in(world, tiles, cam, &self.view, mouse.0, mouse.1); // 1018:3d8d
             self.drag_end = self.square;
@@ -564,7 +569,7 @@ impl Tools {
     /// there (for the road the money for one square, for a building
     /// [`World::can_build`], player 1's). // 1090:0014
     fn preview_squares(&mut self, world: &World, tiles: &Tiles, cam: &Camera) {
-        if self.tool == ROAD && world.road_dragging {
+        if self.tool == ROAD && world.road_drag(self.seat).on {
             // BUG(original): only this tick moves the drag's end: with the animations or new people off the road is one square, and it ends where the mouse was at the last tick.
             self.drag_end = self.square;
             let (from, to) = (self.drag_start, self.drag_end);
@@ -574,7 +579,7 @@ impl Tools {
             } else {
                 line(from.1, to.1).map(|j| (from.0, j)).collect()
             };
-            let ground = world.road_drag_ground;
+            let ground = world.road_drag(self.seat).ground;
             for pos in squares {
                 if ground == 2 || ground == 3 {
                     if !world.can_bridge(pos) {
@@ -602,21 +607,21 @@ impl Tools {
         }
         let fits = match self.tool {
             DEMOLISH => true,
-            SABOTAGE => world.sabotage_fits(self.sabotage_kind(), at),
+            SABOTAGE => world.sabotage_fits(self.seat, self.sabotage_kind(), at),
             ROAD => {
                 self.last_building = 0;
                 let ground = world.island.ground.at(at);
-                // Single human: the money is player 1's.
+                // Single human: the money is player 1's; the view's seat's.
                 !(!on_map(at)
                     || (!world.can_bridge(at) && !world.road_fits(at))
-                    || world.money_of(1) < world.tables.road_cost
+                    || world.money_of(self.seat) < world.tables.road_cost
                     || ((0x37..=0x5e).contains(&ground) && !CROSSABLE.contains(&ground)))
             }
             _ => {
                 let building = self.menu.building.to_le_bytes()[0];
                 self.last_building = building;
-                // Single human: player 1's money.
-                world.can_build(at, building, 1).0 == 0 // 1030:04e3
+                // Single human: player 1's money; the view's seat's.
+                world.can_build(at, building, self.seat).0 == 0 // 1030:04e3
             }
         };
         let b = self.last_building;
@@ -697,10 +702,12 @@ impl Tools {
                 self.sounds.push(0xc);
             }
         }
-        for &menu in &tick.build_menu_removed {
-            self.menu.removed(menu); // 1018:26b9
+        for &(p, menu) in &tick.build_menu_removed {
+            if p == player {
+                self.menu.removed(menu); // 1018:26b9
+            }
         }
-        if tick.pointer_tool {
+        if tick.pointer_tool == Some(player) {
             let _ = self.click(POINTER, world, font, tiles, info, view, screen); // 1010:2c8b
         }
     }
@@ -733,8 +740,8 @@ impl Tools {
 
 /// The road drag ends, if it's on (a command, as the computers wait on
 /// it). // 1010:2b60
-fn drag_cancel(world: &World) -> Vec<Action> {
-    if world.road_dragging {
+fn drag_cancel(world: &World, seat: u8) -> Vec<Action> {
+    if world.road_drag(seat).on {
         vec![Action::RoadDragCancel]
     } else {
         Vec::new()

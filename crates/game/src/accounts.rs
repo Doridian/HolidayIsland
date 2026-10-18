@@ -119,13 +119,15 @@ impl World {
 
     /// The human pays for renovating their building at `pos` (marked:
     /// the original only charges player 1; the computer players' buildings
-    /// are renovated for free). // 1008:4f64
+    /// are renovated for free). Single human: player 1; here every human
+    /// seat pays for theirs ([`World::is_human`]). // 1008:4f64
     fn renovate(&mut self, pos: crate::world::Pos, building: u8, condition: u8) {
         // BUG(original): only the human pays for renovations.
-        if self.island.owners.get(pos) == Some(1) {
+        let owner = self.island.owners.get(pos).unwrap_or(0);
+        if owner != 0 && self.is_human(owner) {
             let cost = self.renovation_price(building, condition);
-            self.add_money(1, cost.wrapping_neg());
-            self.book(BOOK_OTHER, cost.wrapping_neg());
+            self.add_money(owner, cost.wrapping_neg());
+            self.book_for(owner, BOOK_OTHER, cost.wrapping_neg());
         }
     }
 
@@ -143,14 +145,25 @@ impl World {
     /// game is over with a score if the player didn't cheat and the money
     /// isn't frozen; lost, it's over without one. The view shows the end
     /// (`schlussform`, 1068:1016) from [`Tick::game_over`]. // 1008:0512
+    ///
+    /// Single human: the original checks player 1. With several human
+    /// seats a normal game (scenario 0) checks each of them as it does
+    /// player 1 ([`World::january_second_seats`]); scenarios 1 to 13
+    /// still check player 1 only.
     pub(crate) fn january_second(&mut self, tick: &mut Tick) {
         if self.won {
+            return;
+        }
+        // BUG(original): only player 1 wins, loses and goes bankrupt (design issue for multiplayer: each human seat in the normal game, decision 9; scenarios 1 to 13 are phase 3).
+        if self.scenario == 0 && self.seats.multiplayer() {
+            self.january_second_seats(tick);
             return;
         }
         if self.scenario_won() {
             self.won = true;
             let score = (!self.cheated && !self.finances.frozen).then(|| self.score()); // 1010:0faa
             tick.game_over = Some(GameOver {
+                seat: 1,
                 won: true,
                 score,
                 net_worth: self.net_worth(1),
@@ -158,9 +171,61 @@ impl World {
         } else if self.scenario_lost() {
             self.won = false;
             tick.game_over = Some(GameOver {
+                seat: 1,
                 won: false,
                 score: None,
                 net_worth: self.net_worth(1),
+            });
+        }
+    }
+
+    /// The normal game's check with several human seats (decision 9):
+    /// each seat a human plays is checked as the original checks player 1
+    /// (1008:0297, 1008:042b). In 2056 every seat still in has won: the
+    /// first of them ends the game for everyone ([`Tick::game_over`],
+    /// with its results), and every seat gets its own
+    /// ([`Tick::seat_results`]). Else a seat that's bankrupt
+    /// ([`World::bankrupt`], with player 1's rule of last year's books)
+    /// is out, its results lost, and its clients spectate
+    /// ([`World::spectates`]); the game goes on while any human seat is
+    /// in, and ends lost for everyone when none is. A cheat anywhere
+    /// takes everyone's score ([`World::cheated`], decision 10). The
+    /// clock goes on after the end (decision 8). // 1008:0512
+    fn january_second_seats(&mut self, tick: &mut Tick) {
+        let seats: Vec<u8> = self.human_seats().collect();
+        let fair = !self.cheated && !self.finances.frozen;
+        let result = |w: &World, seat: u8, won: bool| GameOver {
+            seat,
+            won,
+            score: (won && fair).then(|| w.score_of(seat)), // 1010:0faa
+            net_worth: w.net_worth(seat),
+        };
+        // A normal game is won in 2056.
+        if self.date.year == 0x808 {
+            let winners: Vec<u8> = seats.iter().copied().filter(|&p| self.player_out(p) == 0).collect();
+            if let Some(&first) = winners.first() {
+                self.won = true;
+                for &p in &winners {
+                    tick.seat_results.push(result(self, p, true));
+                }
+                tick.game_over = Some(result(self, first, true));
+                return;
+            }
+        }
+        let mut went_out = false;
+        for &p in &seats {
+            if self.bankrupt(p) {
+                self.set_player_out(p, 1);
+                went_out = true;
+                tick.seat_results.push(result(self, p, false));
+            }
+        }
+        if went_out && seats.iter().all(|&p| self.player_out(p) != 0) {
+            tick.game_over = Some(GameOver {
+                seat: 0,
+                won: false,
+                score: None,
+                net_worth: 0,
             });
         }
     }
@@ -292,15 +357,16 @@ impl World {
 
     /// Whether `player` (still in the game) has gone bankrupt: their net
     /// worth is below minus the debt limit, and for the human, last year's
-    /// books were in the red too. // 1008:0002
+    /// books were in the red too. Single human: player 1; here every
+    /// human seat, by its own books ([`World::is_human`]). // 1008:0002
     #[must_use]
     pub fn bankrupt(&self, player: u8) -> bool {
         if self.player_out(player) != 0 {
             return false;
         }
         let broke = self.finances.max_debt.wrapping_neg() > self.net_worth(player);
-        if player == 1 {
-            broke && self.book_value(BOOK_LAST_YEAR) < 0 // 1070:13f1
+        if player == 1 || self.is_human(player) {
+            broke && self.book_value_of(player, BOOK_LAST_YEAR) < 0 // 1070:13f1
         } else {
             broke
         }
@@ -407,9 +473,16 @@ impl World {
     /// easier levels (by 10, 20 on easy), but never below half. // 1010:0faa
     #[must_use]
     pub fn score(&self) -> i32 {
-        let worth = (self.net_worth(1) / 90_000).clamp(0, 100);
-        let guests = (self.guests_last_months(1) / 1800).clamp(0, 100);
-        let reputation = i32::from(self.reputation(1)).min(100);
+        self.score_of(1)
+    }
+
+    /// [`World::score`] of the human in seat `player`. Single human:
+    /// player 1's.
+    #[must_use]
+    pub fn score_of(&self, player: u8) -> i32 {
+        let worth = (self.net_worth(player) / 90_000).clamp(0, 100);
+        let guests = (self.guests_last_months(player) / 1800).clamp(0, 100);
+        let reputation = i32::from(self.reputation(player)).min(100);
         let mut score = (worth.wrapping_add(guests).wrapping_add(reputation) / 3).clamp(0, 100);
         let lower = |s: i32, by: i32| (s - by).max(0).max(s / 2);
         if self.played_without_disasters {
@@ -423,25 +496,19 @@ impl World {
     }
 
     /// Adds `amount` to the books' `kind` (marked: the books are the
-    /// human's). The original writes any field of the money menu for other
-    /// kinds; the port only has 0x52–0x6e. // 1070:1419
+    /// human's, player 1's; [`World::book_for`] a human seat's). The
+    /// original writes any field of the money menu for other kinds; the
+    /// port only has 0x52–0x6e. // 1070:1419
     pub fn book(&mut self, kind: u8, amount: i32) {
         // BUG(original): another kind writes some other field of the money menu; the port writes nothing.
-        if let Some(v) = kind
-            .checked_sub(FIRST_BOOK)
-            .and_then(|k| self.books.year.get_mut(usize::from(k)))
-        {
-            *v = v.wrapping_add(amount);
-        }
+        self.book_for(1, kind, amount);
     }
 
-    /// The books' `kind`, 0 outside 0x52–0x6e. // 1070:13f1
+    /// The books' `kind`, 0 outside 0x52–0x6e: player 1's
+    /// ([`World::book_value_of`]). // 1070:13f1
     #[must_use]
     pub fn book_value(&self, kind: u8) -> i32 {
-        kind.checked_sub(FIRST_BOOK)
-            .and_then(|k| self.books.year.get(usize::from(k)))
-            .copied()
-            .unwrap_or(0)
+        self.book_value_of(1, kind)
     }
 
     /// The books' year ends: this year's total and the balance (1070:1452)
@@ -449,13 +516,17 @@ impl World {
     ///
     /// The original also redraws the money menu (1070:1eeb), and works
     /// the total out again if it's shown (1070:2617), which gives 0.
+    /// Single human: player 1's books; here each human seat's.
     fn close_books_year(&mut self) {
-        self.geldmenu_year_total(); // 1070:1452
-        let y = &mut self.books.year;
-        let this = usize::from(BOOK_THIS_YEAR - FIRST_BOOK);
-        for k in 0..13 {
-            y[k] = y[this + k];
-            y[this + k] = 0;
+        let seats: Vec<u8> = self.human_seats().collect();
+        for p in seats {
+            self.geldmenu_year_total(p); // 1070:1452
+            let Some(y) = self.books_of_mut(p) else { continue };
+            let this = usize::from(BOOK_THIS_YEAR - FIRST_BOOK);
+            for k in 0..13 {
+                y[k] = y[this + k];
+                y[this + k] = 0;
+            }
         }
     }
 
@@ -670,6 +741,7 @@ mod tests {
         assert_eq!(
             tick.game_over,
             Some(GameOver {
+                seat: 1,
                 won: false,
                 score: None,
                 net_worth: -1001

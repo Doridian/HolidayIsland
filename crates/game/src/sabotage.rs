@@ -89,8 +89,9 @@ impl World {
             return error(0x19);
         }
         let cost = self.tables.sabotage_kind(kind).cost;
-        // Single human: only player 1's money is checked (the computers never sabotage).
-        if player == 1 && self.money_of(1) < cost {
+        // Single human: only player 1's money is checked (the computers
+        // never sabotage); here every human seat's ([`World::is_human`]).
+        if self.is_human(player) && self.money_of(player) < cost {
             return error(0xe);
         }
         let building = self.island.buildings.at(at);
@@ -128,13 +129,13 @@ impl World {
 
     /// Whether the sabotage tool's picture shows `kind` as one that can be
     /// used on `at` (the building's first square, or the square): on the
-    /// map, not player 1's, with player 1's money, and the kind fits
-    /// there, as the click checks it (here the piranhas' check works).
-    /// Single human: player 1's. // 1090:0014
+    /// map, not `player`'s, with their money, and the kind fits there, as
+    /// the click checks it (here the piranhas' check works). Single
+    /// human: player 1's; each view asks for its seat. // 1090:0014
     #[must_use]
-    pub fn sabotage_fits(&self, kind: u8, at: Pos) -> bool {
+    pub fn sabotage_fits(&self, player: u8, kind: u8, at: Pos) -> bool {
         let k = self.tables.sabotage_kind(kind);
-        if !on_map(at) || self.island.owners.at(at) == 1 || k.cost > self.money_of(1) {
+        if !on_map(at) || self.island.owners.at(at) == player || k.cost > self.money_of(player) {
             return false;
         }
         let building = self.island.buildings.at(at);
@@ -161,9 +162,10 @@ impl World {
     fn order_sabotage(&mut self, days: u16, pos: Pos, kind: u8, player: u8, tick: &mut Tick) {
         let cost = self.tables.sabotage_kind(kind).cost;
         self.add_money(player, cost.wrapping_neg()); // 1078:01e7
-        // Single human: only player 1 has books and sees the money rise.
-        if player == 1 {
-            self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+        // Single human: only player 1 has books and sees the money rise;
+        // here every human seat.
+        if self.is_human(player) {
+            self.book_for(player, BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
             tick.books = true; // 1070:2617
             self.float_money(cost, pos); // 1088:0153
         }

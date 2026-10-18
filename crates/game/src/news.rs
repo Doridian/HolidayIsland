@@ -11,9 +11,10 @@
 //! view, [`crate::savegame::MapView::news`]): the view decides with
 //! [`Posted::opens_tv`] whether a message opens its TV, and asks the world
 //! for the pause that goes with it ([`crate::command::Action::ShowTv`]).
-//! Single human: one player's TV pauses everyone, as in the original (see
-//! `docs/original-bugs.md`, "Design issues for multiplayer", for the
-//! intended multiplayer behaviour).
+//! Single human: one player's TV pauses everyone, as in the original.
+//! With several human clients neither the news nor the TV's button pause
+//! anything (decision 5, [`World::tv_shown`]; `docs/fernseher.md`,
+//! "Multiplayer").
 
 use crate::enhance::Fix;
 use crate::lang::{Language, Text};
@@ -417,11 +418,18 @@ impl World {
     /// (`1110:0067`), and [`World::tv_people`]. Nothing until the first
     /// message was posted (`1110:667c`). Single human: the human's TV
     /// pauses the game for everyone; the simulation waits on a dialog.
+    /// With several human clients the TV pauses nothing (decision 5):
+    /// each client has a TV of their own and closes it when they like, and
+    /// the world doesn't wait on one of them; the sale's people still
+    /// come.
     pub(crate) fn tv_shown(&mut self, n: i16, tick: &mut Tick) {
         if self.news.nothing_yet {
             return;
         }
-        self.clock.paused = true;
+        // BUG(original): one player's TV pauses the game for everyone (design issue for multiplayer: with several humans it pauses nothing, decision 5).
+        if !self.seats.multiplayer() {
+            self.clock.paused = true;
+        }
         self.tv_people(n, tick);
     }
 
@@ -564,9 +572,13 @@ impl World {
 
     /// The pause while the TV is open: set by 1048:12e9, cleared by
     /// 1048:077a, which the original does even when the TV wasn't open.
-    /// Single human: the simulation waits on the human's dialog.
+    /// Single human: the simulation waits on the human's dialog; with
+    /// several human clients the TV pauses nothing (decision 5,
+    /// [`World::tv_shown`]), and closing one ends no pause.
     pub(crate) fn tv_pause(&mut self, on: bool) {
-        self.clock.paused = on;
+        if !self.seats.multiplayer() {
+            self.clock.paused = on;
+        }
     }
 
     /// What opening the TV on entry `n` does to the island (1048:12e9):

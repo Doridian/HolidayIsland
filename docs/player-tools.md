@@ -194,9 +194,14 @@ focus; with `enhance.build_menu` they go to the main screen too). Turning the vi
   [original-bugs.md](original-bugs.md)).
 
 Single human: the money checks (`can_build`, raising, lowering, the road),
-the messages, the books and the build menu are player 1's in the original;
-another human seat would need its own. Nothing here stops the simulation:
-the build menu is no modal dialog.
+the messages, the books and the build menu are player 1's in the original.
+Here they're every human seat's (`World::is_human`): a human in seats 2
+to 8 needs the money, gets the messages, keeps books and has a build menu
+of their own (`World::build_menu_of`, a copy of seat 1's when a client
+first takes the seat), and a road drag of their own (`World::road_drag`;
+seat 1's is the original's `1110:634c`, `704e`, `704f`). The tools take
+the view's seat (`Tools::seat`). Nothing here stops the simulation: the
+build menu is no modal dialog.
 
 ## Open questions
 

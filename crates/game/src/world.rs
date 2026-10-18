@@ -1182,6 +1182,12 @@ pub struct World {
     /// The original's is the host alone in seat 1. Saved in the port's
     /// chunk (`seats.` lines).
     pub seats: crate::seats::Seats,
+    /// What the original keeps once, for player 1, for each of seats 2
+    /// to 8 (index `p - 2`), which a human may play: their books,
+    /// insurance, money menu, road drag, disaster damage and build menu
+    /// (`crate::seats::SeatSlots`). Seat 1's are the original's fields.
+    /// Saved in the port's chunk (`seat.` lines).
+    pub seat_slots: [crate::seats::SeatSlots; 7],
     /// The language of the text the world makes: the computers' names
     /// (`NAMEN.TXT`), the news archive's dates (`MONATE.TXT` and the
     /// language's date format) and its other strings. The language a
@@ -1261,6 +1267,7 @@ impl Default for World {
             news: crate::news::News::default(),
             fixes: crate::enhance::Fixes::ORIGINAL,
             seats: crate::seats::Seats::default(),
+            seat_slots: Default::default(),
             language: crate::lang::Language::default(),
             folder_language: crate::lang::Language::default(),
         }
@@ -1492,6 +1499,7 @@ impl World {
                 speed: longint(save, "1110:0096")?,
                 slice: word(save, "1110:009e")?.cast_signed(),
                 paused: byte(save, "1110:0067")? != 0,
+                stopped: false,
             },
             // Unit 1030:2bc5.
             date: Date {
@@ -1552,6 +1560,10 @@ impl World {
                 people_move: byte(save, "1110:0055")? != 0,
                 people_spawn: byte(save, "1110:0056")? == 1,
                 auction_waits: byte(save, "1110:0063")? != 0,
+                // The port's chunk's; a file without it has the default
+                // (from the file menu, the running game's: `World::load_map`).
+                auction_timeout: crate::savegame::auction_timeout_in(&save.trailing)
+                    .unwrap_or(crate::simulation::AUCTION_TIMEOUT),
             },
             // Unit 1068:313e.
             plots: save
@@ -1624,6 +1636,8 @@ impl World {
             fixes: crate::enhance::fixes_in(&save.trailing, crate::enhance::Fixes::ORIGINAL),
             // The port's chunk's; an original file has the host alone.
             seats: crate::seats::Seats::from_chunk(&save.trailing).unwrap_or_default(),
+            // The port's chunk's too; an original file has none.
+            seat_slots: crate::seats::SeatSlots::from_chunk(&save.trailing),
             // The port's chunk's, if it has one; whoever loads a file
             // without it gives the folder's ([`World::load_map`]).
             language: crate::lang::language_in(&save.trailing).unwrap_or_default(),

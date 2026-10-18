@@ -8,8 +8,10 @@
 //! 1020:24a0, and on again, 1020:24b7) while the other forms are disabled,
 //! not a flag of the world (the TV's pause is `1110:0067`): the form gives
 //! the world no commands. Single human: in the original this stops the
-//! game for the one player; in a multiplayer game a pause would have to be
-//! a command that stops the world for everybody, or not stop it at all.
+//! game for the one player. With several human clients the host's pause
+//! is a command that stops the world for everybody
+//! (`crate::command::Action::Pause`, `crate::simulation::Clock::stopped`);
+//! another client's stops nothing.
 
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};

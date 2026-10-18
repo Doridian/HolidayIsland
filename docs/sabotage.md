@@ -142,4 +142,6 @@ and the kind's check of the table (here the piranhas' works).
   through the map's unported fields unchanged.
 
 Single human: only player 1's money is checked, and only player 1 gets
-the books and the rising money.
+the books and the rising money. Here every human seat
+(`World::is_human`); the tool's picture checks the view's seat's
+(`World::sabotage_fits`).

@@ -23,7 +23,9 @@
 //! The end of the game stops the clock and disables the other forms until
 //! the player picks a button: the simulation waits on this dialog. Single
 //! human: the original shows the human's (player 1's) results and stops
-//! the game for everyone.
+//! the game for everyone. With several human clients it stops nothing
+//! (decision 8), and each view shows its seat's results
+//! (`crate::simulation::Tick::results_for`, decision 9).
 
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
@@ -139,6 +141,8 @@ pub struct Results {
 impl Results {
     /// The results of the game the world just ended, the human's
     /// (player 1's), with the money as `factor` and `language` format it.
+    /// With several human seats `over` is the view's seat's
+    /// (`Tick::results_for`), and so are the guests.
     #[must_use]
     pub fn of(world: &World, over: &GameOver, factor: i32, language: Language) -> Self {
         // Single human: the results are player 1's.
@@ -147,7 +151,7 @@ impl Results {
             cheated: world.cheated,
             scenario: world.scenario,
             net_worth: format_money(over.net_worth, factor, language),
-            guests: world.guests_last_months(1),
+            guests: world.guests_last_months(over.seat.max(1)),
             score: over.score,
         }
     }
@@ -466,7 +470,8 @@ impl Schlussform {
     /// clock, the help, the TV and the forms are the caller's.
     pub fn open_end(&mut self, results: Results, music_on: bool, screen: (i32, i32)) -> Response {
         // Single human: the clock stands until the one player picks a
-        // button; the simulation waits on this dialog.
+        // button; the simulation waits on this dialog. With several human
+        // clients the caller's clock goes on (decision 8).
         self.mode = Mode::End;
         self.music_was_on = music_on;
         let (music, film) = end_media(&results);

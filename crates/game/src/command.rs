@@ -54,16 +54,36 @@ pub enum Action {
     Level { raise: bool, corner: Pos, at: Pos },
     /// The demolish tool's (8) click. // 1028:3c90
     Demolish(Pos),
-    /// The road tool's (16) press: the drag starts at `at`. // 1080:3195
+    /// The road tool's (16) press: the drag starts at `at`. The drag is
+    /// the seat's ([`World::road_drag`]; the original's one flag is
+    /// player 1's). // 1080:3195
     RoadDragStart(Pos),
-    /// Its release: the road from `from` towards `to`, if the drag is
-    /// still on. // 1080:31ed
+    /// Its release: the road from `from` towards `to`, if the seat's
+    /// drag is still on. // 1080:31ed
     RoadDragEnd { from: Pos, to: Pos },
-    /// A button of the button bar ends the drag (1010:2b60, 1010:2c8b).
+    /// A button of the button bar ends the seat's drag (1010:2b60,
+    /// 1010:2c8b).
     RoadDragCancel,
     /// The options' speed slider: the game's speed in ticks per hour
     /// ([`World::set_speed`]). // 1060:0619
     Speed(i32),
+    /// The host's pause form opened (`true`) or closed (1040:3a45,
+    /// 1040:3bac): with several human clients the world stands for
+    /// everyone meanwhile ([`crate::simulation::Clock::stopped`]). A port
+    /// extension, the host's ([`World::apply_client`]); with one human
+    /// it does nothing, and the view stops its own clock (1020:24a0), as
+    /// the original.
+    Pause(bool),
+    /// The host sets how many ticks an auction waits for the human seats
+    /// ([`crate::simulation::Options::auction_timeout`]). A port
+    /// extension, the host's.
+    AuctionTimeout(u16),
+    /// The main screen's cheat, Ctrl+Alt+Shift+G: the seat gets
+    /// 1 000 000 000 and the game counts as cheated (`1110:006f`), which
+    /// takes the score off a win. One flag for the whole game: with
+    /// several humans, one's cheat counts for everyone (decision 10).
+    /// // 1020:3195, en 1020:3194
+    Cheat,
     /// An option of the world's on the options form, or the overview
     /// map's new people ([`World::set_option`]).
     /// // 1060:05a7, 1060:05cb, 1060:0637, 10b8:21c7
@@ -87,15 +107,19 @@ pub enum Action {
     Sell(Pos),
     /// The TV opens on the archive's entry `n` from the button bar's button
     /// 3 (1010:2c8b, 1048:12e9): the game pauses ([`World::tv_shown`]).
-    /// Waits on a dialog. Single human.
+    /// Waits on a dialog. Single human: with several human clients it
+    /// pauses nothing, and only the sale's people come (decision 5).
     ShowTv(i16),
     /// The TV a message opened pauses the game (`true`, 1048:12e9 from
     /// 1048:0a54), and closing it lets it go on (`false`, 1048:077a)
-    /// ([`World::tv_pause`]). Waits on a dialog. Single human.
+    /// ([`World::tv_pause`]). Waits on a dialog. Single human: with
+    /// several human clients it does nothing (decision 5).
     TvPause(bool),
     /// The TV's speaker opened, started or ended reading, or closed
     /// ([`World::set_speaker`]): the auction waits for it, and its lights
-    /// draw random numbers. Waits on a view. Single human.
+    /// draw random numbers. Waits on a view. Single human: with several
+    /// human clients `fix.tv_lights` and `fix.auction_speaker` are on, and
+    /// the world ignores it.
     /// // 1110:662d, 1048:1b3e
     Speaker(crate::news::Speaker),
     /// Switches one of the world's fixes on or off in the middle of a
@@ -158,10 +182,17 @@ impl World {
                     tick.status.push((player, Status::Error(e)));
                 }
             }
-            Action::RoadDragStart(at) => self.road_drag_start(at),
+            Action::RoadDragStart(at) => self.road_drag_start(player, at),
             Action::RoadDragEnd { from, to } => self.road_drag_end(player, from, to, &mut tick),
-            Action::RoadDragCancel => self.road_dragging = false,
+            Action::RoadDragCancel => self.end_road_drag(player),
             Action::Speed(speed) => self.set_speed(speed),
+            // With one human the view stops its own clock instead.
+            Action::Pause(on) => self.clock.stopped = on && self.seats.multiplayer(),
+            Action::AuctionTimeout(ticks) => self.options.auction_timeout = ticks,
+            Action::Cheat => {
+                self.add_money(player, 1_000_000_000); // 1078:01e7
+                self.cheated = true; // 1110:006f
+            }
             Action::SetOption(option, on) => self.set_option(option, on, &mut tick),
             Action::MoneyMenu(a) => self.money_menu_command(player, a),
             Action::Sabotage { kind, at } => self.sabotage_command(player, kind, at, &mut tick),
@@ -214,7 +245,8 @@ impl World {
     /// books' "other" get the cost and it rises from `at`. The original
     /// also takes the tool's pointer off the island (`*1110:6fd6 + 0x17 :=
     /// 0`, the view's). Single human: the books are player 1's, and only
-    /// player 1 needs the money (`crate::terrain`). // 1028:3b7c, 1028:3a68
+    /// player 1 needs the money (`crate::terrain`); here every human
+    /// seat's ([`World::is_human`]). // 1028:3b7c, 1028:3a68
     fn level_tool(&mut self, player: u8, raise: bool, corner: Pos, at: Pos, tick: &mut Tick) {
         let ((error, cost), in_the_way) = if raise {
             self.raise_corner(player, corner, tick) // 10b0:069f
@@ -224,8 +256,8 @@ impl World {
         match error {
             0 => {
                 self.add_money(player, cost.wrapping_neg()); // 1078:01e7
-                if player == 1 {
-                    self.book(BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
+                if self.is_human(player) {
+                    self.book_for(player, BOOK_OTHER, cost.wrapping_neg()); // 1070:1419
                     tick.books = true; // 1070:2617
                     self.float_money(cost, at); // 1088:0153
                 }
@@ -240,23 +272,29 @@ impl World {
 
     /// The road tool goes down on `at`: the drag is on, and its ground and
     /// form are kept, if `at` is on the map. The square itself is the
-    /// view's (`1110:6344`). // 1080:3195
-    fn road_drag_start(&mut self, at: Pos) {
+    /// view's (`1110:6344`). Single human: one drag in the world, player
+    /// 1's (`1110:634c`); each human seat has its own here
+    /// ([`World::road_drag`]). // 1080:3195
+    fn road_drag_start(&mut self, player: u8, at: Pos) {
         if on_map(at) {
-            self.road_dragging = true;
-            self.road_drag_ground = self.ground_or_water(at); // 1000:3e0d
-            self.road_drag_form = self.form_or_flat(at); // 1000:3e8d
+            let drag = crate::roads::RoadDrag {
+                on: true,
+                ground: self.ground_or_water(at), // 1000:3e0d
+                form: self.form_or_flat(at),      // 1000:3e8d
+            };
+            self.set_road_drag(player, drag);
         }
     }
 
-    /// The road tool comes up: with the drag on, the road from `from`
-    /// towards `to` ([`World::build_road`], from the drag's ground), and
-    /// its messages. // 1080:31ed
+    /// The road tool comes up: with the seat's drag on, the road from
+    /// `from` towards `to` ([`World::build_road`], from the drag's
+    /// ground), and its messages. // 1080:31ed
     fn road_drag_end(&mut self, player: u8, from: Pos, to: Pos, tick: &mut Tick) {
-        if !self.road_dragging {
+        let drag = self.road_drag(player);
+        if !drag.on {
             return;
         }
-        match self.build_road(player, from, to, self.road_drag_ground, tick) {
+        match self.build_road(player, from, to, drag.ground, tick) {
             Ok(_) | Err(RoadError::NotBuilt) => {}
             Err(RoadError::NotEnoughMoney) => tick.status.push((player, Status::Error(0xe))),
             Err(RoadError::InTheWay(pos)) => self.in_the_way(player, pos, tick),

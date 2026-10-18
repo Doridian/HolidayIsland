@@ -281,17 +281,21 @@ works it out in 64 bits).
   (and their road doesn't end the drag), and with
   `fix.computer_road_ground` they go by their own start's ground. Both
   are on with more than one human client (`enhance::SINGLE_PLAYER_ONLY`).
-  The drag itself is still one flag in the world, so two humans dragging
-  at once share it; that's left for later.
+  Each human seat has its own drag (`World::road_drag`): seat 1's is the
+  original's one flag, which a computer's road ends as the original's
+  does; a human in seats 2 to 8 has theirs in their slot.
 - Which players are computers: 2 to the player count, as in the
   original, but not a seat a human client plays (`World::is_computer`,
   `game::seats`): `computer_turn` skips such a seat, and `bid_limit`
   doesn't bid for it. A computer takes a seat over when its last client
-  leaves or disconnects and goes on from the state it left; its handicaps
-  (it pays no advertising, insurance or cost of living, `add_money`'s
-  refund) still go by `p != 1`, so a human in seat 2..8 gets them until
-  winning and losing per seat is built (decision 9 in
-  [port-architecture.md](port-architecture.md#decided)).
+  leaves or disconnects and goes on from the state it left. Its
+  handicaps go by `World::is_human`, so a human in seats 2 to 8 has none:
+  they need the money, pay advertising, insurance, the cost of living and
+  the whole interest, get nothing back from `add_money` on the harder
+  levels, pay for their renovations, set their own rents and prices, bid
+  with their money (`bid_limit`), and aren't put out by the month's
+  bankruptcy check (step 0x64) but checked on the 2nd of January as
+  player 1 (decision 9).
 - Building any road turns `1110:0056` on (1080:3216). It isn't a
   player's option but a flag that the road planner, `draw_columns` and
   the overview map's scroll timers clear while busy and set when done

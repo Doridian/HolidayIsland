@@ -5,9 +5,12 @@ Ported in [`game::geldmenu`](../crates/game/src/geldmenu.rs): the form
 (`geldmenu::Action`, through `command::Action::MoneyMenu`). The books it
 shows are the world's ([settlement.md](settlement.md#the-books-tgeldmenuform-10701419),
 `game::accounts`). Single human: the form, the books, the insurance and
-the balance are player 1's. Whether the form is shown no longer decides
-the books with `fix.year_total`, which every game with more than one
-human client has ([below](#world-and-view)).
+the balance are player 1's. A human in seats 2 to 8 has their own books'
+sums, insurance and shown flag (`seats::SeatSlots`, `World::book_for`,
+`World::insured_of`), and their view's form shows them
+(`Geldmenuform::seat`); seat 1's are the original's fields. Whether the
+form is shown no longer decides the books with `fix.year_total`, which
+every game with more than one human client has ([below](#world-and-view)).
 
 ## Opening and closing
 
@@ -117,12 +120,12 @@ The world's part (`World::money_menu_command`):
 
 | `geldmenu::Action` | Original | Checks |
 |---|---|---|
-| `Shown(bool)` | 1070:2b3a / 1070:2bb4 | Player 1 only: the flag `World::money_menu_shown`; showing works out the year's total and the balance |
+| `Shown(bool)` | 1070:2b3a / 1070:2bb4 | Player 1 only: the flag `World::money_menu_shown` (a human in seats 2 to 8: their slot's); showing works out the year's total and the balance |
 | `TakeLoan` | `take_loan(1, Kreditgroesse)` (1078:05c6), the balance (1070:2ab8) | Past `MaxSchulden` the bank says no (`1110:6f28`), nothing changes |
 | `RepayLoan` | `repay_loan` (1078:061b), the balance | The money must be there and something owed |
 | `Advertising { more }` | `*1110:6f24 + p − 1` ±1 | 0 to 7 |
 | `Renovation { more }` | `1110:1334[p]` through the tables | An interval past 5 stays |
-| `Insurance(bool)` | `1110:0072` | Player 1 only |
+| `Insurance(bool)` | `1110:0072` | Player 1 only (a human in seats 2 to 8: their slot's) |
 
 The year's total (1070:1452): kind 0x6b is the sum of 0x5f–0x6a, then
 (1070:2ab8) 0x6c, 0x6d, 0x6e are player 1's money (1078:0191), minus the

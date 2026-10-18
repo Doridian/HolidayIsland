@@ -192,19 +192,45 @@ price) − price) × Random(1000) div 999`.
 
 The bugs kept are in [original-bugs.md](original-bugs.md).
 
-## Open questions
+## Multiplayer
 
-- **Multiplayer**, decided, not built yet (decision 7 in
-  [port-architecture.md](port-architecture.md#decided)): the form stops
-  the simulation for everyone while one human bids, and "Auktion wartet"
-  (the host's option) makes it wait for that human to start. With
-  several humans every seat gets the form, the world waits for them, and
-  a timeout starts it; within a co-op seat any client's bid or pass
-  counts for the seat. Built already: the auction doesn't wait for the
-  TV's speaker (`fix.auction_speaker`), and a computer doesn't bid for a
-  seat a human client plays (`bid_limit`). Holding a button still stops
-  the computers' bids for everyone, and passing (or closing) still hands
-  the item to the computers for all.
+Decision 7 in [port-architecture.md](port-architecture.md#decided),
+built in `game::auction` for games with more than one human client
+(`Seats::multiplayer`); with one the auction is the original's, the form
+player 1's. The form stops the simulation for everyone while it's open,
+in the original and here: the auction ends by its timers, which are
+world ticks, so no client's dialog holds the world.
+
+- Every human seat that's in has the form (`World::auction_seats`), and
+  each seat's view bids with its seat's limit (`Auktionsform::seat`). A
+  human seat's limit is its money, as the original's human's, and
+  nothing for its own building (`bid_limit`); a seat a computer plays
+  while its clients are away bids as the computer.
+- A co-op seat's clients act for it together: any one's start, bid,
+  hold or pass is the seat's (`World::auction_seat_command`).
+- With "Auktion wartet" (the host's `1110:0063`) the auction waits until
+  every human seat has started it (the bid button, `Auction::started`)
+  or passed (`Auction::passed`), but no longer than the host's timeout
+  (`Options::auction_timeout`, default 300 ticks, 30 s;
+  `Action::AuctionTimeout`, saved in the port's chunk as
+  `options.auction_timeout`): then the seats that haven't count as
+  passed. Without it the auction starts as it opens, as the original's.
+- Any seat holding a button (`Auction::held_by`) keeps the computers from
+  bidding; a seat that passes, or whose clients have all gone, holds
+  none.
+- Passing, closing the form and leaving it with a key are the seat's
+  pass: its view hides its form, and the seat can't bid again. The item
+  goes to the computers (1028:0c82) only once every human seat has
+  passed; then the form closes for everyone. A seat that sells its own
+  building has passed from the start; with no other human seat the
+  computers bid among themselves at once, as for the original's human.
+- The winner's books are their seat's ([port-architecture.md](port-architecture.md#seats-and-clients)),
+  and a prize goes onto a human seat's own build menu, not as a
+  computer's order (`make_available`).
+- With `fix.saved_state` the port's chunk keeps the seats' auction
+  (`state.auction.seats`).
+
+## Open questions
 - What `1110:6598` is: saved and loaded, never used here.
 - Why the form is centred by `AuktionsImage`'s height rather than its
   own.

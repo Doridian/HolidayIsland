@@ -313,6 +313,9 @@ pub enum KeyResult {
     /// The key presses button `n` of the button bar (1020:2daa, then
     /// 1010:2c8b, which opens or closes what the button stands for).
     Button(u8),
+    /// Ctrl+Alt+Shift+G, the cheat: a command for the world
+    /// (`crate::command::Action::Cheat`). // 1020:3195, en 1020:3194
+    Cheat,
 }
 
 /// The button bar's button 10, the hotels' submenu, which the later
@@ -1236,6 +1239,10 @@ impl Hauptschirm {
     /// those of the button bar's buttons. // 1020:2e09
     pub fn key_down(&mut self, key: u16, shift: ShiftState, world: &World, tiles: &Tiles) -> KeyResult {
         let mods = shift.0 & (ShiftState::SHIFT.0 | ShiftState::ALT.0 | ShiftState::CTRL.0);
+        // The shift state 7 (`[ssShift, ssAlt, ssCtrl]`) and `G`.
+        if mods == ShiftState::SHIFT.0 | ShiftState::ALT.0 | ShiftState::CTRL.0 && key == 0x47 {
+            return KeyResult::Cheat;
+        }
         if (mods == 0 || mods == ShiftState::SHIFT.0)
             && let Some(&(_, n)) = BUTTON_KEYS.iter().find(|(keys, _)| keys.contains(&key))
         {

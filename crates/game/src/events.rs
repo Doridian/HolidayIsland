@@ -303,16 +303,34 @@ impl World {
     }
 
     /// An earthquake begins: no damage yet, and whether the player is
-    /// insured now counts for it. // 10a0:0d09
+    /// insured now counts for it. Single human: player 1's; each of seats
+    /// 2 to 8 has its own in its slot (`crate::seats::SeatSlots`).
+    /// // 10a0:0d09
     fn quake_start(&mut self) {
         self.damage.amount = 0;
         self.damage.insured = self.insured;
+        for s in &mut self.seat_slots {
+            s.damage = 0;
+            s.damage_insured = s.insured;
+        }
+    }
+
+    /// Adds `amount` to the damage of the disaster going on of `owner`,
+    /// if a human plays them (single human: player 1's).
+    fn add_damage(&mut self, owner: u8, amount: i32) {
+        if owner == 1 {
+            self.damage.amount = self.damage.amount.wrapping_add(amount);
+        } else if self.is_human(owner)
+            && let Some(s) = self.slots_mut(owner)
+        {
+            s.damage = s.damage.wrapping_add(amount);
+        }
     }
 
     /// An hour of an earthquake: 100 random squares (`Random(250)` for `i`,
     /// then `j`) lose their building and people, unless it's a palm or
     /// beach life; the human's count as damage at half their price
-    /// (marked: only player 1's). // 10a0:0d1c
+    /// (marked: only player 1's; here each human seat's). // 10a0:0d1c
     pub(crate) fn quake_damage(&mut self, tick: &mut Tick) {
         for _ in 0..QUAKE_SQUARES {
             let i = self.random.random(250).cast_signed();
@@ -321,10 +339,8 @@ impl World {
             if UNSHAKEN.contains(&building) {
                 continue;
             }
-            if self.island.owners.at((i, j)) == 1 {
-                let half = self.tables.hausprei(building, 0) / 2;
-                self.damage.amount = self.damage.amount.wrapping_add(half);
-            }
+            let half = self.tables.hausprei(building, 0) / 2;
+            self.add_damage(self.island.owners.at((i, j)), half);
             self.remove_people_from((i, j), tick); // 1088:6975
             // For no one, so it never refuses.
             let _ = self.demolish(0, (i, j), tick);
@@ -345,10 +361,8 @@ impl World {
                     continue;
                 }
                 if self.island.lowest_corner((i, j)) < 2 {
-                    if self.island.owners.at((i, j)) == 1 {
-                        let half = self.tables.hausprei(building, 0) / 2;
-                        self.damage.amount = self.damage.amount.wrapping_add(half);
-                    }
+                    let half = self.tables.hausprei(building, 0) / 2;
+                    self.add_damage(self.island.owners.at((i, j)), half);
                     let _ = self.demolish(0, (i, j), tick);
                 }
                 if self.island.lowest_corner((i, j)) < 2 {
@@ -360,11 +374,24 @@ impl World {
 
     /// A flood or an earthquake ends: an insured player gets the damage
     /// back, in the books' "other". Single human: the insurance is player
-    /// 1's. // 10a0:0cce, 10a0:0ddc
+    /// 1's; here each human seat's, of their own damage. // 10a0:0cce,
+    /// 10a0:0ddc
     fn disaster_end(&mut self, tick: &mut Tick) {
         if self.damage.insured {
             self.add_money(1, self.damage.amount);
             self.book(crate::accounts::BOOK_OTHER, self.damage.amount); // 1070:1419
+            tick.books = true; // 1070:2617
+        }
+        for p in 2..=8 {
+            let Some((damage, true)) = self
+                .slots(p)
+                .filter(|_| self.is_human(p))
+                .map(|s| (s.damage, s.damage_insured))
+            else {
+                continue;
+            };
+            self.add_money(p, damage);
+            self.book_for(p, crate::accounts::BOOK_OTHER, damage); // 1070:1419
             tick.books = true; // 1070:2617
         }
     }
@@ -391,8 +418,8 @@ impl World {
     /// slick's square and the message's. The damage is a hundredth of the
     /// human's buildings' value (1008:0b0b), insured if they are now, and
     /// the location map goes down to 50 % within 30 cells around the
-    /// square (1030:185d). Single human: the damage is player 1's.
-    /// // 10a0:074d, 456 bytes
+    /// square (1030:185d). Single human: the damage is player 1's; here
+    /// each human seat's, of their own buildings. // 10a0:074d, 456 bytes
     fn oil_slick_start(&mut self, tick: &mut Tick) -> Pos {
         let mut pos: Pos;
         let mut tries: i16 = 0;
@@ -424,6 +451,14 @@ impl World {
         self.damage.slick = pos;
         self.damage.insured = self.insured;
         self.damage.amount = self.assets(1) / 100; // 1008:0b0b
+        // Single human: player 1's damage; each human seat's here.
+        for p in 2..=8 {
+            let amount = if self.is_human(p) { self.assets(p) / 100 } else { 0 };
+            if let Some(s) = self.slots_mut(p) {
+                s.damage = amount;
+                s.damage_insured = s.insured;
+            }
+        }
         let (value, radius) = OIL_LOCATION;
         self.change_location(pos, value, radius, false); // 1030:185d
         pos
@@ -442,7 +477,8 @@ impl World {
     /// The oil slick ends: the location map around its square back
     /// (1030:185d), an insured player gets the damage back, in the books'
     /// "other", and the oil goes (1088:2df2), its squares' markers free.
-    /// Single human: the insurance is player 1's. // 10a0:0915, 213 bytes
+    /// Single human: the insurance is player 1's; here each human
+    /// seat's ([`World::disaster_end`]). // 10a0:0915, 213 bytes
     fn oil_slick_end(&mut self, tick: &mut Tick) {
         let (value, radius) = OIL_LOCATION;
         self.change_location(self.damage.slick, value, radius, true); // 1030:185d

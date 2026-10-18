@@ -156,15 +156,18 @@ impl World {
     /// third at 2. // 1078:01e7
     ///
     /// For player 1 the original redraws the money on the info bar; the
-    /// port's view does that when it sees the amount change.
+    /// port's view does that when it sees the amount change. Single
+    /// human: players 2 and up are the computers; a human in those seats
+    /// gets nothing back ([`World::is_human`]).
     pub fn add_money(&mut self, player: u8, amount: i32) {
+        let computer = player > 1 && !self.is_human(player);
         let f = &mut self.finances;
         if f.frozen || player == 0 || player > self.player_count {
             return;
         }
         let i = usize::from(player - 1);
         f.money[i] = f.money[i].saturating_add(amount);
-        if player > 1 && amount < 0 {
+        if computer && amount < 0 {
             let back = match self.difficulty {
                 1 => amount / 6,
                 2 => amount / 3,

@@ -279,7 +279,7 @@ impl World {
     /// Raises the corner `(i, j)` a step for `player`: the error (0 when
     /// done) and the cost so far, and the square that caused the error
     /// (`1110:64ba`, for the message). Single human: only player 1 needs
-    /// the money. // 10b0:069f
+    /// the money; here every human seat ([`World::is_human`]). // 10b0:069f
     pub(crate) fn raise_corner(&mut self, player: u8, pos: Pos, tick: &mut Tick) -> ((u16, i32), Pos) {
         let (i, j) = pos;
         let mut result = (0xd, 0, pos);
@@ -301,7 +301,8 @@ impl World {
                 result = (work.error, work.cost, work.error_at);
                 // BUG(original): for player 1 the money check replaces any earlier error.
                 let first = result.0 != 0 && self.fixes.has(Fix::LevellingErrors);
-                if player == 1 && self.money_of(1) < work.cost && !first {
+                // Single human: player 1's money; every human seat's here.
+                if self.is_human(player) && self.money_of(player) < work.cost && !first {
                     result.0 = NOT_ENOUGH_MONEY.into();
                 }
                 if result.0 == 0 {
@@ -327,7 +328,8 @@ impl World {
             result = (work.error, work.cost, work.error_at);
             // BUG(original): for player 1 the money check replaces any earlier error.
             let first = result.0 != 0 && self.fixes.has(Fix::LevellingErrors);
-            if player == 1 && self.money_of(1) < work.cost && !first {
+            // Single human: player 1's money; every human seat's here.
+            if self.is_human(player) && self.money_of(player) < work.cost && !first {
                 result.0 = NOT_ENOUGH_MONEY.into();
             }
             if result.0 == 0 {

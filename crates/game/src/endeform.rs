@@ -14,7 +14,10 @@
 //!
 //! Showing it stops the clock and disables the other forms until it
 //! closes: the simulation waits on this dialog. Single human: in the
-//! original this stops the game for everyone.
+//! original this stops the game for everyone. With several human clients
+//! it stops nothing (decision 8), and a client's "OK" is their leaving
+//! (`crate::seats::SeatChange::Leave`): a computer plays their seat once
+//! its last client has gone.
 
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
@@ -210,7 +213,8 @@ impl Endeform {
     /// 1010:2970); that's the caller's. // 1020:3b5f
     pub fn show(&mut self, screen: (i32, i32)) {
         // Single human: the clock stands while the one player is asked;
-        // the simulation waits on this dialog.
+        // the simulation waits on this dialog. With several human clients
+        // the caller's clock goes on (decision 8).
         self.top = (screen.1 - RECTS[0].3) / 2;
         self.left = (screen.0 - RECTS[0].2) / 2;
         self.height = HEIGHT;

@@ -569,24 +569,45 @@ impl World {
     /// 120th of their buildings' value if they're insured, 1008:062c),
     /// their cost of living and their interest; the computer players pay
     /// a sixth of theirs. Everyone's costs come off their money and go
-    /// into the month; the human's into the books.
+    /// into the month; the human's into the books. Single human: player
+    /// 1; here every human seat pays as the human, with their own
+    /// insurance and books ([`World::is_human`]).
     fn pay_costs(&mut self) {
-        let advertising = self
-            .block_longint(0x3c + 4)
-            .wrapping_mul(i32::from(self.advertising(1)))
-            .wrapping_mul(self.settlement.advertising_cost);
-        let insurance = if self.insured { div(self.assets(1), 120) } else { 0 };
+        let human_costs = |w: &World, p: u8| {
+            let advertising = w
+                .block_longint(0x3c + 4 * usize::from(p))
+                .wrapping_mul(i32::from(w.advertising(p)))
+                .wrapping_mul(w.settlement.advertising_cost);
+            let insurance = if w.insured_of(p) { div(w.assets(p), 120) } else { 0 };
+            let interest = w.finances.interest.get(usize::from(p) - 1).copied().unwrap_or(0); // 1078:05a0
+            (advertising, insurance, interest)
+        };
+        let humans: Vec<bool> = (0..=8).map(|p| p == 1 || self.is_human(p)).collect();
+        let costs: Vec<(i32, i32, i32)> = (0..=8)
+            .map(|p| if p == 0 { (0, 0, 0) } else { human_costs(self, p) })
+            .collect();
         let s = &mut self.settlement;
+        let (advertising, insurance, interest) = costs[1];
         s.set_sum(ADVERTISING, 1, advertising);
         s.set_sum(OTHER, 1, insurance.wrapping_neg());
-        s.set_sum(INTEREST, 1, self.finances.interest[0]); // 1078:05a0
+        s.set_sum(INTEREST, 1, interest); // 1078:05a0
         // BUG(original): only the human pays advertising, insurance and the cost of living; the computers pay a sixth of their interest.
         for p in 2..=self.player_count {
-            let interest = self.finances.interest.get(usize::from(p) - 1).copied().unwrap_or(0);
-            s.set_sum(INTEREST, p, interest / 6);
+            let (advertising, insurance, interest) = costs.get(usize::from(p)).copied().unwrap_or_default();
+            if humans.get(usize::from(p)).copied().unwrap_or(false) {
+                s.set_sum(ADVERTISING, p, advertising);
+                s.set_sum(OTHER, p, insurance.wrapping_neg());
+                s.set_sum(INTEREST, p, interest);
+            } else {
+                s.set_sum(INTEREST, p, interest / 6);
+            }
         }
-        let other = s.sum(OTHER, 1).wrapping_sub(s.living_costs);
-        s.set_sum(OTHER, 1, other);
+        for p in 1..=self.player_count {
+            if humans.get(usize::from(p)).copied().unwrap_or(false) {
+                let other = s.sum(OTHER, p).wrapping_sub(s.living_costs);
+                s.set_sum(OTHER, p, other);
+            }
+        }
         for p in 1..=self.player_count {
             let s = &mut self.settlement;
             let v = s
@@ -597,11 +618,14 @@ impl World {
             s.add_sum(MONTH, p, v);
             self.add_money(p, v);
         }
-        let s = &self.settlement;
-        let (a, i, o) = (s.sum(ADVERTISING, 1), s.sum(INTEREST, 1), s.sum(OTHER, 1));
-        self.book(BOOK_ADVERTISING, a.wrapping_neg());
-        self.book(BOOK_INTEREST, i.wrapping_neg());
-        self.book(BOOK_OTHER, o);
+        let seats: Vec<u8> = self.human_seats().collect();
+        for p in seats {
+            let s = &self.settlement;
+            let (a, i, o) = (s.sum(ADVERTISING, p), s.sum(INTEREST, p), s.sum(OTHER, p));
+            self.book_for(p, BOOK_ADVERTISING, a.wrapping_neg());
+            self.book_for(p, BOOK_INTEREST, i.wrapping_neg());
+            self.book_for(p, BOOK_OTHER, o);
+        }
     }
 
     /// Step 6: each plot's beds, by class of rent (1008:097f of the
@@ -1030,13 +1054,16 @@ impl World {
         }
     }
 
-    /// The human's takings and costs into the books (marked: player 1's),
-    /// in the original's order. // 1070:1419
+    /// The human's takings and costs into the books (marked: player 1's;
+    /// here each human seat's), in the original's order. // 1070:1419
     fn book_month(&mut self, takings: [(u8, usize); 2], costs: [(u8, usize); 2]) {
-        for k in 0..2 {
-            let (t, c) = (self.settlement.sum(takings[k].1, 1), self.settlement.sum(costs[k].1, 1));
-            self.book(takings[k].0, t);
-            self.book(costs[k].0, c.wrapping_neg());
+        let seats: Vec<u8> = self.human_seats().collect();
+        for p in seats {
+            for k in 0..2 {
+                let (t, c) = (self.settlement.sum(takings[k].1, p), self.settlement.sum(costs[k].1, p));
+                self.book_for(p, takings[k].0, t);
+                self.book_for(p, costs[k].0, c.wrapping_neg());
+            }
         }
     }
 
@@ -1464,8 +1491,11 @@ impl World {
         } else {
             self.viewpoint.origin
         };
+        // Single human: players 2 and up are the computers. A human seat
+        // is checked on the 2nd of January instead, as player 1
+        // ([`World::january_second`]).
         for p in 2..=self.player_count {
-            if self.bankrupt(p) && self.player_out(p) == 0 {
+            if !self.is_human(p) && self.bankrupt(p) && self.player_out(p) == 0 {
                 let amount = div(self.assets(p), 5).wrapping_mul(3).wrapping_add(1000);
                 self.schedule_event(10, amount, i32::from(p), here);
                 self.set_player_out(p, 1);
@@ -1554,7 +1584,10 @@ impl World {
     fn computer_rents(&mut self) {
         for n in 0..self.houses.len() {
             let h = &self.houses[n];
-            if self.owner(h.pos()) == 1 {
+            // Single human: player 1's are the human's; here every human
+            // seat's ([`World::is_human`]).
+            let owner = self.owner(h.pos());
+            if owner == 1 || (owner != 0 && self.is_human(owner)) {
                 continue;
             }
             let rent = h.price();
@@ -1574,7 +1607,8 @@ impl World {
     fn computer_prices(&mut self) {
         for n in 0..self.facilities.len() {
             let f = &self.facilities[n];
-            if self.owner(f.pos()) == 1 {
+            let owner = self.owner(f.pos());
+            if owner == 1 || (owner != 0 && self.is_human(owner)) {
                 continue;
             }
             let price = if f.fill() == 100 {

@@ -584,11 +584,15 @@ impl World {
         let item = self.auction.item;
         let square = self.events.get(9).map(|e| e.pos);
         let owns = |w: &World| square.is_some_and(|pos| on_map(pos) && w.island.owners.at(pos) == p);
-        // A seat a human client plays isn't the computer's to bid for
-        // (`crate::seats`; the auction with several humans is still to
-        // come).
-        if p != 1 && self.seats.is_human(p) {
-            0
+        // Single human: player 1's is the human's money. A seat a human
+        // client plays (`World::is_human`) bids as the human does, not as
+        // a computer, and draws no random numbers for it.
+        if p != 1 && self.is_human(p) && p <= self.player_count {
+            if self.player_out(p) != 0 || (item == crate::auction::BUILDING_SALE && owns(self)) {
+                0
+            } else {
+                self.money_of(p) // 1078:0191
+            }
         } else if p < 2 || p > self.player_count {
             if p != 1 || (item == crate::auction::BUILDING_SALE && owns(self)) {
                 0
@@ -634,12 +638,17 @@ impl World {
     /// lists too, the hotels 0x60, 0x64 and 0x68 with the three types
     /// after them and 0x2c, 0x2e, 0x30 and 0x32 with the one after; `kind`
     /// 2 to 7 is a player who builds it next. Single human: kind 1 is
-    /// player 1, whose build menu it is. // 10a0:0691
+    /// player 1, whose build menu it is; a human in seats 2 to 8 gets it
+    /// on their own build menu, not as a computer's order, and with
+    /// `kind` 0 every human's menu gets it ([`World::is_human`]).
+    /// // 10a0:0691
     pub(crate) fn make_available(&mut self, building: u8, kind: u8) {
         match kind {
-            1 => self.add_to_build_menu(building), // 1018:23f8
+            1 => self.add_to_build_menu(1, building), // 1018:23f8
             0 => {
-                self.add_to_build_menu(building); // 1018:23f8
+                for p in self.build_menu_seats() {
+                    self.add_to_build_menu(p, building); // 1018:23f8
+                }
                 let more = match building {
                     0x60 | 0x64 | 0x68 => 3,
                     0x2c | 0x2e | 0x30 | 0x32 => 1,
@@ -649,7 +658,9 @@ impl World {
                     self.offer_type(building.wrapping_add(n)); // 10a8:0523
                 }
             }
-            2..=7 => self.order_building(kind, building), // 10a8:2cc1
+            // Single human: 2 to 8 are the computers.
+            p @ 2..=8 if self.is_human(p) => self.add_to_build_menu(p, building), // 1018:23f8
+            2..=7 => self.order_building(kind, building),                         // 10a8:2cc1
             // BUG(original): player 8 gets nothing: make_available has no case for them.
             8 if self.fixes.has(Fix::PrizePlayer8) => self.order_building(kind, building),
             _ => {}

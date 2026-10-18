@@ -17,7 +17,12 @@ order. `THintergrund`'s timer only runs the intro and the game start
 ([startup.md](startup.md)). The timer's `Tag` is reused as the direction
 to scroll while the mouse is held on a scroll bar arrow (step 6). The
 auction form turns it off while it's open (1020:24a0, 1020:24b7), so the
-whole simulation stands then ([auction.md](auction.md)).
+whole simulation stands then ([auction.md](auction.md)). The pause, the
+options, the file menu, the quit question and the end form turn it off
+too; in the port that's the view not ticking, for one human. With more
+than one human client only the host's pause stops the world, a command
+(`Action::Pause`, `Clock::stopped`, in the hash), and the world's tick
+then does nothing on every peer alike.
 
 | # | Does | Address | Size | Side |
 |---|---|---|---|---|
@@ -254,6 +259,19 @@ the high scores with the net worth. Otherwise, if it's lost (1008:042b),
 it ends without a score. Either way the original shows `schlussform`
 (1068:1016); the port hands that to the view in `Tick::game_over`.
 
+With more than one human client a normal game (scenario 0) checks each
+human seat as the original checks player 1 (decision 9,
+`World::january_second_seats`): in 2056 every seat still in has won,
+and the first of them ends the game for everyone (`Tick::game_over`,
+with its results; every seat's own in `Tick::seat_results`); before
+that each seat that's bankrupt, by player 1's rule with its own books,
+is out, gets its loss, and its clients spectate. The game goes on while
+any human seat is in, and ends lost for all when none is. The month's
+bankruptcy (settlement step 0x64) leaves the human seats to this check.
+Nothing stops the clock (decision 8). The scenarios 1 to 13 still check
+player 1 only: phase 3 (their goals and losses read player 1, and
+Monopolus needs players 2–8 out).
+
 | Scenario | Won when | Lost when |
 |---|---|---|
 | 0 (normal) | the year is 2056 | bankrupt (then `*1110:6f24+0x80` := 1) |
@@ -280,7 +298,8 @@ en 1008:0555, en 1008:075f), with its `UPGRADE\` folder.
   is `price * +1 div HAUSDATA column 4` if that column is positive, else
   `price * condition div 127`; a building site's is its price.
 - Bankrupt (1008:0002): not out yet, net worth below `-MaxSchulden`, and
-  for player 1 last year's books (kind 0x5e, 1070:13f1) negative too.
+  for player 1 last year's books (kind 0x5e, 1070:13f1) negative too
+  (for any human seat, by its own books).
 - The last 12 months (1070:1345): the books' history `*[1110:6f04]+0x24b`
   holds 120 months of each player's guests at `+0x1e14`, with the count
   at `+0x2d1c` and the start at `+0x2d1d` (its third ring,
@@ -794,7 +813,7 @@ menu is shown runs at the end of the tick or command
 - The news (1048:0a54) pauses the game through the TV for the human
   player, depending on their options per kind of news; the archive also
   stores that player's view origin. Decided: with more than one human
-  client news never pause (decision 5, not built yet), and
+  client news never pause (decision 5, built: `World::tv_shown`), and
   `fix.view_news` points them at no square, each TV at its own view
   (decision 1, built; [fernseher.md](fernseher.md#multiplayer)).
 - The houses' `+0x10` is their guests ([settlement.md](settlement.md));
@@ -839,7 +858,9 @@ menu is shown runs at the end of the tick or command
 - Renovations only charge player 1; computer players' buildings get
   renovated for free (their turns don't pay for it either). The
   settlement likewise charges only the human for advertising, insurance
-  and the cost of living.
+  and the cost of living. A human in seats 2 to 8 pays as the human
+  (`World::is_human`), with their own insurance and books
+  (`seats::SeatSlots`).
 - 1010:1129 counts palms on the square's plot through a nil pointer when
   the square has none; the CD's maps and generated islands have a plot
   on every land corner, but a square whose corners are all in sea rows

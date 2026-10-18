@@ -175,6 +175,10 @@ pub struct Auktionsform {
     /// The player's view enhancements (`auction_title`,
     /// `form_positions`).
     pub enhance: Enhancements,
+    /// The seat the form bids for: whose limit the bid button checks.
+    /// Single human: player 1 ([`crate::seats::HOST_SEAT`]); with several
+    /// human seats each has its own form (`crate::auction`).
+    pub seat: u8,
     /// An error for the status bar, `FEHLER.TXT`'s text with that number,
     /// which the caller shows (`show_error_message`, 1030:232d, en
     /// 1030:3495: the text and sound 0xc) and takes.
@@ -205,6 +209,7 @@ impl Auktionsform {
             grip: (0, 0),
             paddle: None,
             enhance: Enhancements::ORIGINAL,
+            seat: crate::seats::HOST_SEAT,
             status_error: None,
         }
     }
@@ -468,8 +473,13 @@ impl Auktionsform {
         }
         let bidding = !world.options.auction_waits || a.joined;
         if hit(BID_BUTTON, kx, ky) {
-            // The original's form is player 1's.
-            if bidding && a.price.wrapping_add(a.price / 20) > a.limits[0] {
+            // The original's form is player 1's; here the form's seat's.
+            let limit = a
+                .limits
+                .get(usize::from(self.seat.wrapping_sub(1)))
+                .copied()
+                .unwrap_or(0);
+            if bidding && a.price.wrapping_add(a.price / 20) > limit {
                 // Not enough money: the error on the main screen's status
                 // bar, not a message box, and the button stays up.
                 // // 1028:1e23, en 1028:301f

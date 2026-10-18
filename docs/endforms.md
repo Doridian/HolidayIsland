@@ -222,6 +222,19 @@ None of them issues a world command. The clock stops while the quit
 question and the end form are up (single human: the simulation waits on
 these dialogs; see [original-bugs.md](original-bugs.md#design-issues-for-multiplayer)).
 
+With more than one human client (decision 8 in
+[port-architecture.md](port-architecture.md#decided)) the quit question,
+the end form and the high scores stop nothing: the view keeps ticking
+(`Game::clock_stopped` in the `holiday` binary), and the world goes on
+after the end of a game. A client's "OK" is their leaving
+(`SeatChange::Leave`): a computer plays their seat once its last client
+has gone. Each view shows its seat's results
+(`Tick::results_for`): the normal game ends for everyone when the first
+human seat wins (decision 9, [simulation.md](simulation.md#the-scenarios-end-10080512)),
+a seat that goes bankrupt gets its loss and spectates, and one human's
+cheat counts for everyone (decision 10). The high scores stay each
+view's file, entered from its seat's results.
+
 Not ported: `game_done`'s freeing (the port drops the game).
 
 ## Open questions

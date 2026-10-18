@@ -285,6 +285,9 @@ pub struct Infobox {
     pub lines: Vec<Line>,
     /// The player's view enhancements (`infobox_text`, `infobox_size`).
     pub enhance: Enhancements,
+    /// The seat the box's buttons are for: its squares get them. Single
+    /// human: player 1 ([`crate::seats::HOST_SEAT`]).
+    pub seat: u8,
 }
 
 impl Infobox {
@@ -337,6 +340,7 @@ impl Infobox {
             zeilen,
             lines: Vec::new(),
             enhance: Enhancements::ORIGINAL,
+            seat: crate::seats::HOST_SEAT,
         }
     }
 
@@ -737,11 +741,13 @@ impl Infobox {
         }
         let pos = self.square;
         let island = &world.island;
-        // Single human: the buttons are for player 1's squares and nobody's.
+        // Single human: the buttons are for player 1's squares and nobody's;
+        // here the box's seat's.
         // BUG(original): a building of nobody's (owner 0) gets the buttons too: the human renovates, prices or sells it.
-        let lowest = u8::from(world.fixes.has(Fix::NobodysBuildings));
+        let nobodys = !world.fixes.has(Fix::NobodysBuildings);
         let owner = island.owners.get(pos).unwrap_or(0);
-        let theirs = on_map(pos) && (lowest..2).contains(&owner) && island.ground.get(pos) != Some(2);
+        let theirs =
+            on_map(pos) && (owner == self.seat || (owner == 0 && nobodys)) && island.ground.get(pos) != Some(2);
         if theirs {
             for row in 0..8 {
                 if kind < IB_ARTEN && self.data.welche_buttonzeile[kind][row] {
@@ -955,7 +961,8 @@ impl World {
 
     /// "Renovieren": `player` renovates the building on `pos` if they
     /// have the money (else error 0xe for player 1); its condition is as
-    /// new. Single human: the books and the money rising are player 1's.
+    /// new. Single human: the books, the error and the money rising are
+    /// player 1's; here every human seat's ([`World::is_human`]).
     /// // 1010:1931
     pub(crate) fn renovate_building(&mut self, player: u8, pos: Pos, tick: &mut Tick) {
         if !self.may_change(player, pos) {
@@ -974,14 +981,14 @@ impl World {
         };
         let price = self.renovation_price(building, condition); // 1008:0660
         if self.money_of(player) < price {
-            if player == 1 {
+            if self.is_human(player) {
                 tick.status.push((player, Status::Error(0xe))); // 1030:232d
             }
             return;
         }
         self.add_money(player, price.wrapping_neg()); // 1078:01e7
-        if player == 1 {
-            self.book(BOOK_OTHER, price.wrapping_neg()); // 1070:1419
+        if self.is_human(player) {
+            self.book_for(player, BOOK_OTHER, price.wrapping_neg()); // 1070:1419
             tick.books = true;
             self.float_money(price, at); // 1088:0153
         }
@@ -1021,8 +1028,8 @@ impl World {
     /// "Bestechen": for 5000 (else error 0xe for player 1) the builders of
     /// the site on `pos` hurry: its days left go down to half of those
     /// past a quarter of the building time, plus that quarter, but by at
-    /// most ten. Single human: the books and the money rising are player
-    /// 1's. // 1010:19f1
+    /// most ten. Single human: the books, the error and the money rising
+    /// are player 1's; here every human seat's. // 1010:19f1
     pub(crate) fn bribe_builders(&mut self, player: u8, pos: Pos, tick: &mut Tick) {
         if !self.may_change(player, pos) {
             return;
@@ -1031,7 +1038,7 @@ impl World {
             return;
         };
         if self.money_of(player) < 5000 {
-            if player == 1 {
+            if self.is_human(player) {
                 tick.status.push((player, Status::Error(0xe))); // 1030:232d
             }
             return;
@@ -1044,8 +1051,8 @@ impl World {
         site.days = i16::try_from(days).unwrap_or(site.days);
         let at = site.pos;
         self.add_money(player, -5000); // 1078:01e7
-        if player == 1 {
-            self.book(BOOK_OTHER, -5000); // 1070:1419
+        if self.is_human(player) {
+            self.book_for(player, BOOK_OTHER, -5000); // 1070:1419
             tick.books = true;
             self.float_money(5000, at); // 1088:0153
         }

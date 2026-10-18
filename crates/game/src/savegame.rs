@@ -75,8 +75,9 @@ impl Fields {
 }
 
 /// What a map file holds of the human's view. Single human: the original
-/// saves the one player's screen with the world; a multiplayer save would
-/// keep one of these per seat, or none.
+/// saves the one player's screen with the world. With several clients the
+/// saving client's is in the original's fields, and each client's can go
+/// into the port's chunk ([`World::to_map_with_views`], [`client_view`]).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct MapView {
     /// The main screen's scroll position, `wo` and `ns`. Loading puts it
@@ -793,19 +794,36 @@ impl World {
     /// unit's globals (`docs/savegame.md`).
     /// Fields neither models are zeros. Saving reads the world and
     /// changes nothing, so it isn't a command: any player may save
-    /// their copy. // 1048:2bae
+    /// their copy, with their own view in the original's fields. // 1048:2bae
     #[must_use]
     pub fn to_map(&self, view: &MapView) -> SaveGame {
+        self.to_map_with_views(view, &[])
+    }
+
+    /// [`World::to_map`], and in the port's chunk the view of each client
+    /// of `views` (decision 12, `view.<client>.` lines,
+    /// [`client_view`]): whoever knows them all (the tests, a host that
+    /// collects them) saves a game every client gets their view back
+    /// from. The original's fields still hold `view`'s, the saving
+    /// client's.
+    #[must_use]
+    pub fn to_map_with_views(&self, view: &MapView, views: &[(crate::seats::Client, &MapView)]) -> SaveGame {
         let mut save = SaveGame::build(&mut Saving { world: self, view });
         // The port's chunk after the original's fields, which the
         // original doesn't read (`docs/savegame.md`); with
         // `fix.saved_state` also what the original's fields lose.
-        // The seats (`crate::seats`) and the news and events that point
-        // nowhere (`fix.view_news`), which the original has no fields for.
+        // The seats (`crate::seats`), their slots, the host's auction
+        // timeout and the news and events that point nowhere
+        // (`fix.view_news`), which the original has no fields for.
         let mut state = self.seats.chunk_lines();
+        state.extend(self.seat_lines());
+        state.push((AUCTION_TIMEOUT.to_owned(), self.options.auction_timeout.to_string()));
         state.extend(self.nowhere_lines());
         if self.fixes.has(Fix::SavedState) {
             state.extend(self.unsaved_state(view));
+        }
+        for (client, v) in views {
+            state.extend(view_lines(*client, v));
         }
         save.trailing = crate::enhance::world_chunk_with(self.fixes, self.language, &state);
         save
@@ -874,6 +892,12 @@ impl World {
         put("auction.bid_pause", a.bid_pause.to_string());
         put("auction.since_call", a.since_call.to_string()); // 1110:65aa
         put("auction.frames", join(&a.frames.values()));
+        // The seats' auction (decision 7): started, passed, held, and the
+        // wait.
+        put(
+            "auction.seats",
+            format!("{},{},{},{}", a.started, a.passed, a.held_by, timer(a.waiting)),
+        );
         // The road candidates of the players past the file's count
         // (unit 10a8:32ec saves players 2 to the count).
         let c = &self.computers;
@@ -940,6 +964,18 @@ impl World {
                 .and_then(numbers)
                 .map(crate::auction::Frames::from_values),
         );
+        if let Some((bits, waiting)) = get("auction.seats").and_then(|v| v.rsplit_once(','))
+            && let Some([started, passed, held_by]) = numbers::<u8, 3>(bits)
+            && let Some(waiting) = match waiting {
+                "-" => Some(None),
+                n => n.parse().ok().map(Some),
+            }
+        {
+            a.started = started;
+            a.passed = passed;
+            a.held_by = held_by;
+            a.waiting = waiting;
+        }
         // Only those the file's fields don't hold.
         let saved = usize::from(self.player_count.saturating_sub(1));
         let c = &mut self.computers;
@@ -1054,6 +1090,10 @@ impl World {
         a.bid_pause = b.bid_pause;
         a.since_call = b.since_call;
         a.frames = b.frames;
+        a.started = b.started;
+        a.passed = b.passed;
+        a.held_by = b.held_by;
+        a.waiting = b.waiting;
         // BUG(original): only players 2 to the file's player count get their road candidates; the others keep those in memory (fix.saved_state: the chunk's).
         let loaded = usize::from(self.player_count.saturating_sub(1));
         for (k, (ends, roads)) in before
@@ -1097,6 +1137,8 @@ impl World {
         // others come back away, and the fixes follow their number.
         w.seats = self.seats.loaded(crate::seats::Seats::from_chunk(&save.trailing));
         w.follow_loaded_seats();
+        // The host's auction timeout; a file without it keeps the game's.
+        w.options.auction_timeout = auction_timeout_in(&save.trailing).unwrap_or(self.options.auction_timeout);
         // With `fix.saved_state`, what the chunk keeps of the rest.
         w.take_saved_state(&save.trailing);
         Ok(w)
@@ -1106,6 +1148,113 @@ impl World {
 /// The prefix of the port's chunk's lines for the world's state the
 /// original's file loses (`fix.saved_state`, [`World::unsaved_state`]).
 const STATE: &str = "state.";
+
+/// The port's chunk's line of the host's auction timeout
+/// ([`crate::simulation::Options::auction_timeout`]), in ticks.
+const AUCTION_TIMEOUT: &str = "options.auction_timeout";
+
+/// The auction timeout a saved game's port chunk in `trailing` keeps;
+/// none for a file without it (any original file).
+#[must_use]
+pub fn auction_timeout_in(trailing: &[u8]) -> Option<u16> {
+    formats::savegame::port_chunk(trailing)?
+        .into_iter()
+        .find(|(k, _)| k == AUCTION_TIMEOUT)?
+        .1
+        .parse()
+        .ok()
+}
+
+/// The prefix of a client's view's lines in the port's chunk
+/// ([`World::to_map_with_views`]).
+const VIEW: &str = "view.";
+
+/// The port's chunk's lines for `client`'s view `v`: `.scroll=` wo, ns,
+/// `.pointers=` the owner and occupancy pointers, `.news=` the four news
+/// options, `.origin=` i, j (if it has one), `.viewpoint=` rotation, i,
+/// j, parity (with `fix.view_people`), and `.fields=` the view's other
+/// fields as `dest#n#hex`, apart by spaces. The view's own people aren't
+/// kept: each view makes its own again.
+fn view_lines(client: crate::seats::Client, v: &MapView) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut put = |key: &str, value: String| out.push((format!("{VIEW}{client}.{key}"), value));
+    let flag = |b: bool| u8::from(b).to_string();
+    put("scroll", format!("{},{}", v.scroll.0, v.scroll.1));
+    put(
+        "pointers",
+        format!("{},{}", flag(v.owner_pointers), flag(v.occupancy_pointers)),
+    );
+    put("news", v.news.map(flag).join(","));
+    if let Some((i, j)) = v.origin {
+        put("origin", format!("{i},{j}"));
+    }
+    if let Some((p, _)) = &v.people {
+        put(
+            "viewpoint",
+            format!("{},{},{},{}", p.rotation, p.origin.0, p.origin.1, p.parity),
+        );
+    }
+    let fields = v
+        .unported
+        .0
+        .iter()
+        .map(|((dest, n), data)| format!("{dest}#{n}#{}", hex(data)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    put("fields", fields);
+    out
+}
+
+/// `client`'s view as a saved game's port chunk keeps it
+/// ([`World::to_map_with_views`]), and its viewpoint if it had its own
+/// (`fix.view_people`); none if the file has no view of theirs (an
+/// original file, or one a client saved alone, whose view is in the
+/// original's fields: [`MapView::from_map`]). The view's own people
+/// aren't kept.
+#[must_use]
+pub fn client_view(
+    save: &SaveGame,
+    client: crate::seats::Client,
+) -> Option<(MapView, Option<crate::people::Viewpoint>)> {
+    let lines = formats::savegame::port_chunk(&save.trailing)?;
+    let prefix = format!("{VIEW}{client}.");
+    let get = |key: &str| {
+        lines
+            .iter()
+            .find(|(k, _)| k.strip_prefix(&prefix) == Some(key))
+            .map(|(_, v)| v.as_str())
+    };
+    let flags = |v: &str| -> Option<Vec<bool>> { v.split(',').map(|f| Some(f.parse::<u8>().ok()? != 0)).collect() };
+    let scroll = square(get("scroll")?)?;
+    let pointers = flags(get("pointers")?)?;
+    let news: [bool; 4] = flags(get("news")?)?.try_into().ok()?;
+    let mut unported = Fields::default();
+    for item in get("fields")?.split_whitespace() {
+        let mut parts = item.split('#');
+        let (dest, n, data) = (parts.next()?, parts.next()?.parse::<usize>().ok()?, parts.next()?);
+        // The dest as the file's own fields name it.
+        let dest = save.numbered().map(|(_, f)| f.dest).find(|d| *d == dest)?;
+        let len = data.len() / 2;
+        unported.insert(dest, n, &unhex(data, len)?);
+    }
+    let viewpoint = get("viewpoint")
+        .and_then(numbers::<i16, 4>)
+        .map(|[rotation, i, j, parity]| crate::people::Viewpoint {
+            rotation: u8::try_from(rotation).unwrap_or(0),
+            origin: (i, j),
+            parity,
+        });
+    let view = MapView {
+        scroll,
+        owner_pointers: *pointers.first()?,
+        occupancy_pointers: *pointers.get(1)?,
+        news,
+        unported,
+        people: None,
+        origin: get("origin").and_then(square),
+    };
+    Some((view, viewpoint))
+}
 
 /// Numbers, comma-separated.
 fn join<T: ToString>(v: &[T]) -> String {
@@ -1241,6 +1390,7 @@ pub fn differences(a: &World, b: &World) -> Vec<&'static str> {
     same!(news);
     same!(fixes);
     same!(seats);
+    same!(seat_slots);
     out
 }
 
@@ -1371,9 +1521,11 @@ mod tests {
         assert!(back.unported.is_empty());
         // The port's chunk follows the original's fields.
         assert!(bytes.ends_with(&save.trailing));
+        let mut lines = w.seats.chunk_lines();
+        lines.push((AUCTION_TIMEOUT.to_owned(), "300".to_owned()));
         assert_eq!(
             save.trailing,
-            crate::enhance::world_chunk_with(w.fixes, w.language, &w.seats.chunk_lines())
+            crate::enhance::world_chunk_with(w.fixes, w.language, &lines)
         );
         // A file without it loads over a game and keeps that game's fixes.
         let mut original = parsed.clone();

@@ -224,6 +224,9 @@ pub struct Umenuform {
     /// The player's view enhancements (`overview_list`, `infobox_text`,
     /// `scroll_bars`).
     pub enhance: Enhancements,
+    /// The seat whose buildings it lists. Single human: player 1
+    /// ([`crate::seats::HOST_SEAT`]).
+    pub seat: u8,
 }
 
 /// `p` percent as one of the ten bars in `menuaus.bmp`: its left edge.
@@ -285,6 +288,7 @@ impl Umenuform {
             saved_height: HEIGHT,
             rolled_up: false,
             enhance: Enhancements::ORIGINAL,
+            seat: crate::seats::HOST_SEAT,
         }
     }
 
@@ -461,9 +465,11 @@ impl Umenuform {
         self.image
             .blit(200, 0x109, bg, Rect::new(200, from, 0x43, 0x10), Rop::Copy, all);
         let t = &world.tables;
-        // Single human: the human's buildings, player 1's.
-        let ours =
-            |pos: Pos, b: u8| world.island.owners.get(pos) == Some(1) && i32::from(t.hausdata(b, 5)) == self.kind;
+        // Single human: the human's buildings, player 1's; the form's
+        // seat's.
+        let ours = |pos: Pos, b: u8| {
+            world.island.owners.get(pos) == Some(self.seat) && i32::from(t.hausdata(b, 5)) == self.kind
+        };
         self.list = if self.kind == 0 || self.kind == 1 {
             world
                 .houses
