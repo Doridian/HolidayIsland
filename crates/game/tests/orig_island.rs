@@ -393,6 +393,85 @@ fn people_on_the_island() {
     }
 }
 
+/// [`people_on_the_island`] with `fix.view_people` and
+/// `people_everywhere` (`-people-split`, turned `-people-split-view1`,
+/// and where the view's own are `-people-split-own`).
+#[test]
+fn people_on_the_island_split() {
+    if !orig().join("SZENARIO").exists() {
+        eprintln!("skipping: {} not found", orig().display());
+        return;
+    }
+    let tiles = tiles();
+    let palette = bitmap("GFXGROUN.BMP").palette;
+    let file = SCENARIO_FILES[3];
+    let map = SaveGame::parse(&read(&format!("SZENARIO/{file}"))).unwrap();
+    let settings = Settings {
+        scenario: 4,
+        ..Settings::default()
+    };
+    let font = Font::new(
+        &bitmap("FONT.BMP"),
+        &fontdat(&read("DATA/FONTDAT1.DAT")).unwrap(),
+        &fontdat(&read("DATA/FONTDAT2.DAT")).unwrap(),
+    );
+    let sonstige = sonstige(&read("TEXTE/SONSTIGE.TXT")).unwrap();
+    let texts = InfoTexts {
+        months: monate(&read("TEXTE/MONATE.TXT")).unwrap(),
+        language: game::lang::Language::of_land(modatyp(&read("DATA/MODATYP.DAT")).unwrap().land),
+        currency_factor: sonstige.waehrungsfaktor,
+        currency: sonstige.texts[5].clone(),
+    };
+    // With `fix.view_people` and `people_everywhere`: the world's people
+    // by nobody's view, and the view's own over them.
+    let mut world = load_world(&map, &settings, true).unwrap();
+    world.tables = world_tables();
+    world.random = Random::new(0x5eed);
+    world.set_loaded_fixes(game::enhance::Fixes::all_on());
+    let mut h = main_screen_at(&map, (90, 185));
+    h.enhance.set(game::enhance::Enhancement::PeopleEverywhere, true);
+    h.paint_map(&world, &tiles);
+    for _ in 0..1500 {
+        let tick = step(&mut world);
+        let _ = h.people_tick(&world);
+        h.redraw_squares(&tick.redraw, &world, &tiles);
+    }
+    h.show_people(&world, &tiles, &font, &texts);
+    assert!(h.people.count() > 0);
+    let mut bare = h.clone();
+    bare.paint_map(&world, &tiles);
+    assert_ne!(h.map, bare.map);
+    if let Some(out) = std::env::var_os("ISLAND_PPM").map(PathBuf::from) {
+        write_ppm(&with_suffix(&out, "people-split"), &compose(&h, &palette), &palette);
+        // Turned once: the world's people turn for the view, and its own.
+        h.key_down(0x2d, ShiftState::default(), &world, &tiles);
+        let _ = h.people_refresh(&world);
+        step(&mut world);
+        let _ = h.people_tick(&world);
+        h.paint_map(&world, &tiles);
+        h.show_people(&world, &tiles, &font, &texts);
+        write_ppm(
+            &with_suffix(&out, "people-split-view1"),
+            &compose(&h, &palette),
+            &palette,
+        );
+        // Where some of the view's own are.
+        if let Some(p) = h.people.records().iter().find(|p| p.kind() != 0) {
+            let (i, j) = p.pos();
+            let mut there = main_screen_at(&map, (i - 10, j - 10));
+            there.people = h.people.clone();
+            there.paint_map(&world, &tiles);
+            let _ = there.people_refresh(&world);
+            there.show_people(&world, &tiles, &font, &texts);
+            write_ppm(
+                &with_suffix(&out, "people-split-own"),
+                &compose(&there, &palette),
+                &palette,
+            );
+        }
+    }
+}
+
 #[test]
 fn computers_shape_the_island() {
     if !orig().join("SZENARIO").exists() {

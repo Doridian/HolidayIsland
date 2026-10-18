@@ -239,6 +239,17 @@ enhancements! {
     /// The TV's lights don't draw from the game's random numbers, so the
     /// speech doesn't change the game (1048:1b3e).
     TvLights = "tv_lights";
+    /// The people only a screen needs (spectators, builders, taxiing
+    /// planes, the jetties' boats, the harbours' sounds) are each
+    /// player's own, with their own random numbers, and the world's
+    /// people no longer follow anyone's view: no view squares, no view
+    /// rotation, no sounds or random numbers by what a player sees
+    /// (1090:2373, 1088:7fb1, `docs/people.md`). Off is the original,
+    /// which only one human can play ([`SINGLE_PLAYER_ONLY`]).
+    ViewPeople = "view_people";
+    /// The shark's diver, which is a boat (kind 3), counts with the boats
+    /// it's taken off when its time is up (10a0:19d2, 1098:109f).
+    SharkBoatCount = "shark_boat_count";
 }
 
 enhancements! {
@@ -361,6 +372,30 @@ enhancements! {
     /// map, and the lists of the file menu, the load form, the buildings'
     /// overview and this list. The original has no wheel.
     MouseWheel = "mouse_wheel";
+    /// With `fix.view_people`, the screen's own people (spectators,
+    /// builders, taxiing planes, the jetties' boats) come all over the
+    /// island, not only where the view looks (1090:2373).
+    PeopleEverywhere = "people_everywhere";
+}
+
+/// The world fixes that may only be off with one human in the game: off,
+/// the world reads that human's view, which several players don't share.
+/// There is no multiplayer yet; [`Fixes::for_humans`] is how a game with
+/// several humans would keep them on.
+pub const SINGLE_PLAYER_ONLY: &[Fix] = &[Fix::ViewPeople];
+
+impl Fixes {
+    /// The fixes a game with `humans` human players runs with: these, but
+    /// with several humans those of [`SINGLE_PLAYER_ONLY`] on.
+    #[must_use]
+    pub fn for_humans(mut self, humans: usize) -> Fixes {
+        if humans > 1 {
+            for &f in SINGLE_PLAYER_ONLY {
+                self.set(f, true);
+            }
+        }
+        self
+    }
 }
 
 /// Every enhancement's [`Info`], the world's first.
@@ -535,6 +570,14 @@ mod tests {
         assert_eq!(e.iter().collect::<Vec<_>>(), [stacking]);
         e.set(stacking, false);
         assert_eq!(e, Enhancements::ORIGINAL);
+    }
+
+    #[test]
+    fn single_player_only() {
+        assert!(!Fixes::ORIGINAL.for_humans(1).has(Fix::ViewPeople));
+        assert!(Fixes::ORIGINAL.for_humans(2).has(Fix::ViewPeople));
+        assert!(!Fixes::ORIGINAL.for_humans(2).has(Fix::TvLights));
+        assert_eq!(Fixes::all_on().for_humans(3), Fixes::all_on());
     }
 
     #[test]

@@ -380,6 +380,10 @@ impl Game {
             self.world.set_viewpoint(self.screen.viewpoint());
             let t = self.world.tick();
             changed |= self.show(&t);
+            // With `fix.view_people`, the view's own people after the
+            // world's (1090:5293, 1090:2373).
+            let own = self.screen.people_tick(&self.world);
+            self.play(own);
             // What the tick's forms asked of the world, before the next.
             changed |= self.apply_commands();
             if self.auction.visible && self.world.auction.open {
@@ -552,12 +556,19 @@ impl Game {
     /// island again, and the overview map's frame
     /// (`uebersichtsmap_draw_frame`, as 1020:0cf7 does).
     fn view_moved(&mut self) {
-        // Single human: the original's player 1.
-        self.commands.push(Command {
-            player: 1,
-            action: command::Action::ViewMoved(self.screen.viewpoint()),
-        });
-        self.apply_commands();
+        if self.world.people_split() {
+            // `fix.view_people`: the world follows nobody's view; this
+            // view places and spawns its own people.
+            let own = self.screen.people_refresh(&self.world);
+            self.play(own);
+        } else {
+            // Single human: the original's player 1.
+            self.commands.push(Command {
+                player: 1,
+                action: command::Action::ViewMoved(self.screen.viewpoint()),
+            });
+            self.apply_commands();
+        }
         self.screen
             .show_people(&self.world, &self.tiles, &self.font, &self.info);
         self.main_view_changed();
@@ -695,6 +706,12 @@ impl Game {
     /// Shows what a tick or command did, and says whether anything changed.
     fn show(&mut self, t: &Tick) -> bool {
         let view = self.screen.camera().view;
+        // With `fix.view_people`: another game's people go, and the view
+        // takes over those the world handed it.
+        if t.loaded {
+            self.screen.people.clear();
+        }
+        self.screen.people.adopt(&t.view_people);
         self.tools
             .world_changed(t, 1, &self.world, &self.font, &self.tiles, &self.info, view, self.size);
         self.show_tools();
@@ -763,13 +780,21 @@ impl Game {
             let mut s = self.sound.borrow_mut();
             // BUG(original): only `people_tick` counts the sounds' times down, with the animations on.
             let every_tick = s.enhance.has(enhance::Enhancement::SoundTimes);
-            let countdown = t.sound_countdown.or(every_tick.then_some(0));
-            let split = countdown.unwrap_or(t.sounds.len()).min(t.sounds.len());
-            s.play_all(t.sounds[..split].iter().copied(), &settings);
+            // With `fix.view_people` the people's sounds this view sees
+            // among them.
+            let (sounds, countdown) = if self.world.people_split() {
+                let look = self.screen.looking();
+                self.screen.people.hear(&self.world, t, &look)
+            } else {
+                (t.sounds.clone(), t.sound_countdown)
+            };
+            let countdown = countdown.or(every_tick.then_some(0));
+            let split = countdown.unwrap_or(sounds.len()).min(sounds.len());
+            s.play_all(sounds[..split].iter().copied(), &settings);
             if countdown.is_some() {
                 s.effects.count_down();
             }
-            s.play_all(t.sounds[split..].iter().copied(), &settings);
+            s.play_all(sounds[split..].iter().copied(), &settings);
             if t.new_day {
                 s.next_day(&mut self.forms.settings);
             }
@@ -1064,8 +1089,12 @@ impl Game {
         let mut rest = self.view_rest.clone();
         self.tools.save(&mut rest);
         self.forms_save(&mut rest);
-        self.world
-            .to_map(&MapView::of(&self.screen, &self.forms.settings, rest))
+        self.world.to_map(&MapView::of_world(
+            &self.screen,
+            &self.forms.settings,
+            rest,
+            &self.world,
+        ))
     }
 
     /// A key in the game: the forms first (`forms`), then the build menu
@@ -2895,7 +2924,7 @@ fn start_game_seeded(
 fn make_game(
     dir: &Path,
     exe: &[u8],
-    (world, camera, origin, view_rest): Start,
+    (mut world, camera, origin, view_rest): Start,
     mut options: Options,
     high: ScoreTable,
     sound: &sound::Shared,
@@ -2920,6 +2949,11 @@ fn make_game(
         Some(origin) => Hauptschirm::new(camera, origin, frame, &font, &title),
         None => Hauptschirm::new_game(camera, frame, &font, &title),
     };
+    // With `fix.view_people` the file's spectators and the like are the
+    // view's own.
+    screen.people = game::people::view::ViewPeople::new(seed());
+    let handed = world.split_off_view_people();
+    screen.people.adopt(&handed);
     let tiles = load_tiles(dir);
     screen.paint_map(&world, &tiles);
     let info = InfoTexts {

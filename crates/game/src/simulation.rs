@@ -110,6 +110,14 @@ pub struct Tick {
     /// Sounds to play, in order (`play_sound`, 10a0:30b6): the people's,
     /// where the player sees them, and the auction's.
     pub sounds: Vec<u8>,
+    /// With `fix.view_people`, the people's sounds as they come, for each
+    /// view to play where it sees them ([`PlacedSound`]); the world
+    /// doesn't know what anyone sees.
+    pub placed_sounds: Vec<PlacedSound>,
+    /// With `fix.view_people`, the people a loaded game or the fix
+    /// switched on took out of the world because they're the views' own
+    /// (`crate::people::view`): each view takes them over.
+    pub view_people: Vec<crate::people::Person>,
     /// The scenario was won or lost ([`World::january_second`]): the
     /// original shows the end of the game (`schlussform`, 1068:1016).
     pub game_over: Option<GameOver>,
@@ -159,6 +167,20 @@ pub struct Tick {
     /// The TV's lights while its speaker reads ([`World::tv_lights`]): the
     /// lower one's frame, and the upper one's if it changes.
     pub tv_lights: Option<(u16, Option<u16>)>,
+}
+
+/// A sound of the people's from a square, with `fix.view_people`: a view
+/// that sees the square plays one of `sounds`, picked with its own random
+/// numbers where there are several (the original picks with the world's,
+/// and only where the player sees it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlacedSound {
+    /// Where it comes from.
+    pub at: Pos,
+    /// One of them plays: `sounds[Random(len)]`.
+    pub sounds: &'static [u8],
+    /// How many of [`Tick::sounds`] came before it, which it plays after.
+    pub after: usize,
 }
 
 /// A message on the status bar.

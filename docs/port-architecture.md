@@ -162,6 +162,19 @@ files, storage, clock), so they run headless in tests.
   settings. `--original` or `original=true` in `settings.ini` switches
   everything off, which is the original exactly
   ([original-bugs.md](original-bugs.md#options)).
+- **The people a screen needs are the view's.** The original spawns some
+  of its people only where the human looks, places all of them for the
+  human's rotation and draws random numbers only for what the human
+  sees. With the world fix `view_people` (on by default) the world keeps
+  only the people that are game state or that the world reads (ships,
+  boats, planes, the rentals' and the buildings' people, the oil, the
+  events' and the sabotage's) and runs them by no view; the spectators,
+  builders, taxiing planes and jetty boats are a simulation in each
+  player's view (`game::people::view::ViewPeople`), with the view's own
+  random numbers, driven by its ticks and its viewpoint, and the
+  people's sounds go to every view with their square. The view enhancement
+  `people_everywhere` runs that simulation for the whole island. Off is
+  the original, for one human only ([people.md](people.md#who-is-whose-fixview_people)).
 - **Window handling like Afterlife.** A resizable window that remembers its size,
   position and fullscreen state. **Alt+Enter** or **F11** toggles fullscreen
   (borderless at the desktop resolution; Ctrl+Cmd+F on macOS; the Fullscreen
@@ -229,6 +242,9 @@ in the design points above:
   Places where the original assumes the human is player 1 get marked
   when they're ported.
 - Bit-exact determinism across native and wasm.
+- No world state that follows one player's view: the people's part is
+  `fix.view_people`; the news and some events still take the human's
+  view origin for where they point.
 - No world-side blocking on one player's UI. Interactions that are modal for
   the one human today need a multiplayer behaviour, decided per case when
   they're decompiled: auctions (`TAuktionsform`, which already runs on

@@ -216,6 +216,14 @@ description = "Das Nachrichtenarchiv hält seine 26. und 27. Nachricht in der ri
 label = "Fernsehlichter ohne Spielzufall"
 description = "Die blinkenden Lichter des Fernsehers nehmen nicht mehr die Zufallszahlen des Spiels, so ändert die Sprache das Spiel nicht"
 
+[enhance.view_people]
+label = "Jedem seine eigenen Leute"
+description = "Zuschauer, Bauarbeiter, rollende Flugzeuge und Steg-Boote hat jeder Bildschirm selbst; die Leute der Welt folgen keiner Ansicht; aus: nur ein Spieler"
+
+[enhance.shark_boat_count]
+label = "Haitaucher zählt als Boot"
+description = "Der Taucher des Hais zählt bei den Booten mit, so kommt kein Boot mehr dazu"
+
 [enhance.window_stacking]
 label = "Fenster stapeln wie unter Windows"
 description = "Fenster stapeln sich wie unter Windows: ein Klick holt eines nach vorn (auch den Hauptschirm), nur modale bleiben oben"
@@ -327,3 +335,7 @@ description = "Füllt der Hauptschirm das Fenster, fällt seine eigene Titelleis
 [enhance.mouse_wheel]
 label = "Mausrad scrollt"
 description = "Das Mausrad scrollt die Insel (mit Umschalt quer), die Übersichtskarte und die Listen"
+
+[enhance.people_everywhere]
+label = "Leute auf der ganzen Insel"
+description = "Mit jedem seinen eigenen Leuten kommen die Leute des Bildschirms auf der ganzen Insel, nicht nur wo die Ansicht ist"

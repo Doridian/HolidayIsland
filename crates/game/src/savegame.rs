@@ -96,6 +96,12 @@ pub struct MapView {
     /// archive, which is the world's), the drawing's tables (1050:313a), the pressed buttons
     /// (`1110:651a`).
     pub unported: Fields,
+    /// With `fix.view_people`: the viewpoint and the people the file gets
+    /// instead of the world's, which go by no view: the world's placed
+    /// for this view and the view's own among them
+    /// (`crate::people::view::ViewPeople::saved_with`), as the original
+    /// would have them, so it can load the file.
+    pub people: Option<(crate::people::Viewpoint, crate::people::People)>,
 }
 
 impl MapView {
@@ -122,6 +128,7 @@ impl MapView {
             occupancy_pointers: byte("1110:0059") != 0,
             news: NEWS_OPTIONS.map(|dest| byte(dest) != 0),
             unported,
+            people: None,
         }
     }
 }
@@ -154,6 +161,25 @@ impl MapView {
             occupancy_pointers: camera.occupancy_pointers,
             news: settings.news,
             unported,
+            people: None,
+        }
+    }
+
+    /// [`MapView::of`] for `world`: with `fix.view_people` also the view's
+    /// viewpoint and people ([`MapView::people`]).
+    #[must_use]
+    pub fn of_world(
+        screen: &Hauptschirm,
+        settings: &crate::optionen::Settings,
+        unported: Fields,
+        world: &World,
+    ) -> Self {
+        let viewpoint = screen.viewpoint();
+        MapView {
+            people: world
+                .people_split()
+                .then(|| (viewpoint, screen.people.saved_with(world, viewpoint))),
+            ..MapView::of(screen, settings, unported)
         }
     }
 }
@@ -537,6 +563,19 @@ fn world_records(w: &World, dest: &str) -> Vec<Vec<u8>> {
 /// The bytes the view has for the field at `dest`, `None` for one it
 /// doesn't model.
 fn view_field(v: &MapView, dest: &str) -> Option<Vec<u8>> {
+    if let Some((viewpoint, people)) = &v.people {
+        let saved = match dest {
+            "*1110:6fd6" => Some(people.records.iter().flat_map(|r| r.0).collect()),
+            "1110:6ff4" => Some(word(people.last)),
+            "1110:007c" => Some(vec![viewpoint.rotation]),
+            "1110:5530" => Some([viewpoint.origin.0.to_le_bytes(), viewpoint.origin.1.to_le_bytes()].concat()),
+            "1110:5534" => Some(word(viewpoint.parity)),
+            _ => None,
+        };
+        if saved.is_some() {
+            return saved;
+        }
+    }
     Some(match dest {
         "1110:0058" => flag(v.owner_pointers),
         "1110:0059" => flag(v.occupancy_pointers),
@@ -558,7 +597,10 @@ struct Saving<'a> {
 impl Source for Saving<'_> {
     fn field(&mut self, dest: &'static str, n: usize, _size: usize) -> Vec<u8> {
         let (w, v) = (self.world, self.view);
-        world_field(w, dest, n)
+        // The view's people and viewpoint first (`MapView::people`).
+        let people = if v.people.is_some() { view_field(v, dest) } else { None };
+        people
+            .or_else(|| world_field(w, dest, n))
             .or_else(|| view_field(v, dest))
             .or_else(|| w.unported.get(dest, n).map(<[u8]>::to_vec))
             .or_else(|| v.unported.get(dest, n).map(<[u8]>::to_vec))

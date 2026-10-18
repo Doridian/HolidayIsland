@@ -35,6 +35,7 @@ use crate::enhance::{Enhancement, Enhancements};
 use crate::monate::Date;
 use crate::money::format_money;
 use crate::people::Viewpoint;
+use crate::people::view::{Looking, ViewPeople};
 use crate::text::{Align, Font};
 use crate::widgets::{Part, ShiftState};
 use crate::world::{Pos, World};
@@ -414,6 +415,9 @@ pub struct Hauptschirm {
     title_text: Vec<u8>,
     /// The player's view enhancements (`form_drags`, `overview_scrolling`).
     pub enhance: Enhancements,
+    /// With `fix.view_people`, the people that are this view's own
+    /// (`crate::people::view`).
+    pub people: ViewPeople,
     /// The title bar was pressed and the button hasn't come up yet
     /// (`form_drags`; the original doesn't keep it).
     title_held: bool,
@@ -610,6 +614,7 @@ impl Hauptschirm {
             title_text: title.to_vec(),
             enhance: Enhancements::ORIGINAL,
             title_held: false,
+            people: ViewPeople::new(0),
             titled: true,
             bar_press: None,
         };
@@ -1123,7 +1128,51 @@ impl Hauptschirm {
             font.draw(dst, &text, at, 100, Align::Left, 1); // 1030:23d3
         };
         let cam = self.drawn_camera();
-        darstellung::draw_people_in(&mut self.map, world, tiles, &cam, &self.view_size, &mut money);
+        if world.people_split() {
+            // The world's, turned for this view, and the view's own; those
+            // aren't drawn while people don't move (1088:7ee3).
+            let turned = world.people_for_view(self.viewpoint());
+            let mut people: Vec<&crate::people::Person> = turned.records.iter().skip(0x24).collect();
+            if world.options.people_move {
+                people.extend(self.people.records());
+            }
+            darstellung::draw_records(&mut self.map, world, &people, tiles, &cam, &self.view_size, &mut money);
+        } else {
+            darstellung::draw_people_in(&mut self.map, world, tiles, &cam, &self.view_size, &mut money);
+        }
+    }
+
+    /// What this view looks at for its own people: the original's view
+    /// for where they come, the drawn one for what it hears, and
+    /// `people_everywhere`.
+    #[must_use]
+    pub fn looking(&self) -> Looking {
+        let cam = self.drawn_camera();
+        Looking {
+            viewpoint: self.viewpoint(),
+            seen: Viewpoint {
+                rotation: cam.view,
+                origin: cam.origin,
+                parity: cam.parity,
+            },
+            columns: self.view_size.columns,
+            half_rows: self.view_size.half_rows,
+            everywhere: self.enhance.has(Enhancement::PeopleEverywhere),
+        }
+    }
+
+    /// This view's own people after a tick of `world`
+    /// ([`ViewPeople::tick`]); the sounds to play.
+    pub fn people_tick(&mut self, world: &World) -> Vec<u8> {
+        let look = self.looking();
+        self.people.tick(world, &look)
+    }
+
+    /// This view's own people after it moved ([`ViewPeople::refresh`]);
+    /// the sounds to play.
+    pub fn people_refresh(&mut self, world: &World) -> Vec<u8> {
+        let look = self.looking();
+        self.people.refresh(world, &look)
     }
 
     /// Redraws the squares the simulation changed, and says whether there

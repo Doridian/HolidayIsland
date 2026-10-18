@@ -19,11 +19,17 @@
 //!
 //! The per-tick movement (`people_tick`, 1090:5293, with `person_animate`,
 //! 1098:109f, and `person_step`, 1090:2ce5) is in [`movement`].
+//!
+//! With `fix.view_people` the people only a screen needs (spectators,
+//! builders, taxiing planes, jetty boats, [`is_view_kind`]) are each
+//! view's own ([`view`]), and the world's go by no view
+//! ([`World::people_view`]); `docs/people.md`, "Who is whose".
 
 // The map's `i` and `j`, and the record's number `n`, as everywhere else.
 #![allow(clippy::many_single_char_names)]
 
 mod movement;
+pub mod view;
 
 use std::sync::Arc;
 
@@ -88,6 +94,23 @@ pub const HELICOPTER: u8 = 0x2e;
 pub const TENNIS_SPECTATORS: std::ops::RangeInclusive<u8> = 0x4d..=0x50;
 /// Spectators at Miss Holiday Island's stage.
 pub const STAGE_SPECTATORS: u8 = 0x41;
+/// A boat at the `Bigport`'s jetties.
+pub const JETTY_BOAT: u8 = 0x33;
+/// Planes taxiing along an airport's runway.
+pub const TAXIING: std::ops::RangeInclusive<u8> = 0x35..=0x3a;
+
+/// Whether people of `kind` are a view's own with `fix.view_people`
+/// ([`view`]): those [`World::spawn_people`] sends only where the view
+/// looks, which nothing in the world reads but the spawning itself. The
+/// rest stay in the world (`docs/people.md`, "Who is whose").
+#[must_use]
+pub fn is_view_kind(kind: u8) -> bool {
+    kind == BUILDER
+        || kind == JETTY_BOAT
+        || kind == STAGE_SPECTATORS
+        || TAXIING.contains(&kind)
+        || TENNIS_SPECTATORS.contains(&kind)
+}
 
 /// One person or vehicle, the record as the map file stores it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -344,6 +367,28 @@ pub fn track_last_rows() -> [i16; 16] {
 }
 
 impl People {
+    /// No records and no tables, without allocating: what's left in a
+    /// world while its people are lent out ([`World::placing`]), and the
+    /// start of a view's own ([`view::ViewPeople`]).
+    #[must_use]
+    pub fn empty() -> Self {
+        People {
+            records: Vec::new(),
+            paths: Vec::new(),
+            entries: Vec::new(),
+            tracks: Vec::new(),
+            directions: [0; DIRECTIONS_SIZE],
+            last: 0,
+            ships: 0,
+            boats: 0,
+            lane: 0,
+            word_6fce: 0,
+            last_building: 0,
+            beach: (0, 0),
+            flag_3c42: false,
+        }
+    }
+
     /// The people as the game's data leaves them for a new game
     /// (1088:868c): the records 1 to 0x640 cleared, `+0x1a` 100, records
     /// 1 to 0x23 of kind 6 and every record's `+0x14` 1; nobody else
@@ -676,6 +721,39 @@ const WATER: u8 = 2;
 /// The marker layers' value for nothing there.
 pub(crate) const FREE: u8 = 0xff;
 
+/// The door `n` of the building on `pos`, by the rotation `r`.
+fn door_at(w: &World, r: usize, pos: Pos, n: usize) -> Pos {
+    let (i, j) = w.building_origin(pos); // 1030:154c
+    let d = DOORS[r][n];
+    (d.0.wrapping_add(i), d.1.wrapping_add(j))
+}
+
+/// Where someone of `at` comes out of the building on `pos`, by the
+/// rotation `r`.
+fn place_at(w: &World, r: usize, at: At, pos: Pos) -> Pos {
+    let offset = |table: &[Pos], first: u8, stride: usize| {
+        let b = w.building_or_none(pos);
+        b.checked_sub(first)
+            .and_then(|n| table.get(usize::from(n) + stride * r))
+            .copied()
+            .unwrap_or((0, 0))
+    };
+    match at {
+        At::Square => pos,
+        At::Door(n) => door_at(w, r, pos, n),
+        At::Jetty | At::Stage => {
+            // BUG(original): other types read past the tables; the port says 0.
+            let (di, dj) = if let At::Jetty = at {
+                offset(&JETTY_OFFSETS, FIRST_JETTY, 4)
+            } else {
+                offset(&STAGE_OFFSETS, FIRST_STAGE, 2)
+            };
+            let (i, j) = w.building_origin(pos); // 1030:154c
+            (di.wrapping_add(i), dj.wrapping_add(j))
+        }
+    }
+}
+
 /// The corner of the map nearest to `(i, j)`, the first of equals.
 /// // 1098:00ef
 fn nearest_corner((i, j): Pos) -> Pos {
@@ -766,6 +844,26 @@ const SIMPLE: [Simple; 30] = [
     simple(BUILDER, At::Square, 0x14, 0x153, (6, -4), None),
 ];
 
+/// Every sound number as a list of one, for [`World::sound_at`]'s
+/// [`crate::simulation::PlacedSound`].
+const ONE_SOUND: [[u8; 1]; 0x40] = {
+    let mut all = [[0; 1]; 0x40];
+    let mut n = 0;
+    while n < 0x40 {
+        #[allow(clippy::cast_possible_truncation)] // Below 0x40.
+        {
+            all[n] = [n as u8];
+        }
+        n += 1;
+    }
+    all
+};
+
+/// `sound` alone, as a list.
+fn sound_list(sound: u8) -> &'static [u8] {
+    ONE_SOUND.get(usize::from(sound)).map_or(&[], |s| &s[..])
+}
+
 /// What 1088:0324 fills in place for kinds 0x1a–0x1f (from the power
 /// station, the sewage works and the zoo), from a door, with the
 /// countdown, picture, offset and sound.
@@ -805,6 +903,41 @@ impl World {
     /// needs an answer.
     pub fn set_viewpoint(&mut self, viewpoint: Viewpoint) {
         self.viewpoint = viewpoint;
+    }
+
+    /// Whether the people are split between the world and the views
+    /// (`fix.view_people`, [`view`]).
+    #[must_use]
+    pub fn people_split(&self) -> bool {
+        self.fixes.has(Fix::ViewPeople)
+    }
+
+    /// The view the world's people go by: the human's
+    /// ([`World::viewpoint`]) in the original; with `fix.view_people`
+    /// nobody's, the first rotation from the map's corner, which each view
+    /// turns its copy of the people from ([`World::people_for_view`]).
+    #[must_use]
+    pub fn people_view(&self) -> Viewpoint {
+        // BUG(original): the people's squares, doors, pictures and a ship's drift go by the human's view (`fix.view_people`: by the first rotation).
+        if self.people_split() {
+            Viewpoint::default()
+        } else {
+            self.viewpoint
+        }
+    }
+
+    /// Lends the people out to a [`Placer`] turned like
+    /// [`World::people_view`]. Meanwhile the world's own are empty.
+    fn placing<R>(&mut self, f: impl FnOnce(&mut Placer<'_>) -> R) -> R {
+        let mut people = std::mem::replace(&mut self.people, People::empty());
+        let r = self.people_view().rotation();
+        let out = f(&mut Placer {
+            w: self,
+            people: &mut people,
+            r,
+        });
+        self.people = people;
+        out
     }
 
     /// The building on `pos`, [`NO_BUILDING`] unless both coordinates are
@@ -870,9 +1003,23 @@ impl World {
     /// A sound from `pos`, if the player sees it. The original plays it
     /// (`play_sound`, 10a0:30b6); the port hands it to the view.
     fn sound_at(&self, pos: Pos, sound: u8, tick: &mut Tick) {
-        if self.visible(pos) {
+        // BUG(original): the world decides by the human's view whether a sound plays (`fix.view_people`: each view does).
+        if self.people_split() {
+            self.placed_sound(pos, sound_list(sound), tick);
+        } else if self.visible(pos) {
             tick.sounds.push(sound);
         }
+    }
+
+    /// With `fix.view_people`: one of `sounds` from `pos`, which each view
+    /// that sees it plays, picked with its own random numbers.
+    fn placed_sound(&self, at: Pos, sounds: &'static [u8], tick: &mut Tick) {
+        debug_assert!(self.people_split());
+        tick.placed_sounds.push(crate::simulation::PlacedSound {
+            at,
+            sounds,
+            after: tick.sounds.len(),
+        });
     }
 
     /// Whether someone of `kind` is on `pos`. For the walkers: whether
@@ -911,37 +1058,10 @@ impl World {
         found
     }
 
-    /// The door `n` of the building on `pos`, by the view's rotation.
-    fn door(&self, pos: Pos, n: usize) -> Pos {
-        let (i, j) = self.building_origin(pos); // 1030:154c
-        let d = DOORS[self.viewpoint.rotation()][n];
-        (d.0.wrapping_add(i), d.1.wrapping_add(j))
-    }
-
-    /// Where someone of `at` comes out of the building on `pos`.
+    /// Where someone of `at` comes out of the building on `pos`, by the
+    /// rotation the people go by ([`World::people_view`]).
     fn place(&self, at: At, pos: Pos) -> Pos {
-        let r = self.viewpoint.rotation();
-        let offset = |table: &[Pos], first: u8, stride: usize| {
-            let b = self.building_or_none(pos);
-            b.checked_sub(first)
-                .and_then(|n| table.get(usize::from(n) + stride * r))
-                .copied()
-                .unwrap_or((0, 0))
-        };
-        match at {
-            At::Square => pos,
-            At::Door(n) => self.door(pos, n),
-            At::Jetty | At::Stage => {
-                // BUG(original): other types read past the tables; the port says 0.
-                let (di, dj) = if let At::Jetty = at {
-                    offset(&JETTY_OFFSETS, FIRST_JETTY, 4)
-                } else {
-                    offset(&STAGE_OFFSETS, FIRST_STAGE, 2)
-                };
-                let (i, j) = self.building_origin(pos); // 1030:154c
-                (di.wrapping_add(i), dj.wrapping_add(j))
-            }
-        }
+        place_at(self, self.people_view().rotation(), at, pos)
     }
 
     /// Someone of `kind` comes onto `pos`: into the first free record of
@@ -1090,12 +1210,41 @@ impl World {
             q.set_flags([1, 1, 1]);
         }
     }
+}
+
+/// Works out where the people's pictures go for a rotation: the parts of
+/// the people code that only place them, on the world's people
+/// ([`World::placing`]), a view's copy of them
+/// ([`World::people_for_view`]) or a view's own ([`view::ViewPeople`]).
+pub(crate) struct Placer<'a> {
+    /// The world, for the island and the tables; its people aren't read.
+    pub w: &'a World,
+    pub people: &'a mut People,
+    /// The rotation, 0–3.
+    pub r: usize,
+}
+
+impl Placer<'_> {
+    pub(crate) fn person(&self, n: i16) -> Person {
+        self.people.get(n).cloned().unwrap_or_default()
+    }
+
+    pub(crate) fn edit(&mut self, n: i16, f: impl FnOnce(&mut Person)) {
+        if let Some(p) = self.people.get_mut(n) {
+            f(p);
+        }
+    }
+
+    /// Where someone of `at` comes out of the building on `pos`.
+    fn place(&self, at: At, pos: Pos) -> Pos {
+        place_at(self.w, self.r, at, pos)
+    }
 
     /// Works out a plane's picture and where it goes from its track, for
     /// both of its halves. // 1088:75de
-    fn place_plane(&mut self, n: i16) {
-        let r = self.viewpoint.rotation();
-        let t = Arc::clone(&self.tables);
+    pub(crate) fn place_plane(&mut self, n: i16) {
+        let r = self.r;
+        let t = Arc::clone(&self.w.tables);
         let Some(p) = self.people.get(n).cloned() else {
             return;
         };
@@ -1120,7 +1269,7 @@ impl World {
             .unwrap_or(0);
         let x = self.people.track_word(track, i32::from(row), 0);
         let y = self.people.track_word(track, i32::from(row), 2);
-        let ground = i16::from(self.island.highest_corner(p.pos()));
+        let ground = i16::from(self.w.island.highest_corner(p.pos()));
         if let Some(p) = self.people.get_mut(n) {
             p.set_sprite(sprite);
             p.set_offset((x.wrapping_sub(w), p.offset().1));
@@ -1140,9 +1289,9 @@ impl World {
 
     /// Works out a walker's picture and where it goes from its path.
     /// // 1088:4c55
-    fn place_walker(&mut self, n: i16) {
-        let r = self.viewpoint.rotation();
-        let t = Arc::clone(&self.tables);
+    pub(crate) fn place_walker(&mut self, n: i16) {
+        let r = self.r;
+        let t = Arc::clone(&self.w.tables);
         let Some(p) = self.people.get(n).cloned() else {
             return;
         };
@@ -1167,13 +1316,44 @@ impl World {
         let x = i16::from(self.people.path_byte(path, row, 0)).wrapping_sub(w);
         let mut y = i16::from(self.people.path_byte(path, row, 1)).wrapping_sub(h);
         // On a bridge over the sea it's a step up.
-        if [0x60, 0x61, 99, 100].contains(&self.ground_or_water(p.pos())) {
+        if [0x60, 0x61, 99, 100].contains(&self.w.ground_or_water(p.pos())) {
             y = y.wrapping_sub(9);
         }
         if let Some(p) = self.people.get_mut(n) {
             p.set_sprite(sprite);
             p.set_offset((x, y));
         }
+    }
+
+    /// Where a taxiing plane's picture goes, by the rotation and the
+    /// runway it took (`+0x20`). // 1098:0745, 1098:0a14, 1098:0ce3, 1098:0e6d
+    pub(crate) fn turn_taxiing(&mut self, n: i16, table: &TaxiingOffsets) {
+        let r = self.r;
+        if let Some(p) = self.people.get_mut(n)
+            && let Some(&offset) = usize::try_from(p.target().1)
+                .ok()
+                .and_then(|lane| table[r].get(lane))
+                .and_then(Option::as_ref)
+        {
+            p.set_offset(offset);
+        }
+    }
+}
+
+impl World {
+    /// [`Placer::place_plane`] on the world's people.
+    fn place_plane(&mut self, n: i16) {
+        self.placing(|p| p.place_plane(n));
+    }
+
+    /// [`Placer::place_walker`] on the world's people.
+    fn place_walker(&mut self, n: i16) {
+        self.placing(|p| p.place_walker(n));
+    }
+
+    /// [`Placer::turn_taxiing`] on the world's people.
+    fn turn_taxiing(&mut self, n: i16, table: &TaxiingOffsets) {
+        self.placing(|p| p.turn_taxiing(n, table));
     }
 
     /// Record `n`, which [`World::add_person`] found free.
@@ -1185,7 +1365,7 @@ impl World {
     /// a case leave the record as it is.
     #[allow(clippy::too_many_lines)] // One case of the original's for each kind.
     fn fill_person(&mut self, n: i16, kind: u8, (i, j): Pos, tick: &mut Tick) {
-        let r = self.viewpoint.rotation();
+        let r = self.people_view().rotation();
         let ship_sprite = |k: i16| {
             usize::try_from(k)
                 .ok()
@@ -1265,6 +1445,11 @@ impl World {
                 p.set_path(0);
                 p.set_step(v.step);
                 p.set_sprite(v.sprite);
+                if self.people_split() {
+                    // The building's square, which each view turns the
+                    // door from ([`Placer::place_again_from_home`]).
+                    self.free_record(n).set_home((i, j));
+                }
                 if let Some(s) = v.sound {
                     self.sound_at(pos, s, tick);
                 }
@@ -1355,6 +1540,7 @@ impl World {
                     self.people.flag_3c42 = true;
                 }
                 let pos = self.place(s.at, (i, j));
+                let split = self.people_split();
                 self.free_record(n).fill(&Fill {
                     pos,
                     offset: s.offset,
@@ -1362,9 +1548,14 @@ impl World {
                     flags: [1, 0, 1],
                     kind,
                     step: s.step,
+                    // The building's square, for the views to turn the
+                    // door from ([`Placer::place_again_from_home`]).
+                    home: if split { (i, j) } else { (0, 0) },
                     ..Fill::default()
                 });
-                if kind == BUILDER {
+                if kind == BUILDER && split {
+                    self.placed_sound(pos, &BUILDER_SOUNDS, tick);
+                } else if kind == BUILDER {
                     if self.visible(pos) {
                         let sound = BUILDER_SOUNDS[usize::from(self.random.random(5))];
                         tick.sounds.push(sound);
@@ -1373,20 +1564,6 @@ impl World {
                     self.sound_at(pos, sound, tick);
                 }
             }
-        }
-    }
-
-    /// Where a taxiing plane's picture goes, by the rotation and the
-    /// runway it took (`+0x20`). // 1098:0745, 1098:0a14, 1098:0ce3, 1098:0e6d
-    fn turn_taxiing(&mut self, n: i16, table: &TaxiingOffsets) {
-        let r = self.viewpoint.rotation();
-        if let Some(p) = self.people.get_mut(n)
-            && let Some(&offset) = usize::try_from(p.target().1)
-                .ok()
-                .and_then(|lane| table[r].get(lane))
-                .and_then(Option::as_ref)
-        {
-            p.set_offset(offset);
         }
     }
 
@@ -1414,7 +1591,12 @@ impl World {
                 p.set_sprite(sprite);
                 p.set_offset((0x1f - t.animdat1(sprite, 1) / 2, p.offset().1));
                 p.set_offset((p.offset().0, 0x10 - t.animdat1(sprite, 0) / 2));
-                if self.visible((i, j)) {
+                // BUG(original): the sound is picked with the world's random numbers, only where the human sees it (`fix.view_people`: by each view).
+                if self.people_split() {
+                    // Picked by each view that sees it, not with the
+                    // world's random numbers.
+                    self.placed_sound((i, j), if kind == 0x19 { &[0x16, 0x17] } else { &[0x15, 5] }, tick);
+                } else if self.visible((i, j)) {
                     let s = self.random.random(2);
                     tick.sounds.push(sounds[usize::from(s & 1)]);
                 }
@@ -1423,7 +1605,7 @@ impl World {
                 let form = usize::from(self.form_or_flat((i, j)));
                 let correction = t
                     .form_korrektur
-                    .get(self.viewpoint.rotation())
+                    .get(self.people_view().rotation())
                     .and_then(|row| row.get(form))
                     .copied()
                     .unwrap_or(0); // 1088:4bfa
@@ -1618,7 +1800,12 @@ impl World {
                 // each side, and does nothing with it.
             }
         }
-        let origin = self.viewpoint.origin;
+        // BUG(original): new people come only to the squares the human's view looks at, from the world's random numbers (`fix.view_people`: the views' own).
+        if self.people_split() {
+            // The rest are the views' own (`view::ViewPeople::spawn`).
+            return;
+        }
+        let origin = self.people_view().origin;
         for l in 0..=60 {
             for e in 0..=10 {
                 let (di, dj) = view_square(e, l);
@@ -1636,7 +1823,7 @@ impl World {
         match b {
             0x70 => {
                 if self.part_or_zero(pos) == 0 {
-                    let d = DOORS[self.viewpoint.rotation()][1];
+                    let d = DOORS[self.people_view().rotation()][1];
                     let look = (pos.0.wrapping_add(d.0), pos.1.wrapping_add(d.1));
                     for kind in TENNIS_SPECTATORS {
                         if !self.person_at(kind, look) {
@@ -1688,7 +1875,7 @@ impl World {
                 }
                 if (0x68..=0x6b).contains(&b) && self.part_or_zero(pos) == 0 {
                     let (di, dj) = JETTY_OFFSETS
-                        .get(usize::from(b - FIRST_JETTY) + 4 * self.viewpoint.rotation())
+                        .get(usize::from(b - FIRST_JETTY) + 4 * self.people_view().rotation())
                         .copied()
                         .unwrap_or((0, 0));
                     let look = (di.wrapping_add(pos.0), dj.wrapping_add(pos.1));
@@ -1715,7 +1902,7 @@ impl World {
             // From the square itself, which is the building's first.
             let look = match s.look {
                 At::Door(n) => {
-                    let d = DOORS[self.viewpoint.rotation()][n];
+                    let d = DOORS[self.people_view().rotation()][n];
                     (pos.0.wrapping_add(d.0), pos.1.wrapping_add(d.1))
                 }
                 _ => pos,
@@ -1988,6 +2175,51 @@ impl World {
             }
         }
         None
+    }
+
+    /// With `fix.view_people`: the people of the views' kinds
+    /// ([`is_view_kind`]) leave the world's records, which are free again
+    /// (the marker layers as they are: those kinds mark nothing), and go
+    /// to the views ([`Tick::view_people`]); the rest are placed again by
+    /// the first rotation ([`World::people_view`]). A loaded game and the
+    /// fix switched on do it.
+    pub(crate) fn hand_over_view_people(&mut self, tick: &mut Tick) {
+        for p in &mut self.people.records[..] {
+            if p.kind() != NOBODY && is_view_kind(p.kind()) {
+                tick.view_people.push(p.clone());
+                p.set_kind(NOBODY);
+            }
+        }
+        self.place_people_again(); // 1088:7a14
+    }
+
+    /// [`World::hand_over_view_people`] outside a command, for a game
+    /// that starts from a file with `fix.view_people`: the people that go
+    /// to the view, none without the fix.
+    pub fn split_off_view_people(&mut self) -> Vec<Person> {
+        let mut tick = Tick::default();
+        if self.people_split() {
+            self.hand_over_view_people(&mut tick);
+        }
+        tick.view_people
+    }
+
+    /// The people as `viewpoint` sees them, for a view to draw with
+    /// `fix.view_people`: a copy of the world's, which go by the first
+    /// rotation ([`World::people_view`]), placed again for the view's
+    /// rotation as 1088:7a14 does, the doors from the buildings' squares
+    /// ([`Placer::place_again_from_home`]), and the planes' pictures as
+    /// 1090:2ce5 lifts them.
+    #[must_use]
+    pub fn people_for_view(&self, viewpoint: Viewpoint) -> People {
+        let mut people = self.people.clone();
+        Placer {
+            w: self,
+            people: &mut people,
+            r: viewpoint.rotation(),
+        }
+        .place_again_from_home();
+        people
     }
 
     /// The map changed for the people: the kinds of the records 0–0x23
@@ -2477,5 +2709,136 @@ mod tests {
         moved(&mut a);
         moved(&mut b);
         assert_eq!(a, b);
+    }
+
+    fn split(mut w: World) -> World {
+        w.fixes.set(Fix::ViewPeople, true);
+        w.options = crate::simulation::Options {
+            animations: true,
+            people_move: true,
+            people_spawn: true,
+            ..w.options
+        };
+        w
+    }
+
+    /// With `fix.view_people` the world sends none of the views' kinds,
+    /// and draws only the boat's and the ship's random numbers.
+    #[test]
+    fn split_spawns_no_view_people() {
+        let mut w = split(world(0x1f, 1, 1));
+        w.set_viewpoint(Viewpoint {
+            origin: (20, 20),
+            ..Viewpoint::default()
+        });
+        let mut only_sea = w.clone();
+        only_sea.island.buildings.set((20, 20), NO_BUILDING);
+        let mut tick = Tick::default();
+        for _ in 0..500 {
+            w.spawn_people(&mut tick);
+            only_sea.spawn_people(&mut tick);
+        }
+        assert!(!w.people.records.iter().any(|p| p.kind() == BUILDER));
+        assert_eq!(w.random, only_sea.random);
+        // The original's builders come, with more random numbers.
+        let mut o = world(0x1f, 1, 1);
+        o.options = w.options;
+        o.set_viewpoint(w.viewpoint);
+        for _ in 0..500 {
+            o.spawn_people(&mut tick);
+        }
+        assert!(o.people.records.iter().any(|p| p.kind() == BUILDER));
+    }
+
+    /// With `fix.view_people` the scroll the view used to send does
+    /// nothing, and the sounds go to the views with their square, picked
+    /// there.
+    #[test]
+    fn split_view_moved_and_sounds() {
+        let mut w = split(world(0x14, 1, 1));
+        let before = w.clone();
+        w.apply(crate::command::Command {
+            player: 1,
+            action: crate::command::Action::ViewMoved(Viewpoint {
+                rotation: 2,
+                origin: (15, 15),
+                parity: 1,
+            }),
+        });
+        assert_eq!(w, before);
+        let mut tick = Tick::default();
+        w.add_person(LEAVING, (20, 20), &mut tick);
+        assert_eq!(w.random, before.random);
+        assert_eq!(tick.sounds, [] as [u8; 0]);
+        assert_eq!(
+            tick.placed_sounds,
+            [crate::simulation::PlacedSound {
+                at: (20, 20),
+                sounds: &[0x15, 5],
+                after: 0,
+            }]
+        );
+        // The original only where the player sees it, from the world's
+        // random numbers.
+        let mut o = world(0x14, 1, 1);
+        o.set_viewpoint(Viewpoint {
+            origin: (20, 20),
+            ..Viewpoint::default()
+        });
+        o.add_person(LEAVING, (20, 20), &mut tick);
+        assert_ne!(o.random, before.random);
+        assert_eq!(tick.sounds.len(), 1);
+    }
+
+    /// With `fix.view_people` the door people keep their building's
+    /// square, and a view turned the other way finds their door from it.
+    #[test]
+    fn split_doors_turn_from_home() {
+        let mut w = split(world(0x14, 1, 1));
+        let mut tick = Tick::default();
+        w.add_person(0x28, (20, 20), &mut tick);
+        let p = w.people.get(FIRST).unwrap();
+        // The first rotation's door, whatever the world was told.
+        assert_eq!((p.pos(), p.home()), ((21, 21), (20, 20)));
+        for r in 0..4u8 {
+            let turned = w.people_for_view(Viewpoint {
+                rotation: r,
+                ..Viewpoint::default()
+            });
+            let d = DOORS[usize::from(r)][0];
+            assert_eq!(turned.get(FIRST).unwrap().pos(), (20 + d.0, 20 + d.1));
+        }
+    }
+
+    /// A view's own builders come to the building site it looks at, from
+    /// its random numbers, and go when the site does.
+    #[test]
+    fn view_people_come_and_go() {
+        let mut w = split(world(0x1f, 1, 1));
+        let random = w.random;
+        let mut v = view::ViewPeople::new(5);
+        let look = view::Looking::original(Viewpoint {
+            origin: (20, 20),
+            ..Viewpoint::default()
+        });
+        let mut sounds = Vec::new();
+        for _ in 0..500 {
+            sounds.extend(v.tick(&w, &look));
+        }
+        assert!(v.records().iter().any(|p| p.kind() == BUILDER && p.pos() == (20, 20)));
+        assert_eq!(w.random, random);
+        w.island.buildings.set((20, 20), 0x14);
+        v.tick(&w, &look);
+        assert_eq!(v.count(), 0);
+        // With the fix off they all go.
+        w.island.buildings.set((20, 20), 0x1f);
+        let mut most = 0;
+        while most == 0 {
+            v.tick(&w, &look);
+            most = most.max(v.count());
+        }
+        w.fixes.set(Fix::ViewPeople, false);
+        v.tick(&w, &look);
+        assert_eq!(v.count(), 0);
     }
 }

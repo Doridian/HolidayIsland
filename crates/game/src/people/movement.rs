@@ -228,7 +228,7 @@ const JOINABLE: [([u8; 5], u8, u8, [u8; 2]); 4] = [
 /// An in-place animation (1098:109f): its picture from its frame (`+0x18`)
 /// and the first picture.
 #[derive(Debug, Clone, Copy)]
-enum Frames {
+pub(super) enum Frames {
     /// One picture per frame.
     Each,
     /// One per two frames.
@@ -239,7 +239,7 @@ enum Frames {
 
 /// The kinds 1098:109f counts up in place until their time (`+0x1a`) is
 /// up: their frames and first picture.
-const IN_PLACE: [(u8, Frames, i16); 36] = [
+pub(super) const IN_PLACE: [(u8, Frames, i16); 36] = [
     (0x1a, Frames::Each, 0xe3),
     (0x1b, Frames::Half, 0xef),
     (0x1c, Frames::Each, 0x103),
@@ -311,7 +311,7 @@ fn at<T: Copy + Default>(table: &[T], index: impl TryInto<usize>) -> T {
 
 /// `p`'s time is up: its frame (`+0x18`, sign-extended) reached its time
 /// (`+0x1a`).
-fn time_up(p: &Person) -> bool {
+pub(super) fn time_up(p: &Person) -> bool {
     i32::from(p.path()) >= p.step()
 }
 
@@ -376,27 +376,6 @@ impl World {
 
     fn marker_2(&self, pos: Pos) -> u8 {
         self.island.layer_5520.get(pos).unwrap_or(FREE)
-    }
-
-    /// A square's form as the player's view turns it. // 1088:4bfa
-    pub(super) fn form_look(&self, pos: Pos) -> u8 {
-        let form = usize::from(self.form_or_flat(pos));
-        self.tables
-            .form_korrektur
-            .get(self.viewpoint.rotation())
-            .and_then(|row| row.get(form))
-            .copied()
-            .unwrap_or(0)
-    }
-
-    /// The height of the corner the view measures `pos` from, 0 off the
-    /// map. // 1088:4c27
-    fn view_corner(&self, pos: Pos) -> u8 {
-        if on_map(pos) {
-            ground_height(&self.island, self.viewpoint.rotation(), pos) // 1050:075e
-        } else {
-            0
-        }
     }
 
     /// How a plane's picture is lifted by its square: the highest corner
@@ -507,7 +486,10 @@ impl World {
             self.claim_ahead(d, n); // 1088:5f3e
         } else if self.person(n).step() != 0 {
             self.edit(n, |p| p.set_step(p.step().wrapping_sub(1)));
-            if self.visible(self.person(n).pos()) {
+            // BUG(original): only a walker the human sees draws its `Random(100)` and `Random(3)` (`fix.view_people`: every one draws the first, each view the second).
+            // With `fix.view_people` whether or not anyone sees it: the
+            // world doesn't know what the players see.
+            if self.people_split() || self.visible(self.person(n).pos()) {
                 self.walker_sound(n, tick); // 1088:68f1
             }
         }
@@ -648,6 +630,21 @@ impl World {
         if self.random.random(100) == 1 {
             self.remove_person(n); // 1088:2df2
         }
+        if self.people_split() {
+            // Each view that sees it picks the sound with its own random
+            // numbers.
+            let sounds: &'static [u8] = match self.people.kind(n) {
+                0x11 => &[4],
+                0x12 => &[0x2b],
+                0x13 | 0x14 => &[3],
+                0x15 | 0x16 => &[2, 0xf, 0x2c],
+                _ => &[],
+            };
+            if !sounds.is_empty() {
+                self.placed_sound(self.person(n).pos(), sounds, tick);
+            }
+            return;
+        }
         match self.people.kind(n) {
             0x11 => tick.sounds.push(4),
             0x12 => tick.sounds.push(0x2b),
@@ -754,7 +751,9 @@ impl World {
     /// The zoo's (0x1d) first frame and the minigolf players' putt have a
     /// sound where the player sees them. // 1098:109f
     fn animate_in_place(&mut self, n: i16, kind: u8, frames: Frames, first: i16, tick: &mut Tick) {
-        if kind == 0x1d && self.visible(self.person(n).pos()) && self.person(n).path() == 0 {
+        if kind == 0x1d && self.people_split() && self.person(n).path() == 0 {
+            self.sound_from(n, 7, tick);
+        } else if kind == 0x1d && self.visible(self.person(n).pos()) && self.person(n).path() == 0 {
             tick.sounds.push(7);
         }
         self.edit(n, |p| p.set_path(p.path().wrapping_add(1)));
@@ -806,7 +805,7 @@ impl World {
         if p.path() % 0x1c != 0 {
             return;
         }
-        let next = add(p.pos(), DRIFT[self.viewpoint.rotation()]);
+        let next = add(p.pos(), DRIFT[self.people_view().rotation()]);
         if off_inner(next) {
             gone(self);
         } else if self.ground_or_water(next) == WATER
@@ -932,46 +931,6 @@ impl World {
             }
             k += 1;
         }
-    }
-
-    /// A ship's or surfer's picture (from `first`, by the look of its
-    /// route's row as the view turns it) and where it goes on its square:
-    /// the row of the route the view's rotation turns its heading into.
-    fn place_on_route(&mut self, n: i16, first: Option<i16>) {
-        let r = self.viewpoint.rotation();
-        let t = Arc::clone(&self.tables);
-        let p = self.person(n);
-        if let Some(first) = first {
-            let look = at(&LOOKS[r], t.animdat4(p.heading(), row(&p), 2));
-            self.edit(n, |p| p.set_sprite(look.wrapping_add(first)));
-        }
-        let p = self.person(n);
-        let group = at(&LOOKS[r], p.heading());
-        let (w, h) = (t.animdat1(p.sprite(), 1) / 2, t.animdat1(p.sprite(), 0) / 2);
-        let x = t.animdat4(group, row(&p), 0).wrapping_sub(w);
-        let y = t.animdat4(group, row(&p), 1).wrapping_sub(h);
-        self.edit(n, |p| p.set_offset((x, y)));
-    }
-
-    /// A surfer's picture and place. // 1088:6ee7
-    fn place_surfer(&mut self, n: i16) {
-        let first = match self.people.kind(n) {
-            0x20 => Some(0x123),
-            0x21 => Some(299),
-            _ => None,
-        };
-        self.place_on_route(n, first);
-    }
-
-    /// A harbour ship's picture and place. // 1088:6cba
-    fn place_harbour_ship(&mut self, n: i16) {
-        let first = match self.people.kind(n) {
-            0x22 => Some(0x133),
-            0x23 => Some(0x13b),
-            0x24 => Some(0x143),
-            _ => None,
-        };
-        self.place_on_route(n, first);
     }
 
     /// A ship for a harbour (kinds 0x22..=0x24) sails from its corner of
@@ -1276,7 +1235,7 @@ impl World {
             }
             self.edit(n, |p| p.set_path(1));
         }
-        let first = TAXIING_SPRITES[self.viewpoint.rotation()][k];
+        let first = TAXIING_SPRITES[self.people_view().rotation()][k];
         self.edit(n, |p| p.set_sprite(first.wrapping_add(p.path())));
     }
 }
@@ -1302,7 +1261,7 @@ impl World {
         if !(PLANE..PLANE + 3).contains(&kind) {
             return;
         }
-        let r = self.viewpoint.rotation();
+        let r = self.people_view().rotation();
         let base = (i16::from(kind) - 7) * 8 + 0x6b;
         // The picture by the look of the track's row, or of the track itself.
         let row_look = |w: &World, n: i16| {
@@ -1469,37 +1428,6 @@ impl World {
         self.place_flying(n);
     }
 
-    /// A plane's picture on its track, lifted by its height (`+0x26`) over
-    /// the view's corner and the form, and its second half's. // 1090:2ce5
-    fn place_flying(&mut self, n: i16) {
-        let r = self.viewpoint.rotation();
-        let t = Arc::clone(&self.tables);
-        let p = self.person(n);
-        let (w, h) = (t.animdat1(p.sprite(), 1) / 2, t.animdat1(p.sprite(), 0) / 2);
-        let track = at(&PLANE_TRACKS[r], p.path());
-        let row = i32::from(row(&p));
-        let (x, y) = (
-            self.people.track_word(track, row, 0),
-            self.people.track_word(track, row, 2),
-        );
-        let lift = at(&FORM_LIFT, self.form_look(p.pos())); // 1088:4bfa
-        #[allow(clippy::cast_possible_truncation)] // FORM_LIFT is within ±18.
-        let lift = lift as i16;
-        let corner = i16::from(self.view_corner(p.pos())); // 1088:4c27
-        let dy = y
-            .wrapping_sub(p.word_26())
-            .wrapping_sub(5)
-            .wrapping_add((corner - 1).wrapping_mul(9).wrapping_add(lift))
-            .wrapping_sub(h);
-        self.edit(n, |p| p.set_offset((x.wrapping_sub(w), dy)));
-        let base = (i16::from(p.kind()) - 7) * 8 + 0x83;
-        let look = at(&LOOKS[r], self.people.track_word(p.path(), row, 4));
-        self.edit(n + PLANE_HALF, |q| {
-            q.set_sprite(base.wrapping_add(look));
-            q.set_offset((x.wrapping_sub(w), y.wrapping_sub(h)));
-        });
-    }
-
     /// Whether the plane's home square (`+0x22`) is one of its airport's
     /// two approaches (1110:36a0; the original takes the second if either
     /// coordinate matches, `fix.plane_approach` if both do). // 1090:2c1f
@@ -1588,7 +1516,7 @@ impl World {
             p.set_step(0);
             p.set_path(track);
         });
-        let r = self.viewpoint.rotation();
+        let r = self.people_view().rotation();
         let p = self.person(n);
         let base = (i16::from(p.kind()) - 7) * 8 + 0x6b;
         let look = at(&LOOKS[r], self.people.track_word(track, 0, 4));
@@ -1613,7 +1541,7 @@ impl World {
                     p.set_step(0);
                     p.set_path(3);
                 });
-                let r = self.viewpoint.rotation();
+                let r = self.people_view().rotation();
                 let base = (i16::from(p.kind()) - 7) * 8 + 0x6b;
                 let look = at(&LOOKS[r], self.people.track_word(3, 0, 4));
                 self.edit(n, |p| p.set_sprite(base.wrapping_add(look)));
@@ -1702,6 +1630,102 @@ impl World {
             self.spawn_people(tick); // 1090:2373
         }
     }
+}
+
+/// The placing parts of the movement, for any people and rotation.
+impl super::Placer<'_> {
+    /// A square's form as the player's view turns it. // 1088:4bfa
+    pub(crate) fn form_look(&self, pos: Pos) -> u8 {
+        let form = usize::from(self.w.form_or_flat(pos));
+        self.w
+            .tables
+            .form_korrektur
+            .get(self.r)
+            .and_then(|row| row.get(form))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// The height of the corner the view measures `pos` from, 0 off the
+    /// map. // 1088:4c27
+    pub(crate) fn view_corner(&self, pos: Pos) -> u8 {
+        if on_map(pos) {
+            ground_height(&self.w.island, self.r, pos) // 1050:075e
+        } else {
+            0
+        }
+    }
+
+    /// A ship's or surfer's picture (from `first`, by the look of its
+    /// route's row as the view turns it) and where it goes on its square:
+    /// the row of the route the view's rotation turns its heading into.
+    pub(crate) fn place_on_route(&mut self, n: i16, first: Option<i16>) {
+        let r = self.r;
+        let t = Arc::clone(&self.w.tables);
+        let p = self.person(n);
+        if let Some(first) = first {
+            let look = at(&LOOKS[r], t.animdat4(p.heading(), row(&p), 2));
+            self.edit(n, |p| p.set_sprite(look.wrapping_add(first)));
+        }
+        let p = self.person(n);
+        let group = at(&LOOKS[r], p.heading());
+        let (w, h) = (t.animdat1(p.sprite(), 1) / 2, t.animdat1(p.sprite(), 0) / 2);
+        let x = t.animdat4(group, row(&p), 0).wrapping_sub(w);
+        let y = t.animdat4(group, row(&p), 1).wrapping_sub(h);
+        self.edit(n, |p| p.set_offset((x, y)));
+    }
+
+    /// A surfer's picture and place. // 1088:6ee7
+    pub(crate) fn place_surfer(&mut self, n: i16) {
+        let first = match self.people.kind(n) {
+            0x20 => Some(0x123),
+            0x21 => Some(299),
+            _ => None,
+        };
+        self.place_on_route(n, first);
+    }
+
+    /// A harbour ship's picture and place. // 1088:6cba
+    pub(crate) fn place_harbour_ship(&mut self, n: i16) {
+        let first = match self.people.kind(n) {
+            0x22 => Some(0x133),
+            0x23 => Some(0x13b),
+            0x24 => Some(0x143),
+            _ => None,
+        };
+        self.place_on_route(n, first);
+    }
+
+    /// A plane's picture on its track, lifted by its height (`+0x26`) over
+    /// the view's corner and the form, and its second half's. // 1090:2ce5
+    pub(crate) fn place_flying(&mut self, n: i16) {
+        let r = self.r;
+        let t = Arc::clone(&self.w.tables);
+        let p = self.person(n);
+        let (w, h) = (t.animdat1(p.sprite(), 1) / 2, t.animdat1(p.sprite(), 0) / 2);
+        let track = at(&PLANE_TRACKS[r], p.path());
+        let row = i32::from(row(&p));
+        let (x, y) = (
+            self.people.track_word(track, row, 0),
+            self.people.track_word(track, row, 2),
+        );
+        let lift = at(&FORM_LIFT, self.form_look(p.pos())); // 1088:4bfa
+        #[allow(clippy::cast_possible_truncation)] // FORM_LIFT is within ±18.
+        let lift = lift as i16;
+        let corner = i16::from(self.view_corner(p.pos())); // 1088:4c27
+        let dy = y
+            .wrapping_sub(p.word_26())
+            .wrapping_sub(5)
+            .wrapping_add((corner - 1).wrapping_mul(9).wrapping_add(lift))
+            .wrapping_sub(h);
+        self.edit(n, |p| p.set_offset((x.wrapping_sub(w), dy)));
+        let base = (i16::from(p.kind()) - 7) * 8 + 0x83;
+        let look = at(&LOOKS[r], self.people.track_word(p.path(), row, 4));
+        self.edit(n + PLANE_HALF, |q| {
+            q.set_sprite(base.wrapping_add(look));
+            q.set_offset((x.wrapping_sub(w), y.wrapping_sub(h)));
+        });
+    }
 
     /// Everyone whose square or picture goes by the view's rotation gets
     /// them again: planes their pictures (1088:70ab), walkers, surfers,
@@ -1710,7 +1734,7 @@ impl World {
     /// building's first one, the pictures by the square's form (0x2a,
     /// 0x46) and the taxiing planes' pictures. Nobody else, and no random
     /// numbers. // 1088:7a14, 1231 bytes
-    fn place_people_again(&mut self) {
+    pub(crate) fn place_again(&mut self) {
         for n in 0..=LAST {
             let kind = self.people.kind(n);
             let pos = self.person(n).pos();
@@ -1749,7 +1773,7 @@ impl World {
                         0x38 => self.turn_taxiing(n, &TAXIING_OFFSETS_38), // 1098:0e6d
                         _ => {}
                     }
-                    let first = TAXIING_SPRITES[self.viewpoint.rotation()][usize::from(kind - 0x35)];
+                    let first = TAXIING_SPRITES[self.r][usize::from(kind - 0x35)];
                     self.edit(n, |p| p.set_sprite(first.wrapping_add(p.path())));
                     None
                 }
@@ -1765,10 +1789,39 @@ impl World {
         }
     }
 
+    /// [`super::Placer::place_again`] for a view's copy of the people or
+    /// its own: those at a door, a jetty or the stage whose building's
+    /// square is known (`+0x22`, which only `fix.view_people` keeps) are
+    /// placed from it, not from where they stand, so turning doesn't lose
+    /// the building; and the planes in the air get their pictures' places
+    /// on their tracks for the rotation (1090:2ce5), which the original
+    /// leaves until they next move.
+    pub(crate) fn place_again_from_home(&mut self) {
+        for n in 0..=LAST {
+            let p = self.person(n);
+            let kind = p.kind();
+            let door_kind = AT_DOOR_0.contains(&kind)
+                || AT_DOOR_1.contains(&kind)
+                || kind == AT_DOOR_2
+                || kind == super::JETTY_BOAT
+                || kind == super::STAGE_SPECTATORS;
+            if door_kind && on_map(p.home()) && p.home() != (0, 0) {
+                self.edit(n, |q| q.set_pos(q.home()));
+            }
+        }
+        self.place_again();
+        for n in 0..=LAST {
+            let p = self.person(n);
+            if (PLANE..PLANE + 3).contains(&p.kind()) && !PARKED.contains(&p.heading()) {
+                self.place_flying(n);
+            }
+        }
+    }
+
     /// A plane's picture and its second half's for the view's rotation:
     /// by its track's row, or a parked plane (0x1b, 0x23) by its parking
     /// track's first row. Nothing else of it moves. // 1088:70ab, 1331 bytes
-    fn turn_plane(&mut self, n: i16) {
+    pub(crate) fn turn_plane(&mut self, n: i16) {
         let p = self.person(n);
         let look_at = PARKED_TRACKS
             .iter()
@@ -1777,12 +1830,34 @@ impl World {
                 || self.people.track_word(p.path(), i32::from(row(&p)), 4),
                 |&(_, track)| self.people.track_word(track, 0, 4),
             );
-        let look = at(&LOOKS[self.viewpoint.rotation()], look_at);
+        let look = at(&LOOKS[self.r], look_at);
         let base = (i16::from(p.kind()) - i16::from(PLANE)) * 8;
         self.edit(n, |q| q.set_sprite(base.wrapping_add(0x6b).wrapping_add(look)));
         self.edit(n + PLANE_HALF, |q| {
             q.set_sprite(base.wrapping_add(0x83).wrapping_add(look));
         });
+    }
+}
+
+/// The placing parts on the world's people.
+impl World {
+    fn place_surfer(&mut self, n: i16) {
+        self.placing(|p| p.place_surfer(n));
+    }
+
+    fn place_harbour_ship(&mut self, n: i16) {
+        self.placing(|p| p.place_harbour_ship(n));
+    }
+
+    fn place_flying(&mut self, n: i16) {
+        self.placing(|p| p.place_flying(n));
+    }
+
+    /// [`super::Placer::place_again`] on the world's people. // 1088:7a14
+    pub(super) fn place_people_again(&mut self) {
+        // A closure: the method itself isn't general over the lifetimes.
+        #[allow(clippy::redundant_closure_for_method_calls)]
+        self.placing(|p| p.place_again());
     }
 }
 

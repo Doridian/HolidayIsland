@@ -119,7 +119,8 @@ theirs with a `Random` then, so what the player looks at changes the
 random numbers. The port keeps the view's rotation, origin and parity in
 `World::viewpoint` (`1110:007c`, `1110:5530`, `1110:5534`, saved with the
 map), which the view sets before each tick; sounds go to the view in
-`Tick::sounds`.
+`Tick::sounds`. With `fix.view_people` the people go by no view
+([below](#who-is-whose-fixview_people)).
 
 ## New people (1090:2373)
 
@@ -178,7 +179,9 @@ world at once, as the original does it: the world clears the records
 `big_map` the middle of the bigger one) and runs `people_refresh`. The view data travels with the command, so a
 replay or another peer places and spawns the same people. Switching
 people moving on (`Action::SetOption`) runs it with the view the world
-last had.
+last had. With `fix.view_people` the world ignores the command and the
+view places and spawns its own instead
+([below](#who-is-whose-fixview_people)).
 
 ## Sending someone out (1090:1a25)
 
@@ -341,7 +344,8 @@ marker layers was checked, in the port and in the English build
 (`GH_PROGRAM=HOLIDAY_EN.EXE tools/gh xrefs` of `people`, en `1118:7802`,
 and the layers, en `1118:5740` and `1118:5744`). Addresses are the
 German build's, "en" the English build's. The answer: much more than
-the oil reads them, so the move is on hold.
+the oil reads them, so only part of them moved to the views
+([below](#who-is-whose-fixview_people)).
 
 ### Who reads them outside the people's own code
 
@@ -406,15 +410,113 @@ So the near-view part could go to the view on its own (spectators,
 builders, taxiing planes, jetty boats, the harbour sounds, and the
 walkers' and sounds' seen-only draws), but the ships, boats, planes,
 rentals' people and everyone the buildings send are part of the world
-as the original runs it. Which of those to keep in the world, and
-whether the raise check and the RNG draws above may change with the
-fix on, is a decision for later.
+as the original runs it.
 
-Found on the way, not yet checked against the code: the shark's diver
-is kind 3, the boats' kind, and when its time is up `person_animate`
-takes one off the boats' count (`1110:6ff0`) it never added, so each
-shark lets one more boat come (1098:109f; it looks like a bug of the
-original).
+Found on the way: the shark's diver is kind 3, the boats' kind
+(`add_person(3, …)` in 10a0:19d2, en 10a8:19d2), and when its time is up
+`person_animate` takes one off the boats' count (`1110:6ff0`, en
+`1118:781c`) that only `spawn_people` adds to, so each shark lets one
+more boat come (1098:109f, en 10a0:150f). A bug of the original:
+`fix.shark_boat_count` counts the diver in when it comes.
+
+The decision: split by effect, below.
+
+## Who is whose (`fix.view_people`)
+
+The audit's answer, split by effect, is the world fix `view_people` (on
+by default). Off, everything is the original's as above, which only a
+game with one human can be (`enhance::SINGLE_PLAYER_ONLY`). On:
+
+**The world keeps** everything that is game state or that something in
+the world reads: the ships and boats, the planes and the helicopter,
+the rentals' walkers and surfers (and the settlement's count of them),
+everyone `send_person` sends from the buildings, the money, the oil,
+those leaving, the pictures by a square's form, and the event and
+sabotage records (the shark's diver, the explosion, the sale sign, the
+championship's surfers). They are made and changed through the world's
+tick and `World::apply` as before, but by no view:
+
+- `World::people_view` gives them the first rotation from the map's
+  corner (`Viewpoint::default()`) wherever the original reads the view:
+  the doors (`1110:34b0`), the jetties' and the stage's offsets, the
+  pictures, a ship's drift "up the screen" (`1110:3cd4`). The world's
+  `viewpoint` is left to what isn't the people's (the saved view, the
+  news).
+- `spawn_people` only sends the boat and the ship; the second part, the
+  view's squares, is the views'.
+- `Action::ViewMoved` does nothing, and the view doesn't send it.
+- Nothing is drawn or picked by what anyone sees: the people's sounds go
+  to the views as `Tick::placed_sounds` (`PlacedSound`: the square, the
+  sounds to pick from), and each view plays one where it sees the
+  square, picked with its own random numbers (`ViewPeople::hear`).
+- Those at a building's door keep the building's square in `+0x22`
+  (the original leaves it 0 for them), so a view turned another way
+  finds their door from it.
+
+**Each view has its own** (`game::people::view::ViewPeople`, kept by
+the main screen): the spectators at a full tennis court (0x4d–0x50) and
+at the stage (0x41), the builders (0x26), the taxiing planes
+(0x35–0x3a), the jetty boats (0x33) and the harbours' sounds,
+`people::is_view_kind`. Nothing in the world reads them but their own
+spawning. They run the original's code for those kinds (1090:2373's
+squares, 1088:0324's cases, 1098:109f's animations, 1088:7a14's placing)
+on the view's records, with the view's random numbers, after each of
+the world's ticks (`Hauptschirm::people_tick`) and after the view
+scrolls or turns (`Hauptschirm::people_refresh`, for 1088:7fb1). Two
+things are the port's: they leave when their building is no longer the
+kind that sent them (the original's world takes them away when it
+changes the building: 1088:6bac, 10a0:0026, 1088:6975), and with the
+view enhancement `people_everywhere` (on by default) they come to every
+square of the island, not only the view's 11 × 61. The view draws the
+world's people turned for its rotation (`World::people_for_view`: a copy
+placed again as 1088:7a14 does, the doors from their buildings, the
+planes' pictures on their tracks) and its own after them, those only
+while people move (1088:7ee3 hides them otherwise).
+
+**Raising land** (`check_raise`) reads the marker layer, as before; the
+views' kinds never mark a square, so it sees only the world's people.
+
+**Cost.** A view's own people take about 1 µs a tick for its squares and
+about 100 µs for the whole island (a release build: the 62 001 squares'
+scan); on an island built over with courts, sites, airports and
+jetties, 1353 people (the general range's size, which caps them),
+about 340 µs. Turning the world's people for a view's drawing is about
+25 µs. (`orig_view_people.rs`, `whole_island_cost`.)
+
+**Random numbers.** With the fix the world's `RandSeed` changes only
+where a view used to leak in:
+
+| Draw | Original | With `view_people` |
+|---|---|---|
+| `spawn_people`'s view squares (1090:2373) | `Random(50)` on a building site's first square, `Random(100)` and maybe `Random(2)` on an airport's, `Random(500)` (and `Random(2)` where seen) on a harbour's, `Random(10)` on a jetty's, each tick for the 11 × 61 squares | none: the views draw their own |
+| A scroll or turn (`people_refresh`, 1088:7fb1) | `spawn_people` again: the boat's and the ship's two `Random(250)` each, and the view squares' | none: the world doesn't hear of it |
+| Someone leaving's sound (0x19, 0x25, 1088:0324) | `Random(2)` where the player sees the square | none: each view picks |
+| The builders' sound (1088:0324) | `Random(5)` where seen | none: the views' |
+| A waiting walker (1088:68f1) | `Random(100)` (one in a hundred leaves) and `Random(3)` for the sound of some, where seen | `Random(100)` for every waiting walker, seen or not; the sound picked by each view |
+| Who's at a door (`send_person`, 1090:1a25) | looked for at the door by the view's rotation | by the first rotation |
+
+And because the views' kinds are no longer among the world's records:
+the world's people take other records (`1110:6ff4` grows less), so
+`people_tick` meets them in another order; `anyone_at` (the oil slick's
+walk, a harbour's ship) and `person_at` don't find them; and one of them
+leaving doesn't free the marker layers on its square
+(1088:2df2's last case), which the original does, whoever else marked
+it.
+
+**Saves** write what the original writes, with the view's people among
+the world's ([savegame.md](savegame.md#the-people-with-fixview_people));
+loading hands them back to the view.
+
+**Switching it** in the middle of a game: on, the world hands its
+views' kinds to the views (`Tick::view_people`); off, the views' own go
+and the world spawns them again where the human looks.
+
+**What's left.** Outside the people the world still takes the human's
+view origin for where the news and the bankruptcy and net worth events
+point (`news.rs`, `settlement.rs`), and the main screen hands the world
+its viewpoint before each tick for those (`World::set_viewpoint`). With
+several humans that would still differ between them.
+
 
 ## Open questions
 
@@ -437,7 +539,7 @@ original).
 - The world reads the human's view in several places, and 1088:7fb1 runs
   `spawn_people` for the view that moved (`Action::ViewMoved`). With
   several players the people would be placed for whoever moved last;
-  that needs an answer.
+  `fix.view_people` is the answer ([above](#who-is-whose-fixview_people)).
 - 1088:0324 reads its tables past their ends for building types that
   don't send that kind (nothing ported does that); the port says 0.
 - Walkers' and surfers' homes can be -1 (a beach already taken), and the

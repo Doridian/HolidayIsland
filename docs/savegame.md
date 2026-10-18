@@ -105,6 +105,30 @@ Each of the CD's seven files, loaded and saved again, gives the same
 fields but the bytes behind the players' names and the computers' status
 text and the 0x15e reserved bytes (`orig_savegame.rs`).
 
+### The people with `fix.view_people`
+
+With the fix the world's people go by no view, and the spectators,
+builders, taxiing planes and jetty boats are the view's own
+([people.md](people.md#who-is-whose-fixview_people)). A save still
+writes what the original writes, so the original loads it as its own:
+`MapView::of_world` puts the view's viewpoint into `1110:007c`, `5530`
+and `5534` (not the world's) and the people as that view sees them into
+`*1110:6fd6` and `1110:6ff4` (`MapView::people`): the world's placed
+again for the view's rotation, as 1088:7a14 would have them, without the
+buildings' squares only the fix keeps in `+0x22`, and the view's own in
+the general range's free records, as 1088:0324 would have put them
+(`ViewPeople::saved_with`). The rest of the table, the marker layers and
+the counts are the world's. Without the fix (`MapView::people` none) the
+file is the world's, as before.
+
+Loading a file with the fix (any file: an original one, a German v1.0
+one, the port's) hands the views' kinds over to the view
+(`World::hand_over_view_people`, `Tick::view_people`; at the start of a
+game `World::split_off_view_people`), and places the rest again for the
+world's rotation, so the view's people start as the file had them. A
+file saved with the fix loads in the original, and in the port without
+the fix, with everyone in the world.
+
 ## What a saved game loses
 
 `load_map` only overwrites what the file holds; everything else stays as

@@ -209,6 +209,14 @@ description = "The news archive keeps its 26th and 27th messages in order when i
 label = "TV lights without game chance"
 description = "The TV's blinking lights no longer use the game's random numbers, so the speech doesn't change the game"
 
+[enhance.view_people]
+label = "Everyone their own people"
+description = "Spectators, builders, taxiing planes and jetty boats are each screen's own, and the world's people don't follow the view; off: one player only"
+
+[enhance.shark_boat_count]
+label = "Shark diver counts as a boat"
+description = "The shark's diver counts with the boats, so it doesn't let one more boat come"
+
 [enhance.window_stacking]
 label = "Windows stack as in Windows"
 description = "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top"
@@ -320,3 +328,7 @@ description = "When the main screen fills the window it drops its own title bar;
 [enhance.mouse_wheel]
 label = "Mouse wheel scrolls"
 description = "The mouse wheel scrolls the island (with Shift across), the overview map and the lists"
+
+[enhance.people_everywhere]
+label = "People all over the island"
+description = "With everyone their own people, the screen's own people come all over the island, not just where the view looks"

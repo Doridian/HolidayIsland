@@ -952,6 +952,25 @@ pub fn draw_people_in(
     size: &ViewSize,
     money: &mut MoneyText,
 ) {
+    let people: Vec<&crate::people::Person> = (FIRST_DRAWN..=crate::people::LAST)
+        .filter_map(|n| world.people.get(n))
+        .collect();
+    draw_records(dst, world, &people, tiles, cam, size, money);
+}
+
+/// [`draw_people_in`] for the records `people` instead of the world's
+/// (from record 0x24 on), in their order: with `fix.view_people` the
+/// world's as the view turns them and the view's own
+/// (`crate::people::view`).
+pub fn draw_records(
+    dst: &mut Surface,
+    world: &World,
+    people: &[&crate::people::Person],
+    tiles: &Tiles,
+    cam: &Camera,
+    size: &ViewSize,
+    money: &mut MoneyText,
+) {
     let island = &world.island;
     let t = &world.tables;
     let view = cam.view();
@@ -963,10 +982,7 @@ pub fn draw_people_in(
     // 1088:385d: the ones on screen, where their pictures go and the order
     // to draw them in (lower first, planes and their second halves last).
     let mut shown = Vec::new();
-    for n in FIRST_DRAWN..=crate::people::LAST {
-        let Some(p) = world.people.get(n) else {
-            continue;
-        };
+    for (n, &p) in people.iter().enumerate() {
         if p.kind() == 0
             || p.flags()[2] != 1
             || !crate::people::sees_in(&viewpoint, island, p.pos(), size.columns, size.half_rows)
@@ -997,9 +1013,7 @@ pub fn draw_people_in(
     // 1088:3727's bubble sort keeps equals in order, as a stable sort does.
     shown.sort_by_key(|s| s.0);
     for (_, n, placed) in shown {
-        let Some(p) = world.people.get(n) else {
-            continue;
-        };
+        let p = people[n];
         if p.kind() == crate::people::MONEY {
             money(dst, p.step(), (placed.x, placed.y));
             continue;

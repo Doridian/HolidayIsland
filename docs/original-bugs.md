@@ -53,7 +53,9 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   ([layout.md](layout.md#big_map-enhancement)), `no_main_title`
   ([layout.md](layout.md#no_main_title-enhancement)), `mouse_wheel` (the
   wheel scrolls the island, Shift across, the overview map and the
-  lists; [map.md](map.md#the-scroll-bars)) and the fixes keyed in
+  lists; [map.md](map.md#the-scroll-bars)), `people_everywhere` (with
+  `fix.view_people`, the view's own people all over the island;
+  [people.md](people.md#who-is-whose-fixview_people)) and the fixes keyed in
   "UI quirks" and "Sound" below. Each form keeps the player's set in its
   `enhance` field (`Game::set_view_enhancements` hands it out; the start
   menu, the load form and the sound get it from `Holiday`), and the
@@ -91,6 +93,12 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   and its key in the bug's row below. Tests construct either mode
   (`Config::ORIGINAL`, `Config::default()`); the existing tests use
   `Config::ORIGINAL`.
+- **Single player only.** A world fix may be one that only a game with
+  one human may have off: off, the world reads that human's view, which
+  several players don't share. `enhance::SINGLE_PLAYER_ONLY` lists them
+  (`view_people`), and `Fixes::for_humans` is how a game with several
+  humans would keep them on. There's no multiplayer yet, so nothing calls
+  it; it's the only constraint of its kind so far.
 - Crashes and hangs have no "original" mode, because the port can't
   crash. It does the fallback listed below. The option there would be
   a better fallback, where one makes sense.
@@ -218,6 +226,8 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 10a0:1f65 | Piranhas ordered for a building that isn't a pool do nothing, without the error 0x1a the other kinds give: the loop over the pools always ends at 6, and the check is for 5 ([sabotage.md](sabotage.md)) | `sabotage_pool_error` |
 | 10a0:1f65, 1028:3079 | A sabotage kind past the nine (only a command can ask for one) reads past `SABOTAGE.TXT`'s table | no: a free kind with no targets; nothing happens |
 | 1048:0a54 | When the news archive first wraps, the empty 26th entry moves into the 25th, so the 27th message goes there and the 26th and 27th stay the wrong way round ([fernseher.md](fernseher.md#posting-a-message-10480a54)) | `news_archive_order` |
+| 1090:2373, 1088:7fb1, 1088:0324, 1098:109f, 1050:245b | The people follow the human's view: the spectators, builders, taxiing planes and jetty boats come only to its squares, the doors, pictures and a ship's drift go by its rotation, and some random numbers (the sounds' picks, a waiting walker's `Random(100)`) are drawn only where it looks, so scrolling and turning change the world and its `RandSeed` ([people.md](people.md#who-is-whose-fixview_people)) | `view_people`: those kinds are each view's own, with its own random numbers, and the world's people go by no view. Single player only off |
+| 10a0:19d2, 1098:109f | The shark's diver is a boat (kind 3) whose time running out takes one off the boats' count (`1110:6ff0`) that it never added, so each shark lets one more boat onto the sea | `shark_boat_count`: the diver counts in when it comes |
 | 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speech option and on how long the speech plays | `tv_lights`: the view's TV draws its own. Kept, the view's TV tells the world (`Action::Speaker`), which draws them in its tick (`World::tv_lights`) ([sound.md](sound.md#the-tvs-speaker)) |
 
 ## UI quirks
@@ -347,7 +357,11 @@ state into the simulation. See the open questions in
   players with different window sizes don't diverge by that. A scroll or
   turn places the people again and spawns new ones for the view
   (1088:7fb1): the command `Action::ViewMoved` carries the viewpoint, so
-  every peer does the same, but the people follow whoever moved last;
+  every peer does the same, but the people follow whoever moved last.
+  `fix.view_people` answers it: the people only a view needs are each
+  view's own, and the world's go by no view
+  ([people.md](people.md#who-is-whose-fixview_people)); the world still
+  takes the human's view origin for where the news and some events point;
 - the road drag state (`1110:634c`, `704e`), which the computers read
   ([player-tools.md](player-tools.md#world-and-view));
 - the build menu's lists, player 1's;

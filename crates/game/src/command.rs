@@ -105,7 +105,8 @@ pub enum Action {
     /// and new ones come where it looks (`people_refresh`, 1088:7fb1).
     /// The view data travels with the command, so every peer places and
     /// spawns the same people. Marked: it's the one human's view; with
-    /// several the people would follow whoever moved last.
+    /// several the people would follow whoever moved last. With
+    /// `fix.view_people` it does nothing, and the view doesn't send it.
     ViewMoved(crate::people::Viewpoint),
 }
 
@@ -125,6 +126,11 @@ impl World {
                     *self = world;
                     tick.loaded = true;
                     tick.redraw_all = true;
+                    if self.people_split() {
+                        // The file's spectators and the like go to the
+                        // views; the rest turn to the world's rotation.
+                        self.hand_over_view_people(&mut tick);
+                    }
                 }
                 // BUG(original): with I/O checks off, a short or missing file stops the reads at the error and half loads the game; the port loads nothing.
                 Err(_) => tick.load_failed = true,
@@ -151,7 +157,18 @@ impl World {
             Action::ShowTv(n) => self.tv_shown(n, &mut tick),
             Action::TvPause(on) => self.tv_pause(on),
             Action::Speaker(s) => self.set_speaker(s),
-            Action::SetFix(fix, on) => self.fixes.set(fix, on),
+            Action::SetFix(fix, on) => {
+                let split = self.people_split();
+                self.fixes.set(fix, on);
+                if !split && self.people_split() {
+                    self.hand_over_view_people(&mut tick);
+                }
+            }
+            // BUG(original): a scroll places and spawns the world's people for the human's view (`fix.view_people`: the world ignores it).
+            // With `fix.view_people` the world doesn't follow anyone's
+            // view: each view places and spawns its own people
+            // (`crate::people::view`).
+            Action::ViewMoved(_) if self.people_split() => {}
             Action::ViewMoved(viewpoint) => {
                 self.people_map_changed(); // 1088:6c8b
                 self.set_viewpoint(viewpoint);

@@ -224,7 +224,16 @@ impl World {
             GO_SLOW => 0x18,
             CHARACTER_ASSASSINATION => 0x19,
             BOMB | ROAD => return self.blow_up(pos, tick), // 10a0:1000
-            SHARK_DIVER => return self.add_person(DIVER, pos, tick), // 1088:0324
+            SHARK_DIVER => {
+                // BUG(original): the diver is a boat (kind 3), and its time running out takes one off the boats' count (1110:6ff0, 1098:109f) that it never added, so each shark lets one more boat onto the sea.
+                let boats = |w: &World| w.people.records.iter().filter(|p| p.kind() == DIVER).count();
+                let before = boats(self);
+                self.add_person(DIVER, pos, tick); // 1088:0324
+                if self.fixes.has(Fix::SharkBoatCount) && boats(self) > before {
+                    self.people.boats = self.people.boats.wrapping_add(1);
+                }
+                return;
+            }
             _ => return,
         };
         self.post_message(self.sabotage_message(number, pos, player), tick);
@@ -595,6 +604,28 @@ mod tests {
             w.effects_tick(&mut tick);
         }
         tick.messages
+    }
+
+    /// The shark's diver is a boat that goes when its time is up, taking
+    /// one off the boats' count: the original never counted it in.
+    #[test]
+    fn shark_diver_boat_count() {
+        for fix in [false, true] {
+            let mut w = World::default();
+            w.fixes.set(Fix::SharkBoatCount, fix);
+            w.options.people_move = true;
+            w.people.last = crate::people::FIRST;
+            let mut tick = Tick::default();
+            w.sabotage_starts((5, 5), SHARK_DIVER, 2, &mut tick);
+            assert_eq!(w.people.kind(crate::people::FIRST), DIVER);
+            assert_eq!(w.people.boats, i16::from(fix));
+            // Its time runs out (255 ticks).
+            for _ in 0..=0x100 {
+                w.people_tick(&mut tick);
+            }
+            assert_eq!(w.people.kind(crate::people::FIRST), crate::people::NOBODY);
+            assert_eq!(w.people.boats, if fix { 0 } else { -1 });
+        }
     }
 
     #[test]
