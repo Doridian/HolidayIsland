@@ -899,10 +899,20 @@ fn walker_path(ground: u8) -> Option<i16> {
 
 impl World {
     /// Hands the world the human's view, which the people code reads
-    /// ([`Viewpoint`]). Marked: player 1's view; for several players this
-    /// needs an answer.
+    /// ([`Viewpoint`]). Marked: player 1's view; with several human
+    /// clients `fix.view_people` and `fix.view_news` are on, and nothing
+    /// reads it ([`World::reads_viewpoint`]).
     pub fn set_viewpoint(&mut self, viewpoint: Viewpoint) {
         self.viewpoint = viewpoint;
+    }
+
+    /// Whether anything in the world reads the viewpoint it was last
+    /// handed ([`World::set_viewpoint`]): not with `fix.view_people` and
+    /// `fix.view_news`, which several human clients have on
+    /// (`crate::seats`), so the view doesn't hand it over then.
+    #[must_use]
+    pub fn reads_viewpoint(&self) -> bool {
+        !(self.people_split() && self.fixes.has(Fix::ViewNews))
     }
 
     /// Whether the people are split between the world and the views

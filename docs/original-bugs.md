@@ -95,11 +95,17 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
   (`Config::ORIGINAL`, `Config::default()`); the existing tests use
   `Config::ORIGINAL`.
 - **Single player only.** A world fix may be one that only a game with
-  one human may have off: off, the world reads that human's view, which
-  several players don't share. `enhance::SINGLE_PLAYER_ONLY` lists them
-  (`view_people`), and `Fixes::for_humans` is how a game with several
-  humans would keep them on. There's no multiplayer yet, so nothing calls
-  it; it's the only constraint of its kind so far.
+  one human may have off: off, the world reads that human's view or UI,
+  which several players don't share. `enhance::SINGLE_PLAYER_ONLY` lists
+  them (`view_people`, `view_news`, `computer_road_ground`,
+  `computer_road_drag`, `overview_arrows`, `year_total`, `tv_lights`,
+  `auction_speaker`), and `Fixes::for_humans` keeps them on with more
+  than one human client: the seats (`game::seats`,
+  `World::follow_seats`) switch those that are off on as the second
+  client joins, remember which, and switch them back off when one is
+  left; meanwhile `Action::SetFix` can't switch them off. Two people in
+  one seat (co-op) count as two. It's the only constraint of its kind
+  so far ([port-architecture.md](port-architecture.md#seats-and-clients)).
 - Crashes and hangs have no "original" mode, because the port can't
   crash. It does the fallback listed below. The option there would be
   a better fallback, where one makes sense.
@@ -201,8 +207,10 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 1090:2373 | Works out a stage's offset for its spectators, then looks for them on the stage's own square | `stage_spectators` |
 | 1090:2c1f | A plane's second approach is accepted when either coordinate matches, not both | `plane_approach` |
 | 1078:09f6 | A corner rising from the sea between plots merges the first pair by their numbers cut to a byte | `plot_merge_numbers` |
+| 10b8:21c7, 10b8:21fa, 10b8:293e, 10b8:2971 | The overview map's scroll arrows switch the world's new people (`1110:0056`) off while held and on when let go: one player's scrolling stops or starts everyone's people (design issue for multiplayer) | `overview_arrows`: the view doesn't send it and the world ignores it. Single player only off |
 | 1080:3216 | Building any road (the computers' too) turns the "new people" animation option (`1110:0056`) on, whatever the player chose | yes; not fixed: not a bug. `1110:0056` isn't a player's option (the options form has none) but a flag that `plan_road`, `draw_columns` (1050:0e68) and the overview map's scroll timers clear while they're busy and set when done, so no people spawn meanwhile; the road only sets it back |
-| 1078:2396 (computers) | The computers' roads use the ground the human's last road drag started on (`1110:704e`): after a drag from water they look for bridges ([computer.md](computer.md#levelling-and-roads)) | `computer_road_ground`: the ground of their start square |
+| 1078:2396 (computers) | The computers' roads use the ground the human's last road drag started on (`1110:704e`): after a drag from water they look for bridges ([computer.md](computer.md#levelling-and-roads)) | `computer_road_ground`: the ground of their start square. Single player only off |
+| 10a8:2463 | The computers don't build roads while the human drags one (`1110:634c`), the human's UI state (design issue for multiplayer) | `computer_road_drag`: they build, and their road doesn't end the drag. Single player only off |
 | 1090:0014, 1090:124f | The tools' pictures go into the people's records from 1 on: for a road drag or a building of more than 35 squares they overwrite real people (square, offset, picture, kind 6) ([player-tools.md](player-tools.md#the-pictures-over-the-island-10900014-1090124f-1090155b)) | no: the view keeps the pictures |
 | 10b0:03fa, 10b0:12c7 | The land only follows a moved corner where a neighbour is exactly two steps off, so existing cliffs get steeper | `levelling_cliffs`: two or more |
 | 10b0:12c7 | Lowering checks the buildings (and clears palms, adding their cost) of squares it reaches after an error already stopped it | `levelling_errors` |
@@ -230,7 +238,10 @@ Built in [`game::enhance`](../crates/game/src/enhance.rs):
 | 1048:0a54 | When the news archive first wraps, the empty 26th entry moves into the 25th, so the 27th message goes there and the 26th and 27th stay the wrong way round ([fernseher.md](fernseher.md#posting-a-message-10480a54)) | `news_archive_order` |
 | 1090:2373, 1088:7fb1, 1088:0324, 1098:109f, 1050:245b | The people follow the human's view: the spectators, builders, taxiing planes and jetty boats come only to its squares, the doors, pictures and a ship's drift go by its rotation, and some random numbers (the sounds' picks, a waiting walker's `Random(100)`) are drawn only where it looks, so scrolling and turning change the world and its `RandSeed` ([people.md](people.md#who-is-whose-fixview_people)) | `view_people`: those kinds are each view's own, with its own random numbers, and the world's people go by no view. Single player only off |
 | 10a0:19d2, 1098:109f | The shark's diver is a boat (kind 3) whose time running out takes one off the boats' count (`1110:6ff0`) that it never added, so each shark lets one more boat onto the sea | `shark_boat_count`: the diver counts in when it comes |
-| 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speech option and on how long the speech plays | `tv_lights`: the view's TV draws its own. Kept, the view's TV tells the world (`Action::Speaker`), which draws them in its tick (`World::tv_lights`) ([sound.md](sound.md#the-tvs-speaker)) |
+| 1048:1b3e | While the TV's speaker speaks, its lights draw `Random(5)`, `Random(20)` and `Random(3)` from the world's `RandSeed` every tick, so the game's numbers depend on the speech option and on how long the speech plays | `tv_lights`: the view's TV draws its own. Kept, the view's TV tells the world (`Action::Speaker`), which draws them in its tick (`World::tv_lights`) ([sound.md](sound.md#the-tvs-speaker)). Single player only off |
+| 1028:1940 | The auction doesn't open while the TV's speaker is open (`1110:662d`): one player's speech and option hold it up (design issue for multiplayer) | `auction_speaker`: it doesn't wait; with `tv_lights` too the world keeps no speaker. Single player only off |
+| 1048:0a54, settlement step 0x64 | A message without a square, the archive's way back (`+0x118`) and the bankruptcy and net worth events take the human's view origin (`1110:5530`), which several players don't share (design issue for multiplayer) | `view_news`: they point at no square (`news::NOWHERE`) and each TV takes its own view; a save writes the saving player's ([fernseher.md](fernseher.md#multiplayer)). Single player only off |
+| 1070:2617, 1070:2b3a | The year's total and balance (kinds 0x6b–0x6e) are worked out only while the human's money menu is shown, and when it opens (design issue for multiplayer) | `year_total`: on every booking, as if it were always shown ([geldmenu.md](geldmenu.md#world-and-view)). Single player only off |
 | 1020:1e9b (en 1020:2367) | An earthquake's damage runs outside the clock's pause on every tick whose hour counter is 1, and the TV's pause stops the counter: a TV opened at an hour's first tick (an earthquake's own message comes on one, so a news option that opens the TV for it does this) has the earthquake demolish 100 more squares every tick until it closes ([simulation.md](simulation.md#earthquakes-10a00d1c)) | `quake_pause`: only on an hour's first tick that isn't paused |
 
 ## UI quirks
@@ -340,22 +351,28 @@ The widgets' are described in
 
 These aren't bugs for a single player, but the original mixes the human's UI
 state into the simulation. See the open questions in
-[simulation.md](simulation.md#open-questions) and [people.md](people.md):
+[simulation.md](simulation.md#open-questions) and [people.md](people.md).
+All of them are decided now; [port-architecture.md](port-architecture.md#decided)
+lists the 13 decisions and co-op, and which are built. The forced fixes
+below are on in any game with more than one human client:
 - the TV's speaker: one player's machine and options decide how long it
   reads (the WAV's length, "Sprachausgabe"), and meanwhile the auction
   doesn't open and the TV's lights take numbers from the world's
   `RandSeed` every tick (`Action::Speaker`, [sound.md](sound.md#the-tvs-speaker));
-  for one player the port does as the original. For multiplayer the lights
-  would draw from a view's numbers and the auction wouldn't wait;
+  for one player the port does as the original. Decided (6), built: the
+  lights draw from a view's numbers (`tv_lights`) and the auction
+  doesn't wait (`auction_speaker`);
 - the TV pause: a message the human's options pick, or the TV's button,
   stops the game for everyone until the TV closes (after its film, whose
   length and skipping are one player's, [films.md](films.md)), and the
   archive keeps the human's view origin. The news options are each player's view
   setting (`optionen::Settings::news`, saved with the view); for one
-  player the port pauses as the original does. Intended for multiplayer,
-  not built yet: news never pause the game, since each player can dismiss
-  their own TV ([fernseher.md](fernseher.md#multiplayer));
-- the animation options;
+  player the port pauses as the original does. Decided (5), not built
+  yet: neither the news nor the TV's button pause the game, since each
+  player can dismiss their own TV. Decided (1), built: the archive's
+  origin points nowhere (`view_news`, [fernseher.md](fernseher.md#multiplayer));
+- the animation options: decided (11), the host's world options; other
+  clients' commands for them are ignored (`World::apply_client`);
 - the human's view, used when people are placed. Only its rotation and
   origin count, not the window or desktop size: the main screen's map is
   624×404 at every size, and the squares the people code looks at
@@ -367,34 +384,49 @@ state into the simulation. See the open questions in
   every peer does the same, but the people follow whoever moved last.
   `fix.view_people` answers it: the people only a view needs are each
   view's own, and the world's go by no view
-  ([people.md](people.md#who-is-whose-fixview_people)); the world still
-  takes the human's view origin for where the news and some events point;
+  ([people.md](people.md#who-is-whose-fixview_people)); the news and the
+  events that took the human's view origin point nowhere with
+  `view_news` (decision 1, built);
 - the road drag state (`1110:634c`, `704e`), which the computers read
-  ([player-tools.md](player-tools.md#world-and-view));
-- the build menu's lists, player 1's;
+  ([player-tools.md](player-tools.md#world-and-view)): decided (2),
+  built, the computers ignore it (`computer_road_drag`,
+  `computer_road_ground`). Two humans dragging at once still share the
+  one flag; left for later;
+- the build menu's lists, player 1's: still to come, with the other
+  `p == 1` places, when humans play other seats;
 - the money menu: the books, its balance, the insurance (`1110:0072`) and
   whether it's shown (which decides when the year's total is worked
   out, `World::money_menu_shown`) are player 1's
-  ([geldmenu.md](geldmenu.md#world-and-view));
+  ([geldmenu.md](geldmenu.md#world-and-view)): decided (4), built, the
+  total is worked out as if it were shown (`year_total`);
 - the overview map's scroll arrows, which switch the "new people" option
   (`1110:0056`, the world's) off while held and on when let go: in the
   port `Action::SetOption(WorldOption::PeopleSpawn, ..)`
-  ([overview-map.md](overview-map.md));
+  ([overview-map.md](overview-map.md)): decided (3), built, they leave
+  it alone (`overview_arrows`);
 - sabotage: only player 1's money is checked, and only player 1 gets the
   books and the rising money (10a0:1f65, 10a0:1d5e); the computers never
-  sabotage;
+  sabotage: per seat, still to come with the other `p == 1` places;
 - the info box with buttons, which disables the other forms (not the
   clock) while it's open, and its and the overview's buttons, which are
-  for player 1's squares ([infobox.md](infobox.md));
+  for player 1's squares ([infobox.md](infobox.md)): the box is each
+  view's; its buttons per seat are still to come;
 - the auction form, which stops the simulation while one human bids and
   waits for them to start it ([auction.md](auction.md#open-questions)), and
-  whose held buttons stop the computers' bids;
+  whose held buttons stop the computers' bids: decided (7), not built
+  yet, a form per seat with waiting and a timeout;
 - the pause (`TPauseform`) and the options (`TOptionenform`), which stop
-  the clock (1020:24a0) for the one player ([options.md](options.md));
+  the clock (1020:24a0) for the one player ([options.md](options.md)):
+  decided (11), the host's; the world's side is still to come;
 - the options' speed, animations, "Auktion wartet" and disasters, one
-  player's settings that change everyone's world;
+  player's settings that change everyone's world: decided (11), built,
+  the host's (`World::apply_client` ignores them from other clients, a
+  co-op partner in seat 1 too);
 - the quit question (`TEndeform`), which stops the clock while one human
-  is asked ([endforms.md](endforms.md));
+  is asked ([endforms.md](endforms.md)): decided (8), not built yet, it
+  doesn't stop the clock;
 - the end of a game (`TSchlussform`), which stops the clock for everyone
   until the one human picks a button, shows player 1's results, and enters
-  only player 1's score in the high scores.
+  only player 1's score in the high scores: decided (8, 9, 10), not built
+  yet: it doesn't stop the clock, winning and losing are per seat, and
+  one human's cheat counts for the whole game.

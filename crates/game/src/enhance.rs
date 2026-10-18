@@ -263,6 +263,32 @@ enhancements! {
     /// not again on every tick the game stands there paused (the TV),
     /// which takes another 100 squares each time (1020:1e9b).
     QuakePause = "quake_pause";
+    /// The news without a square of their own, the news archive's view
+    /// origin and the events of a computer's bankruptcy or the human's
+    /// net worth point at no square of the world: each player's TV takes
+    /// its own view for them, and a saved game writes the saving
+    /// player's (1048:0a54, settlement step 0x64, 1048:1794). Off is the
+    /// original, which only one human can play ([`SINGLE_PLAYER_ONLY`]).
+    ViewNews = "view_news";
+    /// The computers build their roads while a human drags one, and
+    /// their roads don't end the human's drag (`1110:634c`, 10a8:2463,
+    /// 1078:2396). Off is the original, which only one human can play
+    /// ([`SINGLE_PLAYER_ONLY`]).
+    ComputerRoadDrag = "computer_road_drag";
+    /// The overview map's scroll arrows leave the world's new people
+    /// (`1110:0056`) alone (10b8:21c7, 10b8:21fa, 10b8:293e, 10b8:2971).
+    /// Off is the original, which only one human can play
+    /// ([`SINGLE_PLAYER_ONLY`]).
+    OverviewArrows = "overview_arrows";
+    /// This year's total and balance in the books are worked out on every
+    /// booking, as if the money menu were always shown, not by whether
+    /// the human's is (1070:2617, 1070:2b3a). Off is the original, which
+    /// only one human can play ([`SINGLE_PLAYER_ONLY`]).
+    YearTotal = "year_total";
+    /// The auction opens without waiting for the TV's speaker to close
+    /// (1028:1940). Off is the original, which only one human can play
+    /// ([`SINGLE_PLAYER_ONLY`]).
+    AuctionSpeaker = "auction_speaker";
 }
 
 enhancements! {
@@ -411,14 +437,28 @@ enhancements! {
 }
 
 /// The world fixes that may only be off with one human in the game: off,
-/// the world reads that human's view, which several players don't share.
-/// There is no multiplayer yet; [`Fixes::for_humans`] is how a game with
-/// several humans would keep them on.
-pub const SINGLE_PLAYER_ONLY: &[Fix] = &[Fix::ViewPeople];
+/// the world reads that human's view or UI, which several players don't
+/// share. A game with more than one human client has them on
+/// ([`Fixes::for_humans`], [`crate::seats`]): the people
+/// (`view_people`), the news' squares (`view_news`), the road drag
+/// (`computer_road_ground`, `computer_road_drag`), the overview map's
+/// arrows (`overview_arrows`), the money menu (`year_total`) and the TV's
+/// speaker (`tv_lights`, `auction_speaker`).
+pub const SINGLE_PLAYER_ONLY: &[Fix] = &[
+    Fix::ViewPeople,
+    Fix::ViewNews,
+    Fix::ComputerRoadGround,
+    Fix::ComputerRoadDrag,
+    Fix::OverviewArrows,
+    Fix::YearTotal,
+    Fix::TvLights,
+    Fix::AuctionSpeaker,
+];
 
 impl Fixes {
-    /// The fixes a game with `humans` human players runs with: these, but
-    /// with several humans those of [`SINGLE_PLAYER_ONLY`] on.
+    /// The fixes a game with `humans` human clients runs with: these, but
+    /// with several humans those of [`SINGLE_PLAYER_ONLY`] on. Two people
+    /// sharing a seat count as two: they share no view.
     #[must_use]
     pub fn for_humans(mut self, humans: usize) -> Fixes {
         if humans > 1 {
@@ -621,7 +661,11 @@ mod tests {
     fn single_player_only() {
         assert!(!Fixes::ORIGINAL.for_humans(1).has(Fix::ViewPeople));
         assert!(Fixes::ORIGINAL.for_humans(2).has(Fix::ViewPeople));
-        assert!(!Fixes::ORIGINAL.for_humans(2).has(Fix::TvLights));
+        assert!(Fixes::ORIGINAL.for_humans(2).has(Fix::TvLights));
+        assert!(!Fixes::ORIGINAL.for_humans(2).has(Fix::SiteEffect));
+        for &f in SINGLE_PLAYER_ONLY {
+            assert!(Fixes::ORIGINAL.for_humans(2).has(f) && !Fixes::ORIGINAL.for_humans(1).has(f));
+        }
         assert_eq!(Fixes::all_on().for_humans(3), Fixes::all_on());
     }
 

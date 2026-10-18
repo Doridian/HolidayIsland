@@ -43,6 +43,13 @@ pub struct Message {
     pub centre: bool,
 }
 
+/// No square of the world: where a message without one, the archive's
+/// view origin and the events of step 0x64 point with `fix.view_news`.
+/// Each player's TV takes its own view for it ([`Entry::pos_for`]), and a
+/// saved game the saving player's (`crate::savegame`), as the original
+/// would have it.
+pub const NOWHERE: Pos = (i16::MIN, i16::MIN);
+
 /// The archive's entries. // 1048:1ffd, 0x1cd8 bytes
 pub const ARCHIVE_ENTRIES: usize = 26;
 /// An entry's size in the map file. // 1048:0a54
@@ -87,8 +94,9 @@ pub struct Entry {
     /// Where it happened. // +0x114, `i` then `j`
     pub pos: Pos,
     /// The human's view origin when it was posted (`1110:5530`), where the
-    /// TV's first button scrolls back to. Single human: one player's view
-    /// in the world's archive. // +0x118
+    /// TV's first button scrolls back to. With `fix.view_news`
+    /// [`NOWHERE`]: each player's TV goes back to its own view.
+    /// // +0x118
     pub origin: Pos,
 }
 
@@ -117,6 +125,28 @@ impl Entry {
             pos: (0, 0),
             origin: (0, 0),
         }
+    }
+}
+
+impl Entry {
+    /// [`Entry::pos`] for a player whose view's origin is `here`: with
+    /// `fix.view_news`, a message without a square points at the middle
+    /// of their view, where the TV's first button centres it
+    /// (1020:0787 takes 10 rows off).
+    #[must_use]
+    pub fn pos_for(&self, here: Pos) -> Pos {
+        if self.pos == NOWHERE {
+            (here.0.wrapping_add(10), here.1)
+        } else {
+            self.pos
+        }
+    }
+
+    /// [`Entry::origin`] for a player whose view's origin is `here`: with
+    /// `fix.view_news`, their own.
+    #[must_use]
+    pub fn origin_for(&self, here: Pos) -> Pos {
+        if self.origin == NOWHERE { here } else { self.origin }
     }
 }
 
@@ -343,6 +373,12 @@ impl World {
         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // 0..=25
         let index16 = index as i16;
         news.last = index16;
+        // BUG(original): a message without a square, and the archive's way back, take the human's view origin (1110:5530), which several players don't share (fix.view_news: no square; each TV takes its own view).
+        let here = if self.fixes.has(Fix::ViewNews) {
+            NOWHERE
+        } else {
+            self.viewpoint.origin
+        };
         let variant = self.random.random(3).cast_signed();
         message.text = message.number.wrapping_mul(3).wrapping_add(variant);
         let entry = Entry {
@@ -356,9 +392,8 @@ impl World {
             // In the world's language, which every player shares: the
             // original's MONATE.TXT and `land`.
             date: self.date.text(self.language.months(), self.language), // 1030:0148
-            pos: message.pos.unwrap_or(self.viewpoint.origin),
-            // Single human: the view origin of player 1.
-            origin: self.viewpoint.origin,
+            pos: message.pos.unwrap_or(here),
+            origin: here,
         };
         self.news.entries[index] = entry.clone();
         // BUG(original): a message outside 0..89 reads its kind past the table; the port opens no TV.
@@ -390,9 +425,123 @@ impl World {
         self.tv_people(n, tick);
     }
 
-    /// The view's TV says what its speaker does ([`Speaker`]).
+    /// The view's TV says what its speaker does ([`Speaker`]). With
+    /// `fix.tv_lights` and `fix.auction_speaker` nothing in the world
+    /// reads it, and it stays off: one player's speaker isn't the
+    /// world's.
     pub(crate) fn set_speaker(&mut self, speaker: Speaker) {
+        if self.fixes.has(Fix::TvLights) && self.fixes.has(Fix::AuctionSpeaker) {
+            self.news.speaker = Speaker::Off;
+            return;
+        }
         self.news.speaker = speaker;
+    }
+
+    /// The archive's entries and the events whose square is
+    /// [`NOWHERE`], as a saved game's port chunk keeps them
+    /// (`news.nowhere`, `events.nowhere`): entry or event numbers, and for
+    /// an entry `p` for its square and `o` for its origin (`3po 5o`).
+    /// The original's fields get the saving player's view there.
+    pub(crate) fn nowhere_lines(&self) -> Vec<(String, String)> {
+        let entries: Vec<String> = self
+            .news
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.pos == NOWHERE || e.origin == NOWHERE)
+            .map(|(n, e)| {
+                let p = if e.pos == NOWHERE { "p" } else { "" };
+                let o = if e.origin == NOWHERE { "o" } else { "" };
+                format!("{n}{p}{o}")
+            })
+            .collect();
+        let events: Vec<String> = self
+            .events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.pos == NOWHERE)
+            .map(|(n, _)| n.to_string())
+            .collect();
+        let mut out = Vec::new();
+        if !entries.is_empty() {
+            out.push(("news.nowhere".to_owned(), entries.join(" ")));
+        }
+        if !events.is_empty() {
+            out.push(("events.nowhere".to_owned(), events.join(" ")));
+        }
+        out
+    }
+
+    /// Puts [`NOWHERE`] back where a saved game's port chunk in
+    /// `trailing` says ([`World::nowhere_lines`]): the saving player's
+    /// view the original's fields have there isn't the world's.
+    pub(crate) fn take_nowhere(&mut self, trailing: &[u8]) {
+        let Some(lines) = formats::savegame::port_chunk(trailing) else {
+            return;
+        };
+        for (key, value) in lines {
+            for item in value.split_whitespace() {
+                let digits = item.trim_end_matches(['p', 'o']);
+                let Ok(n) = digits.parse::<usize>() else { continue };
+                let flags = &item[digits.len()..];
+                match key.as_str() {
+                    "news.nowhere" => {
+                        if let Some(e) = self.news.entries.get_mut(n) {
+                            if flags.contains('p') {
+                                e.pos = NOWHERE;
+                            }
+                            if flags.contains('o') {
+                                e.origin = NOWHERE;
+                            }
+                        }
+                    }
+                    "events.nowhere" => {
+                        if let Some(e) = self.events.get_mut(n) {
+                            e.pos = NOWHERE;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// The archive's and the events' bytes for a saved game (`*1110:663a`,
+    /// `*1110:6536`) with the saving player's view origin `here` where
+    /// they point at [`NOWHERE`], as the original would have them; none
+    /// when nothing does.
+    pub(crate) fn somewhere_bytes(&self, dest: &str, here: Pos) -> Option<Vec<u8>> {
+        match dest {
+            "*1110:663a"
+                if self
+                    .news
+                    .entries
+                    .iter()
+                    .any(|e| e.pos == NOWHERE || e.origin == NOWHERE) =>
+            {
+                let mut news = self.news.clone();
+                for e in &mut news.entries {
+                    if e.pos == NOWHERE {
+                        e.pos = here;
+                    }
+                    e.origin = e.origin_for(here);
+                }
+                Some(news.archive_bytes())
+            }
+            "*1110:6536" if self.events.iter().any(|e| e.pos == NOWHERE) => Some(
+                self.events
+                    .iter()
+                    .flat_map(|e| {
+                        let mut e = *e;
+                        if e.pos == NOWHERE {
+                            e.pos = here;
+                        }
+                        crate::savegame::event(&e)
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        }
     }
 
     /// The TV's lights while its speaker reads, which the original draws
@@ -427,7 +576,7 @@ impl World {
         let Some(entry) = self.news.entry(n) else {
             return;
         };
-        if entry.number != BUILDING_SALE_NEWS {
+        if entry.number != BUILDING_SALE_NEWS || entry.pos == NOWHERE {
             return;
         }
         let (i, j) = self.building_origin(entry.pos); // 1030:154c
@@ -475,6 +624,51 @@ mod tests {
         let bytes = news.archive_bytes();
         assert_eq!(bytes.len(), 0x1cd8);
         assert_eq!(News::from_archive_bytes(&bytes).unwrap(), news.entries);
+    }
+
+    #[test]
+    fn fix_view_news() {
+        for fixed in [false, true] {
+            let mut w = World::default();
+            w.fixes.set(Fix::ViewNews, fixed);
+            w.viewpoint.origin = (77, 88);
+            let mut tick = Tick::default();
+            w.post_message(Message::default(), &mut tick);
+            w.post_message(message(0), &mut tick);
+            let (a, b) = (&w.news.entries[0], &w.news.entries[1]);
+            if fixed {
+                assert_eq!(
+                    (a.pos, a.origin, b.pos, b.origin),
+                    (NOWHERE, NOWHERE, (10, 20), NOWHERE)
+                );
+                // Each view fills in its own.
+                assert_eq!((a.pos_for((5, 6)), a.origin_for((5, 6))), ((15, 6), (5, 6)));
+                assert_eq!((b.pos_for((5, 6)), b.origin_for((5, 6))), ((10, 20), (5, 6)));
+                // A save writes the saving player's view, and its chunk
+                // where it was nowhere.
+                let bytes = w.somewhere_bytes("*1110:663a", (5, 6)).unwrap();
+                let saved = News::from_archive_bytes(&bytes).unwrap();
+                assert_eq!(
+                    (saved[0].pos, saved[0].origin, saved[1].pos),
+                    ((5, 6), (5, 6), (10, 20))
+                );
+                let chunk =
+                    formats::savegame::make_port_chunk(w.nowhere_lines().iter().map(|(k, v)| (k.as_str(), v.as_str())));
+                let mut back = w.clone();
+                back.news.entries[0].pos = (5, 6);
+                back.news.entries[0].origin = (5, 6);
+                back.news.entries[1].origin = (5, 6);
+                back.take_nowhere(&chunk);
+                assert_eq!(back.news, w.news);
+            } else {
+                assert_eq!(
+                    (a.pos, a.origin, b.pos, b.origin),
+                    ((77, 88), (77, 88), (10, 20), (77, 88))
+                );
+                assert_eq!(w.nowhere_lines(), Vec::<(String, String)>::new());
+                assert_eq!(w.somewhere_bytes("*1110:663a", (5, 6)), None);
+            }
+        }
     }
 
     #[test]

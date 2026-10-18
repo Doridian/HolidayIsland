@@ -232,6 +232,26 @@ description = "Ein Spielstand behält auch Zufallszahlen, Ölpest, Auktion und L
 label = "Erdbeben einmal pro Stunde"
 description = "Ein Erdbeben richtet nur einmal pro Stunde Schaden an, nicht in jedem Takt, den das Spiel angehalten ist (Fernseher)"
 
+[enhance.view_news]
+label = "Nachrichten zur eigenen Ansicht"
+description = "Nachrichten ohne Ort, der Rückweg des Fernsehers und die Ereignisse zu Pleiten und Vermögen nehmen die Ansicht jedes Spielers; aus: nur ein Spieler"
+
+[enhance.computer_road_drag]
+label = "Computer warten nicht auf Straßen"
+description = "Die Computer bauen Straßen, während ein Mensch eine zieht, und ihre Straßen beenden das Ziehen nicht; aus: nur ein Spieler"
+
+[enhance.overview_arrows]
+label = "Übersichtspfeile lassen Leute"
+description = "Die gehaltenen Pfeile der Übersichtskarte halten keine neuen Leute mehr auf; aus: nur ein Spieler"
+
+[enhance.year_total]
+label = "Jahressumme immer berechnet"
+description = "Die Bücher rechnen die Summe des Jahres bei jeder Buchung aus, als wäre das Geldmenü immer offen; aus: nur ein Spieler"
+
+[enhance.auction_speaker]
+label = "Auktion wartet nicht auf TV"
+description = "Eine Auktion beginnt, ohne auf den Sprecher des Fernsehers zu warten; aus: nur ein Spieler"
+
 [enhance.window_stacking]
 label = "Fenster stapeln wie unter Windows"
 description = "Fenster stapeln sich wie unter Windows: ein Klick holt eines nach vorn (auch den Hauptschirm), nur modale bleiben oben"

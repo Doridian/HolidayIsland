@@ -378,8 +378,11 @@ impl Game {
                 changed = true;
             }
             // The original's people code reads the player's view.
-            // The original's 20 × 27 view's, with `big_map` too.
-            self.world.set_viewpoint(self.screen.viewpoint());
+            // The original's 20 × 27 view's, with `big_map` too. With
+            // `fix.view_people` and `fix.view_news` nothing does.
+            if self.world.reads_viewpoint() {
+                self.world.set_viewpoint(self.screen.viewpoint());
+            }
             let t = self.world.tick();
             changed |= self.show(&t);
             // With `fix.view_people`, the view's own people after the

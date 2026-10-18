@@ -229,12 +229,11 @@ fn the_world_follows_no_view() {
         assert_eq!(a.people, b.people, "{name}");
         assert_eq!(a.random, b.random, "{name}");
         assert_eq!(a.island, b.island, "{name}");
-        // Outside the people the world still reads the human's view: the
-        // news and the events take its origin as where they point
-        // (`docs/people.md`, "What's left").
+        // Nor do the news and the events (`fix.view_news`): the
+        // viewpoint the world was handed is all that differs.
         let differ: Vec<_> = game::savegame::differences(&a, &b)
             .into_iter()
-            .filter(|&f| !["viewpoint", "news", "events"].contains(&f))
+            .filter(|&f| f != "viewpoint")
             .collect();
         assert!(differ.is_empty(), "{name}: {differ:?}");
     }

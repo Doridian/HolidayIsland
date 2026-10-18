@@ -1177,6 +1177,11 @@ pub struct World {
     /// changes them ([`crate::command::Action::SetFix`]). The default,
     /// and a file without the chunk, is none: the original.
     pub fixes: crate::enhance::Fixes,
+    /// Who plays which player: the human clients at their seats, the
+    /// host, and the fixes several clients forced on (`crate::seats`).
+    /// The original's is the host alone in seat 1. Saved in the port's
+    /// chunk (`seats.` lines).
+    pub seats: crate::seats::Seats,
     /// The language of the text the world makes: the computers' names
     /// (`NAMEN.TXT`), the news archive's dates (`MONATE.TXT` and the
     /// language's date format) and its other strings. The language a
@@ -1255,6 +1260,7 @@ impl Default for World {
             money_menu_shown: false,
             news: crate::news::News::default(),
             fixes: crate::enhance::Fixes::ORIGINAL,
+            seats: crate::seats::Seats::default(),
             language: crate::lang::Language::default(),
             folder_language: crate::lang::Language::default(),
         }
@@ -1616,12 +1622,15 @@ impl World {
             // Whoever starts the game from a file without it gives the
             // player's defaults instead (`crate::enhance::fixes_in`).
             fixes: crate::enhance::fixes_in(&save.trailing, crate::enhance::Fixes::ORIGINAL),
+            // The port's chunk's; an original file has the host alone.
+            seats: crate::seats::Seats::from_chunk(&save.trailing).unwrap_or_default(),
             // The port's chunk's, if it has one; whoever loads a file
             // without it gives the folder's ([`World::load_map`]).
             language: crate::lang::language_in(&save.trailing).unwrap_or_default(),
             folder_language: crate::lang::Language::default(),
         };
         world.unported = crate::savegame::unported_world_fields(save);
+        world.take_nowhere(&save.trailing);
         world.link_plots();
         if world.fixes.has(crate::enhance::Fix::LoadOrder) {
             world.turn_loaded_lists();

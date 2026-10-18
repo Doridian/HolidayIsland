@@ -243,8 +243,8 @@ in the design points above:
   when they're ported.
 - Bit-exact determinism across native and wasm.
 - No world state that follows one player's view: the people's part is
-  `fix.view_people`; the news and some events still take the human's
-  view origin for where they point.
+  `fix.view_people`, the news' and the events' `fix.view_news`
+  ([below](#decided)).
 - No world-side blocking on one player's UI. Interactions that are modal for
   the one human today need a multiplayer behaviour, decided per case when
   they're decompiled: auctions (`TAuktionsform`, which already runs on
@@ -252,7 +252,8 @@ in the design points above:
   commands, the open question in [auction.md](auction.md#open-questions)),
   the "what now?" dialog (`TWasNunForm`), events, the end-of-game forms.
   Typical answers: the dialog becomes per-player and non-blocking, a decision
-  gets a timeout with a default, or the game pauses for everyone.
+  gets a timeout with a default, or the game pauses for everyone. The
+  answers are [decided](#decided).
 - Save games store seats and keep the original format readable. Single-player
   saves of the original load as a game with one human seat.
 - Language is each player's view setting. The world's own text (the
@@ -266,6 +267,79 @@ in the design points above:
   world's text) in each player's own language.
 
 Not in scope: matchmaking, accounts, or play with the original Windows version.
+
+### Seats and clients
+
+Built in [`game::seats`](../crates/game/src/seats.rs), without any
+networking yet. A human is a **client**, with an id and a `View` of their
+own; a **seat** is a player number (a colour), 1 to 8, and is either a
+computer's or one or more clients' (**co-op**: several people play the
+same colour together). The world keeps the clients, their seats and
+whether each is connected (`World::seats`, in its hash).
+
+- What a client sends acts for their seat: `World::apply_client` takes
+  `(client, action)` (`ClientCommand`, lockstep's message without the
+  tick), finds the client's seat and applies the `Command` with that
+  seat as its `player`, so a command's `player` stays the seat.
+  `World::apply` of a `Command` is the trusted path for a seat's command,
+  which the one human of a single-player game uses.
+- The **host** is a client, in seat 1. Host-only commands are checked by
+  client, not by seat: a co-op partner in seat 1 isn't the host.
+- `Action::Seat` changes the seats: a client joins a seat (a computer's,
+  or one with clients, for co-op), leaves, disconnects or rejoins. Only
+  the host sends them, but a client may send their own leaving; the
+  host never leaves or disconnects.
+- A seat goes to a computer only when **all** its clients have left or
+  disconnected, and back as soon as one of them rejoins
+  (`World::is_computer`: 2 to the player count, as the original's
+  computers, with no client there). The computer goes on from the state
+  it had; while a human plays the seat its turns are skipped and it
+  doesn't bid for it.
+- The forced fixes count human **clients**, connected or not: two people
+  sharing seat 1 still share no view (`Fixes::for_humans`,
+  `World::follow_seats`). As the second client joins, the fixes of
+  `enhance::SINGLE_PLAYER_ONLY` that are off go on, and the seats
+  remember which; when one client is left they go off again. The host
+  can't switch them off meanwhile.
+- Saved in the port's chunk (`seats.` lines,
+  [savegame.md](savegame.md#the-ports-chunk)), with the clients and their
+  seats. An original file loads as the host alone in seat 1; loading
+  keeps the running game's clients and brings the file's others back
+  disconnected.
+- The tests run several clients in one process: one world per peer and
+  a view per client, fed the same commands
+  (`crates/game/tests/multiplayer.rs`).
+
+### Decided
+
+The answers to the design issues ([original-bugs.md](original-bugs.md#design-issues-for-multiplayer)).
+"Forced on" means the world fix is in `enhance::SINGLE_PLAYER_ONLY`: on
+by default, on in every game with more than one human client, and off
+only for one human, as the original.
+
+| # | Decision | State |
+|---|---|---|
+| 1 | The news without a square, the TV archive's view origin and the bankruptcy and net worth events (settlement step 0x64) point at no square of the world; each viewer's TV uses that viewer's own view. A save writes the saving player's origin, so the original can load it. Forced on | Built: `fix.view_news` ([fernseher.md](fernseher.md#multiplayer)) |
+| 2 | The computers ignore every human's road drag: they don't wait on `1110:634c` and don't use `704e`'s ground. Forced on | Built: `fix.computer_road_drag`, `fix.computer_road_ground` ([computer.md](computer.md#open-questions)) |
+| 3 | The overview map's scroll arrows don't touch the world's new people flag `1110:0056` | Built: `fix.overview_arrows`, forced on ([overview-map.md](overview-map.md)) |
+| 4 | The year's total is worked out as if the money menu were shown (`World::money_menu_shown`). Forced on | Built: `fix.year_total` ([geldmenu.md](geldmenu.md#world-and-view)) |
+| 5 | Neither the news nor the TV's button pause the game | Phase 2 ([fernseher.md](fernseher.md#multiplayer)) |
+| 6 | The TV speaker's lights draw from the view's random numbers, not the world's `RandSeed`, and the auction doesn't wait for the speaker (`Action::Speaker`). Forced on | Built: `fix.tv_lights`, `fix.auction_speaker` |
+| 7 | The auction gets a multiplayer form: every seat bids, the world waits for them, with a timeout. Within a co-op seat any client's bid or pass counts for the seat | Phase 2 ([auction.md](auction.md#open-questions)) |
+| 8 | The quit question, the end form and the high scores don't stop the clock | Phase 2 ([endforms.md](endforms.md)) |
+| 9 | Winning, losing and bankruptcy per seat (all of a co-op seat's clients win or lose together) | Phase 3 |
+| 10 | If any human cheats, the whole game counts as cheated | Phase 3 |
+| 11 | The host (a client, in seat 1) owns the world's options: speed, pause, animations, "Auktion wartet", disasters and the fixes; the world ignores commands that change them from any other client, deterministically. Other humans take computer seats (2..=8), or join a seat for co-op. A computer plays a seat while all its clients are away, until one rejoins; quitting hands a seat over only when its last client leaves | Built for the world's commands (`World::apply_client`: the speed, `SetOption`, `SetFix`, `Load`, `Seat`). The pause form stops only the host's view's clock today; making it the world's is phase 2 with decisions 5 and 8 |
+| 12 | Saves get a per-seat section (each seat's, and each client's, view) | Phase 3; the seats and the clients' seats are already in the port's chunk |
+| 13 | All of this is built before any networking; tests run several clients in one process | Built for 1–4, 6 and 11 (`crates/game/tests/multiplayer.rs`) |
+| Co-op | Two or more clients may play one seat: commands come from a client and act for its seat, each client has its own view, host-only is by client, and the forced fixes count clients | Built ([above](#seats-and-clients)) |
+
+Still open, for later phases: much of the code still treats player 1
+as the human and 2..8 as computers (`p == 1` checks for the money
+checks, the books, sabotage, the year end's costs, the build menu, the
+info box's buttons); with humans in other seats those become per seat.
+The road drag (`1110:634c`, `704e`) is one flag in the world, which two
+humans dragging at once would share.
 
 ## Open questions
 

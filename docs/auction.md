@@ -194,13 +194,17 @@ The bugs kept are in [original-bugs.md](original-bugs.md).
 
 ## Open questions
 
-- **Multiplayer**: the form stops the simulation for everyone while one
-  human bids, and "Auktion wartet" makes it wait for that human to
-  start. A multiplayer game needs a decision: every human gets the form
-  and their own limit (the bids are commands with a player already), the
-  world stands until all have started or passed, or a timeout starts it.
-  Holding a button stops the computers' bids for everyone. Passing (or
-  closing) hands the item to the computers for all.
+- **Multiplayer**, decided, not built yet (decision 7 in
+  [port-architecture.md](port-architecture.md#decided)): the form stops
+  the simulation for everyone while one human bids, and "Auktion wartet"
+  (the host's option) makes it wait for that human to start. With
+  several humans every seat gets the form, the world waits for them, and
+  a timeout starts it; within a co-op seat any client's bid or pass
+  counts for the seat. Built already: the auction doesn't wait for the
+  TV's speaker (`fix.auction_speaker`), and a computer doesn't bid for a
+  seat a human client plays (`bid_limit`). Holding a button still stops
+  the computers' bids for everyone, and passing (or closing) still hands
+  the item to the computers for all.
 - What `1110:6598` is: saved and loaded, never used here.
 - Why the form is centred by `AuktionsImage`'s height rather than its
   own.

@@ -584,7 +584,12 @@ impl World {
         let item = self.auction.item;
         let square = self.events.get(9).map(|e| e.pos);
         let owns = |w: &World| square.is_some_and(|pos| on_map(pos) && w.island.owners.at(pos) == p);
-        if p < 2 || p > self.player_count {
+        // A seat a human client plays isn't the computer's to bid for
+        // (`crate::seats`; the auction with several humans is still to
+        // come).
+        if p != 1 && self.seats.is_human(p) {
+            0
+        } else if p < 2 || p > self.player_count {
             if p != 1 || (item == crate::auction::BUILDING_SALE && owns(self)) {
                 0
             } else {
@@ -700,7 +705,9 @@ impl World {
         }
     }
 
-    /// Computer player `p`'s turn, unless it's out: by its state, build;
+    /// Computer player `p`'s turn, unless it's out or a human client plays
+    /// the seat (`crate::seats`; the computer goes on from where it was
+    /// when the seat comes back to it): by its state, build;
     /// think (manage the loans, then build, or wait while the bank says no
     /// and it's in the red; demolish one time in 1000 or 100); wait 11
     /// turns; or demolish: every other turn, its building that earns least
@@ -708,7 +715,7 @@ impl World {
     /// demolished. // 10a8:2d5a
     pub(crate) fn computer_turn(&mut self, p: u8, tick: &mut Tick) {
         // The original's arrays have players 2 to 8.
-        if !(2..=8).contains(&p) || self.player_out(p) != 0 {
+        if !(2..=8).contains(&p) || self.player_out(p) != 0 || self.seats.is_human(p) {
             return;
         }
         let (d, k) = (usize::from(p - 1), slot(p));
@@ -937,8 +944,8 @@ impl World {
             }
             ROAD => {
                 self.set_status(STATUS_ROAD);
-                // Not while the human drags a road (marked).
-                if !self.road_dragging {
+                // BUG(original): the computers wait while the human drags a road (1110:634c), the human's UI state (fix.computer_road_drag: they don't).
+                if !self.road_dragging || self.fixes.has(Fix::ComputerRoadDrag) {
                     let built = self.build_road_on(p, tick);
                     let c = &mut self.computers;
                     if built {
@@ -1403,7 +1410,15 @@ impl World {
         } else {
             self.road_drag_ground
         };
-        let Ok(end) = self.build_road(p, start, to, ground, tick) else {
+        let dragging = self.road_dragging;
+        let built = self.build_road(p, start, to, ground, tick);
+        // Building a road ends the drag (1110:634c, 1078:2396). The
+        // original's computers don't build while a human drags; with
+        // `fix.computer_road_drag` they do, and the drag goes on.
+        if self.fixes.has(Fix::ComputerRoadDrag) {
+            self.road_dragging = dragging;
+        }
+        let Ok(end) = built else {
             return false;
         };
         self.computers.site[k] = end;
@@ -2054,6 +2069,45 @@ mod tests {
             w.road_drag_ground = 2;
             assert_eq!(w.build_road_on(2, &mut Tick::default()), fixed);
         }
+    }
+
+    #[test]
+    fn fix_computer_road_drag() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::ComputerRoadDrag, fixed);
+            w.fixes.set(Fix::ComputerRoadGround, true);
+            w.computers.state[0] = BUILDING;
+            w.computers.build_state[0] = ROAD;
+            w.computers.road[0] = (20, 20);
+            w.computers.road_direction[0] = 0;
+            // The human drags a road.
+            w.road_dragging = true;
+            let site = w.computers.site[0];
+            w.computer_turn(2, &mut Tick::default());
+            // The computer builds its road only with the fix, and the drag
+            // goes on.
+            assert_eq!(w.computers.site[0] != site, fixed);
+            assert!(w.road_dragging);
+        }
+    }
+
+    #[test]
+    fn a_human_seat_is_no_computers() {
+        let mut w = world();
+        w.computers.state[0] = BUILDING;
+        w.computers.build_state[0] = ROAD;
+        w.computers.road[0] = (20, 20);
+        let mut tick = Tick::default();
+        w.seat_change(crate::seats::SeatChange::Join { client: 3, seat: 2 }, &mut tick);
+        let before = w.computers.clone();
+        w.computer_turn(2, &mut tick);
+        assert_eq!(w.computers, before);
+        // Nor does it bid for the seat.
+        assert_eq!(w.bid_limit(2, 100), 0);
+        w.seat_change(crate::seats::SeatChange::Leave(3), &mut tick);
+        w.computer_turn(2, &mut tick);
+        assert_ne!(w.computers, before);
     }
 
     #[test]

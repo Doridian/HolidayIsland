@@ -27,7 +27,7 @@ use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::command;
-use crate::enhance::{Enhancement, Enhancements};
+use crate::enhance::{Enhancement, Enhancements, Fix};
 use crate::people::FIRST;
 use crate::simulation::Tick;
 use crate::text::{Align, Font};
@@ -182,6 +182,8 @@ impl World {
                 tick.redraw_all = true;
             }
             WorldOption::AuctionWaits => self.options.auction_waits = on, // 1060:05a7
+            // BUG(original): the overview map's arrows switch the world's new people (1110:0056) off and on for one player's scrolling (fix.overview_arrows: they leave it alone).
+            WorldOption::PeopleSpawn if self.fixes.has(Fix::OverviewArrows) => {}
             WorldOption::PeopleSpawn => self.options.people_spawn = on,
             WorldOption::Disasters => {
                 // 1060:0637
@@ -1175,6 +1177,24 @@ fn set_range(b: &mut ScrollBar, min: i32, max: i32, position: i32) {
 mod tests {
     use super::*;
     use formats::bmp::Bitmap;
+
+    #[test]
+    fn fix_overview_arrows() {
+        for fixed in [false, true] {
+            let mut w = World::default();
+            w.fixes.set(Fix::OverviewArrows, fixed);
+            w.options.people_spawn = true;
+            let held = command::Action::SetOption(WorldOption::PeopleSpawn, false);
+            let _ = w.apply(command::Command {
+                player: 1,
+                action: held.clone(),
+            });
+            assert_eq!(w.options.people_spawn, fixed);
+            // The view doesn't send it either.
+            let sent = crate::uebersichtsmap::command_for(Some(held), &w);
+            assert_eq!(sent.is_none(), fixed);
+        }
+    }
 
     fn font() -> Font {
         let (width, height) = (12, 14 * 12);

@@ -904,6 +904,8 @@ impl Game {
     /// After the main screen's view moved or turned: the overview map's
     /// frame (10b8:1485) and the compass's buttons follow.
     pub(crate) fn main_view_changed(&mut self) {
+        // Where the TV goes for news without a square (`fix.view_news`).
+        self.forms.tv.view_origin = self.screen.camera().origin;
         let (wo, ns) = self.screen.scroll_position();
         let view = self.screen.camera().view;
         // `big_map`'s bigger view has a frame of its own size.
@@ -1331,7 +1333,7 @@ impl Game {
             self.stack.raise(Win::Main);
             self.set_focus(Focus::Main);
         }
-        self.commands(r.action);
+        self.commands(uebersichtsmap::command_for(r.action, &self.world));
         if let Some((key, shift)) = r.key {
             self.main_screen_key(key, shift);
         }

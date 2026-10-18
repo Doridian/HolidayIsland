@@ -33,7 +33,7 @@ use vcl::surface::{Rop, Surface};
 
 use crate::beach_life::BEACH_LIFE;
 use crate::command::Action;
-use crate::enhance::{Enhancement, Enhancements};
+use crate::enhance::{Enhancement, Enhancements, Fix};
 use crate::optionen::WorldOption;
 use crate::savegame::Fields;
 use crate::simulation::Tick;
@@ -353,6 +353,16 @@ impl Response {
     fn sound(&mut self, n: u8) {
         self.sounds.push(n);
     }
+}
+
+/// A [`Response::action`] for `world`: with `fix.overview_arrows` the
+/// scroll arrows' new people (`1110:0056`) aren't sent, as the world
+/// leaves them alone.
+#[must_use]
+pub fn command_for(action: Option<Action>, world: &World) -> Option<Action> {
+    action.filter(|a| {
+        !(matches!(a, Action::SetOption(WorldOption::PeopleSpawn, _)) && world.fixes.has(Fix::OverviewArrows))
+    })
 }
 
 /// The overview map.

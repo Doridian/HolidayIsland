@@ -274,7 +274,8 @@ impl World {
         if opening {
             // `Timer2` (1028:1940) does nothing while the TV's speaker is
             // open (`1110:662d`), and fires again a second later.
-            if self.news.speaker == crate::news::Speaker::Off {
+            // BUG(original): the auction waits on one player's speaker, whose speech and option are the view's (fix.auction_speaker: it doesn't).
+            if self.news.speaker == crate::news::Speaker::Off || self.fixes.has(Fix::AuctionSpeaker) {
                 self.auction.opening = None;
                 self.open_auction(tick);
                 return;
@@ -711,6 +712,28 @@ mod tests {
         let ticks = run(&mut w, usize::from(OPEN_TICKS));
         assert!(w.auction.open);
         assert_eq!(ticks.last().unwrap().auction_changes, [Change::Opened]);
+    }
+
+    #[test]
+    fn fix_auction_speaker() {
+        let mut w = world(false);
+        w.fixes.set(Fix::AuctionSpeaker, true);
+        let _ = w.apply(Command {
+            player: 1,
+            action: command::Action::Speaker(crate::news::Speaker::Reading),
+        });
+        // The auction doesn't wait; the lights still draw without
+        // `fix.tv_lights`.
+        let ticks = run(&mut w, usize::from(OPEN_TICKS));
+        assert!(w.auction.open);
+        assert!(ticks[0].tv_lights.is_some());
+        // With both, the world doesn't keep the speaker at all.
+        w.fixes.set(Fix::TvLights, true);
+        let _ = w.apply(Command {
+            player: 1,
+            action: command::Action::Speaker(crate::news::Speaker::Reading),
+        });
+        assert_eq!(w.news.speaker, crate::news::Speaker::Off);
     }
 
     #[test]

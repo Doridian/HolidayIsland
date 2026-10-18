@@ -41,6 +41,7 @@ pub mod sabotage;
 pub mod sabowin;
 pub mod savegame;
 pub mod schlussform;
+pub mod seats;
 pub mod settlement;
 pub mod simulation;
 pub mod sound;

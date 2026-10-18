@@ -225,6 +225,26 @@ description = "A saved game also keeps the random numbers, the oil slick, the au
 label = "Earthquakes once an hour"
 description = "An earthquake does its damage once an hour, not on every tick the game stands paused (the TV)"
 
+[enhance.view_news]
+label = "News point at each own view"
+description = "News without a place, the TV's way back and the bankruptcy and net worth events take each player's own view; off: one player only"
+
+[enhance.computer_road_drag]
+label = "Computers don't wait on drags"
+description = "The computers build roads while a human drags one, and their roads don't end the drag; off: one player only"
+
+[enhance.overview_arrows]
+label = "Overview arrows keep new people"
+description = "Holding the overview map's scroll arrows no longer stops new people coming; off: one player only"
+
+[enhance.year_total]
+label = "Year's total always worked out"
+description = "The books work out this year's total on every booking, as if the money menu were always shown; off: one player only"
+
+[enhance.auction_speaker]
+label = "Auctions don't wait for the TV"
+description = "An auction opens without waiting for the TV's speaker to finish; off: one player only"
+
 [enhance.window_stacking]
 label = "Windows stack as in Windows"
 description = "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top"

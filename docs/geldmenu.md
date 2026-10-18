@@ -5,7 +5,9 @@ Ported in [`game::geldmenu`](../crates/game/src/geldmenu.rs): the form
 (`geldmenu::Action`, through `command::Action::MoneyMenu`). The books it
 shows are the world's ([settlement.md](settlement.md#the-books-tgeldmenuform-10701419),
 `game::accounts`). Single human: the form, the books, the insurance and
-the balance are player 1's.
+the balance are player 1's. Whether the form is shown no longer decides
+the books with `fix.year_total`, which every game with more than one
+human client has ([below](#world-and-view)).
 
 ## Opening and closing
 
@@ -132,6 +134,10 @@ condition as `World::money_menu_shown`, set by `Action::Shown` (decided
 for the open question in [simulation.md](simulation.md#open-questions)),
 and runs the refresh at the end of each `World::tick` and `World::apply`
 that booked (`Tick::books`) or loaded a game (`Tick::loaded`, 1070:2630).
+Decided for multiplayer: `fix.year_total` (on by default, and always
+with more than one human client) works the total out as if the menu
+were always shown, on every booking and load, and showing it changes
+nothing; off is the original, for one human.
 The original refreshes right after each booking; only the saved kinds
 0x6b–0x6e could tell the difference, when money changes after a booking
 in the same tick. The year's end shows the form after the books' year

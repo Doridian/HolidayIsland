@@ -236,6 +236,10 @@ pub struct Fernseher {
     speech: Vec<Vec<u8>>,
     /// The options' "Sprachausgabe" (`1110:0066`), the caller's.
     pub speech_option: bool,
+    /// The main screen's view origin, the caller's: where the TV's first
+    /// button goes for a message that points at no square of the world
+    /// (`fix.view_news`, [`crate::news::NOWHERE`]).
+    pub view_origin: Pos,
     /// A message's speech is open (`tv_busy`). // 1110:662d
     speaker_open: bool,
     /// The speaker was started. // 1110:667a
@@ -400,6 +404,7 @@ impl Fernseher {
             films,
             speech: Vec::new(),
             speech_option: true,
+            view_origin: (0, 0),
             speaker_open: false,
             speaker_started: false,
             speaker_done: false,
@@ -661,7 +666,9 @@ impl Fernseher {
             if !p.opens_tv(options) {
                 continue;
             }
-            if p.scrolls(options) {
+            // With `fix.view_news` a message without a square leaves the
+            // view where it is.
+            if p.scrolls(options) && p.entry.pos != crate::news::NOWHERE {
                 r.scroll = Some(p.entry.pos);
             }
             let shown = self.show_entry(p.index, &p.entry, world, info, now);
@@ -894,14 +901,18 @@ impl Fernseher {
     fn toggle_centre(&mut self, world: &World) -> Pos {
         let entry = world.news.entry(self.cursor).cloned().unwrap_or_default();
         self.centred = !self.centred;
+        // With `fix.view_news`, a message without a square and the way
+        // back are this player's view.
+        let here = self.view_origin;
         if self.centred {
-            entry.pos
+            entry.pos_for(here)
         } else {
+            let origin = entry.origin_for(here);
             // BUG(original): back goes to the saved view origin, which 1020:0787 moves 10 rows further.
             if self.enhance.has(Enhancement::TvForm) {
-                (entry.origin.0.wrapping_add(10), entry.origin.1)
+                (origin.0.wrapping_add(10), origin.1)
             } else {
-                entry.origin
+                origin
             }
         }
     }

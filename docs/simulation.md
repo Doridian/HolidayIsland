@@ -769,31 +769,34 @@ menu is shown runs at the end of the tick or command
 
 ## Open questions
 
-- The auction form stops the simulation for everyone while the human
-  bids, and with "Auktion wartet" until they start the auction
-  ([auction.md](auction.md#open-questions)).
-- Several things that change the world wait on the player's UI: the TV
-  pauses the game (`1110:0067`) until its film ends, and the animation
-  options (`1110:0054`..`0056`) decide whether people move at all. For
-  multiplayer these need to become world state everyone agrees on.
+- The multiplayer questions below are decided
+  ([port-architecture.md](port-architecture.md#decided), which says
+  which are built): the auction form, which stops the simulation for
+  everyone while the human bids (decision 7,
+  [auction.md](auction.md#open-questions)); the TV's pause (decision 5);
+  and the animation options (`1110:0054`..`0055`), which are the host's
+  world options (decision 11). The overview map's arrows no longer touch
+  the new people (`1110:0056`) with `fix.overview_arrows` (decision 3).
 - `1110:0070` stops all money changes; nothing found sets it.
 - The computers' roads go by the ground the human's last road drag
   started on (`1110:704e`), and don't build while the human drags
   (`1110:634c`): the human's tool state in the world
-  ([computer.md](computer.md#levelling-and-roads)).
+  ([computer.md](computer.md#levelling-and-roads)). Decided and built
+  (decision 2): `fix.computer_road_ground` and `fix.computer_road_drag`.
 - The sounds' countdown `1110:723c` (people_tick's first loop) stops a
   sound from playing again while it still plays; the port leaves it to
   the view (`Tick::sound_countdown`, `sound::Effects::count_down`).
 - The people code reads the human's view (`World::viewpoint`): where
   people appear, their pictures, and the sounds' `Random`s. The view
   hands it over before each tick, and with `Action::ViewMoved` when it
-  scrolls or turns (1088:7fb1, which also runs `spawn_people`). With
-  several players the people would follow whoever moved last; that needs
-  a multiplayer answer ([people.md](people.md)).
+  scrolls or turns (1088:7fb1, which also runs `spawn_people`).
+  Answered by `fix.view_people` ([people.md](people.md)).
 - The news (1048:0a54) pauses the game through the TV for the human
   player, depending on their options per kind of news; the archive also
-  stores that player's view origin. Both need a multiplayer answer
-  ([fernseher.md](fernseher.md#multiplayer)).
+  stores that player's view origin. Decided: with more than one human
+  client news never pause (decision 5, not built yet), and
+  `fix.view_news` points them at no square, each TV at its own view
+  (decision 1, built; [fernseher.md](fernseher.md#multiplayer)).
 - The houses' `+0x10` is their guests ([settlement.md](settlement.md));
   `1110:0072` is the insurance (a 120th of the buildings' value a month).
 - `demolish` reports the error messages for player 1 as a `Result`,
@@ -821,7 +824,8 @@ menu is shown runs at the end of the tick or command
   condition in world state. The port keeps it as
   `World::money_menu_shown`, set by the money menu's command, and works
   the total out at the end of each tick or command that booked
-  ([geldmenu.md](geldmenu.md#world-and-view)).
+  ([geldmenu.md](geldmenu.md#world-and-view)). With `fix.year_total`
+  (decision 4) as if the menu were always shown.
 - The books' 0x6c–0x6e are the money menu's balance: the human's money,
   `-loan` and their difference whenever the total is worked out
   (1070:2ab8), and after the loan buttons. What `1110:006f` means

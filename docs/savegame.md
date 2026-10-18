@@ -80,6 +80,25 @@ are skipped. `SaveGame::trailing` holds the chunk as read, and
 `World::to_map` writes it. A sidecar file was the other choice; the chunk
 keeps a game in one file and needs nothing from the original.
 
+After the language come the seats (`game::seats`,
+[port-architecture.md](port-architecture.md#stretch-goal-network-multiplayer)),
+every time: `seats.host=<client>`, `seats.clients=` each human client as
+`<client>:<seat>`, with `:away` after one that's disconnected (`0:1 5:1
+9:2:away`: the host and a partner in seat 1, a client of seat 2 away),
+and `seats.forced=` the keys of the fixes several clients switched on,
+which go off again when one is left (`Seats::chunk_lines`). A file
+without them (every original file) is the host alone in seat 1. Loading
+(`World::load_map`, `Seats::loaded`) keeps the running game's clients as
+they are; the file's others come back away, so a computer plays their
+seats until they rejoin, and they still count for the forced fixes.
+
+With `fix.view_news`, `news.nowhere=` lists the archive's entries whose
+square (`p`) or way back (`o`) is nowhere in the world (`3po 7o`), and
+`events.nowhere=` the events whose square is; the original's fields have
+the saving player's view origin there (`MapView::origin`), as the
+original would have written it, and loading puts nowhere back
+(`World::take_nowhere`).
+
 With `fix.saved_state` the chunk also keeps the world's state the
 original's fields lose ([below](#what-a-saved-game-loses)), as `state.`
 lines after the language (`World::unsaved_state`). Numbers are decimal,
@@ -138,9 +157,12 @@ as it was).
 
 Saving only reads the world, so any player can save their copy; it isn't
 a command. Loading in the middle of a game is the command
-`command::Action::Load`. Single human: the original saves the one
-player's screen with the world, and the port does the same; a
-multiplayer save would keep a `MapView` per seat, or none.
+`command::Action::Load`, the host's (`game::seats`). The original saves
+the one player's screen with the world, and the port does the same: the
+saving client's. A save that keeps a view per seat or client is the
+multiplayer work still to come (decision 12 in
+[port-architecture.md](port-architecture.md#decided)); the seats
+themselves are in the port's chunk ([above](#the-ports-chunk)).
 
 Each of the CD's seven files, loaded and saved again, gives the same
 fields but the bytes behind the players' names and the computers' status

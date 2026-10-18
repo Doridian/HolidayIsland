@@ -137,8 +137,13 @@ changes) and becomes the player's default for new games; a view
 enhancement is applied at once, the layout too. Each is saved in
 `settings.ini` (`EnhanceSettings::save`) as `enhance.<key>=on|off`;
 "Alle an" and "Alle aus" write `original=false|true` and drop the keys'
-lines. Single human: whoever switches a fix switches it for everybody; in
-a multiplayer game it would be the host's.
+lines. A fix is the world's, so it's the host's: in a game with several
+human clients the world ignores `SetFix`, the speed and the world's
+options from any other client, a co-op partner in seat 1 too
+(`game::seats`, `World::apply_client`), and the fixes of
+`enhance::SINGLE_PLAYER_ONLY` stay on
+([port-architecture.md](port-architecture.md#decided)). Whose the pause
+and the options' own clock stop are is still to come (decisions 5 and 8).
 
 ## Open questions
 

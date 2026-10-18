@@ -106,6 +106,11 @@ pub struct MapView {
     /// (`crate::people::view::ViewPeople::saved_with`), as the original
     /// would have them, so it can load the file.
     pub people: Option<(crate::people::Viewpoint, crate::people::People)>,
+    /// The saving player's view origin, which a saved game writes where
+    /// the news and the events point at no square (`fix.view_news`,
+    /// [`crate::news::NOWHERE`]), as the original would have it; none for
+    /// the world's viewpoint (`1110:5530`).
+    pub origin: Option<crate::world::Pos>,
 }
 
 impl MapView {
@@ -133,6 +138,7 @@ impl MapView {
             news: NEWS_OPTIONS.map(|dest| byte(dest) != 0),
             unported,
             people: None,
+            origin: None,
         }
     }
 }
@@ -166,6 +172,7 @@ impl MapView {
             news: settings.news,
             unported,
             people: None,
+            origin: Some(camera.origin),
         }
     }
 
@@ -487,7 +494,7 @@ fn pstring(s: &[u8]) -> Vec<u8> {
 }
 
 /// An event's record. // *1110:6536, 0x34 bytes
-fn event(e: &Event) -> Vec<u8> {
+pub(crate) fn event(e: &Event) -> Vec<u8> {
     let mut r = longints(&[
         e.chance,
         e.first_day,
@@ -763,7 +770,11 @@ impl Source for Saving<'_> {
         let (w, v) = (self.world, self.view);
         // The view's people and viewpoint first (`MapView::people`).
         let people = if v.people.is_some() { view_field(v, dest) } else { None };
+        // The news and events that point nowhere, at the saving player's
+        // view (`fix.view_news`).
+        let here = v.origin.unwrap_or(w.viewpoint.origin);
         people
+            .or_else(|| w.somewhere_bytes(dest, here))
             .or_else(|| world_field(w, dest, n))
             .or_else(|| view_field(v, dest))
             .or_else(|| w.unported.get(dest, n).map(<[u8]>::to_vec))
@@ -789,11 +800,13 @@ impl World {
         // The port's chunk after the original's fields, which the
         // original doesn't read (`docs/savegame.md`); with
         // `fix.saved_state` also what the original's fields lose.
-        let state = if self.fixes.has(Fix::SavedState) {
-            self.unsaved_state(view)
-        } else {
-            Vec::new()
-        };
+        // The seats (`crate::seats`) and the news and events that point
+        // nowhere (`fix.view_news`), which the original has no fields for.
+        let mut state = self.seats.chunk_lines();
+        state.extend(self.nowhere_lines());
+        if self.fixes.has(Fix::SavedState) {
+            state.extend(self.unsaved_state(view));
+        }
         save.trailing = crate::enhance::world_chunk_with(self.fixes, self.language, &state);
         save
     }
@@ -1080,6 +1093,10 @@ impl World {
         // and takes the game folder's language.
         w.set_loaded_fixes(crate::enhance::fixes_in(&save.trailing, self.fixes));
         w.language = crate::lang::language_in(&save.trailing).unwrap_or(self.folder_language);
+        // The running game's clients stay at their seats, the file's
+        // others come back away, and the fixes follow their number.
+        w.seats = self.seats.loaded(crate::seats::Seats::from_chunk(&save.trailing));
+        w.follow_loaded_seats();
         // With `fix.saved_state`, what the chunk keeps of the rest.
         w.take_saved_state(&save.trailing);
         Ok(w)
@@ -1223,6 +1240,7 @@ pub fn differences(a: &World, b: &World) -> Vec<&'static str> {
     same!(money_menu_shown);
     same!(news);
     same!(fixes);
+    same!(seats);
     out
 }
 
@@ -1353,7 +1371,10 @@ mod tests {
         assert!(back.unported.is_empty());
         // The port's chunk follows the original's fields.
         assert!(bytes.ends_with(&save.trailing));
-        assert_eq!(save.trailing, crate::enhance::world_chunk(w.fixes, w.language));
+        assert_eq!(
+            save.trailing,
+            crate::enhance::world_chunk_with(w.fixes, w.language, &w.seats.chunk_lines())
+        );
         // A file without it loads over a game and keeps that game's fixes.
         let mut original = parsed.clone();
         original.trailing.clear();

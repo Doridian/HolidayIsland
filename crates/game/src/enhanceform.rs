@@ -596,8 +596,8 @@ impl Enhanceform {
         match self.panes[p].keys[i] {
             Key::Fix(f) => {
                 self.fixes.set(f, on);
-                // Single human: whoever switches a fix switches it for
-                // everybody; in a multiplayer game it would be the host's.
+                // A fix is everybody's, so the host's: the world ignores
+                // it from another client (`crate::seats`).
                 r.commands.push(command::Action::SetFix(f, on));
                 r.changes.push(Change::Fix(f, on));
             }
@@ -905,11 +905,16 @@ mod tests {
         for _ in 0..5 {
             let _ = click(&mut f, |_| (bar.left + 4, bar.top + bar.height - 40));
         }
+        // The arrow takes it the rest of the way, where the thumb covers
+        // the trough.
+        for _ in 0..Fix::ALL.len() {
+            let _ = click(&mut f, |_| arrow);
+        }
         assert_eq!(f.scrolled(0), Fix::ALL.len() - ROWS as usize);
-        let last = f.row_of("tv_lights").unwrap();
+        let last = f.row_of("auction_speaker").unwrap();
         assert!(f.row_of("site_effect").is_none());
         let r = click(&mut f, |_| last);
-        assert_eq!(r.changes, [Change::Fix(Fix::TvLights, false)]);
+        assert_eq!(r.changes, [Change::Fix(Fix::AuctionSpeaker, false)]);
     }
 
     #[test]

@@ -275,9 +275,23 @@ works it out in 64 bits).
   (`fix.computer_area_change`).
 - A computer in the red with the bank's no only waits (or demolishes one
   time in a hundred); nothing else pays its debts.
-- `1110:634c` and `1110:704e` are the human's UI state in the world: for
-  multiplayer the computers' wait on another player's road tool, and
-  their roads by another player's drag, need a decision.
+- `1110:634c` and `1110:704e` are the human's UI state in the world.
+  Decided: the computers ignore every human's road drag. With
+  `fix.computer_road_drag` they build their roads while a human drags
+  (and their road doesn't end the drag), and with
+  `fix.computer_road_ground` they go by their own start's ground. Both
+  are on with more than one human client (`enhance::SINGLE_PLAYER_ONLY`).
+  The drag itself is still one flag in the world, so two humans dragging
+  at once share it; that's left for later.
+- Which players are computers: 2 to the player count, as in the
+  original, but not a seat a human client plays (`World::is_computer`,
+  `game::seats`): `computer_turn` skips such a seat, and `bid_limit`
+  doesn't bid for it. A computer takes a seat over when its last client
+  leaves or disconnects and goes on from the state it left; its handicaps
+  (it pays no advertising, insurance or cost of living, `add_money`'s
+  refund) still go by `p != 1`, so a human in seat 2..8 gets them until
+  winning and losing per seat is built (decision 9 in
+  [port-architecture.md](port-architecture.md#decided)).
 - Building any road turns `1110:0056` on (1080:3216). It isn't a
   player's option but a flag that the road planner, `draw_columns` and
   the overview map's scroll timers clear while busy and set when done

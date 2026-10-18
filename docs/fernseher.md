@@ -194,16 +194,33 @@ The news options `005c`..`005f` (unit 1000:0c6a) are the view's too
 
 ## Multiplayer
 
-- The TV pauses the game for everyone, and the options that open it are
-  one player's: the simulation waits on that player's dialog. For one
-  player the port pauses exactly as the original. The intended design
-  for multiplayer (not built yet): the news options stay each player's
-  view setting (they already are), and news never pause the game, since
-  each player can dismiss their own TV: in a game with more than one
-  human seat the view doesn't send `Action::ShowTv`'s pause (nor
-  `TvPause`) for a message, only the world's part without it (the sale's
-  people). The TV's button would need the same rule.
-- The archive's view origin (`+0x118`) is player 1's view.
-- The speaker's lights draw from the world's `RandSeed`, and the auction
-  waits for the speaker: `Action::Speaker` tells the world
+Decided ([port-architecture.md](port-architecture.md#decided)):
+
+- The pause, not built yet (decision 5): the TV pauses the game for
+  everyone, and the options that open it are one player's, so the
+  simulation waits on that player's dialog. For one player the port
+  pauses exactly as the original. With more than one human client the
+  news options stay each player's view setting (they already are), and
+  neither the news nor the TV's button pause the game, since each player
+  can dismiss their own TV: the view doesn't send `Action::ShowTv`'s
+  pause (nor `TvPause`), only the world's part without it (the sale's
+  people).
+- Built, `fix.view_news`: a message without a square of its own, the
+  archive's view origin (`+0x118`) and the bankruptcy and net worth
+  events (settlement step 0x64) point at no square of the world
+  (`news::NOWHERE`). Each player's TV takes its own view there
+  (`Fernseher::view_origin`, which the main screen keeps up to date;
+  `Entry::pos_for`, `Entry::origin_for`): the first button centres the
+  view where it is and goes back to it, and a message without a square
+  doesn't scroll. A save writes the saving player's view origin in the
+  original's fields, so the original loads it, and the port's chunk
+  says where it was nowhere ([savegame.md](savegame.md#the-ports-chunk)).
+  Off, the archive holds the human's view, as the original.
+- Built, `fix.tv_lights` and `fix.auction_speaker`: the speaker's lights
+  draw from the view's random numbers, not the world's `RandSeed`, and
+  the auction doesn't wait for the speaker. With both on the world
+  doesn't keep what `Action::Speaker` says at all
   ([sound.md](sound.md#the-tvs-speaker)).
+
+All three fixes are on in a game with more than one human client
+(`enhance::SINGLE_PLAYER_ONLY`).

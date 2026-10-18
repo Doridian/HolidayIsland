@@ -1455,9 +1455,15 @@ impl World {
     /// of their buildings' value plus 1000. Unless the human cheated or
     /// the money is frozen, their net worth passing 100 000, 1 000 000 or
     /// 10 000 000 brings events 12, 16 or 18 (one a month, the first that
-    /// hasn't come yet). The events point at the human's view (marked).
+    /// hasn't come yet). The events point at the human's view, with
+    /// `fix.view_news` at no square ([`crate::news::NOWHERE`]).
     fn check_bankruptcies(&mut self) {
-        let here = self.viewpoint.origin;
+        // BUG(original): the events point at the human's view origin (1110:5530), which several players don't share (fix.view_news: at no square).
+        let here = if self.fixes.has(crate::enhance::Fix::ViewNews) {
+            crate::news::NOWHERE
+        } else {
+            self.viewpoint.origin
+        };
         for p in 2..=self.player_count {
             if self.bankrupt(p) && self.player_out(p) == 0 {
                 let amount = div(self.assets(p), 5).wrapping_mul(3).wrapping_add(1000);

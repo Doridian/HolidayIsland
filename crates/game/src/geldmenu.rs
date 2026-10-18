@@ -28,7 +28,7 @@ use vcl::Rect;
 use vcl::surface::{Rop, Surface};
 
 use crate::command;
-use crate::enhance::{Enhancement, Enhancements};
+use crate::enhance::{Enhancement, Enhancements, Fix};
 use crate::hauptschirm::InfoTexts;
 use crate::money::format_money;
 use crate::simulation::Tick;
@@ -96,7 +96,10 @@ impl World {
             Action::Shown(shown) => {
                 if player == 1 {
                     self.money_menu_shown = shown;
-                    if shown {
+                    // With `fix.year_total` the total is always up to
+                    // date as of the last booking, and showing the menu
+                    // changes nothing.
+                    if shown && !self.fixes.has(Fix::YearTotal) {
                         self.geldmenu_year_total(); // 1070:2b3a
                     }
                 }
@@ -173,8 +176,13 @@ impl World {
     /// booked ([`Tick::books`]) or loaded ([`Tick::loaded`]). Only the
     /// saved kinds 0x6b–0x6e can tell the difference, and only when money
     /// changes after a booking in the same tick. // 1070:2617, 1070:2630
+    ///
+    /// With `fix.year_total` it's as if the menu were always shown, so the
+    /// books don't follow one player's form.
     pub(crate) fn geldmenu_refresh(&mut self, tick: &Tick) {
-        if self.money_menu_shown && (tick.books || tick.loaded) {
+        // BUG(original): the year's total follows whether the human's money menu is shown (fix.year_total: as if it always were).
+        let shown = self.money_menu_shown || self.fixes.has(Fix::YearTotal);
+        if shown && (tick.books || tick.loaded) {
             self.geldmenu_year_total();
         }
     }
@@ -1491,6 +1499,25 @@ fn round(x: f64) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fix_year_total() {
+        for fixed in [false, true] {
+            let mut w = World {
+                player_count: 2,
+                ..World::default()
+            };
+            w.fixes.set(Fix::YearTotal, fixed);
+            w.books.year[usize::from(BOOK_THIS_YEAR - FIRST_BOOK)] = 123;
+            // A booking with the money menu hidden.
+            w.geldmenu_refresh(&Tick {
+                books: true,
+                ..Tick::default()
+            });
+            let total = w.books.year[usize::from(BOOK_THIS_YEAR_TOTAL - FIRST_BOOK)];
+            assert_eq!(total, if fixed { 123 } else { 0 });
+        }
+    }
 
     #[test]
     fn renovation_and_advertising_steps() {

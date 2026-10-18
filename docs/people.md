@@ -515,11 +515,16 @@ loaded world is the one saved.
 views' kinds to the views (`Tick::view_people`); off, the views' own go
 and the world spawns them again where the human looks.
 
-**What's left.** Outside the people the world still takes the human's
-view origin for where the news and the bankruptcy and net worth events
-point (`news.rs`, `settlement.rs`), and the main screen hands the world
-its viewpoint before each tick for those (`World::set_viewpoint`). With
-several humans that would still differ between them.
+**What's left** was the news: outside the people the world took the
+human's view origin for where the news without a square, the TV's way
+back and the bankruptcy and net worth events point (`news.rs`,
+`settlement.rs`). Decided: `fix.view_news` points them nowhere in the
+world (`news::NOWHERE`), and each player's TV takes its own view
+([fernseher.md](fernseher.md#multiplayer)). With both fixes on the world
+reads no viewpoint (`World::reads_viewpoint`), and the main screen
+stops handing it one before each tick. Both are on in any game with
+more than one human client (`enhance::SINGLE_PLAYER_ONLY`,
+[port-architecture.md](port-architecture.md#decided)).
 
 
 ## Open questions

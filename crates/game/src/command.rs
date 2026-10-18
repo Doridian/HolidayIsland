@@ -6,8 +6,14 @@
 //! (building, raising and lowering the land, demolishing, the road and
 //! sabotage, `docs/player-tools.md`), the options form's world options
 //! and speed, the money menu, the info box's and the buildings'
-//! overview's buttons, the overview map's new people, the TV's pause and speaker, and the main
-//! screen's view moving, which places the people for it.
+//! overview's buttons, the overview map's new people, the TV's pause and speaker, the main
+//! screen's view moving, which places the people for it, and the seats.
+//!
+//! A command's `player` is the seat it acts for. In a game with several
+//! human clients each client's commands go through
+//! [`World::apply_client`] (`crate::seats`), which finds their seat and
+//! drops what only the host may send; [`World::apply`] carries out a
+//! seat's command as it is, as for the original's one human.
 
 use std::sync::Arc;
 
@@ -23,7 +29,8 @@ use crate::world::{Pos, World, on_map};
 /// `player` does `action`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Command {
-    /// 1 for the human in the original.
+    /// The seat it acts for: 1 for the human in the original
+    /// (`crate::seats`).
     pub player: u8,
     pub action: Action,
 }
@@ -34,9 +41,9 @@ pub enum Action {
     Auction(auction::Action),
     /// The file menu's "Laden": `load_map` reads the parsed file over the
     /// world in the middle of the game, and what the file doesn't hold
-    /// stays as this game left it ([`World::load_map`]). Single human: in
-    /// the original only the one player loads; in a multiplayer game it
-    /// would be the host's, and replaces everyone's world. // 1040:0f27
+    /// stays as this game left it ([`World::load_map`]). The host's
+    /// ([`World::apply_client`]): it replaces everyone's world, and the
+    /// clients keep their seats (`crate::seats::Seats::loaded`). // 1040:0f27
     Load(Arc<SaveGame>),
     /// A build tool's click (the build menus' tools 9 to 20, palms too):
     /// `building` with its first square at `at`. // 1028:3cb1
@@ -93,9 +100,14 @@ pub enum Action {
     Speaker(crate::news::Speaker),
     /// Switches one of the world's fixes on or off in the middle of a
     /// game ([`World::fixes`], `crate::enhance`). A port extension: the
-    /// original has no fixes. In a multiplayer game it would be the
-    /// host's.
+    /// original has no fixes. The host's ([`World::apply_client`]); with
+    /// several human clients those of
+    /// [`crate::enhance::SINGLE_PLAYER_ONLY`] stay on.
     SetFix(crate::enhance::Fix, bool),
+    /// A client joins a seat, leaves, disconnects or rejoins
+    /// ([`World::seat_change`], `crate::seats`). A port extension: the
+    /// host's, but a client's own leaving.
+    Seat(crate::seats::SeatChange),
     /// The human's view scrolled (`hauptschirm_scroll`, 1020:07dc) or
     /// turned (`set_view`, 1010:254d) and now looks at the viewpoint, the
     /// original's 20 × 27 view (with `big_map` too, the middle of the
@@ -160,13 +172,8 @@ impl World {
             Action::ShowTv(n) => self.tv_shown(n, &mut tick),
             Action::TvPause(on) => self.tv_pause(on),
             Action::Speaker(s) => self.set_speaker(s),
-            Action::SetFix(fix, on) => {
-                let split = self.people_split();
-                self.fixes.set(fix, on);
-                if !split && self.people_split() {
-                    self.hand_over_view_people(&mut tick);
-                }
-            }
+            Action::SetFix(fix, on) => self.set_fix(fix, on, &mut tick),
+            Action::Seat(change) => self.seat_change(change, &mut tick),
             // BUG(original): a scroll places and spawns the world's people for the human's view (`fix.view_people`: the world ignores it).
             // With `fix.view_people` the world doesn't follow anyone's
             // view: each view places and spawns its own people
