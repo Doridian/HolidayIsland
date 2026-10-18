@@ -19,7 +19,8 @@ from the build menu, lays roads, raises and lowers the land and
 demolishes ([docs/player-tools.md](docs/player-tools.md)), while the
 computer players do the same. Games are saved and loaded in
 the original's format, from the start menu's load form and the in-game
-file menu ([docs/savegame.md](docs/savegame.md)). The sound, the music
+file menu ([docs/savegame.md](docs/savegame.md)), and the game's
+message boxes and progress window are there too. The sound, the music
 and the films (Cinepak and MS ADPCM, decoded in pure Rust,
 [docs/films.md](docs/films.md)) play. Also here:
 - tools that get the game from the CD image, including the installer's
@@ -29,7 +30,7 @@ and the films (Cinepak and MS ADPCM, decoded in pure Rust,
 
 The plan is a non-matching decompilation like the
 [Afterlife](https://github.com/Doridian/Afterlife) port: the code should behave
-like the original, not compile to the same bytes. The planned stack is winit,
+like the original, not compile to the same bytes. The stack is winit,
 wgpu and cpal, with a resizable window and a fullscreen toggle; see
 [docs/port-architecture.md](docs/port-architecture.md). A stretch goal for
 after the initial port is network multiplayer: humans taking the seats the
@@ -88,15 +89,16 @@ cargo run --release -p holiday -- orig
 ```
 
 The argument is the directory with the game's files (`HOLIDAY.EXE`,
-`GRAFIK\`, `DATA\`, `TEXTE\`). For now it shows the title picture, then
-the background with the start menu on it. The menu's settings work. Start
-shows the main screen with the scenario's island, or the tutorial island
-for a normal game until island generation is ported. The arrow keys and the
+`GRAFIK\`, `DATA\`, `TEXTE\`). It plays the intro, then shows the
+background with the start menu on it. Start shows the main screen with
+the scenario's island, or a new island made from the menu's settings
+for a normal game; "Altes Spiel fortsetzen" loads a saved one. The arrow keys and the
 number pad scroll it (Ctrl for bigger steps), so do its scroll bars and
 the mouse wheel (Shift for across), Insert and Delete turn it, a right
 click moves it. The button bar's tool buttons (or F1 to F12)
-pick the tools; a click on the island uses them.
-Loading a game is only logged. Escape quits.
+pick the tools; a click on the island uses them. The button bar's
+first button opens the file menu (saving, loading, a new game);
+Escape asks whether to quit.
 
 ### Enhancements
 
@@ -151,7 +153,7 @@ shared through [symbols/](symbols/README.md).
 - [docs/versions.md](docs/versions.md): the German v1.0 and the later (English) build, how they differ, `UPGRADE\`
 - [docs/language.md](docs/language.md): how the original picks its language, and the port's German and English
 - [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
-- [docs/port-architecture.md](docs/port-architecture.md): the planned Rust port: stack, crates, design
+- [docs/port-architecture.md](docs/port-architecture.md): the Rust port: stack, crates, design
 - [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)
 - [docs/map.md](docs/map.md): the island's map layers, how the main screen draws them, and its layout
 - [docs/island-generator.md](docs/island-generator.md): how a normal game's island is made, and the rest of a new game

@@ -91,7 +91,8 @@ another name there) from `MAPS\`, which the load form sets
 world from its map file (`load_world`) and a normal game's from the
 generator and the game's data (`new_world`,
 [island-generator.md](island-generator.md)); the `holiday` binary plays
-`titel.avi` ([films.md](films.md)) and skips the progress window.
+`titel.avi` ([films.md](films.md)) and shows the progress window
+([below](#the-progress-window-twasnunform)).
 
 | Tag | Does | Next | Interval (ms) |
 |---|---|---|---|
@@ -101,7 +102,7 @@ generator and the game's data (`new_world`,
 | 1120 | Stops and closes the video, hides the panel, disables the form and image, reactivates WaveMix and reloads the font (`text_done`, `text_init`) | 1200 | 10 |
 | 1130, 1140 | Reload the background `bck<size>.BMP` and show it. Nothing in the start path goes there | 1200 | 10 |
 | 1200 | Creates `TWasNunForm`, the progress window (1040:33e9), shows it and disables the form | 1210 | 10 |
-| 1210 | With the timer off: generates a new island from the start menu's settings (1030:390e, hourglass cursor around 10b0:52d4, [island-generator.md](island-generator.md)); for a scenario or a saved game it only clears the map | 1220 | 10 |
+| 1210 | With the timer off: generates a new island from the start menu's settings (1030:390e, the cursor `crNoDrop` around 10b0:52d4, [island-generator.md](island-generator.md)); for a scenario or a saved game it only clears the map | 1220 | 10 |
 | 1220 | With the timer off: loads the data tables (1030:2e48: `HAUSPOS.DAT`, `HAUSNR.DAT`, the other `*POS.DAT`, prices, names...), the bitmaps (1030:307a: the frame's and the island's, see [map.md](map.md)) and the rest (1030:36e5: months, events, sabotage, the forms' data...), moving the progress bar to 100 | 1500 | 2 |
 | 1500 | Sets up the main screen (`hauptschirm_init`, 1020:2501) and stops the timer. With `+0x190`: `load_map` of the saved game, then `game_start_setup` (1010:2820). With `+0x191`: `load_map` of the scenario's `SZENARIO\*.his` (the later build's 8–13: `UPGRADE\*.his`), puts the kept name, colours and difficulty back, sets the starting money from the difficulty, the scenario's number of computer players and its events (`EREIGNn.DAT`, 1010:36f8; 8–13 `UPGRADE\EREIGN7..12.DAT`), the build menu's bans and the computers (see below), then `game_start_setup`. Finally closes the progress window and shows the main screen (1020:283b: starts its `AnimationsTimer`, height 479) | | |
 
@@ -133,8 +134,26 @@ map file's view position into the main screen's scroll position
 A normal game's world is ported: the island (10b0:52d4) and what the
 game's data sets up around it in states 100 and 1220
 ([island-generator.md](island-generator.md#the-rest-of-a-new-game)), and
-a scenario's start ([below](#a-scenarios-start)). Not ported: the
-progress window.
+a scenario's start ([below](#a-scenarios-start)).
+
+### The progress window: `TWasNunForm`
+
+State 1200 creates it (VMT en 1028:3684) and states 1210 to 1500 move it
+on; [`game::wasnunform`](../crates/game/src/wasnunform.rs) has the
+form, its pages of `WASNUN.TXT` and the gauge's steps. It's 200 × 100,
+centred, `WasNun.bmp` with the gauge (`Prozent.bmp`, `Prozentp.bmp`) and
+a line of text. Its DFM gives it the cursor `crNoDrop`, which
+`generate_island_busy` (en 1038:35f1) and `load_game_rest`
+(en 1038:33c8) also set for the whole screen (`Screen.Cursor := -13`;
+the file menu's work uses `crHourGlass`, -11). The DFM of
+`THintergrund` has `crNoDrop` too, but its picture covers it.
+
+The port's set-up takes a frame or so, so the `holiday` binary shows the
+window one step a frame (state 1200 empty; 1210 with page 1 at 5 % for a
+new island, page 3 at 100 % otherwise, under `crNoDrop`; 1220 page 2 at
+100 %; 1500 page 0 at 100 %), the work done after the frame of state
+1210 is drawn, then the main screen. The gauge's steps within the
+generator and the loaders aren't shown one by one.
 
 ### A scenario's start
 
@@ -172,19 +191,40 @@ numbers):
    (`*1110:70e6`, 1030:0caf) in a direction by `Random(4)`.
 8. `game_start_setup` (1010:2820), the view's.
 
-## Back to the start menu (1010:25dc)
+## Back to the start menu (1010:25dc, en 1010:3582)
 
 The other place that creates `TStartform`, from the file menu's "Neues
-Spiel". It saves the game to `Maps\Last.map`, hides the forms in
-`1110:646c` except 10 and 11, frees the game (1030:3974), reloads the data
-(1030:38a3), puts the globals back (1048:2a05: 1000:1ea0, 1088:0002 and 1010:0f96,
+Spiel" and the end form's. It saves the game to `Maps\Last.map`, hides the forms in
+`1110:646c` except 10 and 11, frees the game (1030:3974, en 1038:3657:
+the clock, the forms, the people, the computers, the news, `music_close`,
+`game_done`), reloads the data (1030:38a3, en 1038:3586: `Randomize`,
+`init_game_globals`, the map's tables, `load_tables`, the view's
+squares, `text_init`, `init_sound`, `SONSTIGE.TXT`), puts the globals
+back (1048:2a05: `init_game_defaults` 1000:1ea0, en 1000:22b4; 1010:0f96,
 which clears `1110:1334`, `1110:133c`, played without disasters, and
-`1110:133e`), restarts `holiday.mid`, and shows
-a new `TStartform`, which
-`startform_init` sets from the globals the game left (`Settings::from_world`).
-The `holiday` binary saves `Last.map`, opens the sounds again, plays
-`holiday.mid` and shows a new start menu; the rest of the reload isn't
-ported. The intro's music is in [sound.md](sound.md#the-music).
+`1110:133e`; 1088:0002, the spectators' flag), restarts `holiday.mid`,
+and shows a new `TStartform`, which `startform_init` sets from the
+globals. The later build puts the globals back before the reload, and
+first waits for the CD: until the film directory has `surfwm.avi` it
+asks (`MessageDlg(…, mtInformation, [mbOK, mbCancel], 0)`, always the
+English text, en 1010:3540); Cancel ends the program (`Halt`).
+
+`init_game_defaults` sets the start menu's island settings, difficulty,
+scenario and colours back to their defaults, and the options (music,
+sounds, news, tooltips, the year's balance, the pointers) but the
+speech; `init_sound` sets the volumes to the system's. Not touched: the
+opponents (`1110:1478`, a scenario's or a file's) and the name
+(`last_player_name`, `1110:0a02`, the one the menu last started with).
+
+The `holiday` binary does the same: it saves `Last.map`, drops the game,
+waits for the CD with the port's message box (in the view's language),
+puts back the start menu's settings (`Settings::after_game`) and the
+options (`optionen::Settings::after_game`), empties the sounds, plays
+`holiday.mid` and shows a new start menu. The world and its tables are
+made anew for every game, and `RandSeed` drawn when it starts, so a
+second game starts as the first would on a fresh start (the test
+`back_to_the_start_menu_starts_clean`). The intro's music is in
+[sound.md](sound.md#the-music).
 
 ## The start menu: `TStartform`
 

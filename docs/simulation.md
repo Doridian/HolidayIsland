@@ -699,10 +699,10 @@ before each tick (marked).
 
 What the view shows comes out of `World::tick` in `Tick`: the squares
 that changed (`redraw`; the view redraws the whole island for them rather
-than the columns 1050:21f9 picks, and has no overview map yet), a flood
+than the columns 1050:21f9 picks), a flood
 (`redraw_all`), the news (`messages`), a started auction (`auction`) and
 what the auction form did (`auction_changes`), the people's and the
-auction's sounds (`sounds`, not played yet), the end of the game
+auction's sounds (`sounds`), the end of the game
 (`game_over`), the money menu's and `TUmenuform`'s refreshes (`books`,
 `umenu`) and the buildings whose occupancy changed (`occupancy`);
 finished buildings are in `redraw`. The people's pictures
@@ -711,13 +711,16 @@ tick (`Hauptschirm::show_people`, 1088:385d, 1088:38c4).
 The view draws the date and money on the info bar when they change, and
 the auction form ([auction.md](auction.md)), whose timers
 (`World::auction_tick`) run before the clock's steps each tick, and the
-file menu, which stops the clock while it's open ([savegame.md](savegame.md)); the
-news, the TV, tooltips, scrolling by the timer, music and the shaking
-aren't ported; the status bar's messages time out (step 2). The auction's buttons and loading a
-game from the file menu, and the main screen's tools (building,
-raising and lowering, demolishing, the road drag,
-[player-tools.md](player-tools.md)) are the commands so far
-(`World::apply`).
+file menu, which stops the clock while it's open ([savegame.md](savegame.md)),
+the TV and its news ([fernseher.md](fernseher.md)), the button bar's
+tooltips, the music ([sound.md](sound.md)) and the other forms; the
+screen's shaking in an earthquake isn't ported; the status bar's
+messages time out (step 2). Everything a player does to the world is a
+command (`command::Action`, `World::apply`): the auction's buttons,
+loading a game, the main screen's tools (building, raising and
+lowering, demolishing, the road drag, [player-tools.md](player-tools.md)),
+the game speed and the world's options, the money menu, sabotage, the
+info box's buttons and the TV's pause.
 `World::to_map` saves the world ([savegame.md](savegame.md)).
 
 Raising and lowering the land (`game::terrain`) and building roads

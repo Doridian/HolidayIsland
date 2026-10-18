@@ -10,7 +10,8 @@
 //! original laid out for the Windows desktop. F11 or Alt+Enter (and
 //! Ctrl+Cmd+F on macOS) toggle borderless fullscreen; those keys don't
 //! reach the game. The window's size, position and fullscreen state are
-//! remembered in the port's settings file ([`settings`]).
+//! remembered in the port's settings file ([`settings`]). The mouse
+//! pointer is the system's, in the shape the frame asks for ([`Cursor`]).
 
 pub mod audio;
 mod display;
@@ -27,7 +28,7 @@ use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::window::{Fullscreen, Window, WindowId};
+use winit::window::{CursorIcon, Fullscreen, Window, WindowId};
 
 pub use display::Error;
 use settings::WindowSettings;
@@ -81,6 +82,32 @@ pub struct Frame<'a> {
     pub palette: &'a [[u8; 3]; 256],
     /// A true-colour picture on top.
     pub overlay: Option<Overlay<'a>>,
+    /// The mouse pointer's shape over the window (`Screen.Cursor`).
+    pub cursor: Cursor,
+}
+
+/// The mouse pointer's shapes the game sets through `Screen.Cursor`
+/// (`TScreen.SetCursor`, en 10f8:5dbe), shown as the system's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Cursor {
+    /// `crDefault` (0): the arrow.
+    #[default]
+    Default,
+    /// `crHourGlass` (-11): the system's busy pointer.
+    HourGlass,
+    /// `crNoDrop` (-13): the VCL's no-drop pointer, the circle with a
+    /// bar (its own resource in the EXE; the system's here).
+    NoDrop,
+}
+
+impl Cursor {
+    fn icon(self) -> CursorIcon {
+        match self {
+            Cursor::Default => CursorIcon::Default,
+            Cursor::HourGlass => CursorIcon::Wait,
+            Cursor::NoDrop => CursorIcon::NoDrop,
+        }
+    }
 }
 
 /// RGB pixels, top row first, `width` × `height` at `x`, `y` in the
@@ -221,6 +248,8 @@ struct Runner<A> {
     /// What the settings file gets at the end: the windowed size and
     /// position, and whether the window is fullscreen.
     remembered: WindowSettings,
+    /// The pointer last set on the window.
+    cursor: Cursor,
 }
 
 impl<A: App> Runner<A> {
@@ -392,11 +421,16 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let Some((_, d)) = &mut self.window
-                    && let Err(e) = d.draw(&self.app.frame())
-                {
-                    self.error = Some(e);
-                    event_loop.exit();
+                if let Some((w, d)) = &mut self.window {
+                    let frame = self.app.frame();
+                    if frame.cursor != self.cursor {
+                        self.cursor = frame.cursor;
+                        w.set_cursor(frame.cursor.icon());
+                    }
+                    if let Err(e) = d.draw(&frame) {
+                        self.error = Some(e);
+                        event_loop.exit();
+                    }
                 }
             }
             _ => {}
@@ -442,6 +476,7 @@ pub fn run<A: App>(title: &str, options: WindowOptions, app: A) -> Result<(), Er
         wheel: (0.0, 0.0),
         swallowed: Vec::new(),
         remembered: WindowSettings::default(),
+        cursor: Cursor::Default,
     };
     event_loop
         .run_app(&mut runner)

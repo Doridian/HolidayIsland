@@ -4,7 +4,9 @@ A normal game (not a scenario, not a saved game) plays on an island the
 game makes from the start menu's settings: shape, relief, land and
 rivers ([startup.md](startup.md#the-start-menu-tstartform)). State 1210
 of `THintergrund`'s timer calls `generate_island_busy` (1030:390e), which
-shows the hourglass around `generate_island` (10b0:52d4). The rest of a
+sets the cursor `crNoDrop` (-13, not the hourglass) around
+`generate_island` (10b0:52d4), whose stages move the progress window
+(`game::wasnunform`). The rest of a
 new game's world comes from the game's data, loaded in state 1220
 ([below](#the-rest-of-a-new-game)).
 

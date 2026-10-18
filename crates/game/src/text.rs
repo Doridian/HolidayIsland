@@ -70,6 +70,14 @@ impl Font {
         i32::from(self.advance[usize::from(c)])
     }
 
+    /// How wide `text` is on one line: its characters' advances. The port's
+    /// own measure (the message boxes, [`crate::msgdlg`]); `draw_text`
+    /// measures as [`Font::wrap`] says.
+    #[must_use]
+    pub fn width(&self, text: &[u8]) -> i32 {
+        text.iter().map(|&c| self.advance(c)).sum()
+    }
+
     /// How `draw_text` wraps `text` into `width` pixels. // 1030:23d3
     ///
     /// This keeps the original's quirks. A line broken at a space keeps the

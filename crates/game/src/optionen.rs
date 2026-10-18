@@ -277,6 +277,26 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// The options after "Neues Spiel" (`back_to_start_menu`,
+    /// en 1010:3582): `init_game_defaults` (en 1000:22b4) sets every one
+    /// but the speech (`1110:0066`) back to its default, and `init_sound`
+    /// (en 1040:3c33) the volumes to the system's (the port: 100) when
+    /// there's sound (`sound_on`); the playlist is set when the next game
+    /// starts (1018:37de).
+    #[must_use]
+    pub fn after_game(&self, sound_on: bool) -> Settings {
+        let mut s = Settings {
+            speech: self.speech,
+            ..Settings::default()
+        };
+        if !sound_on {
+            s.music_volume = self.music_volume;
+            s.sound_volume = self.sound_volume;
+            s.speech_volume = self.speech_volume;
+        }
+        s
+    }
+
     /// The settings a map file holds, the rest as they are. // 1048:2a19
     #[must_use]
     pub fn with_map(&self, save: &SaveGame) -> Settings {

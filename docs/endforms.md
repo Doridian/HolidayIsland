@@ -214,9 +214,9 @@ None of them issues a world command. The clock stops while the quit
 question and the end form are up (single human: the simulation waits on
 these dialogs; see [original-bugs.md](original-bugs.md#design-issues-for-multiplayer)).
 
-Not ported: the message
-box path, `game_done`'s freeing. The money menu's and the overview map's
-tooltips wait for those forms.
+Not ported: `game_done`'s freeing (the port drops the game). The money
+menu's and the overview map's tooltips aren't hooked to those forms yet,
+though both forms are ported.
 
 ## Open questions
 

@@ -212,10 +212,15 @@ moves to 8,136, "Beenden" to 8,158 (two more entries in the table, en
 `1118:1812`). "Löschen" and the key `D` delete the selected game: a
 question (`Wirklich loeschen?`, `Vous êtes sûr?` or `Are you sure?` by
 `land`), then `MAPS\name.map` is erased and the list filled again. The
-port has that menu with `UPGRADE\` (`Dateimenue::with_upgrade`); as the
-message boxes aren't ported, it doesn't ask, and it only erases the
-player's own copy in the port's save directory, never the game's
-`MAPS\`.
+port has that menu with `UPGRADE\` (`Dateimenue::with_upgrade`) and asks
+the question (`MessageDlg(…, mtConfirmation, [mbOK, mbCancel], 0)`,
+en 1040:118b): only OK erases, and only the player's own copy in the
+port's save directory, never the game's `MAPS\`. The invalid name's
+message is `MessageDlg(…, mtError, [mbOK], 0)` (en 1040:0fb9). Both are
+the port's message boxes (`game::msgdlg`), drawn like the game's quit
+question rather than as Windows dialogs. Saving, loading and erasing set
+`Screen.Cursor := crHourGlass` around the file's work (en 1040:0f11,
+en 1040:1069, en 1040:1198), which the port shows for a frame.
 
 Quirks, kept: any press while the name is focused unfocuses it, so
 clicking "Speichern" while typing focuses the field again instead of
@@ -243,10 +248,12 @@ after it.
 - A file the parser can't read loads nothing (the original, with I/O
   checks off, stops reading at the error and keeps the rest of the old
   game, [original-bugs.md](original-bugs.md)).
-- Not ported: the message box, the button
-  bar's mouse handling (a click on its first button opens the menu), the
-  hourglass cursor, the music and data reload of `back_to_start_menu`, and
-  the progress window of states 1000–1500.
+- "Neues Spiel" (`back_to_start_menu`, en 1010:3582) frees the game,
+  waits for the CD (`surfwm.avi`, with the later build's question), and
+  puts back what `init_game_defaults` and the data reload set (the start
+  menu's settings but the opponents and the name, the options but the
+  speech, the sounds), so the next game starts as the first did
+  ([startup.md](startup.md#back-to-the-start-menu-101025dc-en-10103582)).
 - The load form doesn't cut a name to `load_map_name`'s 12 characters:
   the original's 8.3 names always fit, and a longer host file name
   couldn't be found again.

@@ -130,7 +130,7 @@ and NE relocations set up first. This tooling doesn't exist yet.
 ## Layout
 
 ```
-crates/         the Rust port (planned, see port-architecture.md)
+crates/         the Rust port (see port-architecture.md)
 tools/          Python helpers: CD and installer extraction, Ghidra CLI
 docs/           format, binary and architecture notes
 symbols/        what we know about HOLIDAY.EXE, as text

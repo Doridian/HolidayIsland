@@ -183,23 +183,22 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// The globals `startform_init` reads when "Neues Spiel" goes back to
-    /// the start menu (1010:25dc), as `world` left them: a loaded game's
-    /// file has put its own there. The name is player 1's. // 1058:27e6
+    /// The globals `startform_init` (en 1058:378f) reads when "Neues
+    /// Spiel" goes back to the start menu (`back_to_start_menu`,
+    /// en 1010:3582): `init_game_defaults` (en 1000:22b4, from
+    /// en 1048:2a05) has put the island's settings, the difficulty, the
+    /// scenario and the colours back to their defaults, so only the
+    /// opponents are the game's, as `world` left them (a scenario's or a
+    /// loaded file's, `computer_opponents` one below the players), and the
+    /// name is `last_player_name` (`1110:0a02`), the one the start menu
+    /// last started with (`name`), not the game's.
     #[must_use]
-    pub fn from_world(world: &crate::world::World) -> Self {
-        let [island, relief, land, rivers] = world.island_settings;
+    pub fn after_game(world: &crate::world::World, name: Vec<u8>) -> Self {
         Settings {
-            island,
-            relief,
-            land,
-            rivers,
-            difficulty: world.difficulty,
             opponents: world.player_count.saturating_sub(1),
             players: world.player_count,
-            colours: world.player_colours,
-            scenario: world.scenario,
-            name: world.player_names.get(1).cloned().unwrap_or_default(),
+            name,
+            ..Settings::default()
         }
     }
 }

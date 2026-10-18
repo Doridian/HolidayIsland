@@ -175,6 +175,10 @@ pub struct Auktionsform {
     /// The player's view enhancements (`auction_title`,
     /// `form_positions`).
     pub enhance: Enhancements,
+    /// An error for the status bar, `FEHLER.TXT`'s text with that number,
+    /// which the caller shows (`show_error_message`, 1030:232d, en
+    /// 1030:3495: the text and sound 0xc) and takes.
+    pub status_error: Option<u8>,
 }
 
 impl Auktionsform {
@@ -201,6 +205,7 @@ impl Auktionsform {
             grip: (0, 0),
             paddle: None,
             enhance: Enhancements::ORIGINAL,
+            status_error: None,
         }
     }
 
@@ -465,8 +470,10 @@ impl Auktionsform {
         if hit(BID_BUTTON, kx, ky) {
             // The original's form is player 1's.
             if bidding && a.price.wrapping_add(a.price / 20) > a.limits[0] {
-                // TODO: the error (FEHLER.TXT 0xe, 1030:232d) on the status
-                // bar, which isn't ported.
+                // Not enough money: the error on the main screen's status
+                // bar, not a message box, and the button stays up.
+                // // 1028:1e23, en 1028:301f
+                self.status_error = Some(0xe);
             } else {
                 self.pressed = Pressed::Bid;
                 self.press(BID_BUTTON);

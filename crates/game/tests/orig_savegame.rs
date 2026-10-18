@@ -247,8 +247,12 @@ fn a_saved_game_loads_from_the_start_menu() {
     let mut differ = differences(&loaded, &world);
     differ.retain(|f| !["random", "plots", "building_sites", "people", "auction", "computers"].contains(f));
     assert_eq!(differ, Vec::<&str>::new());
-    // The start menu shows the game's settings when the player goes back.
-    assert_eq!(Settings::from_world(&loaded).name, world.player_names[1]);
+    // Going back to the start menu: the defaults, but the game's
+    // opponents and the name the menu last had.
+    let back = Settings::after_game(&loaded, b"Jemand".to_vec());
+    assert_eq!(back.opponents, world.player_count - 1);
+    assert_eq!(back.name, b"Jemand");
+    assert_eq!(back.island, Settings::default().island);
     for _ in 0..2000 {
         step(&mut loaded);
     }

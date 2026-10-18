@@ -3,10 +3,10 @@
 //! screen is up. `docs/simulation.md` has the whole routine, the view's
 //! parts included, and what each subsystem does.
 //!
-//! The subsystems that aren't ported yet are stubs here, named after what
-//! they do, with their address. Each one that draws random numbers in the
-//! original must draw them from [`World::random`] in the same order once
-//! it's ported.
+//! Each subsystem is named after what it does, with its address, and
+//! draws its random numbers from [`World::random`] in the original's
+//! order; the one exception is the screen's shaking in an earthquake,
+//! which is the view's (see [`World::tick`]).
 
 use crate::auction::Change;
 use crate::news::Message;

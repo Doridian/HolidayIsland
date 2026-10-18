@@ -314,7 +314,15 @@ impl Sound {
         self.speaker.at_end()
     }
 
-    /// The intro's music, and "Neues Spiel"'s. // 1000:2466, 1010:25dc
+    /// `music_close`: the music stops and closes, when the game is freed
+    /// (en 1038:3657).
+    pub fn close_music(&mut self) {
+        self.music.player.close();
+        self.sync();
+    }
+
+    /// The intro's music, and "Neues Spiel"'s: `holiday.mid` from its
+    /// start. // 1000:2466, 1010:25dc, en 1010:3690
     pub fn intro_music(&mut self) {
         let lengths = self.lengths();
         self.music.intro(lengths);
@@ -418,6 +426,15 @@ impl Sound {
                 false
             }
         }
+    }
+
+    /// Whether the film directory has the film `name` (`FileExists`).
+    pub fn film_exists(&self, name: &str) -> bool {
+        let sub = match self.film_quality {
+            setup::Film::Lo => "FILMLO",
+            setup::Film::Hi => "FILMHI",
+        };
+        crate::forms::find(&self.dir, &format!("{sub}/{name}")).is_some()
     }
 
     /// The film player's `Stop`/`Eject`/`Close`.

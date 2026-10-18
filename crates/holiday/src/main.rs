@@ -1,9 +1,9 @@
 //! Holiday Island. This plays the intro's film (`sunflow.avi`), shows the
 //! main form with the title picture and then the background, like the
 //! intro (`docs/startup.md`, states 400–450), and then the start menu on
-//! top (state 500). Start (after `titel.avi`, states 1111–1120)
-//! loads the scenario (or, until island generation is ported, the tutorial
-//! island) and shows the main screen with the island, which the arrow keys
+//! top (state 500). Start (after `titel.avi`, states 1111–1120, and the
+//! progress window of states 1200–1500, `TWasNunForm`) loads the scenario
+//! or makes a new island and shows the main screen with it, which the arrow keys
 //! scroll and Insert and Delete turn, and runs the simulation's clock
 //! (`World::tick`, every 100 ms), with the date and money on the info bar.
 //! When an event starts an auction the auction form opens over it; its
@@ -23,7 +23,9 @@
 //! the pointer the info box and from there the buildings' overview
 //! (`forms`); Escape, `Q`, Alt+F4 and the main screen's close button ask
 //! whether to quit (`TEndeform`), and the end of a game shows its results
-//! and the high scores.
+//! and the high scores. The game's message boxes (`MessageDlg`,
+//! `game::msgdlg`) open over everything and take the input until they
+//! answer.
 //!
 //! The window's client area, divided by the UI scale, is the desktop the
 //! game lays out for, again whenever it changes (`docs/layout.md`).
@@ -81,6 +83,7 @@ use game::highscoreform::ScoreTable;
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
 use game::lang;
+use game::msgdlg::{self, Btn, DlgType, MessageDlg, ModalResult};
 use game::optionen::Settings as Options;
 use game::sabowin;
 use game::savegame::{self, Fields, MapView};
@@ -88,9 +91,10 @@ use game::simulation::{TICK_MS, Tick};
 use game::startform::{self, Action, Settings, StartForm};
 use game::text::Font;
 use game::tools::Tools;
+use game::wasnunform::{self, WasNunForm};
 use game::widgets::ShiftState;
 use game::world::{Tables, World};
-use platform::{App, Button, Frame, Input};
+use platform::{App, Button, Cursor, Frame, Input};
 use vcl::form::{Form, Kind};
 use vcl::random::Random;
 use vcl::surface::Surface;
@@ -659,6 +663,16 @@ impl Game {
         key
     }
 
+    /// `show_error_message` (1030:232d, en 1030:3495): `FEHLER.TXT`'s
+    /// text `n` on the status bar, with sound 0xc.
+    fn show_error(&mut self, n: u8) {
+        if let Some(text) = self.tools.status_text(game::simulation::Status::Error(n)) {
+            self.screen.show_status(&text, &self.font);
+        }
+        let settings = self.forms.settings;
+        self.sound.borrow_mut().play(0xc, &settings);
+    }
+
     /// The button bar and the status bar after the tools changed.
     fn show_tools(&mut self) {
         if self.tools.menu_focused || self.tools.sabowin_focused {
@@ -825,6 +839,9 @@ impl Game {
                     .auction
                     .mouse_down(x, y, shift, &self.world, &self.font, &self.info);
                 self.auction_actions(actions);
+                if let Some(n) = self.auction.status_error.take() {
+                    self.show_error(n);
+                }
             }
             Input::MouseUp { .. } => {
                 if buttons_up {
@@ -1195,6 +1212,52 @@ enum Pending {
     Load(SaveGame),
 }
 
+/// States 1200 to 1500 after `titel.avi`: the progress window
+/// (`TWasNunForm`) while the game is set up, one step a frame.
+/// // en 1010:0591
+struct Loading {
+    form: WasNunForm,
+    step: LoadStep,
+    /// The game to start, until the work is done.
+    pending: Option<Pending>,
+    /// The game, once it's set up.
+    game: Option<Game>,
+}
+
+/// Where states 1200 to 1500 are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoadStep {
+    /// State 1200: the window shown, empty.
+    Shown,
+    /// State 1210: the map made or cleared (`generate_island_busy`,
+    /// en 1038:35f1); the port's work is done after this frame.
+    Map,
+    /// State 1220: the game's data loaded (`load_game_data`,
+    /// en 1038:3615).
+    Data,
+    /// State 1500: the map loaded and the main screen set up.
+    Setup,
+}
+
+/// An open message box (`MessageDlg`), over everything, with the input
+/// to itself, and what its answer leads to.
+struct MessageBox {
+    dlg: MessageDlg,
+    then: AfterMessage,
+}
+
+/// What a message box's answer does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AfterMessage {
+    /// Nothing: a message with only OK.
+    Nothing,
+    /// The file menu's "Löschen": OK erases the game. // en 1040:110c
+    Delete(Vec<u8>),
+    /// Going back to the start menu without the CD: OK looks again,
+    /// Cancel ends the program. // en 1010:35e4
+    InsertCd,
+}
+
 /// What `backgroundimage` shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Picture {
@@ -1249,6 +1312,28 @@ struct Holiday {
     settings_file: Option<PathBuf>,
     /// `--original` or `--enhance=` was given.
     command_line: bool,
+    /// The game's font, for the message boxes and the progress window.
+    font: Font,
+    /// The message boxes' bitmaps (`msgdlg::BITMAP_FILES`).
+    message_bitmaps: Vec<Surface>,
+    /// The message box that's open.
+    message: Option<MessageBox>,
+    /// States 1200 to 1500: the progress window and the game set up.
+    loading: Option<Loading>,
+    /// `Screen.Cursor`, and how many more updates it stays when it was
+    /// only set around work that took no time.
+    cursor: Cursor,
+    cursor_updates: u8,
+    /// The mouse on the screen.
+    mouse: (i32, i32),
+    /// `last_player_name`: the start menu's name, kept from game to
+    /// game. // 1110:0a02, en 1118:0a02
+    last_player_name: Vec<u8>,
+    /// The start menu's settings while going back to it waits for the
+    /// CD.
+    next_menu: Option<Settings>,
+    /// `Randomize`: where a game's `RandSeed` comes from.
+    seed: fn() -> u32,
 }
 
 impl Holiday {
@@ -1320,6 +1405,12 @@ impl Holiday {
         if let Some(game) = &mut self.game {
             game.resize(self.size, self.desktop);
         }
+        if let Some(loading) = &mut self.loading {
+            loading.form.place(self.size);
+        }
+        if let Some(m) = &mut self.message {
+            m.dlg.place(self.size);
+        }
         self.set_picture(self.picture);
     }
 
@@ -1337,6 +1428,148 @@ impl Holiday {
                 *picture = Some(load.menu.bild().clone());
             }
             load.form.paint(&mut self.screen, &self.palette);
+        }
+        if let Some(loading) = &self.loading {
+            let f = &loading.form;
+            self.screen.draw(f.left, f.top, f.image(), self.screen.bounds());
+        }
+        if let Some(m) = &self.message {
+            let b = m.dlg.bounds();
+            self.screen.draw(b.left, b.top, m.dlg.image(), self.screen.bounds());
+        }
+    }
+
+    /// The mouse pointer: `Screen.Cursor` if it's set, else the
+    /// progress window's own (its DFM's `crNoDrop`) over it. The
+    /// background form's DFM has `crNoDrop` too, but its picture, with
+    /// the default, covers it.
+    fn cursor_shape(&self) -> Cursor {
+        if self.cursor != Cursor::Default {
+            return self.cursor;
+        }
+        match &self.loading {
+            Some(l) if inside_rect(l.form.bounds(), self.mouse) => Cursor::NoDrop,
+            _ => Cursor::Default,
+        }
+    }
+
+    /// The view's language outside a game: the setting on the folder's
+    /// `land` (`game::lang`).
+    fn language(&self) -> lang::Language {
+        match &self.game {
+            Some(game) => game.info.language(),
+            None => self.enhance.language.language(folder_land(&self.dir)),
+        }
+    }
+
+    /// Opens a message box (`MessageDlg(text, kind, buttons, 0)`) over
+    /// everything; `then` says what its answer does.
+    fn open_message(&mut self, text: &[u8], kind: DlgType, buttons: &[Btn], then: AfterMessage) {
+        let dlg = MessageDlg::new(
+            text,
+            kind,
+            buttons,
+            self.language(),
+            &self.font,
+            self.message_bitmaps.clone(),
+            self.size,
+        );
+        self.message = Some(MessageBox { dlg, then });
+        self.repaint();
+    }
+
+    /// Input while a message box is open: the box is modal and gets it
+    /// all. // en 10d8:07ee (`ShowModal`)
+    fn message_input(&mut self, input: Input) {
+        let Some(m) = &mut self.message else { return };
+        let screen = self.size;
+        let mut r = msgdlg::Response::default();
+        match input {
+            Input::MouseMove { x, y } => r = m.dlg.mouse_move(x, y, screen),
+            Input::MouseDown {
+                x,
+                y,
+                button: Button::Left,
+            } => r = m.dlg.mouse_down(x, y),
+            Input::MouseUp {
+                x,
+                y,
+                button: Button::Left,
+            } => r = m.dlg.mouse_up(x, y),
+            Input::KeyDown(key) => {
+                if key == VK_MENU {
+                    self.keys = self.keys | ShiftState::ALT;
+                }
+                r.answer = m.dlg.key_down(key, self.keys.contains(ShiftState::ALT));
+            }
+            Input::KeyUp(key) => {
+                let bit = match key {
+                    VK_SHIFT => ShiftState::SHIFT,
+                    VK_CONTROL => ShiftState::CTRL,
+                    VK_MENU => ShiftState::ALT,
+                    _ => ShiftState::default(),
+                };
+                self.keys = ShiftState(self.keys.0 & !bit.0);
+            }
+            _ => {}
+        }
+        if let Some(n) = r.sound {
+            let settings = self.game.as_ref().map_or(self.options, |g| g.forms.settings);
+            self.sound.borrow_mut().play(n.number(), &settings);
+        }
+        if let Some(answer) = r.answer {
+            self.message_answered(answer);
+        } else if r.repaint {
+            self.repaint();
+        }
+    }
+
+    /// The message box answered `r`: it closes, and what it was for
+    /// goes on.
+    fn message_answered(&mut self, r: ModalResult) {
+        let Some(m) = self.message.take() else { return };
+        match m.then {
+            AfterMessage::Nothing => {}
+            AfterMessage::Delete(name) => {
+                // en 1040:1190: only OK erases.
+                if r == ModalResult::Ok {
+                    self.delete_game(&name);
+                }
+            }
+            AfterMessage::InsertCd => {
+                // en 1010:3671: Cancel ends the program (`Halt`), OK
+                // looks again.
+                if r == ModalResult::Cancel {
+                    self.quit = true;
+                } else {
+                    self.wait_for_cd();
+                }
+            }
+        }
+        self.repaint();
+    }
+
+    /// `Screen.Cursor := crHourGlass` around work on the files (en
+    /// 1040:0f11, en 1040:1069, en 1040:1198) and back: the work takes no
+    /// time here, so the hourglass shows for the next frame.
+    fn hourglass(&mut self) {
+        self.cursor = Cursor::HourGlass;
+        self.cursor_updates = 2;
+    }
+
+    /// The file menu's "Löschen" after OK: the game's file is erased and
+    /// the list filled again, under the hourglass. The port only erases
+    /// the player's own files, never the game's `MAPS\`. // en 1040:1198
+    fn delete_game(&mut self, name: &[u8]) {
+        self.hourglass();
+        match self.saves.delete(name) {
+            Ok(Some(path)) => println!("deleted {}", path.display()),
+            Ok(None) => eprintln!("{}: not one of the player's games", String::from_utf8_lossy(name)),
+            Err(e) => eprintln!("can't delete {}: {e}", String::from_utf8_lossy(name)),
+        }
+        let games = self.saves.games(self.enhance.view);
+        if let Some(game) = &mut self.game {
+            game.file_menu.menu.set_games(games);
         }
     }
 
@@ -1747,8 +1980,10 @@ impl Holiday {
             Some(dateimenue::Action::Close) => game.file_menu.visible = false,
             Some(dateimenue::Action::Load(name)) => match self.saves.read(&name) {
                 // 1040:0f27: load_map in the middle of the game, a command
-                // to the world.
+                // to the world, under the hourglass (en 1040:1069).
                 Ok(map) => {
+                    self.cursor = Cursor::HourGlass;
+                    self.cursor_updates = 2;
                     if World::from_map(&map).is_ok() {
                         game.view_rest = MapView::from_map(&map).unported;
                         game.forms.loading_settings = Some(game.forms.settings.with_map(&map));
@@ -1761,7 +1996,9 @@ impl Holiday {
                 Err(e) => eprintln!("{e}"),
             },
             Some(dateimenue::Action::Save(name)) => {
-                // 1040:0e03
+                // 1040:0e03, under the hourglass (en 1040:0f11).
+                self.cursor = Cursor::HourGlass;
+                self.cursor_updates = 2;
                 match self.saves.write(&name, &game.map()) {
                     Ok(path) => println!("saved {}", path.display()),
                     Err(e) => eprintln!("can't save {}: {e}", String::from_utf8_lossy(&name)),
@@ -1771,26 +2008,22 @@ impl Holiday {
                     game.file_menu.menu.set_games(games);
                 }
             }
-            // The message box (`MessageDlg`) isn't ported; its text, in
-            // the view's language, goes to the log. // en 1040:0eef
+            // `MessageDlg(…, mtError, [mbOK], 0)` with the message in the
+            // view's language. // 1040:0e03, en 1040:0eef
             Some(dateimenue::Action::InvalidName) => {
                 let text = dateimenue::invalid_name_text(game.info.land);
-                eprintln!("{}", text.iter().map(|&b| char::from(b)).collect::<String>());
+                self.open_message(text, DlgType::Error, &[Btn::Ok], AfterMessage::Nothing);
             }
+            // `MessageDlg(…, mtConfirmation, [mbOK, mbCancel], 0)`: OK
+            // erases the game ([`Holiday::delete_game`]). // en 1040:110c
             Some(dateimenue::Action::Delete(name)) => {
-                // en 1040:110c: the original asks first
-                // ([`dateimenue::delete_question`] in a `MessageDlg`,
-                // which isn't ported); the port only erases the player's
-                // own file, never the game's `MAPS\`.
-                match self.saves.delete(&name) {
-                    Ok(Some(path)) => println!("deleted {}", path.display()),
-                    Ok(None) => eprintln!("{}: not one of the player's games", String::from_utf8_lossy(&name)),
-                    Err(e) => eprintln!("can't delete {}: {e}", String::from_utf8_lossy(&name)),
-                }
-                let games = self.saves.games(self.enhance.view);
-                if let Some(game) = &mut self.game {
-                    game.file_menu.menu.set_games(games);
-                }
+                let text = dateimenue::delete_question(game.info.land);
+                self.open_message(
+                    text,
+                    DlgType::Confirmation,
+                    &[Btn::Ok, Btn::Cancel],
+                    AfterMessage::Delete(name),
+                );
             }
             Some(dateimenue::Action::NewGame) => self.back_to_start_menu(),
             Some(dateimenue::Action::Quit) => {
@@ -1805,26 +2038,78 @@ impl Holiday {
         }
     }
 
-    /// "Neues Spiel": saves `Last.map`, ends the game and shows a new
-    /// start menu, set from the globals the game left, with `holiday.mid`
-    /// again. Reloading the data (1030:38a3) isn't ported but for the
-    /// sounds. // 1010:25dc
+    /// "Neues Spiel" (`back_to_start_menu`, en 1010:3582, de 1010:25dc):
+    /// saves `Last.map`, hides the game's forms and frees the game
+    /// (en 1038:3657, de 1030:3974: the clock, the forms, the people, the
+    /// computers, the news, the music closed, ...), then waits for the
+    /// CD ([`Holiday::wait_for_cd`]) and shows a new start menu
+    /// ([`Holiday::new_start_menu`]).
     fn back_to_start_menu(&mut self) {
         let Some(game) = self.game.take() else { return };
         if let Err(e) = self.saves.write(hintergrund::LAST_MAP.as_bytes(), &game.map()) {
             eprintln!("can't save {}: {e}", hintergrund::LAST_MAP);
         }
-        self.options = game.forms.settings;
-        // 1030:38a3 opens the sounds again (10a0:2f5e), and `holiday.mid`
-        // plays from the start.
         {
             let mut s = self.sound.borrow_mut();
-            s.reset_effects();
             s.speaker.close();
             s.stop_film();
+            s.close_music();
+        }
+        // What `init_game_defaults` leaves for the start menu
+        // (en 1048:2a05): the opponents and the name.
+        self.next_menu = Some(Settings::after_game(&game.world, self.last_player_name.clone()));
+        // And the options: `init_game_defaults` and `init_sound`.
+        let sound_on = self.sound.borrow().effects.enabled;
+        self.options = game.forms.settings.after_game(sound_on);
+        drop(game);
+        self.repaint();
+        self.wait_for_cd();
+    }
+
+    /// The later build's wait for the CD before the start menu
+    /// (en 1010:35e4): until the film directory has `surfwm.avi`, a
+    /// message box asks for it (`MessageDlg(…, mtInformation, [mbOK,
+    /// mbCancel], 0)`, [`AfterMessage::InsertCd`]). The original asks in
+    /// English whatever its `land` (en 1010:3540; the German text,
+    /// en 1010:3502, is in the build unused); the port asks in the view's
+    /// language. v1.0 doesn't wait.
+    fn wait_for_cd(&mut self) {
+        // BUG(original): the later build asks in English whatever its `land`; the port asks in the view's language.
+        if self.sound.borrow().film_exists(setup::INSERT_CD_FILM) {
+            self.new_start_menu();
+        } else {
+            let text = match self.language() {
+                lang::Language::De => setup::INSERT_CD,
+                lang::Language::En => setup::INSERT_CD_EN,
+            };
+            self.open_message(
+                text,
+                DlgType::Information,
+                &[Btn::Ok, Btn::Cancel],
+                AfterMessage::InsertCd,
+            );
+        }
+    }
+
+    /// The rest of `back_to_start_menu` once the CD is there: the
+    /// globals back to a new game's (en 1048:2a05: `init_game_defaults`,
+    /// en 1000:22b4, which sets the start menu's island, difficulty,
+    /// scenario and colours and the options back; `clear_game_flags`;
+    /// the spectators' flag), the data reloaded (en 1038:3586, de
+    /// 1030:38a3: `Randomize`, the game's tables and texts, `init_sound`,
+    /// which empties the sounds and sets the volumes to the system's),
+    /// `holiday.mid` from its start and a new `TStartform` set from the
+    /// globals (`startform_init`, en 1058:378f). So a second game starts
+    /// as the first did; the port's world and tables are made anew for
+    /// each game anyway, and `RandSeed` is drawn when it starts.
+    fn new_start_menu(&mut self) {
+        let settings = self.next_menu.take().unwrap_or_default();
+        {
+            let mut s = self.sound.borrow_mut();
+            s.reset_effects(); // `init_sound`, en 1040:3c33
             s.intro_music();
         }
-        self.start = start_menu(&self.dir, &self.exe, Settings::from_world(&game.world));
+        self.start = start_menu(&self.dir, &self.exe, settings);
         self.start.menu.enhance = self.enhance.view;
         self.start.show(self.size);
         self.repaint();
@@ -1858,7 +2143,9 @@ impl Holiday {
     }
 
     /// State 1120 and on: the film stops and closes, the session takes
-    /// the wave device back (10a0:254f), and the game starts.
+    /// the wave device back (10a0:254f), and state 1200 shows the
+    /// progress window (`TWasNunForm`, en 1028:3b3c); the game is set up
+    /// over the next frames ([`Holiday::advance_loading`]).
     fn start_pending(&mut self) {
         {
             let mut s = self.sound.borrow_mut();
@@ -1866,25 +2153,120 @@ impl Holiday {
             s.effects_on();
         }
         self.overlay = None;
-        let high = forms::high_scores(&self.dir, &self.saves.high_scores());
-        match self.pending.take() {
-            Some(Pending::Start { scenario }) => {
-                self.game = Some(start_game(
-                    &self.dir,
-                    &self.exe,
-                    self.start.menu.settings(),
-                    scenario,
-                    self.options,
-                    high,
-                    &self.sound,
-                    self.size,
-                    &self.enhance,
-                ));
+        let Some(pending) = self.pending.take() else { return };
+        let form = WasNunForm::show(
+            bitmaps(&self.dir, &wasnunform::BITMAP_FILES),
+            wasnun_texts(&self.dir),
+            &self.font,
+            self.size,
+        );
+        self.loading = Some(Loading {
+            form,
+            step: LoadStep::Shown,
+            pending: Some(pending),
+            game: None,
+        });
+        self.repaint();
+    }
+
+    /// One step of states 1210 to 1500 a frame, each shown on the
+    /// progress window as the original shows it when its work is done
+    /// (`docs/startup.md`). The port's work takes a frame or so, all of
+    /// it after the step of state 1210 is drawn: its page stays on the
+    /// screen while the game is set up. Then the window goes and the main
+    /// screen shows. // en 1010:0591
+    fn advance_loading(&mut self) {
+        let Some(mut loading) = self.loading.take() else { return };
+        match loading.step {
+            LoadStep::Shown => {
+                // State 1210: `Screen.Cursor := crNoDrop` around
+                // `generate_island` (en 1038:35f1), which shows page 1 and
+                // 5 % before it makes an island, page 3 and 100 % once it
+                // has cleared the map for a scenario or a saved game
+                // (en 10b8:52d4).
+                self.cursor = Cursor::NoDrop;
+                let new_island = match &loading.pending {
+                    Some(Pending::Start { scenario }) => {
+                        hintergrund::new_island(self.start.menu.settings(), *scenario) == Island::Generated
+                    }
+                    _ => false,
+                };
+                if new_island {
+                    loading.form.set_page(wasnunform::page::NEW_MAP, &self.font);
+                    loading.form.set_percent(5, &self.font);
+                } else {
+                    loading.form.set_page(wasnunform::page::INIT_MAP, &self.font);
+                    loading.form.set_percent(100, &self.font);
+                }
+                loading.step = LoadStep::Map;
             }
-            Some(Pending::Load(map)) => {
+            LoadStep::Map => {
+                // The port's work, then state 1220's page 2 at 100 %
+                // (`load_game_data`, en 1038:3615, with `crNoDrop` in
+                // `load_game_rest`, en 1038:33c8).
+                loading.game = loading.pending.take().map(|p| self.set_up_game(p));
+                loading.form.set_page(wasnunform::page::INIT_GAME, &self.font);
+                loading.form.set_percent(100, &self.font);
+                loading.step = LoadStep::Data;
+            }
+            LoadStep::Data => {
+                // State 1500: page 0 at 100 % around `load_map`; the cursor
+                // is back (en 1038:357f).
+                self.cursor = Cursor::Default;
+                loading.form.set_page(wasnunform::page::LOAD_MAP, &self.font);
+                loading.form.set_percent(100, &self.font);
+                loading.step = LoadStep::Setup;
+            }
+            LoadStep::Setup => {
+                // The window hides and goes, the main screen shows
+                // (`wasnun_hide`, en 1028:3baa; `hauptschirm_show`).
+                self.game = loading.game.take();
+                // `big_map`'s main screen fills the desktop, which can be
+                // a little bigger or smaller than the screen size.
+                let (size, desktop) = (self.size, self.desktop);
+                let notes = self.enhance_notes();
+                if let Some(game) = &mut self.game {
+                    game.resize(size, desktop);
+                    game.forms.enhance_notes = notes;
+                }
+                self.repaint();
+                return;
+            }
+        }
+        self.loading = Some(loading);
+        self.repaint();
+    }
+
+    /// Runs states 1210 to 1500 to their end at once.
+    #[cfg(test)]
+    fn finish_loading(&mut self) {
+        while self.loading.is_some() {
+            self.advance_loading();
+        }
+    }
+
+    /// The game `pending` sets up: a new island or a scenario from the
+    /// start menu's settings, or a saved game. // en 1010:0591
+    fn set_up_game(&mut self, pending: Pending) -> Game {
+        let high = forms::high_scores(&self.dir, &self.saves.high_scores());
+        let seed = (self.seed)();
+        match pending {
+            Pending::Start { scenario } => start_game_seeded(
+                &self.dir,
+                &self.exe,
+                self.start.menu.settings(),
+                scenario,
+                self.options,
+                high,
+                &self.sound,
+                self.size,
+                &self.enhance,
+                seed,
+            ),
+            Pending::Load(map) => {
                 let settings = self.start.menu.settings().clone();
                 let options = self.options.with_map(&map);
-                self.game = Some(load_game(
+                load_game(
                     &self.dir,
                     &self.exe,
                     &map,
@@ -1894,19 +2276,10 @@ impl Holiday {
                     &self.sound,
                     self.size,
                     &self.enhance,
-                ));
+                    seed,
+                )
             }
-            None => {}
         }
-        // `big_map`'s main screen fills the desktop, which can be a
-        // little bigger or smaller than the screen size.
-        let (size, desktop) = (self.size, self.desktop);
-        let notes = self.enhance_notes();
-        if let Some(game) = &mut self.game {
-            game.resize(size, desktop);
-            game.forms.enhance_notes = notes;
-        }
-        self.repaint();
     }
 
     /// State 420: the intro's film stops and closes.
@@ -1984,8 +2357,10 @@ impl Holiday {
         }
         match response.action {
             Some(Action::Start { scenario }) => {
-                // `startform_start_click` hides the form, and hintergrund's
-                // states 1000-1500 start the game.
+                // `startform_start_click` keeps the name as
+                // `last_player_name`, hides the form, and hintergrund's
+                // states 1000-1500 start the game. // 1058:021a
+                self.last_player_name.clone_from(&self.start.menu.settings().name);
                 self.start.hide();
                 self.play_start_film(Pending::Start { scenario });
             }
@@ -2009,6 +2384,15 @@ impl App for Holiday {
     fn update(&mut self, elapsed: Duration) {
         let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         self.sound.borrow_mut().advance(ms);
+        if self.cursor_updates > 0 {
+            self.cursor_updates -= 1;
+            if self.cursor_updates == 0 {
+                self.cursor = Cursor::Default;
+            }
+        }
+        if self.loading.is_some() {
+            self.advance_loading();
+        }
         // `scroll_bars`: the start menu's scroll arrows held repeat.
         if self.start.visible() && self.load.is_none() && self.start.menu.scroll_held() {
             let response = self.start.menu.repeat(ms);
@@ -2040,6 +2424,18 @@ impl App for Holiday {
     }
 
     fn input(&mut self, input: Input) {
+        if let Input::MouseMove { x, y } | Input::MouseDown { x, y, .. } | Input::MouseUp { x, y, .. } = input {
+            self.mouse = (x, y);
+        }
+        if !matches!(input, Input::Close) && self.message.is_some() {
+            self.message_input(input);
+            return;
+        }
+        // States 1200 to 1500: the background form is disabled, and the
+        // progress window takes no input.
+        if !matches!(input, Input::Close) && self.loading.is_some() {
+            return;
+        }
         if !matches!(input, Input::Close) && self.intro_input(input) {
             return;
         }
@@ -2108,6 +2504,7 @@ impl App for Holiday {
                 height: u32::try_from(r.height()).unwrap_or(0),
                 rgb,
             }),
+            cursor: self.cursor_shape(),
         }
     }
 
@@ -2128,6 +2525,11 @@ impl App for Holiday {
 /// install's mixed (`TEXTE/Hausname.txt`).
 fn read(dir: &Path, name: &str) -> Vec<u8> {
     read_opt(dir, name).unwrap_or_else(|| panic!("can't read {}", dir.join(name).display()))
+}
+
+/// Whether `x`, `y` is in `r`.
+fn inside_rect(r: Rect, (x, y): (i32, i32)) -> bool {
+    (r.left..r.right).contains(&x) && (r.top..r.bottom).contains(&y)
 }
 
 /// [`read`], `None` for a file that isn't there.
@@ -2170,6 +2572,16 @@ fn bitmaps(dir: &Path, files: &[&str]) -> Vec<Surface> {
     files
         .iter()
         .map(|f| Surface::from_bitmap(&bitmap(dir, &format!("GRAFIK/{}", f.to_ascii_uppercase()))))
+        .collect()
+}
+
+/// The progress window's four lines of `TEXTE\WASNUN.TXT`, read line by
+/// line (`wasnun_load_texts`, en 1028:374a).
+fn wasnun_texts(dir: &Path) -> Vec<Vec<u8>> {
+    let data = read_opt(dir, &format!("TEXTE/{}", wasnunform::TEXT_FILE)).unwrap_or_default();
+    data.split(|&b| b == b'\n')
+        .map(|l| l.strip_suffix(b"\r").unwrap_or(l).to_vec())
+        .take(4)
         .collect()
 }
 
@@ -2326,8 +2738,20 @@ type Start = (World, Camera, Option<(i16, i16)>, Fields);
 /// scenario's map (and its view origin) or a generated island. Either
 /// plays with `fixes`, which a generated island is made with: some change
 /// the generator. // 1000:2466
+#[cfg(test)]
 fn start_world(dir: &Path, settings: &Settings, scenario_page: bool, options: &mut Options, fixes: Fixes) -> Start {
-    let seed = seed();
+    start_world_seeded(dir, settings, scenario_page, options, fixes, seed())
+}
+
+/// [`start_world`] with `RandSeed` as `Randomize` left it (`seed`).
+fn start_world_seeded(
+    dir: &Path,
+    settings: &Settings,
+    scenario_page: bool,
+    options: &mut Options,
+    fixes: Fixes,
+    seed: u32,
+) -> Start {
     match hintergrund::new_island(settings, scenario_page) {
         Island::Scenario(path) => {
             let map = SaveGame::parse(&read(dir, &path)).unwrap_or_else(|e| panic!("{path}: {e}"));
@@ -2390,11 +2814,12 @@ fn load_game(
     sound: &sound::Shared,
     size: (i32, i32),
     config: &Config,
+    seed: u32,
 ) -> Game {
     let data = hintergrund::GameData::load(|name| read_opt(dir, name)).unwrap_or_else(|e| panic!("{e}"));
     // The file's fixes; the player's for those it doesn't name (all of
     // them in an original file).
-    let world = hintergrund::load_saved_game(map, settings, &data, seed(), config.fixes)
+    let world = hintergrund::load_saved_game(map, settings, &data, seed, config.fixes)
         .unwrap_or_else(|e| panic!("the saved game: {e}"));
     let view = MapView::from_map(map);
     let camera = view.camera(&world);
@@ -2414,10 +2839,39 @@ fn load_game(
 
 /// What hintergrund's timer does from state 1200 to 1500 once Start is
 /// clicked and `titel.avi` is over, without the progress window
-/// (`TWasNunForm`) and what isn't ported yet: load the scenario's map or
-/// generate an island, set up the main screen and show it. // 1000:2466
+/// (`TWasNunForm`, [`Holiday::advance_loading`]): load the scenario's map
+/// or generate an island, set up the main screen and show it.
+/// // 1000:2466, en 1010:0591
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn start_game(
+    dir: &Path,
+    exe: &[u8],
+    settings: &Settings,
+    scenario_page: bool,
+    options: Options,
+    high: ScoreTable,
+    sound: &sound::Shared,
+    size: (i32, i32),
+    config: &Config,
+) -> Game {
+    start_game_seeded(
+        dir,
+        exe,
+        settings,
+        scenario_page,
+        options,
+        high,
+        sound,
+        size,
+        config,
+        seed(),
+    )
+}
+
+/// [`start_game`] with `RandSeed` as `Randomize` left it (`seed`).
+#[allow(clippy::too_many_arguments)]
+fn start_game_seeded(
     dir: &Path,
     exe: &[u8],
     settings: &Settings,
@@ -2427,10 +2881,11 @@ fn start_game(
     sound: &sound::Shared,
     size: (i32, i32),
     config: &Config,
+    seed: u32,
 ) -> Game {
     // A new game, and a scenario (whose file has no fixes), plays with
     // the player's, in place before the world is set up.
-    let start = start_world(dir, settings, scenario_page, &mut options, config.fixes);
+    let start = start_world_seeded(dir, settings, scenario_page, &mut options, config.fixes, seed);
     let mut game = make_game(dir, exe, start, options, high, sound, size, config.language);
     if scenario_page {
         game.tools.menu.start_scenario(game.world.scenario); // en 1018:015f
@@ -2826,6 +3281,8 @@ impl Holiday {
             image.visible = true;
         }
         let start = start_menu(&dir, &exe, Settings::default());
+        let font = font(&dir);
+        let message_bitmaps = bitmaps(&dir, &msgdlg::BITMAP_FILES);
         let mut holiday = Holiday {
             dir,
             exe,
@@ -2852,6 +3309,16 @@ impl Holiday {
             enhance,
             settings_file: None,
             command_line: false,
+            font,
+            message_bitmaps,
+            message: None,
+            loading: None,
+            cursor: Cursor::Default,
+            cursor_updates: 0,
+            mouse: (0, 0),
+            last_player_name: Settings::default().name,
+            next_menu: None,
+            seed,
         };
         holiday.start.menu.enhance = enhance.view;
         holiday.sound.borrow_mut().set_view_enhancements(enhance.view);
@@ -3141,6 +3608,7 @@ mod tests {
     /// `step3-oil-slick.png`. Skipped without the game's files in `orig/`.
     #[test]
     fn oil_slick_on_screen() {
+        const OIL_SEED: u32 = 7;
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orig");
         if !dir.join("GRAFIK").exists() {
             eprintln!("skipping: {} not found", dir.display());
@@ -3154,7 +3622,9 @@ mod tests {
         };
         let high = forms::high_scores(&dir, Path::new("/nonexistent/HIGHSCOR.WAV"));
         let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
-        let mut game = start_game(
+        // A fixed `RandSeed`: where the oil drifts by the time the view
+        // gets there is the random numbers'.
+        let mut game = start_game_seeded(
             &dir,
             &exe,
             &settings,
@@ -3164,6 +3634,7 @@ mod tests {
             &sound,
             SIZE,
             &Config::ORIGINAL,
+            OIL_SEED,
         );
         game.forms.settings.speech = false;
         // Only the scenario's oil slick, tomorrow.
@@ -4029,10 +4500,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    fn inside_rect(r: Rect, (x, y): (i32, i32)) -> bool {
-        (r.left..r.right).contains(&x) && (r.top..r.bottom).contains(&y)
     }
 
     /// The main screen's title bar drags it, kept on the screen, rolled up
@@ -4901,6 +5368,393 @@ mod tests {
                 let line = lang::latin1(&format!("{}: {}", i.key, i.description(language)));
                 assert!(font.wrap(&line, 616, game::text::Align::Left).len() <= 2, "{}", i.key);
             }
+        }
+    }
+
+    /// The two game folders, each in its own language and in the other
+    /// forced, with a tag for the screenshots; those not there skipped.
+    fn folders() -> Vec<(PathBuf, lang::Setting, &'static str)> {
+        use lang::{Language, Setting};
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        [
+            ("orig", Setting::Auto, "de"),
+            ("orig-en", Setting::Auto, "en"),
+            ("orig", Setting::Is(Language::En), "de-lang-en"),
+            ("orig-en", Setting::Is(Language::De), "en-lang-de"),
+        ]
+        .into_iter()
+        .filter_map(|(folder, setting, tag)| {
+            let dir = root.join(folder);
+            if dir.join("GRAFIK").exists() || dir.join("Grafik").exists() {
+                Some((dir, setting, tag))
+            } else {
+                eprintln!("skipping: {} not found", dir.display());
+                None
+            }
+        })
+        .collect()
+    }
+
+    /// A game with the forms `holiday_in_a_game` opens closed again, its
+    /// saves in a directory of its own.
+    fn quiet_game(dir: &Path, setting: lang::Setting, saves: &str) -> Holiday {
+        let mut config = Config::default();
+        config.view.set(enhance::Enhancement::BigMap, false);
+        config.view.set(enhance::Enhancement::WindowStacking, false);
+        config.language = setting;
+        let mut h = holiday_in_a_game(dir, SIZE, config);
+        let game = h.game.as_mut().unwrap();
+        for button in [3, 4, 5] {
+            game.click_button(button);
+        }
+        let _ = game.update(Duration::ZERO);
+        h.saves.dir = std::env::temp_dir().join(format!("holiday-{saves}-{}", std::process::id()));
+        std::fs::create_dir_all(&h.saves.dir).unwrap();
+        h.repaint();
+        h
+    }
+
+    fn key(h: &mut Holiday, key: u16) {
+        h.input(Input::KeyDown(key));
+        h.input(Input::KeyUp(key));
+    }
+
+    /// The file menu's message boxes: an invalid name's error, and the
+    /// question before "Löschen", which erases the game only on OK, in the
+    /// view's language; the box is modal. With `HOLIDAY_PNG` set they go
+    /// there as `step4-invalid-name-<tag>.png` and `step4-delete-<tag>.png`.
+    #[test]
+    fn file_menu_message_boxes() {
+        use lang::Language;
+        for (dir, setting, tag) in folders() {
+            let mut h = quiet_game(&dir, setting, &format!("msgbox-{tag}"));
+            let language = h.language();
+            h.game.as_mut().unwrap().forms.requests.push(Request::FileMenu);
+            h.process_requests();
+            assert!(h.game.as_ref().unwrap().file_menu.visible);
+            // An invalid name: an error with OK, which Enter answers.
+            h.file_menu_response(dateimenue::Response {
+                action: Some(dateimenue::Action::InvalidName),
+                ..dateimenue::Response::default()
+            });
+            let m = h.message.as_ref().expect("the error");
+            assert_eq!(m.then, AfterMessage::Nothing);
+            assert_eq!(m.dlg.buttons(), [Btn::Ok]);
+            write_png(&h, &format!("step4-invalid-name-{tag}"));
+            // Modal: the file menu doesn't get the keys meanwhile.
+            key(&mut h, 0x51);
+            assert!(h.message.is_some() && h.game.as_ref().unwrap().file_menu.visible);
+            key(&mut h, 0x0d);
+            assert!(h.message.is_none());
+            // "Löschen": Cancel (Escape) keeps the file, OK (Enter, the
+            // focused button) erases it.
+            let map = h.game.as_ref().unwrap().map();
+            let path = h.saves.write(b"TESTDEL", &map).unwrap();
+            let delete = || dateimenue::Response {
+                action: Some(dateimenue::Action::Delete(b"TESTDEL".to_vec())),
+                ..dateimenue::Response::default()
+            };
+            h.file_menu_response(delete());
+            let m = h.message.as_ref().expect("the question");
+            assert_eq!(m.dlg.buttons(), [Btn::Ok, Btn::Cancel]);
+            assert!(path.exists(), "nothing erased before the answer");
+            write_png(&h, &format!("step4-delete-{tag}"));
+            // Dragged by its title bar.
+            let before = h.message.as_ref().unwrap().dlg.bounds();
+            let grab = (before.left + 60, before.top + 5);
+            h.input(Input::MouseDown {
+                x: grab.0,
+                y: grab.1,
+                button: Button::Left,
+            });
+            h.input(Input::MouseMove {
+                x: grab.0 + 30,
+                y: grab.1 + 20,
+            });
+            h.input(Input::MouseUp {
+                x: grab.0 + 30,
+                y: grab.1 + 20,
+                button: Button::Left,
+            });
+            let after = h.message.as_ref().expect("still open").dlg.bounds();
+            assert_eq!((after.left, after.top), (before.left + 30, before.top + 20));
+            key(&mut h, 0x1b);
+            assert!(h.message.is_none() && path.exists());
+            h.file_menu_response(delete());
+            // The OK button clicked with the mouse.
+            let ok_at = middle(h.message.as_ref().unwrap().dlg.button_bounds(0));
+            h.input(Input::MouseDown {
+                x: ok_at.0,
+                y: ok_at.1,
+                button: Button::Left,
+            });
+            write_png(&h, &format!("step4-delete-pressed-{tag}"));
+            h.input(Input::MouseUp {
+                x: ok_at.0,
+                y: ok_at.1,
+                button: Button::Left,
+            });
+            assert!(h.message.is_none(), "answered");
+            assert!(!path.exists(), "erased on OK");
+            assert_eq!(h.cursor, Cursor::HourGlass, "under the hourglass");
+            h.update(Duration::ZERO);
+            h.update(Duration::ZERO);
+            assert_eq!(h.cursor, Cursor::Default);
+            // The texts are the view's.
+            let expected: &[u8] = match language {
+                Language::De => b"Wirklich loeschen?",
+                Language::En => b"Are you sure?",
+            };
+            assert_eq!(
+                dateimenue::delete_question(h.game.as_ref().unwrap().info.land),
+                expected
+            );
+            std::fs::remove_dir_all(&h.saves.dir).unwrap();
+        }
+    }
+
+    /// The auction's bid without the money: `FEHLER.TXT`'s error 0xe on the
+    /// status bar, as the original shows it (not a message box), and no
+    /// bid. With `HOLIDAY_PNG` set the screen goes there as
+    /// `step4-auction-no-money-<tag>.png`.
+    #[test]
+    fn auction_without_the_money() {
+        for (dir, setting, tag) in folders() {
+            let mut h = quiet_game(&dir, setting, &format!("auction-{tag}"));
+            let game = h.game.as_mut().unwrap();
+            game.world.auction.item = 9;
+            game.world.auction.price = 12_500;
+            game.world.auction.start_price = 12_500;
+            game.world.auction.joined = true;
+            game.world.auction.limits[0] = 0;
+            game.open_auction();
+            let commands = game.commands.len();
+            let (x, y) = (
+                game.auction.left + 248,
+                game.auction.top + auktionsform::LAYOUT[2].1.top + 20,
+            );
+            let press = Input::MouseDown {
+                x,
+                y,
+                button: Button::Left,
+            };
+            let release = Input::MouseUp {
+                x,
+                y,
+                button: Button::Left,
+            };
+            assert!(game.auction_mouse(press, ShiftState::LEFT, false));
+            assert!(game.auction_mouse(release, ShiftState::default(), true));
+            assert_eq!(game.commands.len(), commands, "no bid");
+            assert_eq!(game.screen.status_timeout(), 20, "the error on the status bar");
+            h.repaint();
+            assert!(h.message.is_none());
+            write_png(&h, &format!("step4-auction-no-money-{tag}"));
+        }
+    }
+
+    /// States 1200 to 1500: the progress window (`TWasNunForm`) shows a
+    /// step a frame, the island made after the frame of state 1210, with
+    /// `crNoDrop` meanwhile, then the main screen. With `HOLIDAY_PNG` set
+    /// the window at state 1210 goes there as `step4-progress-<tag>.png`.
+    #[test]
+    fn the_progress_window() {
+        for (dir, setting, tag) in folders() {
+            let sound = Sound::new(&dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+            let saves = Saves {
+                dir: std::env::temp_dir().join("holiday-progress-test-saves"),
+                game_maps: dir.join("MAPS"),
+            };
+            let config = Config {
+                language: setting,
+                ..Config::default()
+            };
+            let mut h = Holiday::new(dir.clone(), saves, sound, config);
+            h.resize(800, 600);
+            h.intro_step(Duration::ZERO, MENU_AT);
+            h.start.hide();
+            h.pending = Some(Pending::Start { scenario: false });
+            h.start_pending();
+            let form = |h: &Holiday| h.loading.as_ref().map(|l| (l.form.text().to_vec(), l.form.percent()));
+            assert_eq!(form(&h), Some((Vec::new(), 0)), "state 1200");
+            h.update(Duration::ZERO);
+            let texts = wasnun_texts(&dir);
+            assert_eq!(
+                form(&h),
+                Some((texts[wasnunform::page::NEW_MAP].clone(), 5)),
+                "state 1210"
+            );
+            assert_eq!(h.frame().cursor, Cursor::NoDrop);
+            assert!(h.game.is_none());
+            write_png(&h, &format!("step4-progress-{tag}"));
+            h.update(Duration::ZERO);
+            assert_eq!(
+                form(&h),
+                Some((texts[wasnunform::page::INIT_GAME].clone(), 100)),
+                "state 1220"
+            );
+            h.update(Duration::ZERO);
+            assert_eq!(
+                form(&h),
+                Some((texts[wasnunform::page::LOAD_MAP].clone(), 100)),
+                "state 1500"
+            );
+            assert_eq!(h.frame().cursor, Cursor::Default);
+            h.update(Duration::ZERO);
+            assert!(h.loading.is_none() && h.game.is_some());
+            // A scenario's state 1210 clears the map: page 3 at 100 %.
+            h.game = None;
+            h.start.menu = start_menu(
+                &dir,
+                &h.exe,
+                Settings {
+                    scenario: 2,
+                    ..Settings::default()
+                },
+            )
+            .menu;
+            h.pending = Some(Pending::Start { scenario: true });
+            h.start_pending();
+            h.update(Duration::ZERO);
+            assert_eq!(form(&h), Some((texts[wasnunform::page::INIT_MAP].clone(), 100)));
+            h.finish_loading();
+            assert_eq!(h.game.as_ref().unwrap().world.scenario, 2);
+        }
+    }
+
+    /// "Neues Spiel" puts back what the original's `back_to_start_menu`
+    /// does: the start menu's settings but the opponents and the name,
+    /// and the options, so the next game starts as it would on a fresh
+    /// start with that menu. With `HOLIDAY_PNG` set, the CD question goes
+    /// there as `step4-insert-cd-<tag>.png`.
+    /// A program on `dir` past the intro, its games' `RandSeed` fixed.
+    fn fixed_holiday(dir: &Path) -> Holiday {
+        let sound = Sound::new(dir, setup::Sound::Hi, platform::audio::Audio::silent()).shared();
+        let saves = Saves {
+            dir: std::env::temp_dir().join(format!("holiday-back-test-{}", std::process::id())),
+            game_maps: dir.join("MAPS"),
+        };
+        let mut h = Holiday::new(dir.to_path_buf(), saves, sound, Config::default());
+        h.seed = || 0x1996_0611;
+        h.resize(800, 600);
+        h.intro_step(Duration::ZERO, MENU_AT);
+        h
+    }
+
+    #[test]
+    fn back_to_the_start_menu_starts_clean() {
+        let Some(dir) = game_dir() else { return };
+        let new = || fixed_holiday(&dir);
+        let start = |h: &mut Holiday| {
+            h.respond(startform::Response {
+                action: Some(Action::Start { scenario: false }),
+                ..startform::Response::default()
+            });
+            h.start_pending();
+            h.finish_loading();
+        };
+        // The first game from a menu that isn't the defaults, played a
+        // little with the options changed.
+        let mut h = new();
+        let custom = Settings {
+            relief: 4,
+            land: 0,
+            rivers: 9,
+            difficulty: 2,
+            opponents: 3,
+            players: 4,
+            colours: [3, 1, 2, 4, 5, 6, 7, 8],
+            name: b"Tester".to_vec(),
+            ..Settings::default()
+        };
+        h.start = start_menu(&dir, &h.exe, custom);
+        h.start.show(h.size);
+        start(&mut h);
+        let game = h.game.as_mut().unwrap();
+        game.forms.settings.music = false;
+        game.forms.settings.news = [false; 4];
+        game.forms.settings.speech = false;
+        game.forms.settings.sound_volume = 30;
+        game.world.clock.paused = false;
+        let _ = game.update(Duration::from_millis(u64::from(TICK_MS) * 20));
+        h.back_to_start_menu();
+        assert!(h.message.is_none(), "the CD is there");
+        assert!(h.start.visible() && h.game.is_none());
+        // `init_game_defaults`: the defaults, but the opponents and the name.
+        let menu = h.start.menu.settings().clone();
+        assert_eq!(
+            menu,
+            Settings {
+                opponents: 3,
+                players: 4,
+                name: b"Tester".to_vec(),
+                ..Settings::default()
+            }
+        );
+        // The options: the defaults, but the speech.
+        assert_eq!(
+            h.options,
+            Options {
+                speech: false,
+                ..Options::default()
+            }
+        );
+        start(&mut h);
+        let second = h.game.take().unwrap();
+        // A fresh start with that menu and those options.
+        let mut fresh = new();
+        fresh.start = start_menu(&dir, &fresh.exe, menu);
+        fresh.start.show(fresh.size);
+        fresh.options.speech = false;
+        start(&mut fresh);
+        let first = fresh.game.take().unwrap();
+        assert_eq!(world_hash(&second.world), world_hash(&first.world));
+        assert_eq!(second.forms.settings, first.forms.settings);
+        assert_eq!(second.screen.camera(), first.screen.camera());
+        assert_eq!(second.tools.down, first.tools.down);
+        std::fs::remove_dir_all(&h.saves.dir).ok();
+    }
+
+    /// Going back to the start menu without the CD (the later build's
+    /// wait): OK looks again, Cancel ends the program; the question is in
+    /// the view's language. With `HOLIDAY_PNG` set it goes there as
+    /// `step4-insert-cd-<tag>.png`.
+    #[test]
+    fn waiting_for_the_cd() {
+        let Some(dir) = game_dir() else { return };
+        // Without the CD: OK looks again, Cancel ends the program.
+        for (setting, tag) in [
+            (lang::Setting::Auto, "de"),
+            (lang::Setting::Is(lang::Language::En), "de-lang-en"),
+        ] {
+            let mut h = fixed_holiday(&dir);
+            h.enhance.language = setting;
+            h.start.hide();
+            h.next_menu = Some(Settings::default());
+            h.open_message(
+                match h.language() {
+                    lang::Language::De => setup::INSERT_CD,
+                    lang::Language::En => setup::INSERT_CD_EN,
+                },
+                DlgType::Information,
+                &[Btn::Ok, Btn::Cancel],
+                AfterMessage::InsertCd,
+            );
+            write_png(&h, &format!("step4-insert-cd-{tag}"));
+            key(&mut h, 0x0d);
+            assert!(
+                h.message.is_none() && h.start.visible() && !h.quit,
+                "OK: the CD is there now"
+            );
+            h.start.hide();
+            h.open_message(
+                setup::INSERT_CD,
+                DlgType::Information,
+                &[Btn::Ok, Btn::Cancel],
+                AfterMessage::InsertCd,
+            );
+            key(&mut h, 0x1b);
+            assert!(h.quit, "Cancel: Halt");
         }
     }
 }

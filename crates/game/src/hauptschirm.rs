@@ -1071,6 +1071,12 @@ impl Hauptschirm {
         self.draw_status(text, font);
     }
 
+    /// The ticks the status bar's message still stays. // 1110:009a
+    #[must_use]
+    pub fn status_timeout(&self) -> i16 {
+        self.status_timeout
+    }
+
     fn draw_status(&mut self, text: &[u8], font: &Font) {
         // 1030:21a8: the bar's picture back over its first 220 pixels.
         let all = self.status.bounds();

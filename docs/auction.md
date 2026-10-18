@@ -180,7 +180,10 @@ price) − price) × Random(1000) div 999`.
   timer tries again 10 ticks later ([sound.md](sound.md#the-tvs-speaker)).
   The sounds are the world's `Tick::sounds`; the three calls' files
   aren't where the game looks for them, so they're silent.
-- Not ported: the error message for a bid without the money; the build
+- A bid without the money shows `FEHLER.TXT`'s error 0xe on the main
+  screen's status bar with sound 0xc (`show_error_message`, 1030:232d,
+  from 1028:1e23, en 1028:301f), not a message box: the view's
+  (`Auktionsform::status_error`), no command. Not ported: the build
   menu's part of `make_available`.
 
 The bugs kept are in [original-bugs.md](original-bugs.md).

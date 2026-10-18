@@ -1,8 +1,11 @@
-# Port architecture (planned)
+# Port architecture
 
 The port is written in **Rust** (stable, edition 2024), as a Cargo workspace.
-Targets are Linux (Wayland and X11), macOS, and the browser (WebAssembly). Nothing
-here is built yet; this is the plan the first code should follow.
+Targets are Linux (Wayland and X11), macOS, and the browser (WebAssembly).
+This started as the plan the first code followed; the port is built along
+it, and what isn't built yet is marked: there's no web build, no `net`
+crate, and the port reads a folder with the game's files, not the CD
+image itself.
 
 ## What the original needs from the platform
 
@@ -36,19 +39,19 @@ Rejected:
 - `softbuffer`: no GPU scaling.
 - Bevy/macroquad: they want to own the game loop and the asset model.
 
-## Workspace (planned)
+## Workspace
 
 ```
-crates/formats/    pure parsers, no I/O: ISO9660, the installer archive (LZHUF), NE resources,
-                   DFM (TPF0), BMP, the DATA/TEXTE tables, maps/scenarios, high scores,
-                   AVI/Cinepak/MS ADPCM, WAV
+crates/formats/    pure parsers, no I/O: NE resources, DFM (TPF0), BMP, the DATA/TEXTE
+                   tables, maps/scenarios, high scores, SETUP.DAT, AVI/Cinepak/MS ADPCM
+                   (planned: ISO9660 and the installer archive, which tools/ reads now)
 crates/vcl/        the subset of Delphi's VCL/RTL the game uses: components built from the
                    DFMs, TCanvas over the indexed framebuffer, timers, modal flows,
                    ShortString, Delphi's Random
 crates/game/       the decompiled game, one module per original unit; no platform deps.
                    World (simulation, commands) and View (one player's UI) kept apart
 crates/platform/   winit/wgpu/cpal glue, the data source and storage backends
-crates/holiday/    the binary (native) and the wasm entry point
+crates/holiday/    the binary (native; the wasm entry point is planned)
 crates/net/        later: lockstep session, transport trait, WebSocket relay client
 ```
 
@@ -91,12 +94,15 @@ files, storage, clock), so they run headless in tests.
   boundary by `World::apply`. Computer players produce the same commands from
   their AI. The UI never writes to `World` directly. In single player the
   command queue is local and the extra step costs nothing.
-- **Modal flows are `async`, in the UI only.** Win16 code blocks freely:
-  `ShowModal`, `MessageBox`, `Application.ProcessMessages` loops, waiting for a
-  video to end. The browser can't block. Instead of rewriting those routines as
-  state machines, the port writes them as `async fn`, with `.await` where the
-  original blocked. A tiny single-threaded executor is polled once per frame by
-  the platform loop. Only `View` code awaits. The simulation never waits on a
+- **Modal flows are view state, in the UI only.** Win16 code blocks freely:
+  `ShowModal`, `MessageDlg`, `Application.ProcessMessages` loops, waiting for a
+  video to end. The browser can't block. (The plan was to write these as
+  `async fn` polled once a frame; the port didn't need it.) A modal form is
+  the view's state that takes the input until it answers, and what the
+  original did after the blocking call runs on the answer: the message
+  boxes (`game::msgdlg`), the file menu, the quit question. Waiting for a
+  film is a state the frame looks at, and the work of states 1200–1500 is
+  done a step a frame under the progress window. The simulation never waits on a
   dialog: where the original stops the simulation for one player's decision,
   that becomes a world state (paused, or waiting for that player's command), not
   a blocked call stack.
@@ -164,14 +170,15 @@ files, storage, clock), so they run headless in tests.
   keeps its own settings file (`settings.ini` in the platform's config
   directory, `platform::settings`; browser storage on the web), separate from
   anything the original reads.
-- **Game data.** Players point the port at the CD: an ISO image, or a folder
-  with the CD's files. It reads the ISO and the installer's `_FILES.1` itself, so
-  players don't need the Python tools; those stay for research. File lookup is
-  case-insensitive. In the browser the user picks the ISO once and it's kept in
+- **Game data.** Players point the port at a folder with the game's files
+  (now), or the CD's ISO image, whose installer's `_FILES.1` it would read
+  itself, so players don't need the Python tools (planned; those tools do
+  it now). File lookup is case-insensitive. In the browser the user picks the ISO once and it's kept in
   the Origin Private File System. Saves, high scores and settings go to the
   platform's data directory natively, and to browser storage on the web.
-- **Assets from the EXE** (DFMs, cursors, icon) are read from the user's
-  `HOLIDAY.EXE` at runtime and never committed.
+- **Assets from the EXE** (the DFMs, the VCL's button glyphs) are read from
+  the user's `HOLIDAY.EXE` at runtime and never committed. The mouse
+  pointers are the system's, in the shapes the game sets (`platform::Cursor`).
 
 ## Stretch goal: network multiplayer
 

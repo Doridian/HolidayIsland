@@ -9,8 +9,8 @@
 //! [`Helpform::show`] and [`Helpform::hide`] are the bubble; the forms'
 //! lookups give the text and where it goes: [`button_bar_tooltip`] for
 //! the button bar, and the text tables of the money menu
-//! ([`MONEY_MENU_TEXTS`]) and the overview map ([`OVERVIEW_TEXTS`]) for
-//! when those are ported.
+//! ([`MONEY_MENU_TEXTS`]) and the overview map ([`OVERVIEW_TEXTS`]),
+//! which aren't hooked to those forms yet.
 
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
