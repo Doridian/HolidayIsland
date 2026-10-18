@@ -33,7 +33,8 @@
 //! `holiday [--save-dir=DIR] [--soundfont=FILE.sf2] [--sound=hi|lo|off]
 //! [--films=hi|lo] [--no-audio] [--window-size=WxH] [--fullscreen|--windowed]
 //! [--ui-scale=N] [--lang=auto|de|en] [--original] [--enhance=KEY=on|off]
-//! [--enhancements] [--help] [GAME_DIR]` ([`USAGE`]), where `GAME_DIR` holds `HOLIDAY.EXE`,
+//! [--enhancements] [--host=ROOM|--join=ROOM ...] [--help] [GAME_DIR]`
+//! ([`USAGE`]; the network game's options are `network`'s), where `GAME_DIR` holds `HOLIDAY.EXE`,
 //! `GRAFIK`, `DATA` and the films and sounds (default `orig`); the texts
 //! are the port's own (`game::lang`, `lang/`). Saved games go to `DIR`
 //! (default `MAPS` in the platform's data directory,
@@ -52,6 +53,7 @@
 mod film;
 mod forms;
 mod loading;
+mod network;
 mod sound;
 mod stacking;
 mod upgrade;
@@ -340,6 +342,15 @@ struct Game {
     /// The TV's lights' random numbers with `fix.tv_lights`, the view's
     /// own instead of the world's `RandSeed`.
     lights_random: Random,
+    /// The seat this view plays: 1, the host's, but for a client that
+    /// joined a network game.
+    seat: u8,
+    /// A network game's session (`network`): the commands go to it, and
+    /// the clock runs on its goes.
+    net: Option<network::NetGame>,
+    /// The network game ended, and why: the game goes back to the start
+    /// menu (a client) or on alone (the host).
+    net_over: Option<String>,
 }
 
 impl Game {
@@ -355,6 +366,7 @@ impl Game {
         self.end_music_tick(ms);
         self.sound.borrow_mut().music_frame(&mut self.forms.settings);
         changed |= self.apply_commands();
+        changed |= self.net_poll();
         while self.since_tick >= tick {
             if self.clock_stopped() {
                 // The file menu, the pause, the options, the quit question
@@ -364,37 +376,28 @@ impl Game {
                 self.since_tick = Duration::ZERO;
                 break;
             }
+            // In a network game a tick runs only with the host's go.
+            let step = match &mut self.net {
+                None => None,
+                Some(net) => {
+                    let Some(step) = net.session.next_step(&self.world) else {
+                        self.since_tick = self.since_tick.min(tick);
+                        break;
+                    };
+                    Some(step)
+                }
+            };
             self.since_tick -= tick;
-            // Step 2: the status bar's message times out; step 3 the
-            // tooltips; step 8 the TV.
-            changed |= self.screen.status_tick(&self.font);
-            changed |= self.forms_clock_tick();
-            // A scroll bar held scrolls again (the `Tag`'s cases). The
-            // original does it after its simulation's steps and the
-            // building slice, before the people's; the port before the
-            // world's tick, which then sees the new view a step early.
-            if self.screen.bar_tick(&self.world, &self.tiles) {
-                self.view_moved();
-                changed = true;
-            }
-            // The original's people code reads the player's view.
-            // The original's 20 × 27 view's, with `big_map` too. With
-            // `fix.view_people` and `fix.view_news` nothing does.
-            if self.world.reads_viewpoint() {
-                self.world.set_viewpoint(self.screen.viewpoint());
-            }
-            let t = self.world.tick();
-            changed |= self.show(&t);
-            // With `fix.view_people`, the view's own people after the
-            // world's (1090:5293, 1090:2373).
-            let own = self.screen.people_tick(&self.world);
-            self.play(own);
-            // What the tick's forms asked of the world, before the next.
-            changed |= self.apply_commands();
-            if self.auction.visible && self.world.auction.open {
-                self.auction.draw_auctioneer(&self.world); // 1028:0221
-                changed = true;
-            }
+            changed |= self.clock_tick(step);
+            ticked = true;
+        }
+        // A client that fell behind (while its game loaded, say) catches
+        // up on the goes it has.
+        while let Some(net) = &mut self.net
+            && net.session.behind() > 0
+            && let Some(step) = net.session.next_step(&self.world)
+        {
+            changed |= self.clock_tick(Some(step));
             ticked = true;
         }
         changed |= self.auction.advance(ms, &self.world, &self.font, &self.info);
@@ -416,15 +419,111 @@ impl Game {
         changed || info
     }
 
+    /// One tick of the clock: the view's steps around the world's tick,
+    /// and in a network game first the go's commands (`step`), which
+    /// every peer applies alike.
+    fn clock_tick(&mut self, step: Option<net::Step>) -> bool {
+        let mut changed = false;
+        // Step 2: the status bar's message times out; step 3 the
+        // tooltips; step 8 the TV.
+        changed |= self.screen.status_tick(&self.font);
+        changed |= self.forms_clock_tick();
+        // A scroll bar held scrolls again (the `Tag`'s cases). The
+        // original does it after its simulation's steps and the
+        // building slice, before the people's; the port before the
+        // world's tick, which then sees the new view a step early.
+        if self.screen.bar_tick(&self.world, &self.tiles) {
+            self.view_moved();
+            changed = true;
+        }
+        if let Some(step) = step {
+            for command in step.commands {
+                let t = self.world.apply_client(command);
+                changed |= self.show(&t);
+            }
+            changed |= self.forms_after_commands();
+        }
+        // The original's people code reads the player's view.
+        // The original's 20 × 27 view's, with `big_map` too. With
+        // `fix.view_people` and `fix.view_news` nothing does.
+        if self.world.reads_viewpoint() {
+            self.world.set_viewpoint(self.screen.viewpoint());
+        }
+        let t = self.world.tick();
+        if let Some(net) = &mut self.net {
+            net.session.finish_step(&self.world);
+        }
+        changed |= self.show(&t);
+        // With `fix.view_people`, the view's own people after the
+        // world's (1090:5293, 1090:2373).
+        let own = self.screen.people_tick(&self.world);
+        self.play(own);
+        // What the tick's forms asked of the world, before the next.
+        changed |= self.apply_commands();
+        if self.auction.visible && self.world.auction.open {
+            self.auction.draw_auctioneer(&self.world); // 1028:0221
+            changed = true;
+        }
+        changed
+    }
+
     /// Applies the player's commands, and draws again what the forms show
-    /// of the world after them.
+    /// of the world after them. In a network game they go to the host
+    /// instead, which stamps them for a tick of every peer's.
     fn apply_commands(&mut self) -> bool {
         let mut changed = false;
         for command in std::mem::take(&mut self.commands) {
-            let t = self.world.apply(command);
-            changed |= self.show(&t);
+            if let Some(net) = &mut self.net {
+                net.session.submit(command.action);
+            } else {
+                let t = self.world.apply(command);
+                changed |= self.show(&t);
+            }
         }
         changed | self.forms_after_commands()
+    }
+
+    /// A network game's news: who came and went, a desync, the end of the
+    /// session. A host whose session ended plays on alone: its clients'
+    /// seats go to the computers, by its own commands.
+    fn net_poll(&mut self) -> bool {
+        let Some(net) = &mut self.net else { return false };
+        let events = net.session.poll(Some(&self.world));
+        let Some(why) = network::report(&events) else {
+            return false;
+        };
+        let host = net.session.is_host();
+        self.net = None;
+        if !host {
+            self.net_over = Some(why);
+            return false;
+        }
+        let away: Vec<_> = self
+            .world
+            .seats
+            .members()
+            .iter()
+            .filter(|m| m.present && m.client != self.world.seats.host())
+            .map(|m| m.client)
+            .collect();
+        for client in away {
+            self.commands.push(Command {
+                player: game::seats::HOST_SEAT,
+                action: command::Action::Seat(game::seats::SeatChange::Disconnect(client)),
+            });
+        }
+        self.apply_commands()
+    }
+
+    /// The view plays `seat`: its tools, forms and results are that
+    /// seat's.
+    fn set_seat(&mut self, seat: u8) {
+        self.seat = seat;
+        self.tools.seat = seat;
+        self.auction.seat = seat;
+        self.forms.money.seat = seat;
+        self.forms.infobox.seat = seat;
+        self.forms.umenu.seat = seat;
     }
 
     /// A form is up that stops the clock. Single human: with several
@@ -736,8 +835,16 @@ impl Game {
             self.screen.people.clear();
         }
         self.screen.people.adopt(&t.view_people);
-        self.tools
-            .world_changed(t, 1, &self.world, &self.font, &self.tiles, &self.info, view, self.size);
+        self.tools.world_changed(
+            t,
+            self.seat,
+            &self.world,
+            &self.font,
+            &self.tiles,
+            &self.info,
+            view,
+            self.size,
+        );
         self.show_tools();
         if t.loaded {
             // `load_map`'s windows (1010:08d7), before the units after it.
@@ -1301,6 +1408,9 @@ enum Pending {
     Start { scenario: bool },
     /// The load form's game.
     Load(SaveGame),
+    /// A network game's world, which this client joins, and the host's
+    /// snapshot it came from.
+    Join(Box<World>, Box<SaveGame>),
 }
 
 /// States 1200 to 1500 after `titel.avi`: the progress window
@@ -1404,6 +1514,14 @@ struct Holiday {
     next_menu: Option<Settings>,
     /// `Randomize`: where a game's `RandSeed` comes from.
     seed: fn() -> u32,
+    /// The network game the command line asked for (`network`): the
+    /// host's starts with its game, a client's at once.
+    net_args: Option<network::NetArgs>,
+    /// A client's session while it waits for the host's world.
+    joining: Option<network::NetSession>,
+    /// The game being set up is the one the client joins: it takes the
+    /// session.
+    join_loading: bool,
 }
 
 impl Holiday {
@@ -2129,6 +2247,72 @@ impl Holiday {
         self.new_start_menu();
     }
 
+    /// A game just set up: a network game's host connects to its room
+    /// now, and a client's session, which brought the world, goes with
+    /// the game, whose view plays the client's seat.
+    fn start_network_game(&mut self) {
+        let Some(game) = &mut self.game else { return };
+        if std::mem::take(&mut self.join_loading)
+            && let Some(session) = self.joining.take()
+        {
+            if let Some((_, seat)) = session.me() {
+                game.set_seat(seat);
+            }
+            game.net = Some(network::NetGame { session });
+            return;
+        }
+        let Some(args) = self.net_args.as_ref().filter(|a| a.role == network::Role::Host) else {
+            return;
+        };
+        match args.connect() {
+            Ok(session) => {
+                eprintln!("network: hosting room {} on {}", args.room, args.signal);
+                game.net = Some(network::NetGame { session });
+            }
+            Err(e) => eprintln!("network: can't host: {e}"),
+        }
+    }
+
+    /// A client waiting for the host: once the host's world comes, the
+    /// game is set up from it (states 1200 to 1500) and joins; if the
+    /// host turns it away or the connection ends, the program ends with
+    /// why.
+    fn poll_joining(&mut self) {
+        let Some(session) = &mut self.joining else { return };
+        // The goes wait in the session while the game is set up.
+        if self.loading.is_some() || self.pending.is_some() || self.game.is_some() {
+            return;
+        }
+        let events = session.poll(None);
+        if network::report(&events).is_some() {
+            self.joining = None;
+            self.quit = true;
+            return;
+        }
+        let Some((data, save)) = events.into_iter().find_map(|e| match e {
+            net::Event::Snapshot { data, save, .. } => Some((data, save)),
+            _ => None,
+        }) else {
+            return;
+        };
+        let fallback = self.language();
+        match network::joined_world(&self.dir, data, &save, fallback) {
+            Ok(world) => {
+                self.intro = Intro::Done;
+                self.load = None;
+                self.start.hide();
+                self.pending = Some(Pending::Join(Box::new(world), save));
+                self.join_loading = true;
+                self.start_pending();
+            }
+            Err(e) => {
+                eprintln!("network: {e}");
+                self.joining = None;
+                self.quit = true;
+            }
+        }
+    }
+
     /// The rest of `back_to_start_menu`: the
     /// globals back to a new game's (en 1048:2a05: `init_game_defaults`,
     /// en 1000:22b4, which sets the start menu's island, difficulty,
@@ -2221,6 +2405,7 @@ impl Holiday {
                 game.resize(size, desktop);
                 game.forms.enhance_notes = notes;
             }
+            self.start_network_game();
             self.repaint();
             return;
         };
@@ -2395,11 +2580,16 @@ impl App for Holiday {
                 self.respond(response);
             }
         }
+        self.poll_joining();
         if let Some(game) = &mut self.game
             && game.update(elapsed)
         {
             self.process_requests();
             self.repaint();
+        }
+        if self.game.as_ref().is_some_and(|g| g.net_over.is_some()) {
+            // A client's network game ended: back to the start menu.
+            self.back_to_start_menu();
         }
         let film_done = self.sound.borrow().film_done();
         match self.intro {
@@ -2911,6 +3101,22 @@ orig). The texts are the port's own, in German or English.
   --fullscreen, --windowed
   --ui-scale=N           1 to 4
   --help                 this
+
+A network game (docs/networking.md):
+  --host=ROOM            host the game started from the start menu in ROOM
+  --join=ROOM            join the game hosted in ROOM
+  --signal=URL           the signaling server (default ws://localhost:3536)
+  --seat=N               (joining) the seat to play, 1 to 8; another
+                         client's seat to share it; default the first
+                         computer's
+  --rejoin=ID            (joining) come back as client ID after a dropped
+                         connection
+  --stun=URL             a STUN server (stun:host:port); more than once for
+                         more
+  --turn=URL             a TURN server (turn:host:port or turns:...), for
+                         those who can't connect directly
+  --turn-user=NAME, --turn-password=SECRET
+                         the TURN server's credentials
 ";
 
 /// The command line's options.
@@ -2925,6 +3131,8 @@ struct Args {
     enhance: Config,
     /// `--original` or `--enhance=` was given.
     command_line: bool,
+    /// A network game, if one was asked for.
+    net: Option<network::NetArgs>,
 }
 
 /// The enhancements, one per line: key, whose, on or off in `config`, and
@@ -2996,12 +3204,16 @@ fn args() -> Args {
         settings_file: platform::settings::settings_file(),
         ..platform::WindowOptions::default()
     };
+    let mut net = network::Options::default();
     let fail = |message: &str| -> ! {
         eprintln!("{message}");
         std::process::exit(2);
     };
     for arg in std::env::args_os().skip(1) {
         let a = arg.to_str().unwrap_or_default();
+        if net.take(a).unwrap_or_else(|e| fail(&e)) {
+            continue;
+        }
         if let Some(size) = a.strip_prefix("--window-size=") {
             let parsed = size
                 .split_once(['x', 'X'])
@@ -3081,6 +3293,7 @@ fn args() -> Args {
         print!("{}", enhancement_list(&enhance));
         std::process::exit(0);
     }
+    let net = net.finish().unwrap_or_else(|e| fail(&e));
     Args {
         dir,
         save_dir,
@@ -3091,6 +3304,7 @@ fn args() -> Args {
         window,
         enhance,
         command_line: original || !overrides.is_empty(),
+        net,
     }
 }
 
@@ -3105,6 +3319,7 @@ fn main() {
         window,
         enhance,
         command_line,
+        net,
     } = args();
     let audio = if no_audio {
         platform::audio::Audio::silent()
@@ -3123,6 +3338,20 @@ fn main() {
     let mut holiday = Holiday::new(dir, saves, sound, enhance);
     holiday.settings_file.clone_from(&window.settings_file);
     holiday.command_line = command_line;
+    // A client connects at once and waits for the host's world.
+    if let Some(args) = net.as_ref().filter(|a| a.role == network::Role::Join) {
+        match args.connect() {
+            Ok(session) => {
+                eprintln!("network: waiting for the host of room {} on {}", args.room, args.signal);
+                holiday.joining = Some(session);
+            }
+            Err(e) => {
+                eprintln!("network: can't join: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    holiday.net_args = net;
     holiday.start_intro();
     if let Err(e) = platform::run("Holiday Island", window, holiday) {
         eprintln!("{e}");
@@ -3186,6 +3415,9 @@ impl Holiday {
             last_player_name: Settings::default().name,
             next_menu: None,
             seed,
+            net_args: None,
+            joining: None,
+            join_loading: false,
         };
         holiday.start.menu.enhance = enhance.view;
         holiday.sound.borrow_mut().set_view_enhancements(enhance.view);
@@ -3218,6 +3450,7 @@ mod tests {
     use super::*;
 
     mod leftovers;
+    mod network_game;
     mod saved_windows;
 
     /// The screen the older tests lay out for.

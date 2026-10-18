@@ -1,0 +1,23 @@
+[package]
+name = "server"
+version = "0.1.0"
+description = "The Holiday Island port's signaling server, for network games"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "holiday-server"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+axum = { version = "0.8", default-features = false, features = ["ws"] }
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+matchbox_protocol = { version = "0.14", features = ["json"] }
+matchbox_signaling = "0.14"
+serde_json = "1"
+tokio = { version = "1.53", features = ["rt-multi-thread", "net", "signal"] }
+
+[lints]
+workspace = true

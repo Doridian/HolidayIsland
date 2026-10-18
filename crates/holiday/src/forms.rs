@@ -1062,7 +1062,7 @@ impl Game {
             changed = true;
         }
         // The view's seat's results (with one human, the game's end).
-        if let Some(over) = t.results_for(game::seats::HOST_SEAT) {
+        if let Some(over) = t.results_for(self.seat) {
             self.game_over(&over);
             changed = true;
         }
@@ -1076,7 +1076,12 @@ impl Game {
         let results = Results::of(&self.world, over, self.info.currency_factor, self.info.language);
         if let Some(score) = over.score {
             let (d, m, y) = today();
-            let name = self.world.player_names.get(1).cloned().unwrap_or_default();
+            let name = self
+                .world
+                .player_names
+                .get(usize::from(self.seat))
+                .cloned()
+                .unwrap_or_default();
             let date = highscoreform::date_text(d, m, y, self.info.language);
             let r = self
                 .forms
@@ -1259,7 +1264,14 @@ impl Game {
             .into_iter()
             .partition(|a| matches!(a, command::Action::Speaker(_)));
         for action in speaker {
-            let _ = self.world.apply(Command { player: 1, action });
+            if self.net.is_some() {
+                // A network game's world ignores the speaker (several
+                // humans: `fix.tv_lights`, `fix.auction_speaker`), and
+                // changes only by the session's goes.
+                self.commands.push(Command { player: 1, action });
+            } else {
+                let _ = self.world.apply(Command { player: 1, action });
+            }
         }
         self.commands(actions);
         if r.shown {

@@ -1145,6 +1145,58 @@ impl World {
     }
 }
 
+/// The port's chunk's line of a snapshot ([`World::snapshot`]) that
+/// says whether the world had `fix.saved_state`, which the snapshot
+/// itself always has on.
+const SNAPSHOT_SAVED_STATE: &str = "snapshot.saved_state";
+
+impl World {
+    /// The world as a network game's host sends it to a client that
+    /// joins ([`World::load_snapshot`]): a saved game, with
+    /// `fix.saved_state` on whatever this world has, so that it keeps
+    /// all of the world, and a line that says whether the world had it.
+    /// The original's view fields are a default view's: each client has
+    /// its own. Reads the world and changes nothing.
+    #[must_use]
+    pub fn snapshot(&self) -> SaveGame {
+        let mut w = self.clone();
+        let had = w.fixes.has(Fix::SavedState);
+        w.fixes.set(Fix::SavedState, true);
+        let mut save = w.to_map(&MapView::default());
+        let mut lines = save.port_chunk().unwrap_or_default();
+        lines.push((SNAPSHOT_SAVED_STATE.to_owned(), u8::from(had).to_string()));
+        save.trailing = formats::savegame::make_port_chunk(lines.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        save
+    }
+
+    /// The world a [`World::snapshot`] holds, read over `self`, which
+    /// gives what no file holds: the tables from the game's files and
+    /// the folder's language. It's the snapshot's world as it was, the
+    /// seats too: unlike [`World::load_map`], which keeps the running
+    /// game's clients and brings the file's others back away, the
+    /// file's clients are there as the file has them, and
+    /// `fix.saved_state` is as the snapshot's world had it. A port
+    /// extension for joining a network game; not a command, since it
+    /// makes a client's first world rather than changing one.
+    ///
+    /// # Errors
+    /// If the file lacks a field the world needs.
+    pub fn load_snapshot(&self, save: &SaveGame) -> Result<World, crate::world::Error> {
+        let mut w = self.load_map(save)?;
+        if let Some(seats) = crate::seats::Seats::from_chunk(&save.trailing) {
+            w.seats = seats;
+        }
+        let had = save
+            .port_chunk()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|(k, _)| k == SNAPSHOT_SAVED_STATE)
+            .is_none_or(|(_, v)| v == "1");
+        w.fixes.set(Fix::SavedState, had);
+        Ok(w)
+    }
+}
+
 /// The prefix of the port's chunk's lines for the world's state the
 /// original's file loses (`fix.saved_state`, [`World::unsaved_state`]).
 const STATE: &str = "state.";

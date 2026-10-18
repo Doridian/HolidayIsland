@@ -9,8 +9,14 @@ publish.workspace = true
 [dependencies]
 formats = { path = "../formats" }
 game = { path = "../game" }
+net = { path = "../net" }
 platform = { path = "../platform" }
 vcl = { path = "../vcl" }
+
+[dev-dependencies]
+# The network game's test runs the signaling server in the test.
+server = { path = "../server" }
+tokio = { version = "1.53", features = ["rt-multi-thread"] }
 
 [lints]
 workspace = true

@@ -3,9 +3,9 @@
 The port is written in **Rust** (stable, edition 2024), as a Cargo workspace.
 Targets are Linux (Wayland and X11), macOS, and the browser (WebAssembly).
 This started as the plan the first code followed; the port is built along
-it, and what isn't built yet is marked: there's no web build, no `net`
-crate, and the port reads a folder with the game's files, not the CD
-image itself.
+it, and what isn't built yet is marked: there's no web build, network
+games are native only and started from the command line, and the port
+reads a folder with the game's files, not the CD image itself.
 
 ## What the original needs from the platform
 
@@ -52,7 +52,10 @@ crates/game/       the decompiled game, one module per original unit; no platfor
                    World (simulation, commands) and View (one player's UI) kept apart
 crates/platform/   winit/wgpu/cpal glue, the data source and storage backends
 crates/holiday/    the binary (native; the wasm entry point is planned)
-crates/net/        later: lockstep session, transport trait, WebSocket relay client
+crates/net/        network games: the transport trait, the WebRTC transport (matchbox),
+                   an in-memory one for tests, the lockstep session, the wire format
+                   (planned: a WebSocket relay transport as a fallback)
+crates/server/     holiday-server, the signaling server the peers find each other on
 lang/<code>/       the texts of each language (TEXTE/, UPGRADE/, strings.toml), embedded
                    into crates/game (lang/README.md)
 ```
@@ -227,10 +230,13 @@ simulation games (Age of Empires, OpenTTD):
   command log from that point.
 - Each peer sends a hash of `World` every few ticks. A mismatch is a desync bug,
   and the command log reproduces it.
-- Transport: browsers can only use WebSocket and WebRTC, so the baseline is a
-  small relay server, WebSocket for both native and web clients. Peer-to-peer
-  WebRTC data channels are a later option. The game talks to a transport trait,
-  not to sockets.
+- Transport: browsers can only use WebSocket and WebRTC. The port uses
+  WebRTC data channels (matchbox: the same API natively and in the
+  browser), each client connected to the host, with a small signaling
+  server to find each other and TURN (coturn) for players who can't
+  connect directly. The game talks to a transport trait, not to sockets,
+  so a WebSocket relay can be added as a fallback
+  ([networking.md](networking.md)).
 - All world state is visible to every peer. That's fine for playing with
   friends; it isn't cheat-proof, and doesn't try to be.
 
@@ -270,8 +276,8 @@ Not in scope: matchmaking, accounts, or play with the original Windows version.
 
 ### Seats and clients
 
-Built in [`game::seats`](../crates/game/src/seats.rs), without any
-networking yet. A human is a **client**, with an id and a `View` of their
+Built in [`game::seats`](../crates/game/src/seats.rs); the network
+carries it ([below](#networking)). A human is a **client**, with an id and a `View` of their
 own; a **seat** is a player number (a colour), 1 to 8, and is either a
 computer's or one or more clients' (**co-op**: several people play the
 same colour together). The world keeps the clients, their seats and
@@ -364,6 +370,7 @@ only for one human, as the original.
 | 11 | The host (a client, in seat 1) owns the world's options: speed, pause, animations, "Auktion wartet", disasters and the fixes; the world ignores commands that change them from any other client, deterministically. Other humans take computer seats (2..=8), or join a seat for co-op. A computer plays a seat while all its clients are away, until one rejoins; quitting hands a seat over only when its last client leaves | Built (`World::apply_client`: the speed, the pause, `SetOption`, the auction timeout, `SetFix`, `Load`, `Seat`). The host's pause form stops the world for everyone (`Action::Pause`, `Clock::stopped`) |
 | 12 | Saves get a per-seat section (each seat's, and each client's, view) | Built: any client saves their own copy with their view in the original's fields; the seats' slots (`seat.<p>.`) are in the port's chunk, and with `World::to_map_with_views` every client's view (`view.<client>.`, `savegame::client_view`). Only the host loads in the middle of a game ([savegame.md](savegame.md#the-ports-chunk)) |
 | 13 | All of this is built before any networking; tests run several clients in one process | Built for 1–12 (`crates/game/tests/multiplayer.rs`) |
+| Network | WebRTC through matchbox, behind a transport trait (a WebSocket relay can be added as a fallback); a star, every client connected to the host on the reliable, ordered channel; coturn for TURN, the ICE servers configurable; host-authoritative lockstep with an input delay; native first, `crates/net` kept fit for wasm | Built natively, from the command line ([networking.md](networking.md)) |
 | Co-op | Two or more clients may play one seat: commands come from a client and act for its seat, each client has its own view, host-only is by client, and the forced fixes count clients | Built ([above](#seats-and-clients)) |
 
 Built in phase 2 too: the `p == 1` places now ask `World::is_human`
@@ -392,7 +399,44 @@ A human who takes a seat in the middle of a game takes the colour as
 its computer left it, money and loan too ([above](#seats-and-clients)).
 The high scores are each view's to enter, from its seat's results.
 
-Still open: the host's own quitting and the networking itself.
+Still open: the host's own quitting (the session ends cleanly for the
+clients; what should happen instead isn't decided).
+
+### Networking
+
+Built ([networking.md](networking.md)): `crates/net` and the signaling
+server `crates/server`, wired into the binary by command-line options
+(`--host=ROOM`, `--join=ROOM`, `--signal=`, `--stun=`, `--turn=`,
+`--seat=`, `--rejoin=`), native only so far.
+
+- **Transport**: a trait that never blocks, polled once a frame:
+  connect to a room as host or client, send to a peer, broadcast, poll
+  messages and peers coming and going. The WebRTC transport is
+  matchbox's socket on the reliable, ordered channel; natively its
+  message loop runs on a thread with a one-thread tokio runtime. The
+  topology is a star: each client connects to the host only, which the
+  signaling server arranges per room.
+- **Session**: host-authoritative lockstep. Clients send their commands
+  to the host, which stamps each with a tick 3 ticks on (the input
+  delay) and sends every tick's go, the list of `ClientCommand`s for it,
+  empty or not; every peer runs a tick only with its go, applying the
+  list through `World::apply_client`. The world changes only by those
+  commands, on every peer alike. Peers exchange the world's hash every
+  10 ticks (a hasher that's the same on every target) and report a
+  desync without stopping.
+- **Joining**: the host sends a joining client its world as a saved
+  game (`World::snapshot`, read back with `World::load_snapshot`, the
+  same world bit for bit) before the tick its `SeatChange::Join` is
+  carried out on, and the goes from that tick. A dropped connection is
+  `SeatChange::Disconnect`, coming back (`--rejoin=`) `Rejoin`, saying
+  goodbye `Leave`.
+- **Wire format**: hand-written, versioned, deterministic; frames of at
+  most 16 KiB.
+- Tests: the session over the in-memory transport (three peers, joins
+  in the middle of a game, a dropped connection and a rejoin, a desync
+  made on purpose, the hash checked after every step), and over WebRTC
+  on localhost through the signaling server run in the test, also
+  between two copies of the binary in one process.
 
 ## Open questions
 

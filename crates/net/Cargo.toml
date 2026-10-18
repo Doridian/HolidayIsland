@@ -1,0 +1,32 @@
+[package]
+name = "net"
+version = "0.1.0"
+description = "Network multiplayer for the Holiday Island port: transports and the lockstep session"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["matchbox"]
+# The WebRTC transport (matchbox). Without it only the in-memory transport
+# is there.
+matchbox = ["dep:matchbox_socket", "dep:tokio"]
+
+[dependencies]
+formats = { path = "../formats" }
+game = { path = "../game" }
+matchbox_socket = { version = "0.14", optional = true }
+
+# Natively the socket's message loop runs on a thread of its own, on a
+# small tokio runtime. The browser build will spawn it with
+# wasm-bindgen-futures instead (docs/networking.md).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.53", features = ["rt", "time"], optional = true }
+
+[dev-dependencies]
+server = { path = "../server" }
+tokio = { version = "1.53", features = ["rt-multi-thread"] }
+vcl = { path = "../vcl" }
+
+[lints]
+workspace = true

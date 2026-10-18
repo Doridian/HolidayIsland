@@ -117,6 +117,9 @@ enum Kind {
     Scenario { path: String, scenario_page: bool },
     /// A saved game.
     Load(Box<SaveGame>),
+    /// A network game's world, which a client joins, read from the
+    /// host's snapshot (`network::joined_world`), and the snapshot.
+    Join(Box<World>, Box<SaveGame>),
 }
 
 /// A game being set up.
@@ -178,6 +181,7 @@ impl Setup {
                 let options = options.with_map(&map);
                 (Kind::Load(Box::new(map)), options)
             }
+            Pending::Join(world, map) => (Kind::Join(world, map), options),
         };
         let mut steps: VecDeque<Step> = match kind {
             Kind::Island => (0..game::generator::STAGES.len()).map(Step::Island).collect(),
@@ -307,6 +311,13 @@ impl Setup {
                 let view = MapView::from_map(map);
                 let camera = view.camera(&world);
                 (world, camera, Some(camera.origin), view.unported)
+            }
+            // The host's world as it is: not a load, which would change
+            // it (`World::load_snapshot`).
+            Kind::Join(world, map) => {
+                let view = MapView::from_map(map);
+                let camera = view.camera(world);
+                ((**world).clone(), camera, Some(camera.origin), view.unported)
             }
         };
         self.start = Some((start, self.config.language));
@@ -569,6 +580,9 @@ impl GameParts {
         forms.compass.draw_knob(&mut screen.corner);
         Game {
             lights_random: Random::new(seed()),
+            seat: game::seats::HOST_SEAT,
+            net: None,
+            net_over: None,
             forms,
             // The caller sets the player's (`Setup::assemble`).
             stack: Stack::new(enhance::Enhancements::ORIGINAL),
