@@ -220,6 +220,158 @@ fn a_played_game_loads_and_plays_on() {
     assert!(SaveGame::parse(&bytes).is_err());
 }
 
+/// The first event of `kind` (and `start`, if given) fires tomorrow.
+fn fire_tomorrow(world: &mut World, kind: i32, start: Option<i32>) {
+    let day = world.days + 1;
+    let e = world
+        .events
+        .iter_mut()
+        .find(|e| e.kind == kind && e.running == 0 && start.is_none_or(|s| e.start == s))
+        .expect("an event of that kind");
+    (e.first_day, e.last_day, e.chance) = (day, day, 0x10000);
+}
+
+/// `map` loaded over `into` by the file menu's command, and what the
+/// command did.
+fn load_with_tick(into: &World, map: &SaveGame) -> (World, game::simulation::Tick) {
+    let mut loaded = into.clone();
+    let tick = loaded.apply(Command {
+        player: 1,
+        action: command::Action::Load(std::sync::Arc::new(map.clone())),
+    });
+    assert!(tick.loaded);
+    (loaded, tick)
+}
+
+/// `map` loaded over `into` by the file menu's command.
+fn load(into: &World, map: &SaveGame) -> World {
+    load_with_tick(into, map).0
+}
+
+/// `world` saved with `view` turned each way and loaded over `other`,
+/// with `fix.saved_state`: the file's people are placed for the view,
+/// without the door people's buildings, and with the view's own among
+/// them (a builder); the chunk has the rest, so the world loads as it
+/// was.
+fn turned_views_load(world: &World, other: &World, view: &MapView) {
+    let mut own = game::people::view::ViewPeople::new(1);
+    let mut builder = game::people::Person::default();
+    builder.set_kind(0x26);
+    builder.set_pos((100, 100));
+    own.adopt(&[builder]);
+    for rotation in 1..4 {
+        let viewpoint = game::people::Viewpoint {
+            rotation,
+            ..world.viewpoint
+        };
+        let turned = MapView {
+            people: Some((viewpoint, own.saved_with(world, viewpoint))),
+            ..view.clone()
+        };
+        let map = through_a_file(world, &turned);
+        assert!(
+            map.port_chunk().unwrap().iter().any(|(k, _)| k == "state.people.homes"),
+            "no door people"
+        );
+        let (got, tick) = load_with_tick(other, &map);
+        // The builder goes back to the view.
+        assert_eq!(
+            tick.view_people
+                .iter()
+                .map(game::people::Person::kind)
+                .collect::<Vec<_>>(),
+            [0x26]
+        );
+        let mut differ = differences(&got, world);
+        // The file's viewpoint is the view's.
+        differ.retain(|&f| f != "viewpoint");
+        assert_eq!(differ, Vec::<&str>::new(), "rotation {rotation}");
+        // Without the state's lines, the door people lose their
+        // buildings.
+        let mut lossy = map.clone();
+        lossy.trailing = game::enhance::world_chunk(world.fixes, world.language);
+        assert!(differences(&load(other, &lossy), world).contains(&"people"));
+    }
+}
+
+/// With `fix.saved_state` (every fix on): a game saved in the middle of
+/// play, with an oil slick going on, an auction open that the player
+/// joined and people about, loaded into another running game (the file
+/// menu's "Laden"), is the game that was saved, with nothing turned back
+/// by hand, and plays on bit for bit as it does. So is one saved with
+/// the view turned, whose people the file has as the view sees them.
+#[test]
+fn saved_state_plays_on_as_the_game_saved() {
+    let Some(data) = game_data() else { return };
+    // "König der Insel", which has people at its buildings' doors.
+    let n = SCENARIO_FILES.iter().position(|f| *f == "Koenig.his").unwrap();
+    let map = SaveGame::parse(&read(&format!("SZENARIO/{}", SCENARIO_FILES[n])).unwrap()).unwrap();
+    let settings = Settings {
+        scenario: u8::try_from(n + 1).unwrap(),
+        ..Settings::default()
+    };
+    let mut world = load_world(&map, &settings, true).unwrap();
+    world.set_loaded_fixes(Fixes::all_on());
+    world.tables = std::sync::Arc::clone(&data.tables);
+    world.random = Random::new(0x0bad_cafe);
+    for _ in 0..600 {
+        step(&mut world);
+    }
+    world.disasters = true;
+    fire_tomorrow(&mut world, 2, Some(5));
+    fire_tomorrow(&mut world, 0, None);
+    let start = world.days;
+    while !world.auction.open {
+        world.tick();
+        assert!(world.days < start + 5, "no auction");
+    }
+    world.apply(Command {
+        player: 1,
+        action: command::Action::Auction(auction::Action::Bid),
+    });
+    for _ in 0..5 {
+        world.tick();
+    }
+    assert!(world.oil_slick && world.auction.open && world.auction.joined);
+    assert!(world.auction.limits.iter().any(|&l| l != 0));
+    let about = world.people.records.iter().filter(|p| p.kind() != 0).count();
+    assert!(about > 0x23 + 30, "{about} people");
+    let view = MapView {
+        scroll: (240, 237),
+        ..MapView::default()
+    };
+    let parsed = through_a_file(&world, &view);
+
+    // Another game, played a while.
+    let mut other = new_world(&Settings::default(), &data, 0x5eed, Fixes::all_on());
+    for _ in 0..300 {
+        step(&mut other);
+    }
+    let mut loaded = load(&other, &parsed);
+    assert_eq!(differences(&loaded, &world), Vec::<&str>::new());
+    // From the start menu too, whatever its fixes: the file's.
+    let started = load_saved_game(&parsed, &Settings::default(), &data, 99, Fixes::ORIGINAL).unwrap();
+    assert_eq!(differences(&started, &world), Vec::<&str>::new());
+    // Without the chunk it's the other game's, as the original.
+    let mut original = parsed.clone();
+    original.trailing.clear();
+    let lossy = load(&other, &original);
+    assert_eq!(lossy.random, other.random);
+    assert!(differences(&lossy, &world).contains(&"random"));
+
+    turned_views_load(&world, &other, &view);
+
+    // Played on, the two stay the same: the auction to its end, then
+    // the player leaves the others.
+    for _ in 0..9000 {
+        step(&mut world);
+        step(&mut loaded);
+    }
+    assert!(world.days > start + 300 && !world.oil_slick);
+    assert_eq!(differences(&loaded, &world), Vec::<&str>::new());
+    assert_eq!(through_a_file(&loaded, &view), through_a_file(&world, &view));
+}
+
 /// "Altes Spiel fortsetzen": the saved game over a game set up as for
 /// Start, without an island. It has the file's world; what the file
 /// doesn't hold is the new set-up's, and it plays.

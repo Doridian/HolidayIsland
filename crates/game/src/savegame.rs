@@ -14,7 +14,9 @@
 //! as it was in memory: after a game was loaded from the start menu, as
 //! the start of a game set it up (states 1000–1500), and after one was
 //! loaded in the middle of a game, as that game left it.
-//! [`World::keep_unsaved`] is that part.
+//! [`World::keep_unsaved`] is that part. With `fix.saved_state` the
+//! port's chunk keeps that state too (`state.` lines,
+//! [`World::to_map`]), and loading takes it from there.
 
 use std::collections::BTreeMap;
 
@@ -22,6 +24,7 @@ use formats::savegame::{SaveGame, Source};
 
 use crate::computer::Candidates;
 use crate::darstellung::Camera;
+use crate::enhance::Fix;
 use crate::events::Event;
 use crate::hauptschirm::Hauptschirm;
 use crate::world::World;
@@ -623,33 +626,249 @@ impl World {
     pub fn to_map(&self, view: &MapView) -> SaveGame {
         let mut save = SaveGame::build(&mut Saving { world: self, view });
         // The port's chunk after the original's fields, which the
-        // original doesn't read (`docs/savegame.md`).
-        save.trailing = crate::enhance::world_chunk(self.fixes, self.language);
+        // original doesn't read (`docs/savegame.md`); with
+        // `fix.saved_state` also what the original's fields lose.
+        let state = if self.fixes.has(Fix::SavedState) {
+            self.unsaved_state(view)
+        } else {
+            Vec::new()
+        };
+        save.trailing = crate::enhance::world_chunk_with(self.fixes, self.language, &state);
         save
+    }
+
+    /// The port's chunk's `state.` lines (`fix.saved_state`): what
+    /// `load_map` (1048:2a19) leaves as it was in memory
+    /// ([`World::keep_unsaved`]), as `save_map` (1048:2bae) doesn't
+    /// write it, and of the people the file gets with `view`
+    /// ([`MapView::people`]), what differs from the world's: the door
+    /// people's buildings (`+0x22`) and the last record. Numbers are
+    /// decimal, a flag `0` or `1`, a square `i,j`, a timer that doesn't
+    /// run `-`, a byte list hex without its trailing zeros.
+    fn unsaved_state(&self, view: &MapView) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let mut put = |key: &str, value: String| out.push((format!("{STATE}{key}"), value));
+        let flag = |b: bool| if b { "1" } else { "0" }.to_owned();
+        let pos = |(i, j): (i16, i16)| format!("{i},{j}");
+        let timer = |t: Option<u16>| t.map_or_else(|| "-".to_owned(), |n| n.to_string());
+        put("rand_seed", self.random.seed.to_string()); // 1110:4a06
+        put("oil_slick", flag(self.oil_slick)); // 1110:0088
+        let p = &self.people;
+        put("people.lane", p.lane.to_string()); // 1110:6fcc
+        put("people.6fce", p.word_6fce.to_string());
+        put("people.last_building", p.last_building.to_string()); // 1110:6ff2
+        put("people.beach", pos(p.beach)); // 1110:7040, 1110:7042
+        put("people.3c42", flag(p.flag_3c42));
+        // What the file's people (the view's, with `fix.view_people`)
+        // don't have of the world's.
+        if let Some((viewpoint, saved)) = &view.people {
+            put("people.view_rotation", viewpoint.rotation.to_string());
+            if saved.last != p.last {
+                put("people.last", p.last.to_string()); // 1110:6ff4
+            }
+            let homes: Vec<String> = p
+                .records
+                .iter()
+                .zip(&saved.records)
+                .enumerate()
+                .filter(|(_, (w, f))| w.kind() != crate::people::NOBODY && w.home() != f.home())
+                .map(|(n, (w, _))| format!("{n}:{}", pos(w.home())))
+                .collect();
+            if !homes.is_empty() {
+                put("people.homes", homes.join(" ")); // +0x22
+            }
+            // The world's free records the view's own took in the file:
+            // what they held before (`take_saved_free_people`).
+            let free: Vec<String> = p
+                .records
+                .iter()
+                .zip(&saved.records)
+                .enumerate()
+                .filter(|(_, (w, f))| w.kind() == crate::people::NOBODY && w != f)
+                .map(|(n, (w, _))| format!("{n}:{}", hex(&w.0)))
+                .collect();
+            if !free.is_empty() {
+                put("people.free", free.join(" "));
+            }
+        }
+        let a = &self.auction;
+        put("auction.limits", join(&a.limits)); // 1110:654e
+        put("auction.joined", flag(a.joined)); // 1110:65ae
+        put("auction.open", flag(a.open));
+        put("auction.opening", timer(a.opening));
+        put("auction.sold", timer(a.sold));
+        put("auction.bid_pause", a.bid_pause.to_string());
+        put("auction.since_call", a.since_call.to_string()); // 1110:65aa
+        put("auction.frames", join(&a.frames.values()));
+        // The road candidates of the players past the file's count
+        // (unit 10a8:32ec saves players 2 to the count).
+        let c = &self.computers;
+        let saved = usize::from(self.player_count.saturating_sub(1));
+        for (k, (ends, roads)) in c.road_ends.iter().zip(&c.roads).enumerate().skip(saved) {
+            let lists = |l: &Candidates| (0..3).map(|n| hex(l.list(n))).collect::<Vec<_>>().join(",");
+            put(&format!("computers.{}.road_ends", k + 2), lists(ends)); // *[1110:70e2[i]]
+            put(&format!("computers.{}.roads", k + 2), lists(roads)); // *[1110:70e6[i]]
+        }
+        out
+    }
+
+    /// With `fix.saved_state` on in this world just loaded: each value of
+    /// the port's chunk's `state.` lines in `trailing`
+    /// ([`World::unsaved_state`]) in place of what
+    /// [`World::keep_unsaved`] kept of the game in memory. A line that's
+    /// missing (an original file, a v1.0 one, an older port's) or that
+    /// doesn't read leaves that.
+    fn take_saved_state(&mut self, trailing: &[u8]) {
+        if !self.fixes.has(Fix::SavedState) {
+            return;
+        }
+        let state: BTreeMap<String, String> = formats::savegame::port_chunk(trailing)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(k, v)| Some((k.strip_prefix(STATE)?.to_owned(), v)))
+            .collect();
+        let get = |key: &str| state.get(key).map(String::as_str);
+        let flag = |key: &str| match get(key) {
+            Some("1") => Some(true),
+            Some("0") => Some(false),
+            _ => None,
+        };
+        let timer = |key: &str| match get(key)? {
+            "-" => Some(None),
+            n => n.parse().ok().map(Some),
+        };
+        if let Some(seed) = num(get("rand_seed")) {
+            self.random.seed = seed;
+        }
+        if let Some(b) = flag("oil_slick") {
+            self.oil_slick = b;
+        }
+        let p = &mut self.people;
+        set(&mut p.lane, num(get("people.lane")));
+        set(&mut p.word_6fce, num(get("people.6fce")));
+        set(&mut p.last_building, num(get("people.last_building")));
+        set(&mut p.beach, get("people.beach").and_then(square));
+        set(&mut p.flag_3c42, flag("people.3c42"));
+        if self.people_split() && get("people.view_rotation").is_some() {
+            self.take_saved_people(get("people.homes"), num(get("people.last")));
+        }
+        let a = &mut self.auction;
+        set(&mut a.limits, get("auction.limits").and_then(numbers));
+        set(&mut a.joined, flag("auction.joined"));
+        set(&mut a.open, flag("auction.open"));
+        set(&mut a.opening, timer("auction.opening"));
+        set(&mut a.sold, timer("auction.sold"));
+        set(&mut a.bid_pause, num(get("auction.bid_pause")));
+        set(&mut a.since_call, num(get("auction.since_call")));
+        set(
+            &mut a.frames,
+            get("auction.frames")
+                .and_then(numbers)
+                .map(crate::auction::Frames::from_values),
+        );
+        // Only those the file's fields don't hold.
+        let saved = usize::from(self.player_count.saturating_sub(1));
+        let c = &mut self.computers;
+        for (k, (ends, roads)) in c.road_ends.iter_mut().zip(&mut c.roads).enumerate().skip(saved) {
+            set(
+                ends,
+                get(&format!("computers.{}.road_ends", k + 2)).and_then(candidates_of),
+            );
+            set(
+                roads,
+                get(&format!("computers.{}.roads", k + 2)).and_then(candidates_of),
+            );
+        }
+    }
+
+    /// With `fix.saved_state` and `fix.view_people`, once the views have
+    /// taken their own people from a world just loaded
+    /// (`World::hand_over_view_people`): the world's free records they
+    /// took in the file get back what they held, from the port's chunk in
+    /// `trailing` (`state.people.free`). The file menu's load
+    /// (`crate::command::Action::Load`) and the start menu's (after
+    /// [`World::split_off_view_people`]) do it.
+    pub fn take_saved_free_people(&mut self, trailing: &[u8]) {
+        if !self.fixes.has(Fix::SavedState) || !self.people_split() {
+            return;
+        }
+        let Some(free) = formats::savegame::port_chunk(trailing)
+            .unwrap_or_default()
+            .into_iter()
+            .find_map(|(k, v)| (k == format!("{STATE}people.free")).then_some(v))
+        else {
+            return;
+        };
+        for (n, bytes) in free.split_whitespace().filter_map(|r| {
+            let (n, bytes) = r.split_once(':')?;
+            let mut person = crate::people::Person::default();
+            let len = person.0.len();
+            person.0.copy_from_slice(&unhex(bytes, len)?);
+            Some((n.parse::<usize>().ok()?, person))
+        }) {
+            if let Some(p) = self.people.records.get_mut(n)
+                && p.kind() == crate::people::NOBODY
+                && bytes.kind() == crate::people::NOBODY
+            {
+                *p = bytes;
+            }
+        }
+    }
+
+    /// With `fix.view_people`, for a file whose people are a view's
+    /// (`state.people.view_rotation`): the world's door people get their
+    /// buildings' squares (`+0x22`) back from `homes`, everyone is placed
+    /// again for the world's rotation from them (1088:7a14, and the
+    /// flying planes' pictures, as `people_for_view` placed them for the
+    /// view), and the last record is `last`, when nothing but the views'
+    /// people is after it.
+    fn take_saved_people(&mut self, homes: Option<&str>, last: Option<i16>) {
+        for (n, home) in homes.into_iter().flat_map(str::split_whitespace).filter_map(|h| {
+            let (n, home) = h.split_once(':')?;
+            Some((n.parse::<usize>().ok()?, square(home)?))
+        }) {
+            if let Some(p) = self.people.records.get_mut(n)
+                && p.kind() != crate::people::NOBODY
+            {
+                p.set_home(home);
+            }
+        }
+        self.place_people_again_from_home();
+        if let Some(last) = last
+            && let Ok(from) = usize::try_from(last)
+            && from < self.people.records.len()
+            && self.people.records[from + 1..]
+                .iter()
+                .all(|p| p.kind() == crate::people::NOBODY || crate::people::is_view_kind(p.kind()))
+        {
+            self.people.last = last;
+        }
     }
 
     /// Puts back what `load_map` (1048:2a19) leaves as it was, from
     /// `before`, the world in memory when the file was read: `RandSeed`,
     /// the tables from the CD, and the globals the file doesn't hold.
-    /// Each of those is state a saved game loses.
+    /// Each of those is state a saved game loses; with `fix.saved_state`
+    /// the port's chunk keeps the marked ones, and [`World::load_map`]
+    /// takes them from it after this.
     pub fn keep_unsaved(&mut self, before: &World) {
-        // BUG(original): RandSeed isn't saved; a loaded game goes on with the numbers of the game in memory.
+        // BUG(original): RandSeed isn't saved; a loaded game goes on with the numbers of the game in memory (fix.saved_state: the chunk's).
         self.random = before.random;
         self.tables = std::sync::Arc::clone(&before.tables);
         self.folder_language = before.folder_language;
-        // BUG(original): an oil slick going on (1110:0088) isn't saved; the loaded game takes the flag of the one in memory.
+        // BUG(original): an oil slick going on (1110:0088) isn't saved; the loaded game takes the flag of the one in memory (fix.saved_state: the chunk's).
         self.oil_slick = before.oil_slick;
         self.finances.frozen = before.finances.frozen;
         // The money menu stays as it is.
         self.money_menu_shown = before.money_menu_shown;
-        // BUG(original): the people's lane, 1110:6fce, last building, beach and 1110:3c42 aren't saved.
+        // BUG(original): the people's lane, 1110:6fce, last building, beach and 1110:3c42 aren't saved (fix.saved_state: the chunk's).
         let (p, q) = (&mut self.people, &before.people);
         p.lane = q.lane;
         p.word_6fce = q.word_6fce;
         p.last_building = q.last_building;
         p.beach = q.beach;
         p.flag_3c42 = q.flag_3c42;
-        // BUG(original): the auction's limits (1110:654e), whether the player joined (65ae) and the form's timers aren't saved.
+        // BUG(original): the auction's limits (1110:654e), whether the player joined (65ae) and the form's timers aren't saved (fix.saved_state: the chunk's).
         let (a, b) = (&mut self.auction, &before.auction);
         a.limits = b.limits;
         a.joined = b.joined;
@@ -659,7 +878,7 @@ impl World {
         a.bid_pause = b.bid_pause;
         a.since_call = b.since_call;
         a.frames = b.frames;
-        // BUG(original): only players 2 to the file's player count get their road candidates; the others keep those in memory.
+        // BUG(original): only players 2 to the file's player count get their road candidates; the others keep those in memory (fix.saved_state: the chunk's).
         let loaded = usize::from(self.player_count.saturating_sub(1));
         for (k, (ends, roads)) in before
             .computers
@@ -680,7 +899,9 @@ impl World {
 
     /// The world a map file loads into while `self` is the game in memory,
     /// as loading a game from the file menu does (1040:0f27): the file's
-    /// fields over what [`World::keep_unsaved`] keeps.
+    /// fields over what [`World::keep_unsaved`] keeps, and with
+    /// `fix.saved_state` (the file's, or for a file without the port's
+    /// chunk this game's) what the chunk's `state.` lines keep of that.
     ///
     /// # Errors
     /// If the file lacks a field the world needs.
@@ -691,8 +912,77 @@ impl World {
         // and takes the game folder's language.
         w.set_loaded_fixes(crate::enhance::fixes_in(&save.trailing, self.fixes));
         w.language = crate::lang::language_in(&save.trailing).unwrap_or(self.folder_language);
+        // With `fix.saved_state`, what the chunk keeps of the rest.
+        w.take_saved_state(&save.trailing);
         Ok(w)
     }
+}
+
+/// The prefix of the port's chunk's lines for the world's state the
+/// original's file loses (`fix.saved_state`, [`World::unsaved_state`]).
+const STATE: &str = "state.";
+
+/// Numbers, comma-separated.
+fn join<T: ToString>(v: &[T]) -> String {
+    v.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
+}
+
+/// A number of the chunk.
+fn num<T: std::str::FromStr>(v: Option<&str>) -> Option<T> {
+    v?.parse().ok()
+}
+
+/// `N` numbers of the chunk, comma-separated.
+fn numbers<T: std::str::FromStr + Copy + Default, const N: usize>(v: &str) -> Option<[T; N]> {
+    let mut out = [T::default(); N];
+    let mut parts = v.split(',');
+    for o in &mut out {
+        *o = parts.next()?.trim().parse().ok()?;
+    }
+    parts.next().is_none().then_some(out)
+}
+
+/// A square of the chunk, `i,j`.
+fn square(v: &str) -> Option<(i16, i16)> {
+    numbers::<i16, 2>(v).map(|[i, j]| (i, j))
+}
+
+/// `slot` becomes `value`, if there is one.
+fn set<T>(slot: &mut T, value: Option<T>) {
+    if let Some(v) = value {
+        *slot = v;
+    }
+}
+
+/// Bytes as hex, without the trailing zeros.
+fn hex(bytes: &[u8]) -> String {
+    let end = bytes.iter().rposition(|&b| b != 0).map_or(0, |n| n + 1);
+    bytes[..end].iter().fold(String::new(), |mut out, b| {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{b:02x}");
+        out
+    })
+}
+
+/// [`hex`]'s bytes, zeros to `len`.
+fn unhex(v: &str, len: usize) -> Option<Vec<u8>> {
+    if !v.len().is_multiple_of(2) || v.len() / 2 > len {
+        return None;
+    }
+    let mut out = (0..v.len() / 2)
+        .map(|n| u8::from_str_radix(v.get(2 * n..2 * n + 2)?, 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    out.resize(len, 0);
+    Some(out)
+}
+
+/// A computer's road candidates of the chunk: three [`hex`] lists.
+fn candidates_of(v: &str) -> Option<Candidates> {
+    let lists = v.split(',').map(|l| unhex(l.trim(), 256)).collect::<Option<Vec<_>>>()?;
+    if lists.len() != 3 {
+        return None;
+    }
+    Candidates::from_fields(&lists.iter().map(Vec::as_slice).collect::<Vec<_>>())
 }
 
 /// The names of the fields in which `a` and `b` differ: for tests, and
@@ -782,7 +1072,6 @@ mod tests {
         assert_eq!(keep_on_screen(r(-5, -5, 200, 100), (800, 600)), (-5, -5));
         assert_eq!(keep_on_screen(r(320, 272, 640, 479), (800, 600)), (160, 121));
     }
-    use crate::enhance::Fix;
     use crate::world::{BuildingSite, Facility, House, Plot};
 
     #[test]
@@ -883,6 +1172,162 @@ mod tests {
         playing.folder_language = en;
         let loaded = playing.load_map(&original).unwrap();
         assert_eq!((loaded.language, loaded.folder_language), (en, en));
+    }
+
+    /// A world with state the original's file doesn't hold, and another
+    /// game to load it into.
+    fn unsaved_worlds() -> (World, World) {
+        let mut w = World {
+            player_names: (0..9).map(|i| format!("name{i}").into_bytes()).collect(),
+            player_count: 3,
+            fixes: crate::enhance::Fixes::all_on(),
+            ..World::default()
+        };
+        w.events = vec![Event::default(); crate::events::EVENTS];
+        w.random = vcl::random::Random::new(0x1234_5678);
+        w.oil_slick = true;
+        let p = &mut w.people;
+        (p.lane, p.word_6fce, p.last_building, p.beach, p.flag_3c42) = (2, -3, 77, (40, 41), true);
+        p.last = 0x40;
+        let a = &mut w.auction;
+        a.limits = [1, -2, 3, 400_000, 5, 6, 7, i32::MAX];
+        (a.joined, a.open, a.opening, a.sold, a.bid_pause, a.since_call) = (true, true, None, Some(12), 3, 9);
+        a.frames = crate::auction::Frames::from_values([1, 2, 3, 4, 5, 1, 0, 6, 2]);
+        // Players 2 and 3 are in the file's fields; 4 to 8 aren't.
+        for (k, c) in w.computers.road_ends.iter_mut().enumerate() {
+            c.push(1, (10 + i16::try_from(k).unwrap(), 20));
+        }
+        w.computers.roads[4].push(3, (200, 201));
+        let mut other = World {
+            player_count: 3,
+            ..World::default()
+        };
+        other.random = vcl::random::Random::new(99);
+        other.people.beach = (-1, -1);
+        other.auction.limits = [9; 8];
+        other.auction.sold = None;
+        other.computers.road_ends[5].push(2, (1, 1));
+        (w, other)
+    }
+
+    #[test]
+    fn fix_saved_state() {
+        let (w, other) = unsaved_worlds();
+        let save = w.to_map(&MapView::default());
+        let parsed = SaveGame::parse(&save.to_bytes()).unwrap();
+        // Loaded over another game, it's the game that was saved.
+        let back = other.load_map(&parsed).unwrap();
+        assert_eq!(differences(&back, &w), Vec::<&str>::new());
+        // From the start menu's set-up too (`load_saved_game`).
+        assert_eq!(
+            differences(&World::default().load_map(&parsed).unwrap(), &w),
+            Vec::<&str>::new()
+        );
+
+        // A file without the chunk: the game in memory's, as the original.
+        let mut original = parsed.clone();
+        original.trailing.clear();
+        let mut playing = other.clone();
+        playing.fixes = crate::enhance::Fixes::all_on();
+        let back = playing.load_map(&original).unwrap();
+        let mut expected = back.clone();
+        expected.keep_unsaved(&playing);
+        assert_eq!(differences(&back, &expected), Vec::<&str>::new());
+        assert_eq!((back.random, back.oil_slick), (other.random, false));
+        assert_eq!(back.computers.road_ends[5], other.computers.road_ends[5]);
+        // The players in the file keep the file's.
+        assert_eq!(back.computers.road_ends[1], w.computers.road_ends[1]);
+
+        // A line missing or that doesn't read falls back to that; one the
+        // port doesn't know is skipped.
+        let mut lines = parsed.port_chunk().unwrap();
+        lines.retain(|(k, _)| k != "state.rand_seed");
+        for (k, v) in &mut lines {
+            if k == "state.oil_slick" {
+                *v = "x".to_owned();
+            }
+        }
+        lines.push(("state.from_the_future".to_owned(), "1".to_owned()));
+        let mut edited = parsed.clone();
+        edited.trailing = formats::savegame::make_port_chunk(lines.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        let back = other.load_map(&edited).unwrap();
+        assert_eq!(differences(&back, &w), ["oil_slick", "random"]);
+        assert_eq!((back.random, back.oil_slick), (other.random, other.oil_slick));
+
+        // Off, the file has none of it, and loads as the original's.
+        let mut off = w.clone();
+        off.fixes.set(Fix::SavedState, false);
+        let save = off.to_map(&MapView::default());
+        assert!(save.port_chunk().unwrap().iter().all(|(k, _)| !k.starts_with(STATE)));
+        let back = other.load_map(&save).unwrap();
+        let mut expected = back.clone();
+        expected.keep_unsaved(&other);
+        assert_eq!(differences(&back, &expected), Vec::<&str>::new());
+        assert_eq!(back.random, other.random);
+        // A file with the state loaded with the fix off in its chunk
+        // (by hand: the port writes none then) ignores the state.
+        let mut lines = parsed.port_chunk().unwrap();
+        for (k, v) in &mut lines {
+            if k == "fix.saved_state" {
+                *v = "0".to_owned();
+            }
+        }
+        edited.trailing = formats::savegame::make_port_chunk(lines.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        assert_eq!(other.load_map(&edited).unwrap().random, other.random);
+    }
+
+    /// With `fix.view_people` the file's people are the view's; the chunk
+    /// gives the world its door people's buildings, its last record and
+    /// what the records the view's own took held.
+    #[test]
+    fn fix_saved_state_view_people() {
+        let (mut w, other) = unsaved_worlds();
+        let door = 0x30;
+        let p = &mut w.people.records[door];
+        p.set_kind(0x1a);
+        p.set_home((30, 31));
+        p.set_pos((31, 32));
+        // A free record with what someone who left left there.
+        let free = 0x41;
+        w.people.records[free].set_pos((7, 8));
+        let mut saved = w.people.clone();
+        saved.records[door].set_home((0, 0));
+        saved.records[door].set_pos((29, 31));
+        // A view's own builder in it, the last record.
+        saved.records[free] = crate::people::Person::default();
+        saved.records[free].set_kind(0x26);
+        saved.last = 0x41;
+        let view = MapView {
+            people: Some((
+                crate::people::Viewpoint {
+                    rotation: 2,
+                    ..Default::default()
+                },
+                saved,
+            )),
+            ..MapView::default()
+        };
+        let load = |w: &World| {
+            let mut back = other.clone();
+            let tick = back.apply(crate::command::Command {
+                player: 1,
+                action: crate::command::Action::Load(std::sync::Arc::new(w.to_map(&view))),
+            });
+            assert_eq!(tick.view_people.len(), 1);
+            back
+        };
+        let back = load(&w);
+        // (Placed again from it: on a real island, where the door is
+        // the building's, that's where it stood; `orig_savegame.rs`.)
+        assert_eq!(back.people.records[door].home(), (30, 31));
+        assert_eq!(back.people.records[free], w.people.records[free]);
+        assert_eq!(back.people.last, 0x40);
+        // Without the fix, the file's.
+        w.fixes.set(Fix::SavedState, false);
+        let back = load(&w);
+        assert_eq!(back.people.records[door].home(), (0, 0));
+        assert_eq!(back.people.records[free].pos(), (0, 0));
+        assert_eq!(back.people.last, 0x41);
     }
 
     #[test]

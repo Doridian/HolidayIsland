@@ -2855,6 +2855,9 @@ fn load_game(
         size,
         config.language,
     );
+    // With `fix.saved_state`, the world's records the view's own people
+    // had in the file get back what they held.
+    game.world.take_saved_free_people(&map.trailing);
     game.set_view_enhancements(config.view);
     game
 }

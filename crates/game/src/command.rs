@@ -130,6 +130,9 @@ impl World {
                         // The file's spectators and the like go to the
                         // views; the rest turn to the world's rotation.
                         self.hand_over_view_people(&mut tick);
+                        // With `fix.saved_state`, the records they had
+                        // get back what the saved world held.
+                        self.take_saved_free_people(&map.trailing);
                     }
                 }
                 // BUG(original): with I/O checks off, a short or missing file stops the reads at the error and half loads the game; the port loads nothing.

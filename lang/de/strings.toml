@@ -224,6 +224,10 @@ description = "Zuschauer, Bauarbeiter, rollende Flugzeuge und Steg-Boote hat jed
 label = "Haitaucher zählt als Boot"
 description = "Der Taucher des Hais zählt bei den Booten mit, so kommt kein Boot mehr dazu"
 
+[enhance.saved_state]
+label = "Spielstand speichert alles"
+description = "Ein Spielstand behält auch Zufallszahlen, Ölpest, Auktion und Leute, so spielt ein geladenes Spiel genau weiter wie das gespeicherte"
+
 [enhance.window_stacking]
 label = "Fenster stapeln wie unter Windows"
 description = "Fenster stapeln sich wie unter Windows: ein Klick holt eines nach vorn (auch den Hauptschirm), nur modale bleiben oben"

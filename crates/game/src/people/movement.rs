@@ -1610,6 +1610,17 @@ const AT_DOOR_1: [u8; 13] = [
 ];
 /// Those at its third. // 1088:7a14
 const AT_DOOR_2: u8 = 0x3e;
+
+/// Whether someone of `kind` stands at a building's door, its jetty or
+/// its stage, whose square 1088:7a14 works out from the building's: what
+/// `+0x22` keeps with `fix.view_people`.
+pub(crate) fn placed_from_home(kind: u8) -> bool {
+    AT_DOOR_0.contains(&kind)
+        || AT_DOOR_1.contains(&kind)
+        || kind == AT_DOOR_2
+        || kind == super::JETTY_BOAT
+        || kind == super::STAGE_SPECTATORS
+}
 /// The tracks parked planes (0x1b, 0x23) look along. // 1088:70ab
 const PARKED_TRACKS: [(i16, i16); 2] = [(0x1b, 10), (0x23, 13)];
 
@@ -1800,12 +1811,7 @@ impl super::Placer<'_> {
         for n in 0..=LAST {
             let p = self.person(n);
             let kind = p.kind();
-            let door_kind = AT_DOOR_0.contains(&kind)
-                || AT_DOOR_1.contains(&kind)
-                || kind == AT_DOOR_2
-                || kind == super::JETTY_BOAT
-                || kind == super::STAGE_SPECTATORS;
-            if door_kind && on_map(p.home()) && p.home() != (0, 0) {
+            if placed_from_home(kind) && on_map(p.home()) && p.home() != (0, 0) {
                 self.edit(n, |q| q.set_pos(q.home()));
             }
         }
@@ -1858,6 +1864,14 @@ impl World {
         // A closure: the method itself isn't general over the lifetimes.
         #[allow(clippy::redundant_closure_for_method_calls)]
         self.placing(|p| p.place_again());
+    }
+
+    /// [`super::Placer::place_again_from_home`] on the world's people,
+    /// for the world's rotation: a loaded game's whose file has them as a
+    /// view saw them (`fix.saved_state`, `crate::savegame`).
+    pub(crate) fn place_people_again_from_home(&mut self) {
+        #[allow(clippy::redundant_closure_for_method_calls)]
+        self.placing(|p| p.place_again_from_home());
     }
 }
 

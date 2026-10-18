@@ -250,6 +250,15 @@ enhancements! {
     /// The shark's diver, which is a boat (kind 3), counts with the boats
     /// it's taken off when its time is up (10a0:19d2, 1098:109f).
     SharkBoatCount = "shark_boat_count";
+    /// A saved game keeps what the original's loses, in the port's chunk
+    /// (`state.` keys, [`crate::savegame`]): `RandSeed`, an oil slick
+    /// going on, the people's lane, `6fce`, last building, beach and
+    /// `3c42`, the auction's limits, joined flag and timers, the
+    /// computers' road candidates past the file's player count, and,
+    /// with `view_people`, the world's door people's buildings and its
+    /// last record. A game loaded from such a file goes on as the one
+    /// that was saved (1048:2a19, 1048:2bae).
+    SavedState = "saved_state";
 }
 
 enhancements! {
@@ -484,6 +493,14 @@ const SAVED_PREFIX: &str = "fix.";
 /// ([`crate::lang::language_in`]).
 #[must_use]
 pub fn world_chunk(fixes: Fixes, language: Language) -> Vec<u8> {
+    world_chunk_with(fixes, language, &[])
+}
+
+/// [`world_chunk`] with `more` lines after the language: the world's
+/// state the original's file loses, with `fix.saved_state`
+/// (`crate::savegame`'s `state.` keys).
+#[must_use]
+pub fn world_chunk_with(fixes: Fixes, language: Language, more: &[(String, String)]) -> Vec<u8> {
     let mut lines: Vec<(String, &str)> = Fix::ALL
         .iter()
         .map(|&f| {
@@ -494,7 +511,12 @@ pub fn world_chunk(fixes: Fixes, language: Language) -> Vec<u8> {
         })
         .collect();
     lines.push(("language".to_owned(), language.code()));
-    formats::savegame::make_port_chunk(lines.iter().map(|(k, v)| (k.as_str(), *v)))
+    formats::savegame::make_port_chunk(
+        lines
+            .iter()
+            .map(|(k, v)| (k.as_str(), *v))
+            .chain(more.iter().map(|(k, v)| (k.as_str(), v.as_str()))),
+    )
 }
 
 /// The fixes a saved game's `trailing` bytes keep. A fix the file doesn't

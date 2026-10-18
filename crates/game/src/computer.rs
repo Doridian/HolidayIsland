@@ -168,7 +168,9 @@ impl Candidates {
         self.lists.get(k).map_or(&[], |l| &l[..])
     }
 
-    fn from_fields(fields: &[&[u8]]) -> Option<Self> {
+    /// The lists from three of 256 bytes each, as [`Candidates::list`]
+    /// gives them; none if one has another size.
+    pub(crate) fn from_fields(fields: &[&[u8]]) -> Option<Self> {
         let mut c = Candidates::default();
         for (list, field) in c.lists.iter_mut().zip(fields) {
             if field.len() != 256 {

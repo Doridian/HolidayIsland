@@ -80,6 +80,39 @@ are skipped. `SaveGame::trailing` holds the chunk as read, and
 `World::to_map` writes it. A sidecar file was the other choice; the chunk
 keeps a game in one file and needs nothing from the original.
 
+With `fix.saved_state` the chunk also keeps the world's state the
+original's fields lose ([below](#what-a-saved-game-loses)), as `state.`
+lines after the language (`World::unsaved_state`). Numbers are decimal,
+a flag `0` or `1`, a square `i,j`, a timer that isn't running `-`, a
+byte list hex without its trailing zeros:
+
+| Key | What |
+|---|---|
+| `state.rand_seed` | `RandSeed` (`1110:4a06`) |
+| `state.oil_slick` | An oil slick going on (`1110:0088`) |
+| `state.people.lane`, `.6fce`, `.last_building`, `.beach`, `.3c42` | The people's `1110:6fcc`, `6fce`, `6ff2`, `7040`/`7042` and `3c42` |
+| `state.auction.limits` | The eight players' limits (`1110:654e`), comma-separated |
+| `state.auction.joined`, `.open`, `.opening`, `.sold`, `.bid_pause`, `.since_call` | Whether the player joined (`1110:65ae`), the form's open state, its timers (`Timer2`, `Timer1`), the paddle's pause and the ticks since the last call (`1110:65aa`) |
+| `state.auction.frames` | The auctioneer's nine frame values (`auction::Frames::values`) |
+| `state.computers.<p>.road_ends`, `.roads` | The road candidates (`*[1110:70e2[i]]`, `*[1110:70e6[i]]`) of each computer `p` past the file's player count: three hex lists |
+| `state.people.view_rotation` | With `fix.view_people`: the file's people are a view's, placed for this rotation ([below](#the-people-with-fixview_people)) |
+| `state.people.homes` | Then: the world's people whose `+0x22` the file's lack (the door people's buildings), `n:i,j` apart by spaces |
+| `state.people.last` | Then: the world's last record (`1110:6ff4`), if the file's is another |
+| `state.people.free` | Then: the world's free records that the view's own took in the file, `n:hex`, as they were |
+
+Loading (`World::load_map`, so both the file menu's command and the
+start menu's `hintergrund::load_saved_game`) runs `World::keep_unsaved`
+as before, then, with `fix.saved_state` on in the loaded world (the
+file's chunk's, or for a file without one the game's it's loaded into),
+puts each value the chunk has in place of the one kept
+(`World::take_saved_state`). A line that's missing or doesn't read
+leaves the kept value, and lines the port doesn't know are skipped, so
+an original file, a German v1.0 one and an older port's load as before.
+The free records go back after the views have taken their people from
+them (`World::take_saved_free_people`: `Action::Load` after
+`hand_over_view_people`, the start menu after `split_off_view_people`).
+With the fix off the port writes no `state.` lines and reads none.
+
 ## World and view
 
 A map file holds the world and one player's screen. `game::savegame`
@@ -129,6 +162,16 @@ world's rotation, so the view's people start as the file had them. A
 file saved with the fix loads in the original, and in the port without
 the fix, with everyone in the world.
 
+What the view's people lose of the world's this way (the door people's
+buildings in `+0x22`, so that after a load they are placed by where they
+stand for the view and have no building until they leave; the last
+record; the free records the view's own took), `fix.saved_state`
+keeps in the chunk. Loading then gives the door people their buildings
+back and places everyone again for the world's rotation from them
+(`place_again_from_home`, as `World::people_for_view` placed them for
+the view), so the world is the one that was saved whichever way the view
+was turned.
+
 ## What a saved game loses
 
 `load_map` only overwrites what the file holds; everything else stays as
@@ -144,7 +187,8 @@ running, so these carry over from one game into another:
   (`1110:65ae`) and the form's timers.
 - The computers' road candidates of the players past the file's count.
 - `Strassenbaukosten` (`1110:64ee`), which the port keeps in
-  `Tables::road_cost`, and the tables from `DATA\`, which come from the CD.
+  `Tables::road_cost`, and the tables from `DATA\`, which come from the CD
+  (and stay so with `fix.saved_state`, which keeps the rest).
 
 And the order of two lists changes: `save_map` writes the building sites
 from the list's head and `load_map` puts each in front of the ones before
@@ -153,9 +197,20 @@ lists of houses and facilities from the houses' list (1068:2d49), the
 reverse of that list, whatever order the game had. A reloaded game can
 therefore play differently from the one in memory. With those turned
 back, a played game, saved and loaded, plays on exactly as the game it
-came from (`orig_savegame.rs`). `fix.load_order` loads them that way:
-the file's chunk says whether it's on, or for a file without one the
-game it's loaded into (`World::set_loaded_fixes`).
+came from (`orig_savegame.rs`). Two fixes do it, each on its own:
+`fix.saved_state` keeps the state above in the port's chunk
+([above](#the-ports-chunk)), and `fix.load_order` loads the lists in
+their order. Neither touches the other's part: with only
+`saved_state` the lists still come back turned round, with only
+`load_order` the state is still the game in memory's. For both, the
+file's chunk says whether they're on, or for a file without one the
+game it's loaded into (`World::set_loaded_fixes`). With both (and every
+other fix) on, a game saved in the middle of an oil slick and an
+auction and loaded into another running game is the game that was
+saved, field for field, and plays on bit for bit
+(`orig_savegame.rs`, `saved_state_plays_on_as_the_game_saved`).
+`Tables` and `Strassenbaukosten` aren't saved either way: they come
+from the game folder.
 
 ## Loading from the start menu: `TLadenForm`
 

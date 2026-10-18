@@ -505,7 +505,11 @@ it.
 
 **Saves** write what the original writes, with the view's people among
 the world's ([savegame.md](savegame.md#the-people-with-fixview_people));
-loading hands them back to the view.
+loading hands them back to the view. That file lacks the door people's
+buildings (`+0x22`), so after loading it they have none until they
+leave; `fix.saved_state` keeps them in the port's chunk, with the
+world's last record and the free records the view's own took, and a
+loaded world is the one saved.
 
 **Switching it** in the middle of a game: on, the world hands its
 views' kinds to the views (`Tick::view_people`); off, the views' own go

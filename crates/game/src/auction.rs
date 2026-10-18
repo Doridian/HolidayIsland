@@ -97,6 +97,41 @@ pub struct Frames {
     hand_step: u8,
 }
 
+impl Frames {
+    /// Every value, the steps too, for the port's chunk
+    /// (`fix.saved_state`, `crate::savegame`).
+    #[must_use]
+    pub fn values(&self) -> [u8; 9] {
+        [
+            self.mouth,
+            self.eyes,
+            self.brows,
+            self.hammer,
+            self.hand,
+            u8::from(self.hammering),
+            u8::from(self.waving),
+            self.hammer_step,
+            self.hand_step,
+        ]
+    }
+
+    /// The frames [`Frames::values`] gave.
+    #[must_use]
+    pub fn from_values(v: [u8; 9]) -> Self {
+        Frames {
+            mouth: v[0],
+            eyes: v[1],
+            brows: v[2],
+            hammer: v[3],
+            hand: v[4],
+            hammering: v[5] != 0,
+            waving: v[6] != 0,
+            hammer_step: v[7],
+            hand_step: v[8],
+        }
+    }
+}
+
 /// The auction an event started, and how it stands. // unit 1028:2506
 ///
 /// While it's [`Auction::open`], the simulation's clock stands for

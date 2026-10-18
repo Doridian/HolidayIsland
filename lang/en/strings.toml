@@ -217,6 +217,10 @@ description = "Spectators, builders, taxiing planes and jetty boats are each scr
 label = "Shark diver counts as a boat"
 description = "The shark's diver counts with the boats, so it doesn't let one more boat come"
 
+[enhance.saved_state]
+label = "Saved games keep everything"
+description = "A saved game also keeps the random numbers, the oil slick, the auction and the people, so a loaded game plays on exactly as the one saved"
+
 [enhance.window_stacking]
 label = "Windows stack as in Windows"
 description = "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top"
