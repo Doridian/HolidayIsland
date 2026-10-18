@@ -240,7 +240,7 @@ fn open_stream(
     let err = {
         let errors = Arc::clone(&errors);
         let mut logged: Vec<String> = Vec::new();
-        move |e: cpal::StreamError| {
+        move |e: cpal::Error| {
             errors.fetch_add(1, Ordering::Relaxed);
             let text = e.to_string();
             if !logged.contains(&text) {
@@ -253,7 +253,7 @@ fn open_stream(
         cpal::SampleFormat::F32 => {
             let engine = Arc::clone(engine);
             device.build_output_stream(
-                &config,
+                config,
                 move |out: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     engine
                         .lock()
@@ -268,7 +268,7 @@ fn open_stream(
             let engine = Arc::clone(engine);
             let mut buf = Vec::new();
             device.build_output_stream(
-                &config,
+                config,
                 move |out: &mut [i16], _: &cpal::OutputCallbackInfo| {
                     buf.resize(out.len(), 0.0);
                     engine
