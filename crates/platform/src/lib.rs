@@ -192,6 +192,12 @@ pub trait App {
     fn frame(&self) -> Frame<'_>;
     /// Whether the game has quit.
     fn finished(&self) -> bool;
+    /// Whether the game asks for its window to be minimized
+    /// (`TApplication.Minimize`) since the last call; the runner asks
+    /// after every update. In the browser there's nothing to minimize.
+    fn take_minimize(&mut self) -> bool {
+        false
+    }
     /// The desktop the game lays out for is now `width` × `height`: the
     /// window's client area divided by the UI scale. Called once before
     /// the first frame and after every change. It may be smaller than
@@ -322,7 +328,7 @@ impl<A: App> Runner<A> {
         event_loop.exit();
     }
 
-        /// In the browser: takes the display once its GPU is set up.
+    /// In the browser: takes the display once its GPU is set up.
     #[cfg(target_arch = "wasm32")]
     fn take_display(&mut self, event_loop: &ActiveEventLoop) {
         let Some((_, slot)) = &self.pending else { return };
@@ -395,6 +401,12 @@ impl<A: App> ApplicationHandler for Runner<A> {
             self.last = now;
             if let Some((w, _)) = &self.window {
                 w.request_redraw();
+            }
+        }
+        if self.app.take_minimize() {
+            // A no-op in the browser.
+            if let Some((w, _)) = &self.window {
+                w.set_minimized(true);
             }
         }
         if self.app.finished() {

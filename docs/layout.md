@@ -100,12 +100,32 @@ The main screen is a window like the others: its title bar drags it.
   its title bar.
 - `UeberschriftbildMouseMove` (1020:1bd9): with `ssLeft` the form follows
   the cursor, kept at `0..screen_width - Width` and `0..screen_height -
-  Height` (16 then).
+  Height` (16 then). So it can be dropped with all but its title bar off
+  the bottom of the screen, and the mouse up gives it its full height
+  there ([original-bugs.md](original-bugs.md#ui-quirks)); with
+  `enhance.form_drags` it's kept on the screen by the height it's let go
+  with (all 479, or 16 rolled up after a double click). The build menu's
+  drag (1018:0461, en 1018:0476; shrunk on the press, 1018:021d) and the
+  file menu's ([savegame.md](savegame.md)) are the same.
 - `UeberschriftbildMouseUp` (1020:1c58): the height goes back to 479
   unless `+0x1da` is set. So a double click leaves the main screen rolled
   up to its title bar until the next click on it. `+0x1da` also keeps the
   button bar's tooltips away (1020:2115,
   [endforms.md](endforms.md#open-questions)).
+
+The title bar's two widgets are buttons of the game's toolkit over their
+`TImage`s, made in `hauptschirm_init` (1020:2501): `CloseBild` at the
+left (`close.bmp`, held down `closepre.bmp`) and `Kleinbild` at the right
+(`minimize.bmp`, held down `minimizp.bmp`). A press of any button holds
+one down (sound 8; en 1020:31e7, en 1020:325b, de 1020:32c0), the release
+lets it up (sound 10; en 1020:3221, en 1020:3295, de 1020:32fa), and the
+`TImage`'s `OnClick`, the left button let go over it, does the work:
+`CloseBild`'s opens the quit question (1020:0577), `Kleinbild`'s
+minimizes the game (`TApplication.Minimize`, 1020:0595; 1020:049e, the
+same, is the unused `CloseButtonDblClick` of an earlier close button).
+The port minimizes the window (`App::take_minimize`; nothing in the
+browser). `big_map` moves `Kleinbild` to the wider form's right end;
+`no_main_title` takes both away with the title bar (below).
 
 The move handler doesn't check that the press was on the title bar, so a
 left drag that started off every form (on the background) moves the main
@@ -117,7 +137,8 @@ bar, and the compass's and the sabotage window's drags end when the
 mouse comes up.
 
 Ported in `game::hauptschirm`: `Hauptschirm::layout`, `bounds`,
-`title_mouse_down/move/up`, `left`, `top`, `height`, `rolled_up`.
+`title_mouse_down/move/up`, `title_button_down/up`, `left`, `top`, `height`,
+`rolled_up`.
 
 The two scroll bars take the mouse as the original's handlers have them
 ([map.md](map.md#the-scroll-bars)); with `big_map` their stretched
@@ -157,10 +178,12 @@ coordinates; only the info box is placed relative to the main screen.
 Every form's title bar drags it, kept on the screen by the same
 `max(0, ..)` / `min(screen - size, ..)` clamp as the main screen:
 1070:08e0 (money menu), 1020:38d4 (quit question, by its 16-pixel title
-bar; with `enhance.form_drags` by its full height), 1048:2955 (TV), 1060:29f0 (options), 1040:09ca (file menu),
+bar; with `enhance.form_drags` by its full height), 1048:2955 (TV), 1060:29f0 (options), 1040:09ca (file menu,
+by its 16-pixel title bar; with `enhance.form_drags` by its full height),
 10b8:3c9b (overview), 1028:1c4d (auction), 1080:1e54 (buildings'
 overview), 1028:2ecc (sabotage), 1038:346f (compass), 1018:0461 (build
-menu). `screen_width`'s other readers are these handlers.
+menu, by its 16-pixel title bar as the main screen, above).
+`screen_width`'s other readers are these handlers.
 
 So the layout differs by screen size only in where things land:
 

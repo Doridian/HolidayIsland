@@ -454,7 +454,7 @@ pub struct Uebersichtsmap {
     /// picture and takes it off by drawing the area under it again
     /// (10b8:1485).
     bare: Surface,
-    /// The player's view enhancements (`overview_colours`,
+    /// The player's view enhancements (`mouse_buttons`, `overview_colours`,
     /// `overview_scrolling`).
     pub enhance: Enhancements,
 }
@@ -1099,7 +1099,7 @@ impl Uebersichtsmap {
             self.compose_big(frame, rotation, (ox, oy));
             return;
         }
-        // BUG(original): the frame is a 40 × 25 box in every rotation, but turned a quarter the main view covers about 50 × 20 of the map's pixels (25 half rows across, 19½ columns down).
+        // BUG(original): the frame is a 40 × 25 box in every rotation, but turned a quarter the main view covers about 50 × 20 of the map's pixels (25 half rows across, 19½ columns down); `overview_frame` gives that view a box of its own (`Hauptschirm::overview_frame`, drawn as `big_map`'s).
         let f = &FRAMES[usize::from(rotation & 3)];
         let x = i32::from(wo) * 2 - 1 - ox - f.offset.0;
         let y = i32::from(ns) - oy - f.offset.1;
@@ -1139,7 +1139,8 @@ impl Uebersichtsmap {
     }
 
     /// `big_map`: the main screen's bigger view is `frame` on the map's
-    /// picture (`Hauptschirm::overview_frame`), or none for the original's
+    /// picture (`Hauptschirm::overview_frame`; with `overview_frame` also
+    /// the original's view turned a quarter), or none for the original's
     /// view, whose frame is [`FRAMES`]'. Whether the map changed.
     pub fn set_big_frame(&mut self, frame: Option<Rect>) -> bool {
         if self.big_frame == frame {
@@ -1440,10 +1441,15 @@ impl Uebersichtsmap {
         r.action = Some(Action::SetOption(WorldOption::PeopleSpawn, false));
     }
 
-    /// `NSScrollBildMouseDown` at `y`: the arrows step 5 and the trough
-    /// pages 30, again every 25 ms while held; the thumb is grabbed.
-    /// // 10b8:222b
-    pub fn scroll_mouse_down(&mut self, y: i32, world: &World) -> Response {
+    /// `NSScrollBildMouseDown` at `y`, with any button (`left` or not):
+    /// the arrows step 5 and the trough pages 30, again every 25 ms while
+    /// held; the thumb is grabbed. With `mouse_buttons` only the left
+    /// button. // 10b8:222b, en 10c0:222b
+    pub fn scroll_mouse_down(&mut self, y: i32, left: bool, world: &World) -> Response {
+        // BUG(original): unlike the horizontal bar (10b8:29a2) and the toggle (10b8:1c74) the vertical bar doesn't look at the button: the right or middle one scrolls too, with its sound and timer.
+        if !left && self.enhance.has(Enhancement::MouseButtons) {
+            return Response::default();
+        }
         let mut r = Response {
             refresh: true,
             ..Response::default()
@@ -1989,7 +1995,7 @@ impl Uebersichtsmap {
         };
         self.centre = pair("[1110:723a]+0x1cc");
         self.double = byte("[1110:723a]+0x212") != 0;
-        // BUG(original): a saved mode past 7 draws nothing (10b8:17cf); one of 6 or 7 shows the land by slopes or heights' last case.
+        // BUG(original): a saved colouring past 5 (only from a hand-edited file) draws nothing: 10b8:17cf takes modes below 8 whose bit is in the caller's mask, and no caller's mask has 6's or 7's bit, nor its switch a case past 5; the port draws nothing too.
     }
 }
 

@@ -58,10 +58,11 @@ const HISTORY_MONTHS: usize = RING_GUESTS + RING_MONTHS;
 const HISTORY_START: usize = RING_GUESTS + RING_START;
 
 /// What a player whose money can't be read has: when the money is frozen,
-/// or for a player not in the game. // 1078:0191
-const NO_MONEY: i32 = 99_999_999;
+/// or for player 0 or one past the player count (`0x05F5E100`).
+/// // 1078:0191, en 1080:0191
+const NO_MONEY: i32 = 100_000_000;
 
-/// The building type scenario 5 counts. // 1008:00a2
+/// The surf school, whose visitors scenario 5 counts. // 1008:00a2
 const SCENARIO_5_BUILDING: u8 = 0x6d;
 
 /// How a scenario is lost. // 1008:042b, en 1008:075f
@@ -366,7 +367,7 @@ impl World {
                 *s = s.wrapping_add(i32::from(h.guests()));
             }
         }
-        // BUG(original): a plot number outside 0..3000 reads the stack around the table; the port reads 0.
+        // BUG(original): a plot number outside 0..3000 reads, and adds into, the stack around the table; the port reads 0 and skips the add.
         self.plots.iter().all(|p| {
             let mine = usize::try_from(p.id())
                 .ok()
@@ -407,6 +408,7 @@ impl World {
             8 => Loss::Year(2016),
             9 => Loss::Year(2011),
             11 | 13 => Loss::Year(2026),
+            // BUG(original): a scenario with no case returns an unset byte; the port says it's never lost.
             _ => Loss::Never,
         }
     }
@@ -440,8 +442,8 @@ impl World {
         }
     }
 
-    /// `player`'s money, or 99 999 999 while the money is frozen and for a
-    /// player not in the game. // 1078:0191
+    /// `player`'s money, or 100 000 000 while the money is frozen, for
+    /// player 0 or one past the player count. // 1078:0191, en 1080:0191
     pub(crate) fn money_of(&self, player: u8) -> i32 {
         if self.finances.frozen || player == 0 || player > self.player_count {
             return NO_MONEY;
@@ -499,8 +501,8 @@ impl World {
         }
     }
 
-    /// The `+0x10` values (guests?) of `player`'s houses whose price is
-    /// over 320. // 1008:0134
+    /// The guests (`+0x10`) of `player`'s houses whose price is over 320.
+    /// // 1008:0134, en 1008:01c4
     fn luxury_guests(&self, player: u8) -> i32 {
         self.houses
             .iter()
@@ -508,7 +510,7 @@ impl World {
             .fold(0i32, |sum, h| sum.wrapping_add(i32::from(h.guests())))
     }
 
-    /// The `+0xc` values of `player`'s buildings of type 0x6d.
+    /// The visitors (`+0xc`) of `player`'s surf schools (type 0x6d).
     /// // 1008:00a2
     fn facility_sum(&self, player: u8) -> i32 {
         self.facilities

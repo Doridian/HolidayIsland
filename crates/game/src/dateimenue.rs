@@ -97,8 +97,8 @@ pub const RECTS_UPGRADE: [(i32, i32, i32, i32); 23] = [
     (8, 114, 85, 132),
     (8, 136, 85, 154),
     (8, 136, 85, 154),
-    (8, 158, 85, 176), // en 1118:18aa
-    (8, 158, 85, 176), // en 1118:18b2
+    (8, 158, 85, 176), // en 1118:189a
+    (8, 158, 85, 176), // en 1118:18a2
     (8, 186, 85, 204),
     (8, 186, 85, 204),
     (106, 186, 183, 204),
@@ -108,6 +108,9 @@ pub const RECTS_UPGRADE: [(i32, i32, i32, i32); 23] = [
 /// The form's size: entry 0 of [`RECTS`] (1040:12be).
 pub const WIDTH: i32 = 202;
 pub const HEIGHT: i32 = 210;
+/// The height the form shrinks to while its title bar is held, its
+/// title bar's (`ClientHeight := 16`). // 1040:073c, en 1040:077e
+pub const TITLE_HEIGHT: i32 = 16;
 
 const CLOSE: u8 = 1;
 const TITLE: u8 = 2;
@@ -270,7 +273,11 @@ pub struct Dateimenue {
     /// Where the mouse grabbed the title bar, from the form's top left.
     /// // 1110:6046, 1110:6048
     grab: (i32, i32),
-    /// The player's view enhancements (`edit_field`, `modifier_clicks`).
+    /// The form's height: [`HEIGHT`], or [`TITLE_HEIGHT`] while its title
+    /// bar is held. `Height`
+    height: i32,
+    /// The player's view enhancements (`edit_field`, `modifier_clicks`,
+    /// `form_drags`).
     pub enhance: Enhancements,
     /// The parts and the buttons: v1.0's, or the later build's with
     /// `UPGRADE\` ([`Dateimenue::with_upgrade`]).
@@ -299,6 +306,7 @@ impl Dateimenue {
             pressed: 0,
             mode: 2,
             grab: (0, 0),
+            height: HEIGHT,
             enhance: Enhancements::ORIGINAL,
             rects: &RECTS,
             buttons: BUTTONS,
@@ -362,6 +370,23 @@ impl Dateimenue {
     #[must_use]
     pub fn image(&self) -> &Surface {
         &self.image
+    }
+
+    /// Where the form is on the screen, as high as it is now.
+    #[must_use]
+    pub fn bounds(&self) -> Rect {
+        Rect::new(self.left, self.top, WIDTH, self.height)
+    }
+
+    /// Empties the name field and erases it from the background, as the
+    /// later build's "Löschen" does once the game is erased and the list
+    /// filled again. Its cursor stays where it was (the field's keys keep
+    /// it within the text), and a focused field shows its `|` again with
+    /// the next key. // en 1040:110c
+    pub fn clear_name(&mut self) {
+        self.edit.text.clear();
+        let background = self.bitmaps.get(BACKGROUND.0).unwrap_or(&self.empty);
+        self.edit.frame.erase(&mut self.image, background);
     }
 
     /// The list of saved games after a save: the entries and the first row
@@ -491,6 +516,8 @@ impl Dateimenue {
             } else if self.hit(TITLE, x, y) {
                 self.pressed = TITLE;
                 self.grab = (x, y);
+                self.height = TITLE_HEIGHT;
+                r.refresh = true;
             }
         }
         // 1040:0192: the list, which puts the selected name in the field.
@@ -539,13 +566,21 @@ impl Dateimenue {
     }
 
     /// `DateimenuebildMouseMove`: drags the form by its title bar while
-    /// the left button is held, keeping it on the `screen`. // 1040:09ca
+    /// the left button is held, keeping it on the `screen` by its width
+    /// and its height then, the title bar's. With `form_drags` by its
+    /// full height, which it's let go with. // 1040:09ca, en 1040:0a45
     pub fn mouse_move(&mut self, x: i32, y: i32, shift: ShiftState, screen: (i32, i32)) -> Response {
         let mut r = Response::default();
         if self.pressed == TITLE && shift.contains(ShiftState::LEFT) {
             let (sx, sy) = (self.left + x, self.top + y);
             self.left = (sx - self.grab.0).max(0).min(screen.0 - WIDTH);
-            self.top = (sy - self.grab.1).max(0).min(screen.1 - HEIGHT);
+            let top = sy - self.grab.1;
+            self.top = if self.enhance.has(Enhancement::FormDrags) {
+                top.min(screen.1 - HEIGHT).max(0)
+            } else {
+                // BUG(original): the form is kept on the screen by its 16-pixel title bar, the height it has while dragged, so it can be dropped with all but the title bar off the bottom.
+                top.max(0).min(screen.1 - self.height)
+            };
             r.moved = true;
         }
         r
@@ -553,11 +588,17 @@ impl Dateimenue {
 
     /// `DateimenuebildMouseUp`: with the left button, the button that
     /// went down comes up (sound 10) and does its part if the mouse is
-    /// still on it. With any button, the arrows. // 1040:0a4c
+    /// still on it, or the title bar is let go and the form gets its
+    /// height back (`rect0.bottom + 1`). With any button, the arrows.
+    /// // 1040:0a4c, en 1040:0ac7
     pub fn mouse_up(&mut self, x: i32, y: i32, left_button: bool) -> Response {
         let mut r = Response::default();
         if left_button {
             let id = std::mem::take(&mut self.pressed);
+            if id == TITLE {
+                self.height = RECTS[0].3 + 1;
+                r.refresh = true;
+            }
             if id != 0 && id != TITLE {
                 self.draw_up(id);
                 r.refresh = true;
@@ -824,6 +865,48 @@ mod tests {
         let down = m.mouse_down(x, y, true, ShiftState::LEFT);
         let up = m.mouse_up(x, y, true);
         if up.action.is_some() { up } else { down }
+    }
+
+    /// The title bar's drag: the form shrinks to it while held and is
+    /// kept on the screen by it, so it can go off the bottom; with
+    /// `form_drags` by its full height. 1040:073c, 1040:09ca, 1040:0a4c
+    #[test]
+    fn drags_by_the_title_bar() {
+        for fixed in [false, true] {
+            let mut m = menu(3);
+            m.enhance.set(Enhancement::FormDrags, fixed);
+            let screen = (800, 600);
+            let _ = m.mouse_down(50, 5, true, ShiftState::LEFT);
+            assert_eq!(m.bounds().height(), TITLE_HEIGHT);
+            let r = m.mouse_move(50, 5 + 1000, ShiftState::LEFT, screen);
+            assert!(r.moved);
+            let bottom = if fixed { 600 - HEIGHT } else { 600 - TITLE_HEIGHT };
+            assert_eq!(m.top, bottom, "fixed {fixed}");
+            // A right release doesn't let it go; the left one does.
+            let _ = m.mouse_up(50, 5, false);
+            assert_eq!(m.bounds().height(), TITLE_HEIGHT);
+            let _ = m.mouse_up(50, 5, true);
+            assert_eq!(m.bounds(), Rect::new(m.left, bottom, WIDTH, HEIGHT));
+        }
+    }
+
+    /// The later build's "Löschen" empties the name field. en 1040:110c
+    #[test]
+    fn clear_name_empties_the_field() {
+        let mut m = menu(3);
+        m.edit.text = b"SPIEL1".to_vec();
+        m.repaint_edit();
+        m.clear_name();
+        assert_eq!(m.name(), b"");
+        // The field shows the background there again.
+        let f = m.edit.frame;
+        let background = &m.bitmaps[BACKGROUND.0];
+        for y in f.top..f.top + f.height {
+            for x in f.left..f.left + f.width {
+                let at = |s: &Surface| s.pixels[usize::try_from(y).unwrap() * s.width + usize::try_from(x).unwrap()];
+                assert_eq!(at(&m.image), at(background), "{x}, {y}");
+            }
+        }
     }
 
     #[test]

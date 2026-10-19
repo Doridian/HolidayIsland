@@ -95,7 +95,10 @@ box is too narrow and too high ([original-bugs.md](original-bugs.md#ui-quirks)).
 With the port's `big_map` and a bigger main view the frame is drawn
 instead as a box around what that view covers, with `UeRecht.BMP`'s
 mark for the screen's bottom edge beside it
-([layout.md](layout.md#big_map-enhancement)).
+([layout.md](layout.md#big_map-enhancement)). With `enhance.overview_frame`
+the original's view turned a quarter gets such a box too, around the
+squares its corners show (about 50 × 20; `Hauptschirm::overview_frame`);
+turned 0 or 2 it keeps the original's picture, which fits.
 
 ### The mouse and keys
 
@@ -115,12 +118,24 @@ mark for the screen's bottom edge beside it
   go (10b8:21c7, 10b8:21fa). The thumbs are dragged. The thumb is
   `16 + (pos - min) (travel - 16) / range`, `travel` the vertical bar's
   height less 35 and the horizontal trough's width (which lets it onto the
-  right arrow; with `enhance.overview_scrolling` 4 less).
+  right arrow; with `enhance.overview_scrolling` 4 less). The horizontal
+  bar (in `Menubild`, 10b8:29a2) takes only the left button, but the
+  vertical one (`NSScrollbild`, 10b8:222b, en 10c0:222b) doesn't look at
+  the button: the right or middle one steps, pages and grabs it too, with
+  sound 9 and the timer that clears `1110:0056` (unless the world has
+  `fix.overview_arrows`), though only the left drags the thumb
+  ([original-bugs.md](original-bugs.md#ui-quirks)); with
+  `enhance.mouse_buttons` only the left button
+  (`Uebersichtsmap::scroll_mouse_down`).
 - `Menubild`'s colourings' buttons pick on the mouse up over the button
   (sound 9 on the press); "Schließen" goes down (sound 8) and closes
   (sound 10, then 0xe).
 - The title bar: any button grabs it (the form shrinks to 16 rows while
-  dragged, and stays so after a double click until the next press); the
+  dragged, and stays so after a double click until the next press:
+  `FUN_10f0_2e58(form, 0x10)` is the form's `ClientHeight` setter, which
+  stores the value at +0x120 while the form is loading (`csLoading`) and
+  otherwise calls 10e8:1919; the forms have no border, so their
+  `ClientHeight` is their `Height`); the
   left button holds close or the size button, which switches big and small
   (10b8:3e73: hidden, laid out, drawn, shown).
 - `Umschaltbild`: the left button switches heights and slopes.
@@ -173,8 +188,3 @@ and lets the knob up (1038:2b5b). Turning with Insert and Delete updates
 its buttons (1038:3256, from `hauptschirm_key_turn`), as does showing a
 game while it's open. The title row right of the close button drags it
 like the overview map's; its keys go to the main screen (1038:3557).
-
-## Open questions
-
-- `FUN_10f0_2e58(form, 0x10)` when the title bar is grabbed is taken to
-  set the form's height to 16, as the build menu's drag does.

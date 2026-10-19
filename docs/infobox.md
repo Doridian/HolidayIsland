@@ -109,8 +109,8 @@ text), each with the currency.
 |---|---|
 | 0 Renovieren | 1010:1931: the renovation price (1008:0660) if the player has it (else error 0xe for player 1): paid, booked as "other" and rising for player 1; the condition is 127 again |
 | 1, 2 (minus, plus) | The house's rent a step down or up (1010:1e05, 1010:1d62), or the facility's price (1010:1c86, 1010:1ae2) |
-| 3 Bestechen | 1010:19f1: for 5000 (else error 0xe) the site's days left become `min(days, max(max(0, (days - t div 4) div 2) + t div 4, days - 10))` for the building time `t` (`HAUSDATA.DAT` column 0) |
-| 4 Verkaufen | While event 9 isn't running: event 9 (the sale) certain, with the price (twice `HAUSPREI.DAT` column 2 for a price of 10 or less, else a quarter of the price), the human as the seller and the building's first square |
+| 3 Bestechen | 1010:19f1: for 5000 (else error 0xe) the site's days left become `min(days, max(max(0, (days - t div 4) div 2) + t div 4, days - 10))` for the building time `t` (`HAUSDATA.DAT` column 0), which leaves them as they are for `days` up to `t div 4` (`fix.bribe_no_effect`: then nothing is paid) |
+| 4 Verkaufen | While event 9 isn't running: event 9 (the sale) certain, with the price (twice `HAUSPREI.DAT` column 2 for a price of 10 or less, else a quarter of the price), the human as the seller and the building's first square. A sale waiting to start or for its auction is overwritten; with `fix.sale_event_busy` nothing happens then either ([original-bugs.md](original-bugs.md#simulation-logic)) |
 | 5 Abbruch, 6 OK | Close |
 | 7 Insel-Info | `+0x180` set and the box laid out again where it is: the plot's information (1038:1e83) |
 | 8 Übersicht | Close, and the overview opens (1080:0ea8) |

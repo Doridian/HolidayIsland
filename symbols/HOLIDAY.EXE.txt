@@ -21,6 +21,9 @@
 1000:3ed1 func part_or_zero  # (i, j): the part, 0 unless both are 1..249
 1000:3f15 func owner_or_zero  # (i, j): the owner, 0 unless both are 1..249; game::roads
 1008:0002 func bankrupt
+1008:00a2 func facility_sum  # (player) the sum of +0xc (the surf school's visitors) over the player's buildings of type 0x6d; scenario 5's win
+1008:0134 func luxury_guests  # (player) the guests (+0x10) of the player's houses priced over 320; scenario 4's win
+1008:01d2 func plot_average  # docs/original-bugs.md
 1008:0297 func scenario_won
 1008:042b func scenario_lost
 1008:0512 func january_second
@@ -178,11 +181,13 @@
 1018:3dd6 func save_mouse
 1018:3e46 func load_mouse
 1020:0456 func hauptschirm_knob_click
-1020:0480 func endeform_open
+1020:0480 func endeform_open  # CloseButtonDblClick (published, no component uses it)
+1020:049e func hauptschirm_minimize_click  # MinimizeButtonClick: Application.Minimize
 1020:04b0 func hauptschirm_draw_view
 1020:04bc func show_info_box
 1020:050b func hide_info_box
-1020:0577 func endeform_open2
+1020:0577 func endeform_open2  # the CloseBild widget's callback
+1020:0595 func hauptschirm_kleinbild_minimize  # the Kleinbild widget's callback: Application.Minimize
 1020:05a7 func hauptschirm_update_scroll
 1020:067c func hauptschirm_erase_thumbs
 1020:0697 func hauptschirm_origin_from_scroll  # view_origin_i/j/parity from +0x408 (wo) and +0x40a (ns)
@@ -227,6 +232,8 @@
 1020:283b func hauptschirm_show
 1020:2866 func hauptschirm_formshow
 1020:28bf func hauptschirm_formclose
+1020:2909 func hauptschirm_save  # the main screen's fields, from save_map; docs/savegame.md
+1020:2b1d func hauptschirm_load  # from load_map; docs/savegame.md
 1020:2d31 func hauptschirm_key_turn
 1020:2d4c func hauptschirm_key_scroll
 1020:2daa func hauptschirm_press_button  # (n): button_bar_click for button n, from FormKeyDown (1/D: the file menu)
@@ -1156,6 +1163,7 @@
 10e8:1cb8 func tcontrol_set_enabled  # (Boolean): sets +0x2a and sends CM_ENABLEDCHANGED (0xf0c)
 10e8:201c func tcontrol_bringtofront  # probably: SetZOrder(True) through the dynamic method -10
 10e8:22c6 func tcontrol_refresh  # probably: what the forms call after drawing into their TImage
+10f0:2e58 func tcustomform_set_clientheight  # stores +0x120 while csLoading, else 10e8:1919; the forms are borderless, so it sets the height
 10f0:2e80 func tcustomform_set_visible  # probably: (Boolean), what Show/Hide call
 10f0:56ce func tcustomform_hide  # probably
 10f0:56e1 func tcustomform_show  # probably

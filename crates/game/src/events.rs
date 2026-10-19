@@ -154,8 +154,12 @@ impl World {
     ///   message; at the end, if any of the three is going on, the end
     ///   message and the disaster stops.
     /// - 3, 5: its message at `pos` (5 also scrolls there); at the end an
-    ///   auction of the `start` item, and it could start again, but its
-    ///   chance is 0.
+    ///   auction of the `start` item, and it can start again: its chance
+    ///   is 0, unless it was made certain again while it ran (events 9
+    ///   and 10, a building's sale and a bankrupt player's property,
+    ///   [`World::schedule_event`]), which the original does, overwriting
+    ///   its value, player and square, and `fix.sale_event_busy` doesn't
+    ///   ([`World::sale_event_busy`]).
     /// - 4: just its message.
     /// - 6: a message with no values, and a new building type.
     ///

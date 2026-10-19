@@ -316,7 +316,7 @@ Scenarios 8–13 are the later build's ([versions.md](versions.md),
 en 1008:0555, en 1008:075f), with its `UPGRADE\` folder.
 
 - Net worth (1008:0c6e): the buildings' value (at least 0) plus money
-  less loan, at most `MaxInt`. Money (1078:0191) is 99 999 999 while it's
+  less loan, at most `MaxInt`. Money (1078:0191) is 100 000 000 while it's
   frozen or for a player not in the game. A building's value (1008:0a56)
   is `price * +1 div HAUSDATA column 4` if that column is positive, else
   `price * condition div 127`; a building site's is its price.
@@ -563,7 +563,7 @@ facilities, `+0x360` the next), saved by 1068:313e.
 Ported in [`game::beach_life`](../crates/game/src/beach_life.rs). The
 finished buildings ("houses") are a list at `*1110:6f10` of 0x2c-byte
 records (unit 1068:2e05): `+3`, `+5` the building's first square, `+8`
-the next record, `+0x10` a value not identified yet (guests?), `+0x13 +
+the next record, `+0x10` its guests, `+0x13 +
 4n` the squares of its beach life `n` = 1..5 and `+0x2b` how many it has.
 Beach life is building type 36 (`Strandleben`): people on the beach.
 
@@ -605,7 +605,7 @@ The sabotage slots (`*1110:705a`, 5 × 10 bytes: attacker, victim, kind,
 | 1 bomb | 9 | message 0x17 (attacker, victim) |
 | 2 stink bomb, 4 rats | 90; 0 | like the piranhas |
 | 3 shark diver | 119; 118; 0 | message 4 (attacker); location × 60 %, radius 10; undone |
-| 5 soft soap | 2; 1 | countdown := 1; message 0x42. The countdown then goes on to 0 the same day, so the message never comes |
+| 5 soft soap | 2; 1 | 2: countdown := 1, so a soap no plane used ends quietly; 1 (set by a plane skidding on it, 10a0:0e17): message 0x42, and the slot ends the next day. The original's ended slot keeps its kind and square, so planes go on skidding there (`fix.soft_soap_active`, [original-bugs.md](original-bugs.md)) |
 | 6 go-slow | 10 | if the square holds a building site (type 31), 1078:1995 finds it in `*1110:6f08` and its days left go up by its type's building time (`HAUSDATA.DAT` column 0); otherwise the countdown is set to 0 and the sabotage ends |
 | 7 character assassination | 10 | the victim's reputation (`*1110:6f24 + 0x2f + player`, 50 at first) goes down by 50, to at least 0 |
 

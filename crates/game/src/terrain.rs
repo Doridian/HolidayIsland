@@ -373,6 +373,7 @@ impl World {
         if work.heights[n] == 1 {
             work.cost = work.cost.wrapping_add(self.land_costs.from_water);
             let (a, b) = work.at((di, dj));
+            // BUG(original): the list (getmem 0xa2, 10b0:069f) has room for 80 corners and isn't checked: more risen from the sea in one raise overrun the heap block; the port's list has room for all.
             work.risen.push((a.to_le_bytes()[0], b.to_le_bytes()[0])); // 10b0:025b
         } else {
             work.cost = work.cost.wrapping_add(self.land_costs.raise);

@@ -253,8 +253,9 @@ pub fn load_world(map: &SaveGame, settings: &Settings, scenario_page: bool) -> R
     Ok(world)
 }
 
-/// The building types scenarios 1, 4 and 6 take off the build menu: the
-/// player can't build them there. // 1000:21a0
+/// The building types scenarios 1, 4 and 6, and the later build's 8, 12
+/// and 13 (`BANNING_SCENARIOS`), take off the build menu: the player
+/// can't build them there. // 1000:21a0
 pub const SCENARIO_BANNED: [u8; 12] = [0x6f, 0x71, 0x79, 0x7e, 0x25, 0x3c, 0x1e, 0x1d, 0x7d, 0x23, 0x6c, 0x6e];
 
 /// The scenarios whose build menu goes without [`SCENARIO_BANNED`]: 1, 4

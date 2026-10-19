@@ -210,7 +210,46 @@ pub struct Auction {
     /// started the auction or passed count as passed
     /// ([`crate::simulation::Options::auction_timeout`]).
     pub waiting: Option<u16>,
+    /// With `fix.auction_queue`: the auctions started while this one
+    /// waited to open or was on, each its item (the event's message
+    /// number, as [`World::start_auction`] takes it) and price, the
+    /// first next. A port extension, kept in a saved game's port chunk
+    /// (`auction.queue`, [`queue_lines`], [`queue_in`]).
+    pub queue: Vec<(i32, i32)>,
 }
+
+/// The port chunk's line of the auctions waiting their turn
+/// ([`Auction::queue`]): `item,price` pairs; none for an empty queue.
+#[must_use]
+pub fn queue_lines(a: &Auction) -> Vec<(String, String)> {
+    if a.queue.is_empty() {
+        return Vec::new();
+    }
+    let pairs: Vec<String> = a.queue.iter().map(|(item, price)| format!("{item},{price}")).collect();
+    vec![(QUEUE_KEY.to_owned(), pairs.join(" "))]
+}
+
+/// The auctions waiting their turn that a saved game's port chunk in
+/// `trailing` keeps ([`queue_lines`]); none in a file without the line.
+#[must_use]
+pub fn queue_in(trailing: &[u8]) -> Vec<(i32, i32)> {
+    formats::savegame::port_chunk(trailing)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|(k, _)| k == QUEUE_KEY)
+        .map(|(_, v)| {
+            v.split_whitespace()
+                .filter_map(|pair| {
+                    let (item, price) = pair.split_once(',')?;
+                    Some((item.parse().ok()?, price.parse().ok()?))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The port chunk's key of [`Auction::queue`].
+const QUEUE_KEY: &str = "auction.queue";
 
 /// Seat `p`'s bit in [`Auction::started`], [`Auction::passed`] and
 /// [`Auction::held_by`]; 0 for no seat.
@@ -278,7 +317,17 @@ impl World {
     /// Puts `item` up for auction at `price`, and starts the form's
     /// opening timer (`Timer2`, unless it's on already), which
     /// [`Tick::auction`] tells the view. // 1028:08ac
+    ///
+    /// With `fix.auction_queue`, while another auction waits to open, is
+    /// on or waits for `Timer1` ([`World::auction_busy`]), this one goes
+    /// into [`Auction::queue`] and starts once that one is over
+    /// ([`World::next_auction`]).
     pub(crate) fn start_auction(&mut self, item: i32, price: i32, tick: &mut Tick) {
+        // BUG(original): a second auction before the form opens (Timer2 already on), or while one is on, takes the first one's item and price: the first is never held (fix.auction_queue: it waits its turn).
+        if self.fixes.has(Fix::AuctionQueue) && self.auction_busy() {
+            self.auction.queue.push((item, price));
+            return;
+        }
         let a = &mut self.auction;
         a.price = price;
         a.start_price = price;
@@ -294,6 +343,54 @@ impl World {
     /// The world's tick runs this before the clock's steps, which stand
     /// while the form is open. // 1028:190d, 1028:1940, 1028:1973
     pub(crate) fn auction_tick(&mut self, tick: &mut Tick) {
+        self.auction_timers(tick);
+        self.next_auction(tick);
+    }
+
+    /// Whether an auction waits to open (`Timer2`), is on, or waits for
+    /// `Timer1` to hand its item over.
+    #[must_use]
+    pub fn auction_busy(&self) -> bool {
+        let a = &self.auction;
+        a.opening.is_some() || a.open || a.sold.is_some()
+    }
+
+    /// With `fix.auction_queue`, once no auction is on
+    /// ([`World::auction_busy`]): the next one waiting its turn starts
+    /// ([`World::start_auction`]).
+    fn next_auction(&mut self, tick: &mut Tick) {
+        if !self.fixes.has(Fix::AuctionQueue) || self.auction_busy() || self.auction.queue.is_empty() {
+            return;
+        }
+        let (item, price) = self.auction.queue.remove(0);
+        self.start_auction(item, price, tick);
+    }
+
+    /// Whether event `n`'s one record (9, a building's sale, or 10, a
+    /// bankrupt player's property) is taken: the event is waiting to come
+    /// (its chance isn't 0 and its window isn't over) or running, or its
+    /// auction ([`BUILDING_SALE`], [`PROPERTY_SALE`]) waits to open, is
+    /// on, waits for `Timer1` or waits its turn ([`Auction::queue`]).
+    /// Scheduling it again then would overwrite its value, player and
+    /// square (`fix.sale_event_busy`).
+    #[must_use]
+    pub fn sale_event_busy(&self, n: usize) -> bool {
+        let item = if n == PROPERTY_EVENT {
+            PROPERTY_SALE
+        } else {
+            BUILDING_SALE
+        };
+        let event = self
+            .events
+            .get(n)
+            .is_some_and(|e| e.running != 0 || (e.chance != 0 && self.days <= e.last_day));
+        let a = &self.auction;
+        event || (a.item == item && self.auction_busy()) || a.queue.iter().any(|&(i, _)| low_word(i) == item)
+    }
+
+    /// [`World::auction_tick`]'s three timers. // 1028:190d, 1028:1940,
+    /// 1028:1973
+    fn auction_timers(&mut self, tick: &mut Tick) {
         let a = &mut self.auction;
         a.since_call = a.since_call.saturating_add(1);
         let sold = count_down(&mut a.sold);
@@ -473,6 +570,7 @@ impl World {
         }
         let a = &mut self.auction;
         a.ticks = a.ticks.wrapping_add(1);
+        // BUG(original): the calls go on after the third ("sold") until `Timer1` closes the form: the hammer comes down again and the calls past 3 draw their `Random(20)` and `Random(15)` (en 1028:28b1); kept, as stopping them would change the random numbers.
         if a.going != NO_BID && a.ticks > a.wait.wrapping_add(10) {
             if self.random.random(20) == 1 {
                 let a = &mut self.auction;
@@ -632,9 +730,11 @@ impl World {
                 }
             }
         }
+        // BUG(original): the property is cleared only when no computer's limit is above the price; when one is but the 101 tries all fail, it stays the bankrupt player's for good (fix.property_unsold: cleared whenever no computer takes it).
+        let unsold = !tried || (!sold && self.fixes.has(Fix::PropertyUnsold));
         if fixed && !sold && self.auction.bidder != 0 {
             self.award_auction(tick); // 1028:08e7
-        } else if !tried && self.auction.item == PROPERTY_SALE {
+        } else if unsold && self.auction.item == PROPERTY_SALE {
             let owner = self.events.get(PROPERTY_EVENT).map_or(0, |e| e.arg);
             self.clear_property(owner.to_le_bytes()[0], tick); // 10a0:09ea
         }
@@ -670,7 +770,13 @@ impl World {
                 };
                 self.post_message(message, tick); // 1048:0a54
                 self.transfer_building(w, pos, tick); // 10a0:03ca
-                self.add_money(seller.to_le_bytes()[0], price);
+                let s = seller.to_le_bytes()[0];
+                self.add_money(s, price);
+                // BUG(original): the seller's money goes up without a booking, so the sale isn't in their books (fix.sale_booked: under "other", as the refunds are).
+                if self.fixes.has(Fix::SaleBooked) && (s == 1 || self.is_human(s)) {
+                    self.book_for(s, crate::accounts::BOOK_OTHER, price); // 1070:1419
+                    tick.books = true; // 1070:2617
+                }
             }
             PROPERTY_SALE => {
                 let (owner, _) = event(PROPERTY_EVENT);
@@ -1187,5 +1293,132 @@ mod tests {
         assert!(tick.redraw.iter().all(|&p| w.island.owners.at(p) == 2));
         assert_eq!(w.island.owners.at((12, 20)), 0);
         assert_eq!(tick.messages[0].pos, Some((10, 20)));
+    }
+
+    #[test]
+    fn fix_sale_booked() {
+        for fixed in [false, true] {
+            let mut w = World {
+                player_count: 3,
+                events: vec![Event::default(); 41],
+                ..World::default()
+            };
+            w.fixes.set(Fix::SaleBooked, fixed);
+            // The human sold; computer 2 bought.
+            w.events[SALE_EVENT].arg = 1;
+            w.finances.money[..3].copy_from_slice(&[0, 9000, 0]);
+            w.auction = Auction {
+                item: BUILDING_SALE,
+                bidder: 2,
+                price: 8000,
+                ..Auction::default()
+            };
+            let mut tick = Tick::default();
+            w.award_auction(&mut tick);
+            assert_eq!(w.finances.money[..2], [8000, 1000]);
+            assert_eq!(w.book_value(crate::accounts::BOOK_OTHER), if fixed { 8000 } else { 0 });
+            assert_eq!(tick.books, fixed);
+        }
+    }
+
+    #[test]
+    fn fix_auction_queue() {
+        for fixed in [false, true] {
+            let mut w = world(false);
+            w.fixes.set(Fix::AuctionQueue, fixed);
+            // A second auction before the form opens.
+            let mut tick = Tick::default();
+            w.start_auction(10, 20_000, &mut tick);
+            run(&mut w, OPEN_TICKS.into());
+            assert!(w.auction.open);
+            let first = if fixed { (7, 10_000) } else { (10, 20_000) };
+            assert_eq!((w.auction.item, w.auction.price), first);
+            assert_eq!(w.auction.queue, if fixed { vec![(10, 20_000)] } else { vec![] });
+            // The queue is in the port's chunk.
+            let lines = queue_lines(&w.auction);
+            let chunk = formats::savegame::make_port_chunk(lines.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+            assert_eq!(queue_in(&chunk), w.auction.queue);
+            // The player passes, nobody takes it; the next one opens a
+            // second later.
+            w.auction.limits[1..].fill(0);
+            auction_command(&mut w, Action::Leave);
+            assert!(!w.auction_busy());
+            let ticks = run(&mut w, usize::from(OPEN_TICKS) + 1);
+            assert_eq!(w.auction.open, fixed);
+            if fixed {
+                assert_eq!((w.auction.item, w.auction.price), (10, 20_000));
+                assert_eq!(w.auction.queue, []);
+                assert_eq!(ticks.last().unwrap().auction_changes, [Change::Opened]);
+            }
+        }
+    }
+
+    /// A world with player 2 bankrupt and their building on (10, 20) up
+    /// for auction at 1000, only computer 8 with a limit above it, by 1.
+    fn property_world(seed: u32, fixed: bool) -> World {
+        let mut w = World {
+            tables: std::sync::Arc::new(crate::world::Tables {
+                hausnr: vec![[1, 0, 0, 1, 1, 1, 0, 0]; 0x80],
+                hausdata: vec![[0; 10]; 0x80],
+                ..crate::world::Tables::default()
+            }),
+            player_count: 8,
+            events: vec![Event::default(); 41],
+            random: Random::new(seed),
+            ..World::default()
+        };
+        w.fixes.set(Fix::PropertyUnsold, fixed);
+        w.events[PROPERTY_EVENT].arg = 2;
+        w.island.buildings.set((10, 20), 5);
+        w.island.owners.set((10, 20), 2);
+        w.auction = Auction {
+            item: PROPERTY_SALE,
+            price: 1000,
+            ..Auction::default()
+        };
+        w.auction.limits[7] = 1001;
+        w
+    }
+
+    #[test]
+    fn fix_property_unsold() {
+        // A seed whose 101 tries all miss computer 8 at no raise.
+        let seed = (0..1000)
+            .find(|&seed| {
+                let mut w = property_world(seed, false);
+                w.sell_to_computers(true, &mut Tick::default());
+                w.auction.bidder == 0
+            })
+            .unwrap();
+        for fixed in [false, true] {
+            let mut w = property_world(seed, fixed);
+            w.sell_to_computers(true, &mut Tick::default());
+            assert_eq!(w.auction.bidder, 0);
+            // The original leaves it standing; cleared, it's demolished.
+            assert_eq!(w.island.owners.at((10, 20)) == 2, !fixed);
+            assert_eq!(w.island.buildings.at((10, 20)) == 5, !fixed);
+        }
+    }
+
+    #[test]
+    fn sale_event_busy() {
+        let mut w = world(false);
+        assert!(!w.sale_event_busy(SALE_EVENT) && !w.sale_event_busy(PROPERTY_EVENT));
+        // Waiting, in its window.
+        w.events[PROPERTY_EVENT].chance = 0x3fffc;
+        w.events[PROPERTY_EVENT].last_day = 10;
+        assert!(w.sale_event_busy(PROPERTY_EVENT) && !w.sale_event_busy(SALE_EVENT));
+        // Past its window it never comes.
+        w.days = 11;
+        assert!(!w.sale_event_busy(PROPERTY_EVENT));
+        // Its auction waits its turn.
+        w.auction.queue.push((i32::from(BUILDING_SALE), 100));
+        assert!(w.sale_event_busy(SALE_EVENT));
+        w.auction.queue.clear();
+        // Its auction waits for the form.
+        w.auction.item = PROPERTY_SALE;
+        assert!(w.sale_event_busy(PROPERTY_EVENT));
+        w.auction.opening = None;
+        assert!(!w.sale_event_busy(PROPERTY_EVENT));
     }
 }

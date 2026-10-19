@@ -63,7 +63,10 @@ ersten` .. `zum dritten`, 8 `Startgebot:`, 9 `erhielt den Zuschlag`, 10
 
 1. An event (`events_tick`, [simulation.md](simulation.md#events-10103084))
    calls `start_auction(item, price)` (1028:08ac): price, start price,
-   item, and `Timer2` on.
+   item, and `Timer2` on. One that starts while another waits for its
+   form or is on takes its item and price; with `fix.auction_queue` it
+   waits its turn (`Auction::queue`) and starts once the last is handed
+   over ([original-bugs.md](original-bugs.md#simulation-logic)).
 2. `Timer2` (1 s later): the form opens (1028:0dde). First 10a8:0373
    works out every player's limit at the price. For item 0x15 (a
    building sale, event 9) whose seller (event 9's argument) is the human,
@@ -76,7 +79,13 @@ ersten` .. `zum dritten`, 8 `Startgebot:`, 9 `erhielt den Zuschlag`, 10
    price += price div 20 (also the start price), the calls start again,
    and the bidder's paddle (in their colour) slides up from the bottom and
    back, 35 frames each at least 25 ms after the last by `GetTickCount`,
-   with the message loop blocked and `Timer3` off.
+   with the message loop blocked and `Timer3` off. Each frame puts the
+   bare background back under the paddle (rows 167–234 at its column)
+   first, which for colours 7 and 8 wipes the bottom rows of the
+   auctioneer's waving hand at 282, 149 until the hand's next frame
+   ([original-bugs.md](original-bugs.md#ui-quirks)); with
+   `enhance.auction_paddle` the hand's current frame goes back there too,
+   under the paddle (`Auktionsform::draw_paddle`).
 4. `Timer1` (3 s after the third call): the form closes (1028:0476: the
    main screen and its timer come back) and the last bidder gets the item
    (1028:08e7).
@@ -110,7 +119,9 @@ mouth `Random(7)` within 800 ms of a call; eyes and brows each with
   if any limit is above the price, up to 101 tries of a raise of
   `Random(20)` × 5 % and a computer `Random(7) + 2` until one's limit is
   above it; it gets the item at that price. If none's is and the item is a
-  bankrupt player's property (0x16), it's demolished (10a0:09ea). A bid
+  bankrupt player's property (0x16), it's demolished (10a0:09ea); when
+  one's is but the tries all fail, it stays the bankrupt player's
+  (`fix.property_unsold`: demolished then too). A bid
   that leads is ignored, and after the third call the close button gives
   the item away a second time; with `fix.auction_pass` nothing happens
   once it's sold, and when no computer takes it a leading bidder gets it
@@ -131,7 +142,10 @@ buildings, 0x67). Then by item:
 - 0x15 (a building, event 9): message 0x29 at the building with the
   seller and the winner; the building's squares (by its type, a site's
   the type it becomes) become the winner's (10a0:03ca), and the seller
-  gets the price.
+  gets the price, without a booking (`fix.sale_booked`: a human seller's
+  books show it under "other", 0x6a). Event 9 is one record, which a
+  second sale takes over until its auction is over (`fix.sale_event_busy`
+  keeps it, [original-bugs.md](original-bugs.md#simulation-logic)).
 - 0x16 (a bankrupt player's property, event 10): message 0x2a; all of
   their squares become the winner's (10a0:0346).
 - 7, 0x55, 10, 1, 8, 0xd, 0x10, 0x3c, 0x33, 0x13, 0x39, 0x36: their

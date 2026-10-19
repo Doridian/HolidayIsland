@@ -168,7 +168,7 @@ impl World {
         self.geldmenu_balance(player);
     }
 
-    /// Kinds 0x6c to 0x6e: player 1's money (1078:0191, 99 999 999 while
+    /// Kinds 0x6c to 0x6e: player 1's money (1078:0191, 100 000 000 while
     /// it's frozen), their loan negated and the difference. They're only
     /// shown and saved. Single human: the books are player 1's, so the
     /// port does nothing for another `player`; with a human in seats 2 to

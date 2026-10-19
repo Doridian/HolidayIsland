@@ -701,6 +701,7 @@ impl World {
             match self.record_kind(f.building()) {
                 1 => {
                     let c = usize::from(f.price_class());
+                    // BUG(original): a price class past 9 (from a map file) writes past the two 10-entry stack arrays (en 1008:1305); the port skips the shop.
                     if let (Some(r), Some(s)) = (by_class.get_mut(c), places_by_class.get_mut(c)) {
                         *r = r.wrapping_add(capacity.wrapping_mul(i32::from(f.price_class())));
                         *s = s.wrapping_add(capacity);
@@ -1501,7 +1502,9 @@ impl World {
     }
 
     /// Step 0x64: a computer player who has gone bankrupt is out, and
-    /// its property is auctioned ([`World::auction_property`]). Unless the
+    /// its property is auctioned ([`World::auction_property`]); with
+    /// `fix.sale_event_busy` only while event 10 is free
+    /// ([`World::sale_event_busy`]), else it stays in until a later month. Unless the
     /// human cheated or the money is frozen, their net worth passing
     /// 100 000, 1 000 000 or 10 000 000 brings events 12, 16 or 18 (one a
     /// month, the first that hasn't come yet). The events point at the
@@ -1518,6 +1521,12 @@ impl World {
         // ([`World::january_second`]).
         for p in 2..=self.player_count {
             if !self.is_human(p) && self.bankrupt(p) && self.player_out(p) == 0 {
+                // With `fix.sale_event_busy` a computer goes out only once
+                // event 10 is free, so a month later while another's
+                // property waits for its auction.
+                if self.fixes.has(Fix::SaleEventBusy) && self.sale_event_busy(10) {
+                    continue;
+                }
                 self.auction_property(p);
                 self.set_player_out(p, 1);
             }
@@ -1557,7 +1566,7 @@ impl World {
     /// humans a human seat's too, as it goes out on the 2nd of January
     /// ([`World::january_second`]).
     pub(crate) fn auction_property(&mut self, p: u8) {
-        // BUG(original): one record for event 10: a second bankruptcy before the first's auction has ended takes it over, so the first one's property is never auctioned (with several humans more players go out, on the 2nd of January too).
+        // BUG(original): one record for event 10: a second bankruptcy before the first's auction has ended takes it over, so the first one's property is never auctioned (with several humans more players go out, on the 2nd of January too) (fix.sale_event_busy: a computer goes out once it's free; a human seat on the 2nd of January still takes it over).
         let here = self.event_square();
         let amount = div(self.assets(p), 5).wrapping_mul(3).wrapping_add(1000);
         self.schedule_event(10, amount, i32::from(p), here);
@@ -1841,6 +1850,32 @@ mod tests {
             player_count: 2,
             settlement: settlement(),
             ..World::default()
+        }
+    }
+
+    #[test]
+    fn fix_sale_event_busy_bankruptcies() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::SaleEventBusy, fixed);
+            w.player_count = 3;
+            w.events = vec![crate::events::Event::default(); crate::events::EVENTS];
+            w.events[10].last_day = 1_000_000;
+            w.finances.max_debt = 1000;
+            w.finances.money[..3].copy_from_slice(&[0, -5000, -6000]);
+            // Computers 2 and 3 go bankrupt in the same month.
+            let mut tick = Tick::default();
+            w.check_bankruptcies(&mut tick);
+            assert_eq!(w.player_out(2), 1);
+            // The original's second takes event 10 over; fixed, it waits.
+            assert_eq!(w.player_out(3), u8::from(!fixed));
+            assert_eq!(w.events[10].arg, if fixed { 2 } else { 3 });
+            if fixed {
+                // Once the first one's sale is over, the next month.
+                w.events[10].chance = 0;
+                w.check_bankruptcies(&mut tick);
+                assert_eq!((w.player_out(3), w.events[10].arg), (1, 3));
+            }
         }
     }
 

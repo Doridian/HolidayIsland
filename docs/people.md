@@ -534,8 +534,6 @@ more than one human client (`enhance::SINGLE_PLAYER_ONLY`,
   pictures: the pointer and the squares a building or road would take
   (1090:124f, [player-tools.md](player-tools.md)), which the port keeps
   in the view.
-- Who sends the walkers out: nothing ported adds kinds 0x11–0x16
-  (1088:7a14 only places them again).
 - 1098:0002 returns an undefined value when a harbour ship's square has no
   harbour next to it; the port keeps the ship's heading (it leaves anyway).
 - The harbour ships' second detour (1098:04f9) checks the ship's own square

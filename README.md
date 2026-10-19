@@ -6,40 +6,35 @@ Rust, for Linux, macOS and WebAssembly.
 **Play it in your browser:** <https://doridian.github.io/HolidayIsland/> (the page
 asks for the CD image, [docs/web.md](docs/web.md)).
 
-Status: **early.** The Cargo workspace exists with a `formats` crate that
-parses all the text tables in `DATA\` and `TEXTE\` the way the original's
-loaders read them, and splits maps, scenarios and saved games into their
-fields, along with the high-score table and `SETUP.DAT`. The startup
-sequence is mapped ([docs/startup.md](docs/startup.md)). The `vcl` crate
-builds the forms from the layouts in `HOLIDAY.EXE` and draws them with their
-bitmaps into an 8-bit framebuffer, and the `holiday` binary opens a window
-(`winit` and `wgpu`) that plays the intro and shows the start menu. The
-`game` crate has the first ported game code: text in the game's own bitmap
-font, its widget toolkit, the start menu, and starting a game: the island
-from a scenario, or one generated from the start menu's settings, is drawn
-on the main screen, which scrolls and turns, and the player builds on it
-from the build menu, lays roads, raises and lowers the land and
-demolishes ([docs/player-tools.md](docs/player-tools.md)), while the
-computer players do the same. Games are saved and loaded in
-the original's format, from the start menu's load form and the in-game
-file menu ([docs/savegame.md](docs/savegame.md)), and the game's
-message boxes and progress window are there too. The sound, the music
-and the films (Cinepak and MS ADPCM, decoded in pure Rust,
-[docs/films.md](docs/films.md)) play. Also here:
+Status: **playable.** The whole game is ported: the start menu, a
+random island or any of the 13 scenarios (the six of the expanded
+edition's `UPGRADE\` too), building, roads, terraforming, the guests,
+the settlements and the people on the island, the money menu and the
+yearly accounts, the computer opponents, the auctions, sabotage, the
+events and disasters, the TV news and films, the overview map, the
+info box, the options, the high scores and the end of the game. Games
+are saved and loaded in the original's format
+([docs/savegame.md](docs/savegame.md)), and the sound, the music and
+the films (Cinepak and MS ADPCM, decoded in pure Rust,
+[docs/films.md](docs/films.md)) play. On top of the original:
+- fixes of the original's bugs and some extensions, all of which can
+  be switched off ([below](#enhancements))
+- multiplayer: humans in the computers' seats, alone or several in one
+  seat, over the network natively and in the browser
+  ([docs/networking.md](docs/networking.md))
+- the browser build ([docs/web.md](docs/web.md))
 - tools that get the game from the CD image, including the installer's
   compressed archive that holds `HOLIDAY.EXE`
-- a headless Ghidra setup for the 16-bit executable
-- notes on the binaries, the compiler, the data files and startup
+- a headless Ghidra setup for the 16-bit executable, and notes on the
+  binaries, the data files and every part of the game ([Docs](#docs))
 
-The plan is a non-matching decompilation like the
-[Afterlife](https://github.com/Doridian/Afterlife) port: the code should behave
-like the original, not compile to the same bytes. The stack is winit,
-wgpu and cpal, with a resizable window and a fullscreen toggle; see
-[docs/port-architecture.md](docs/port-architecture.md). A stretch goal for
-after the initial port is network multiplayer: humans taking the seats the
-original gives to computer opponents. `HOLIDAY.EXE` is a 16-bit
-Windows 3.1 program written in **Borland Delphi 1**; [docs/binaries.md](docs/binaries.md)
-has the details.
+The port is a non-matching decompilation like the
+[Afterlife](https://github.com/Doridian/Afterlife) port: the code
+behaves like the original, but doesn't compile to the same bytes. The
+stack is winit, wgpu and cpal, with a resizable window and a fullscreen
+toggle; see [docs/port-architecture.md](docs/port-architecture.md).
+`HOLIDAY.EXE` is a 16-bit Windows 3.1 program written in **Borland
+Delphi 1**; [docs/binaries.md](docs/binaries.md) has the details.
 
 This repository contains **no game data files or original code**, with one
 exception: the game's texts. Its German and English texts, strings and
@@ -122,6 +117,21 @@ or all off for the original; the list saves them in the port's
 `--enhancements` lists the keys (`--help` the other options). Details in
 [docs/original-bugs.md](docs/original-bugs.md#options).
 
+### Multiplayer
+
+Humans take the seats the original gives to computer opponents; two or
+more can play the same seat. A signaling server (`holiday-server`,
+`cargo run --release -p server`) introduces the players, who then talk
+directly over WebRTC:
+
+```sh
+holiday --host=island --signal=ws://server:3536 orig  # the host picks the game on the start menu
+holiday --join=island --signal=ws://server:3536 orig  # each other player
+```
+
+The browser build joins the same games. German and English players can
+share a game. Details in [docs/networking.md](docs/networking.md).
+
 ### Music
 
 The game's music is MIDI, and the port renders it with a SoundFont, which
@@ -155,22 +165,47 @@ shared through [symbols/](symbols/README.md).
 - `tools/lzhuf.py`: the LZHUF decoder those archives use.
 - `tools/extract-hoi-installer.py`: unpacks the English release from its DOSBox installer.
 - `tools/gh`, `tools/ghidra/`: headless Ghidra setup and CLI for the decompilation.
+- `tools/get-soundfont.sh`: downloads the SoundFont the music plays with.
+- `tools/build-web.sh`: builds the browser version into `web/`.
 
 ## Docs
 
+The port and the project:
+- [docs/port-architecture.md](docs/port-architecture.md): the Rust port: stack, crates, design, the seats and clients
+- [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
+- [docs/original-bugs.md](docs/original-bugs.md): every bug of the original found so far, and the enhancements that fix them
+- [docs/networking.md](docs/networking.md): network games, the signaling server, the lockstep session
+- [docs/web.md](docs/web.md): the browser build
 - [docs/binaries.md](docs/binaries.md): what's on the CD, what the executables are
   built with (Delphi 1, 16-bit NE), segment map, OS surface, the VESA variant
 - [docs/versions.md](docs/versions.md): the German v1.0 and the later (English) build, how they differ, `UPGRADE\`
 - [docs/language.md](docs/language.md): how the original picks its language, and the port's German and English
 - [lang/README.md](lang/README.md): the language data: the texts in German and English, and adding a language
-- [docs/decomp-workflow.md](docs/decomp-workflow.md): approach, Ghidra setup, layout, conventions
-- [docs/port-architecture.md](docs/port-architecture.md): the Rust port: stack, crates, design
+- [docs/data-files.md](docs/data-files.md): survey of the game's data files
+- [docs/formats/install-archive.md](docs/formats/install-archive.md): the installer archive format
+
+The game:
+- [docs/startup.md](docs/startup.md): what the game does from launch to the start menu
+- [docs/layout.md](docs/layout.md): the windows, where they go, how they stack
 - [docs/widgets.md](docs/widgets.md): the game's own widget toolkit (buttons, scroll bars, ...)
 - [docs/map.md](docs/map.md): the island's map layers, how the main screen draws them, and its layout
 - [docs/island-generator.md](docs/island-generator.md): how a normal game's island is made, and the rest of a new game
-- [docs/data-files.md](docs/data-files.md): survey of the game's data files
+- [docs/player-tools.md](docs/player-tools.md): building, roads, raising and lowering the land, demolishing
+- [docs/simulation.md](docs/simulation.md): the game's tick: guests, buildings, money, events, the end of a year
+- [docs/settlement.md](docs/settlement.md): the plots and how the guests settle
+- [docs/people.md](docs/people.md): the people, ships, boats and planes on the island
+- [docs/computer.md](docs/computer.md): the computer opponents
+- [docs/auction.md](docs/auction.md): the auctions
+- [docs/sabotage.md](docs/sabotage.md): sabotage
+- [docs/geldmenu.md](docs/geldmenu.md): the money menu
+- [docs/infobox.md](docs/infobox.md): the info box
+- [docs/overview-map.md](docs/overview-map.md): the overview map
+- [docs/fernseher.md](docs/fernseher.md): the TV and the news
+- [docs/options.md](docs/options.md): the options, and the port's list of enhancements
+- [docs/endforms.md](docs/endforms.md): the end of a game, the high scores, quitting
 - [docs/savegame.md](docs/savegame.md): the saved games' format, saving and loading, where saves go
-- [docs/formats/install-archive.md](docs/formats/install-archive.md): the installer archive format
+- [docs/sound.md](docs/sound.md): the sound effects, the speech and the music
+- [docs/films.md](docs/films.md): the films and their codecs
 
 ## Legal
 

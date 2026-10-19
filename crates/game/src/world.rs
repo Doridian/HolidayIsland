@@ -1549,6 +1549,9 @@ impl World {
                 ticks: longint(save, "1110:65a2")?,
                 wait: longint(save, "1110:65a6")?,
                 held: byte(save, "1110:6599")? != 0,
+                // The port's chunk's (`fix.auction_queue`); none in an
+                // original file.
+                queue: crate::auction::queue_in(&save.trailing),
                 ..Auction::default()
             },
             options: Options {

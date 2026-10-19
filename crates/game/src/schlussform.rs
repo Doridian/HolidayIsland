@@ -157,6 +157,7 @@ impl Results {
     }
 
     /// A fair win: "Weiterspielen", the won music and film.
+    // BUG(original): a cheater who wins gets the loss's verdict, music and film and no "Weiterspielen" (1068:0288, 1068:1016); kept as design, cheating is punished.
     fn fair_win(&self) -> bool {
         self.won && !self.cheated
     }
@@ -221,7 +222,7 @@ pub fn schluss_load_texts(lines: &[Vec<u8>], r: &Results) -> Texts {
             7 => Some(1),
             s @ 1..=6 => Some(usize::from(s) + 1),
             s @ 8..=13 if games == 14 => Some(usize::from(s)),
-            // BUG(original): a scenario past the file's (7, or 13 in the later build's) leaves the text as it was; the port leaves it empty.
+            // BUG(original): a scenario past the file's (7, or 13 in the later build's) leaves the text as it was, and as the switch reads no line, every later line is read 14 lines early (v1.0: 8): a loss's net worth, guests, score, high score note and buttons come from the reasons' lines, a win's from the loss block; the port leaves the reason empty and reads the rest where it is.
             _ => None,
         };
         row.map(|k| line(block + k)).unwrap_or_default()

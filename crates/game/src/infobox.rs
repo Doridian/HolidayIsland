@@ -844,7 +844,7 @@ impl Infobox {
             BRIBE => r.action = Some(Action::Bribe(pos)), // 1010:19f1
             SELL => {
                 // Nothing while a sale is on.
-                if world.events.get(SALE_EVENT).is_none_or(|e| e.running == 0) {
+                if !world.sale_on() {
                     r.action = Some(Action::Sell(pos));
                 }
             }
@@ -1029,7 +1029,9 @@ impl World {
     /// the site on `pos` hurry: its days left go down to half of those
     /// past a quarter of the building time, plus that quarter, but by at
     /// most ten. Single human: the books, the error and the money rising
-    /// are player 1's; here every human seat's. // 1010:19f1
+    /// are player 1's; here every human seat's. With
+    /// `fix.bribe_no_effect` a bribe that leaves the days as they are
+    /// costs nothing. // 1010:19f1
     pub(crate) fn bribe_builders(&mut self, player: u8, pos: Pos, tick: &mut Tick) {
         if !self.may_change(player, pos) {
             return;
@@ -1044,11 +1046,16 @@ impl World {
             return;
         }
         let site = &mut self.building_sites[n];
+        let before = site.days;
         let days = i32::from(site.days);
         let quarter = i32::from(self.tables.hausdata(site.building, 0) / 4);
         let half = ((days - quarter) / 2).max(0); // 1030:0ee7
         let days = (half + quarter).max(days - 10).min(days);
         site.days = i16::try_from(days).unwrap_or(site.days);
+        // BUG(original): with its days at a quarter of the building time or fewer the site gets no faster, and the 5000 are paid all the same (fix.bribe_no_effect: nothing is paid).
+        if site.days == before && self.fixes.has(Fix::BribeNoEffect) {
+            return;
+        }
         let at = site.pos;
         self.add_money(player, -5000); // 1078:01e7
         if self.is_human(player) {
@@ -1058,12 +1065,26 @@ impl World {
         }
     }
 
+    /// Whether a sale is on, so "Verkaufen" does nothing: event 9 is
+    /// running, and with `fix.sale_event_busy` also while it waits to
+    /// come or its auction is still to be held
+    /// ([`World::sale_event_busy`]). // 1038:24d6
+    #[must_use]
+    pub fn sale_on(&self) -> bool {
+        // BUG(original): only a running sale stops another: one waiting to start or at its auction is overwritten, so its building is never sold, or one is auctioned twice and its seller paid twice (fix.sale_event_busy).
+        if self.fixes.has(Fix::SaleEventBusy) {
+            self.sale_event_busy(SALE_EVENT)
+        } else {
+            self.events.get(SALE_EVENT).is_some_and(|e| e.running != 0)
+        }
+    }
+
     /// "Verkaufen": unless a sale is on, the building on `pos` goes to
     /// auction: event 9 becomes certain with the price, twice
     /// `HAUSPREI.DAT` column 2 for a type of price 10 or less, else a
     /// quarter of the price, for the seller `player`. // 1038:24d6
     pub(crate) fn sell_building(&mut self, player: u8, pos: Pos) {
-        if !self.may_change(player, pos) || self.events.get(SALE_EVENT).is_some_and(|e| e.running != 0) {
+        if !self.may_change(player, pos) || self.sale_on() {
             return;
         }
         let at = match self.find_record(pos) {
@@ -1137,6 +1158,102 @@ mod tests {
             let rent = w.houses[0].price();
             w.step_price(1, (20, 20), true);
             assert_ne!(w.houses[0].price(), rent);
+        }
+    }
+
+    /// A world with player 1's building site on (20, 20) of a type
+    /// that takes 40 days, with `days` left, and 20 000 to spend.
+    fn site_world(days: i16) -> World {
+        let mut hausdata = vec![[0; 10]; 0x80];
+        hausdata[40][0] = 40;
+        let mut w = World {
+            tables: std::sync::Arc::new(crate::world::Tables {
+                hausnr: vec![[1, 0, 0, 1, 1, 1, 0, 0]; 0x80],
+                hausdata,
+                ..crate::world::Tables::default()
+            }),
+            player_count: 1,
+            ..World::default()
+        };
+        w.island.buildings.set((20, 20), BUILDING_SITE);
+        w.island.owners.set((20, 20), 1);
+        w.building_sites = vec![BuildingSite {
+            pos: (20, 20),
+            days,
+            building: 40,
+            ..BuildingSite::default()
+        }];
+        w.finances.money[0] = 20_000;
+        w
+    }
+
+    #[test]
+    fn fix_bribe_no_effect() {
+        for fixed in [false, true] {
+            // A quarter of the building time or less: no faster.
+            let mut w = site_world(8);
+            w.fixes.set(Fix::BribeNoEffect, fixed);
+            let mut tick = Tick::default();
+            w.bribe_builders(1, (20, 20), &mut tick);
+            assert_eq!(w.building_sites[0].days, 8);
+            assert_eq!(w.finances.money[0], if fixed { 20_000 } else { 15_000 });
+            assert_eq!(w.book_value(BOOK_OTHER), if fixed { 0 } else { -5000 });
+            // More: half of those past the quarter, plus the quarter, by
+            // at most ten, paid either way.
+            let mut w = site_world(30);
+            w.fixes.set(Fix::BribeNoEffect, fixed);
+            w.bribe_builders(1, (20, 20), &mut tick);
+            assert_eq!(w.building_sites[0].days, 20);
+            assert_eq!(w.finances.money[0], 15_000);
+        }
+    }
+
+    #[test]
+    fn fix_sale_event_busy() {
+        for fixed in [false, true] {
+            let mut w = World {
+                tables: std::sync::Arc::new(crate::world::Tables {
+                    hausnr: vec![[1, 0, 0, 1, 1, 1, 0, 0]; 0x80],
+                    hausdata: vec![[0; 10]; 0x80],
+                    hausprei: vec![[4000, 0, 0, 0]; 0x80],
+                    ..crate::world::Tables::default()
+                }),
+                player_count: 1,
+                events: vec![crate::events::Event::default(); crate::events::EVENTS],
+                ..World::default()
+            };
+            w.events[SALE_EVENT].last_day = 1_000_000;
+            w.fixes.set(Fix::SaleEventBusy, fixed);
+            for (n, pos) in [(20, 20), (30, 30)].into_iter().enumerate() {
+                w.island.buildings.set(pos, 40 + u8::try_from(n).unwrap());
+                w.island.owners.set(pos, 1);
+                let mut house = crate::world::House::new(pos);
+                house.set_building(40 + u8::try_from(n).unwrap());
+                w.houses.push(house);
+            }
+            w.sell_building(1, (20, 20));
+            assert_eq!(
+                (w.events[SALE_EVENT].chance, w.events[SALE_EVENT].pos),
+                (0x3fffc, (20, 20))
+            );
+            assert_eq!(w.sale_on(), fixed);
+            // A second sale before the first has started: the original
+            // takes the record over.
+            w.sell_building(1, (30, 30));
+            assert_eq!(w.events[SALE_EVENT].pos, if fixed { (20, 20) } else { (30, 30) });
+            // Its auction waiting for the form: still taken.
+            w.events[SALE_EVENT].chance = 0;
+            w.auction.item = crate::auction::BUILDING_SALE;
+            w.auction.opening = Some(3);
+            assert_eq!(w.sale_on(), fixed);
+            // Over: free again.
+            w.auction.opening = None;
+            assert!(!w.sale_on());
+            w.sell_building(1, (30, 30));
+            assert_eq!(w.events[SALE_EVENT].pos, (30, 30));
+            // Running: taken either way.
+            w.events[SALE_EVENT].running = 2;
+            assert!(w.sale_on());
         }
     }
 

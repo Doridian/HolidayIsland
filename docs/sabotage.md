@@ -119,8 +119,9 @@ square under the mouse, the kind and player 1. In order:
 The messages have the attacker and the victim (`a`, `b`) and the square.
 `effects_tick` then counts each slot down a day at a time, on the day's
 second tick (1020:1e9b), see `game::sabotage`. The people code asks
-whether a square has sabotage of a kind (10a0:0ec8: the piranhas in the
-pool, the soap on the runway) and ends the soap (10a0:0e17).
+whether a square has sabotage of a kind (10a0:0ec8; both callers,
+1090:44fd and 1090:4676, ask for the soap on the runway, kind 5) and
+ends the soap (10a0:0e17).
 
 ## The tool's picture (1090:0014)
 

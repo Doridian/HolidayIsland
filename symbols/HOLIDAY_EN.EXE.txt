@@ -39,7 +39,10 @@
 1000:3ec5 func helpform_show  # de 1040:3dc7
 1000:3fab func helpform_hide  # de 1040:3ead
 1008:0002 func bankrupt  # de 1008:0002
+1008:00a2 func facility_sum  # de 1008:00a2
 1008:0134 func camp_site_guests  # new: (player) the guests of the player's small camp sites (type 0); scenario 9 wins at 5000; docs/versions.md
+1008:01c4 func luxury_guests  # de 1008:0134
+1008:0262 func plot_average  # de 1008:01d2
 1008:0317 func islands_joined  # new: exactly one plot of more than 41 squares; scenario 8's win
 1008:036e func wonders_full  # new: (player) more than 8 of the player's facilities of the 1110:1458 types are 80 % full; scenario 11's win
 1008:03fc func most_guests_everywhere  # new: on every plot player 1's houses have more than half the plot's guests (+0xee div 2); scenario 13's win
@@ -210,10 +213,12 @@
 1018:3f23 func tool_click  # de 1028:3dd0
 1020:0456 func hauptschirm_knob_click  # de 1020:0456
 1020:0480 func endeform_open  # de 1020:0480
+1020:049e func hauptschirm_minimize_click  # de 1020:049e
 1020:04b0 func hauptschirm_draw_view  # de 1020:04b0
 1020:04bc func show_info_box  # de 1020:04bc
 1020:050b func hide_info_box  # de 1020:050b
 1020:0577 func endeform_open2  # de 1020:0577
+1020:0595 func hauptschirm_kleinbild_minimize  # de 1020:0595
 1020:05a7 func hauptschirm_update_scroll  # de 1020:05a7
 1020:067c func hauptschirm_erase_thumbs  # de 1020:067c
 1020:0697 func hauptschirm_origin_from_scroll  # de 1020:0697
@@ -258,6 +263,8 @@
 1020:283b func hauptschirm_show  # de 1020:283b
 1020:2866 func hauptschirm_formshow  # de 1020:2866
 1020:28bf func hauptschirm_formclose  # de 1020:28bf
+1020:2909 func hauptschirm_save  # de 1020:2909
+1020:2b1d func hauptschirm_load  # de 1020:2b1d
 1020:2d31 func hauptschirm_key_turn  # de 1020:2d31
 1020:2d4c func hauptschirm_key_scroll  # de 1020:2d4c
 1020:2daa func hauptschirm_press_button  # de 1020:2daa
@@ -1183,6 +1190,7 @@
 10f0:1cb8 func tcontrol_set_enabled  # de 10e8:1cb8
 10f0:201c func tcontrol_bringtofront  # de 10e8:201c
 10f0:22c6 func tcontrol_refresh  # de 10e8:22c6
+10f8:2e58 func tcustomform_set_clientheight  # de 10f0:2e58
 10f8:2e80 func tcustomform_set_visible  # de 10f0:2e80
 10f8:56ce func tcustomform_hide  # de 10f0:56ce
 10f8:56e1 func tcustomform_show  # de 10f0:56e1

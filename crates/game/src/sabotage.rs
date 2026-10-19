@@ -389,6 +389,9 @@ const TENNIS: [u8; 2] = [0x6f, 0x70];
 const SURFING: std::ops::RangeInclusive<u8> = 0x71..=0x78;
 /// Miss Holiday Island's: two empty, two full.
 const MISS: std::ops::RangeInclusive<u8> = 0x79..=0x7c;
+/// The days of each championship's countdown on which the place gets its
+/// boost and on which the boost goes back. // 10a0:117e
+const BOOSTED: [(u16, u16); 3] = [(0x36, 2), (0x37, 3), (0x18, 2)];
 
 impl World {
     /// Each active sabotage and championship moves on a day: on certain
@@ -410,7 +413,7 @@ impl World {
         for n in 0..self.championships.len() {
             let c = self.championships[n];
             if c.active {
-                self.championship_day(c, tick);
+                self.championship_day(n, c, tick);
                 let c = &mut self.championships[n];
                 if c.countdown == 0 {
                     c.active = false;
@@ -464,8 +467,30 @@ impl World {
     /// building is still there: the building fills, the place gets
     /// better, the owner's reputation goes up, the news reports it, and at
     /// the end it all goes back. // 10a0:117e
-    fn championship_day(&mut self, c: Championship, tick: &mut Tick) {
-        let Some(building) = self.island.buildings.get(c.pos) else {
+    ///
+    /// With `fix.championship_location` a championship (slot `n`) whose
+    /// building has gone ends, and if the place had its boost and not
+    /// yet its end, the boost goes back.
+    fn championship_day(&mut self, n: usize, c: Championship, tick: &mut Tick) {
+        let building = self.island.buildings.get(c.pos);
+        let there = building.is_some_and(|b| match c.kind {
+            0 => TENNIS.contains(&b),
+            1 => SURFING.contains(&b),
+            2 => MISS.contains(&b),
+            _ => false,
+        });
+        // BUG(original): a championship only acts while its building is there: one that goes in the middle of it never takes its boost of the place (×160 %) back, so a new one there stacks another (fix.championship_location: it ends, and takes the boost back).
+        if !there && self.fixes.has(Fix::ChampionshipLocation) && (0..=2).contains(&c.kind) {
+            // The days the boost is on: from the day after it comes to
+            // the day it goes.
+            let (boost, undo) = BOOSTED[usize::from(c.kind)];
+            if (undo..boost).contains(&c.countdown) {
+                self.change_location(c.pos, 160, 1, true); // 1030:185d
+            }
+            self.championships[n].active = false;
+            return;
+        }
+        let Some(building) = building else {
             return;
         };
         let owner = self.island.owners.get(c.pos).unwrap_or(0);
@@ -651,6 +676,48 @@ mod tests {
             }
             assert_eq!(w.people.kind(crate::people::FIRST), crate::people::NOBODY);
             assert_eq!(w.people.boats, if fix { 0 } else { -1 });
+        }
+    }
+
+    #[test]
+    fn fix_championship_location() {
+        for fixed in [false, true] {
+            // Miss Holiday Island on (100, 60), a day before its boost.
+            let mut w = World::default();
+            w.fixes.set(Fix::ChampionshipLocation, fixed);
+            w.island.buildings.set((100, 60), 0x79);
+            w.championships[0] = Championship {
+                kind: 2,
+                pos: (100, 60),
+                countdown: 0x18,
+                active: true,
+            };
+            days(&mut w, 1);
+            assert_eq!(w.island.location.get((50, 30)), Some(160));
+            // Where the place would be after the whole championship.
+            let mut whole = w.clone();
+            days(&mut whole, 0x20);
+            // The building goes in the middle of it.
+            w.island.buildings.set((100, 60), crate::world::NO_BUILDING);
+            days(&mut w, 1);
+            assert_eq!(w.championships[0].active, !fixed);
+            days(&mut w, 0x20);
+            assert!(!w.championships[0].active);
+            // The original keeps the boost for good.
+            assert_eq!(w.island.location.get((50, 30)) == Some(160), !fixed);
+            assert_eq!(w.island.location == whole.island.location, fixed);
+            // Gone before its boost: it just ends.
+            let mut w = World::default();
+            w.fixes.set(Fix::ChampionshipLocation, fixed);
+            w.championships[0] = Championship {
+                kind: 0,
+                pos: (100, 60),
+                countdown: 0x37,
+                active: true,
+            };
+            days(&mut w, 1);
+            assert_eq!(w.championships[0].active, !fixed);
+            assert_eq!(w.island.location, LocationMap::filled(100));
         }
     }
 

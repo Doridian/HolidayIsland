@@ -256,6 +256,38 @@ description = "The books work out this year's total on every booking, as if the 
 label = "Auctions don't wait for the TV"
 description = "An auction opens without waiting for the TV's speaker to finish; off: one player only"
 
+[enhance.sale_event_busy]
+label = "One sale at a time"
+description = "A building (or a bankrupt player's property) goes up for auction only once the last sale is over, instead of overwriting it"
+
+[enhance.auction_queue]
+label = "Auctions wait for each other"
+description = "An auction that starts while another waits or is on comes after it, instead of taking its item and price"
+
+[enhance.property_unsold]
+label = "Unsold property cleared"
+description = "A bankrupt player's property no computer buys is always cleared, not only when no limit was above the price"
+
+[enhance.sale_booked]
+label = "Sale proceeds in the books"
+description = "The price of a building sold at auction shows in the seller's books, under other"
+
+[enhance.soft_soap_active]
+label = "Soft soap really ends"
+description = "Only soft soap that's still on makes planes skid, not what its slot kept after it ended"
+
+[enhance.championship_location]
+label = "Championship ends without building"
+description = "A championship whose building goes in the middle of it takes back its boost of the place and ends"
+
+[enhance.walker_markers]
+label = "Walkers clear only their marks"
+description = "A walker leaving a square clears only its own marks on it, not another walker's"
+
+[enhance.bribe_no_effect]
+label = "Useless bribes are free"
+description = "Bribing costs nothing when the builders can't go any faster"
+
 [enhance.window_stacking]
 label = "Windows stack as in Windows"
 description = "Forms stack like windows: a click raises one (the main screen too), only modal forms stay on top"
@@ -274,11 +306,11 @@ description = "Text fields keep the focus when clicked, so the file menu's Speic
 
 [enhance.modifier_clicks]
 label = "Clicks with Shift and Ctrl too"
-description = "Clicks on lists, with the tools and on the main scroll bars work with Shift or Ctrl held and on a double click"
+description = "Clicks on lists, with the tools and on the scroll bars work with Shift, Ctrl or a double click; only a held mouse button stops the arrow keys"
 
 [enhance.mouse_buttons]
 label = "Only the left button clicks"
-description = "The right mouse button no longer clicks start menu buttons, ticks options, drags the money menu or closes the credits"
+description = "The right mouse button no longer clicks start menu buttons, ticks options, drags the money menu, closes the credits or scrolls the overview map"
 
 [enhance.start_menu_scenario]
 label = "Start menu ticks the scenario"
@@ -322,7 +354,7 @@ description = "The overview map has a colour for low grass, high sand and nobody
 
 [enhance.form_drags]
 label = "Window drags end on release"
-description = "Form drags end when the mouse comes up and only move the form grabbed; the quit question stays on screen"
+description = "Form drags end when the mouse comes up and only move the form grabbed; the main screen, build menu, file menu and quit question stay whole on screen"
 
 [enhance.infobox_text]
 label = "Info box: thousands and the sea"
@@ -391,3 +423,11 @@ description = "Loading doesn't show the end form, the info box and the tooltip a
 [enhance.loaded_pause]
 label = "No pause after loading"
 description = "A game saved with the TV open doesn't load paused without its TV: loading ends the TV's pause"
+
+[enhance.overview_frame]
+label = "Overview frame fits when turned"
+description = "The overview map's frame has the shape of the view turned a quarter, about 50 x 20, instead of always 40 x 25"
+
+[enhance.auction_paddle]
+label = "Paddles don't wipe the hand"
+description = "The auctioneer's hand is drawn again after each frame of a bidding paddle instead of losing its bottom rows"

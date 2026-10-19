@@ -214,15 +214,16 @@ The other place that creates `TStartform`, from the file menu's "Neues
 Spiel" and the end form's. It saves the game to `Maps\Last.map`, hides the forms in
 `1110:646c` except 10 and 11, frees the game (1030:3974, en 1038:3657:
 the clock, the forms, the people, the computers, the news, `music_close`,
-`game_done`), reloads the data (1030:38a3, en 1038:3586: `Randomize`,
-`init_game_globals`, the map's tables, `load_tables`, the view's
-squares, `text_init`, `init_sound`, `SONSTIGE.TXT`), puts the globals
-back (1048:2a05: `init_game_defaults` 1000:1ea0, en 1000:22b4; 1010:0f96,
-which clears `1110:1334`, `1110:133c`, played without disasters, and
-`1110:133e`; 1088:0002, the spectators' flag), restarts `holiday.mid`,
-and shows a new `TStartform`, which `startform_init` sets from the
-globals. The later build puts the globals back before the reload, and
-first waits for the CD: until the film directory has `surfwm.avi` it
+`game_done`), puts the globals back (1048:2a05: `init_game_defaults`
+1000:1ea0, en 1000:22b4; 1010:0f96, which clears `1110:1334`,
+`1110:133c`, played without disasters, and `1110:133e`; 1088:0002, the
+spectators' flag), reloads the data (1030:38a3, en 1038:3586:
+`Randomize`, `init_game_globals`, the map's tables, `load_tables`, the
+view's squares, `text_init`, `init_sound`, `SONSTIGE.TXT`), restarts
+`holiday.mid`, and shows a new `TStartform`, which `startform_init` sets
+from the globals. Both builds do it in this order. The later build
+leaves `THintergrund` and its picture disabled (v1.0 enables the form),
+and first waits for the CD: until the film directory has `surfwm.avi` it
 asks (`MessageDlg(…, mtInformation, [mbOK, mbCancel], 0)`, always the
 English text, en 1010:3540); Cancel ends the program (`Halt`). The
 port never asks for the CD (no copy protection).

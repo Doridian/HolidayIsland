@@ -37,7 +37,7 @@ use crate::money::format_money;
 use crate::people::Viewpoint;
 use crate::people::view::{Looking, ViewPeople};
 use crate::text::{Align, Font};
-use crate::widgets::{Part, ShiftState};
+use crate::widgets::{BitmapId, Button, Frame, Outcome, Part, ShiftState};
 use crate::world::{Pos, World};
 
 /// The form's size. // 1110:1578, 1110:157a
@@ -108,7 +108,7 @@ const TROUGH_END: i32 = 32;
 
 /// The bitmaps the frame is drawn from, from `GRAFIK`, in the order
 /// [`Hauptschirm::new`] takes them.
-pub const BITMAP_FILES: [&str; 15] = [
+pub const BITMAP_FILES: [&str; 17] = [
     "menulei3.bmp", // the title bar, 1020:1df3
     "statusle.bmp", // the info bar's, despite the name: 1110:600e
     "buttoff.bmp",  // 1110:600a
@@ -124,6 +124,8 @@ pub const BITMAP_FILES: [&str; 15] = [
     "scrbutsu.BMP", // down, 1110:6026
     "scrbutwe.BMP", // left, 1110:602a
     "scrbutos.BMP", // right, 1110:602e
+    "closepre.bmp", // the close widget held down, 1110:54bc
+    "minimizp.bmp", // the minimize widget held down, 1020:2501
 ];
 const MENULEI: usize = 0;
 const INFO: usize = 1;
@@ -140,6 +142,19 @@ const UP_PRESSED: usize = 11;
 const DOWN_PRESSED: usize = 12;
 const LEFT_PRESSED: usize = 13;
 const RIGHT_PRESSED: usize = 14;
+const CLOSE_PRESSED: usize = 15;
+const MINIMIZE_PRESSED: usize = 16;
+
+/// The title bar's two widgets, buttons of the game's toolkit over their
+/// `TImage`s (+0x2f1 over `CloseBild`, +0x1db over `Kleinbild`; 1020:2501).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleButton {
+    /// `CloseBild`: its click asks whether to quit (1020:0577).
+    Close,
+    /// `Kleinbild`: its click minimizes the game (`TApplication.Minimize`,
+    /// 1020:0595).
+    Minimize,
+}
 
 /// The left edges of the 23 buttons in the button bar, each 25 wide.
 /// // 1110:12c0
@@ -229,10 +244,13 @@ pub const WHEEL_STEP: i16 = 2;
 /// The part of a scroll bar `length` long at `along`, as the presses
 /// test it (1020:0d92, 1020:151a): the back arrow up to 16 (`< 0x11`),
 /// the forward arrow from `length - 16`, and between them the thumb from
-/// its start and 15 on, the trough before and after it. With
-/// `whole_thumb` (`scroll_bars`) all 20 pixels of the thumb.
-fn part_at(bar: Bar, length: i32, along: i32, whole_thumb: bool) -> Part {
-    if along < 0x11 {
+/// its start and 15 on, the trough before and after it. With `fixed`
+/// (`scroll_bars`) the back arrow is its 16 pixels and the thumb all 20
+/// of its own.
+fn part_at(bar: Bar, length: i32, along: i32, fixed: bool) -> Part {
+    // BUG(original): `< 0x11`: the pixel past the 16-pixel back arrow counts as the arrow.
+    let arrow = if fixed { 0x10 } else { 0x11 };
+    if along < arrow {
         return Part::BackArrow;
     }
     if along >= length - 0x10 {
@@ -240,7 +258,7 @@ fn part_at(bar: Bar, length: i32, along: i32, whole_thumb: bool) -> Part {
     }
     let thumb = bar.thumb(length);
     // BUG(original): the thumb is 20 pixels long, but only its first 16 grab it: a press on its last four pages forward.
-    let end = if whole_thumb { thumb + THUMB - 1 } else { thumb + 0xf };
+    let end = if fixed { thumb + THUMB - 1 } else { thumb + 0xf };
     if along < thumb {
         Part::PageBack
     } else if along > end {
@@ -308,7 +326,7 @@ const VK_DELETE: [u16; 2] = [0x2e, 0x6e];
 pub enum KeyResult {
     /// The view moved or turned and was redrawn.
     Redrawn,
-    /// Not a key this port handles yet.
+    /// A key the main screen doesn't use (or one it doesn't use now).
     Ignored,
     /// The key presses button `n` of the button bar (1020:2daa, then
     /// 1010:2c8b, which opens or closes what the button stands for).
@@ -434,6 +452,13 @@ pub struct Hauptschirm {
     titled: bool,
     /// A scroll bar held down.
     bar_press: Option<BarPress>,
+    /// The close and minimize widgets are held down (their buttons'
+    /// pressed flags).
+    close_pressed: bool,
+    minimize_pressed: bool,
+    /// The shift state of `Hauptbild`'s last mouse event, of which the
+    /// original keeps whether it's empty (+0x407).
+    mouse_shift: ShiftState,
 }
 
 /// `src` repeated over a `width` × `height` surface.
@@ -626,6 +651,9 @@ impl Hauptschirm {
             people: ViewPeople::new(0),
             titled: true,
             bar_press: None,
+            close_pressed: false,
+            minimize_pressed: false,
+            mouse_shift: ShiftState(0),
         };
         // 1020:1e4f: the game's name over the title bar.
         let width = LAYOUT[0].1.width();
@@ -653,11 +681,18 @@ impl Hauptschirm {
             let r = Rect::new(x, 0, BUTTON_SIZE, BUTTON_SIZE);
             self.buttons.blit(x, 0, &b[BUTTOFF], r, Rop::Copy, all);
         }
-        // The compass knob, close and minimize widgets, drawn up.
+        // The compass knob, close and minimize widgets, drawn up (or
+        // held down).
+        let close = if self.close_pressed { CLOSE_PRESSED } else { CLOSE };
+        let minimize = if self.minimize_pressed {
+            MINIMIZE_PRESSED
+        } else {
+            MINIMIZE
+        };
         for (dst, index) in [
             (&mut self.corner, KOMPKN),
-            (&mut self.close, CLOSE),
-            (&mut self.minimize, MINIMIZE),
+            (&mut self.close, close),
+            (&mut self.minimize, minimize),
         ] {
             let all = dst.bounds();
             dst.draw(0, 0, &b[index], all);
@@ -1235,8 +1270,10 @@ impl Hauptschirm {
         self.paint_map(world, tiles);
     }
 
-    /// `FormKeyDown`: so far the keys that move and turn the view, and
-    /// those of the button bar's buttons. // 1020:2e09
+    /// `FormKeyDown`: the keys that move and turn the view, and those of
+    /// the button bar's buttons. The arrow keys don't scroll while
+    /// `Hauptbild`'s last mouse event had a shift state
+    /// ([`Hauptschirm::hauptbild_mouse`]). // 1020:2e09, 1020:2d4c
     pub fn key_down(&mut self, key: u16, shift: ShiftState, world: &World, tiles: &Tiles) -> KeyResult {
         let mods = shift.0 & (ShiftState::SHIFT.0 | ShiftState::ALT.0 | ShiftState::CTRL.0);
         // The shift state 7 (`[ssShift, ssAlt, ssCtrl]`) and `G`.
@@ -1260,6 +1297,10 @@ impl Hauptschirm {
             return KeyResult::Ignored;
         };
         if let Some(&(_, _, ns, wo)) = SCROLL_KEYS.iter().find(|k| k.0 == key || k.1 == key) {
+            // 1020:2d4c: not while the island has the mouse held.
+            if self.key_scroll_blocked() {
+                return KeyResult::Ignored;
+            }
             self.scroll(ns * step, wo * step, world, tiles);
             return KeyResult::Redrawn;
         }
@@ -1275,6 +1316,26 @@ impl Hauptschirm {
             return KeyResult::Ignored;
         }
         KeyResult::Redrawn
+    }
+
+    /// `Hauptbild`'s `MouseDown`, `MouseMove` and `MouseUp` keep whether
+    /// their shift state had anything in it (+0x407), which stops the
+    /// arrow keys' scrolling. // 1020:1984, 1020:1ae6, 1020:1b31
+    pub fn hauptbild_mouse(&mut self, shift: ShiftState) {
+        self.mouse_shift = shift;
+    }
+
+    /// Whether the arrow keys don't scroll ([`Hauptschirm::key_down`]):
+    /// while a mouse button is held over the island, as for a road's
+    /// drag. With `modifier_clicks` only then.
+    fn key_scroll_blocked(&self) -> bool {
+        if self.enhance.has(Enhancement::ModifierClicks) {
+            let buttons = ShiftState::LEFT | ShiftState::RIGHT | ShiftState::MIDDLE;
+            self.mouse_shift.0 & buttons.0 != 0
+        } else {
+            // BUG(original): +0x407 is `Shift <> []`, which counts Shift, Ctrl and Alt too: after the mouse moved over the island with one held, its arrow keys (Shift+arrows, Ctrl+arrows) do nothing until the mouse moves there again without it.
+            self.mouse_shift != ShiftState::default()
+        }
     }
 
     /// The overview map's click (10b8:37f5, `crate::uebersichtsmap`): the
@@ -1371,11 +1432,17 @@ impl Hauptschirm {
     /// Where `big_map`'s bigger view lies on the overview map's picture
     /// (`crate::uebersichtsmap`, a square `(i, j)` at `((i - j + 250) · 2,
     /// i + j)`): the box its corners' squares span, with the original's
-    /// frame one pixel to the left (10b8:1349). None for the original's
-    /// view, whose frame is the overview's own picture.
+    /// frame one pixel to the left (10b8:1349). With `overview_frame` the
+    /// original's view turned a quarter (rotations 1 and 3) gets such a
+    /// box too, about 50 × 20. None for the original's view otherwise,
+    /// whose frame is the overview's own picture.
     #[must_use]
     pub fn overview_frame(&self, tiles: &Tiles) -> Option<Rect> {
-        if !self.view_size.is_big() {
+        let quarter = self.camera.view & 1 == 1;
+        // Without it the overview draws its own 40 × 25 frame picture in
+        // every rotation (the quirk is marked in `crate::uebersichtsmap`).
+        let turned = quarter && self.enhance.has(Enhancement::OverviewFrame);
+        if !(self.view_size.is_big() || turned) {
             return None;
         }
         let cam = self.drawn_camera();
@@ -1556,6 +1623,65 @@ impl Hauptschirm {
         self.width != WIDTH || self.full_height != HEIGHT
     }
 
+    /// `CloseBildMouseDown`, `KleinbildMouseDown`: a press of any button
+    /// on the widget holds it down (`closepre.bmp`, `minimizp.bmp`) and
+    /// plays [`Sound::Press`](crate::widgets::Sound::Press).
+    /// // en 1020:31e7, en 1020:325b (de 1020:32c0)
+    pub fn title_button_down(&mut self, which: TitleButton, x: i32, y: i32) -> Outcome {
+        let mut button = self.title_button(which);
+        let out = button.mouse_down(x, y);
+        self.set_title_button(which, button.pressed);
+        out
+    }
+
+    /// `CloseBildMouseUp`, `KleinbildMouseUp`: a held widget comes up and
+    /// plays [`Sound::Release`](crate::widgets::Sound::Release). Its
+    /// `TImage`'s `OnClick` (the left button let go over it, which the
+    /// caller sees to) does what it's for.
+    /// // en 1020:3221, en 1020:3295 (de 1020:32fa)
+    pub fn title_button_up(&mut self, which: TitleButton, x: i32, y: i32) -> Outcome {
+        let mut button = self.title_button(which);
+        let out = button.mouse_up(x, y);
+        self.set_title_button(which, button.pressed);
+        out
+    }
+
+    /// Whether a title bar widget is held down.
+    #[must_use]
+    pub fn title_button_pressed(&self, which: TitleButton) -> bool {
+        match which {
+            TitleButton::Close => self.close_pressed,
+            TitleButton::Minimize => self.minimize_pressed,
+        }
+    }
+
+    /// The widget as the toolkit's button, 16 × 16 at its image's top left.
+    fn title_button(&self, which: TitleButton) -> Button {
+        let mut frame = Frame::new(0, 0, TITLE_HEIGHT, TITLE_HEIGHT);
+        frame.visible = true;
+        let mut button = Button::new(frame, BitmapId(CLOSE), BitmapId(CLOSE_PRESSED), b"", 9);
+        button.pressed = self.title_button_pressed(which);
+        button
+    }
+
+    fn set_title_button(&mut self, which: TitleButton, pressed: bool) {
+        let (flag, dst, index) = match which {
+            TitleButton::Close => (
+                &mut self.close_pressed,
+                &mut self.close,
+                if pressed { CLOSE_PRESSED } else { CLOSE },
+            ),
+            TitleButton::Minimize => (
+                &mut self.minimize_pressed,
+                &mut self.minimize,
+                if pressed { MINIMIZE_PRESSED } else { MINIMIZE },
+            ),
+        };
+        *flag = pressed;
+        let all = dst.bounds();
+        dst.draw(0, 0, &self.bitmaps[index], all);
+    }
+
     /// `UeberschriftbildMouseDown`: the press is kept from the form's top
     /// left, and the form shrinks to its title bar; a double click (the
     /// press with `ssDouble`) leaves it like that when let go.
@@ -1573,8 +1699,10 @@ impl Hauptschirm {
 
     /// `UeberschriftbildMouseMove` with the `cursor` on the screen: while
     /// the left button is down the form follows it, kept on the `screen`
-    /// by its width and its height then. Whether it moved. With
-    /// `form_drags` only after a press on the title bar. // 1020:1bd9
+    /// by its width and its height then, the title bar's. Whether it
+    /// moved. With `form_drags` only after a press on the title bar, and
+    /// kept on the screen by the height it's let go with (all of it, but
+    /// rolled up after a double click). // 1020:1bd9
     pub fn title_mouse_move(&mut self, shift: ShiftState, cursor: (i32, i32), screen: (i32, i32)) -> bool {
         // BUG(original): nothing says the press was on the title bar, so a left drag that started off every form and comes over it moves the form by the last grab.
         let held = self.title_held || !self.enhance.has(Enhancement::FormDrags);
@@ -1582,7 +1710,15 @@ impl Hauptschirm {
             return false;
         }
         self.left = (cursor.0 - self.grab.0).max(0).min(screen.0 - WIDTH);
-        self.top = (cursor.1 - self.grab.1).max(0).min(screen.1 - self.height);
+        let top = cursor.1 - self.grab.1;
+        self.top = if self.enhance.has(Enhancement::FormDrags) {
+            // Whole on the screen at the height it's let go with.
+            let height = if self.rolled_up { TITLE_HEIGHT } else { self.full_height };
+            top.min(screen.1 - height).max(0)
+        } else {
+            // BUG(original): the form is kept on the screen by its 16-pixel title bar, the height it has while dragged, so it can be dropped with all but the title bar off the bottom, where the mouse up gives it its full height back.
+            top.max(0).min(screen.1 - self.height)
+        };
         true
     }
 
@@ -1630,6 +1766,121 @@ const _: () = assert!(VIEW_WIDTH == 624 && VIEW_HEIGHT == 405);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::widgets::Sound;
+    use formats::bmp::Bitmap;
+
+    fn font() -> Font {
+        let (width, height) = (12, 14 * 12);
+        let bitmap = Bitmap {
+            width,
+            height,
+            palette: [vcl::Rgb::default(); 256],
+            pixels: vec![0; width * height],
+        };
+        Font::new(&bitmap, &[[0; 8]; 32], &[[1; 8]; 32])
+    }
+
+    /// A main screen whose bitmaps are each filled with their index + 1.
+    fn screen(enhance: Enhancements) -> Hauptschirm {
+        let camera = Camera {
+            view: 0,
+            origin: (0, 0),
+            parity: 0,
+            owner_pointers: false,
+            occupancy_pointers: false,
+        };
+        let bitmaps = (0..BITMAP_FILES.len())
+            .map(|i| Surface::new(16, 16, u8::try_from(i + 1).unwrap()))
+            .collect();
+        let mut s = Hauptschirm::new_game(camera, bitmaps, &font(), b"");
+        s.enhance = enhance;
+        s
+    }
+
+    /// The close and minimize widgets: a press holds one down
+    /// (`closepre.bmp`, `minimizp.bmp`, sound 8), the release lets it up
+    /// (sound 10) and says whether it was over it.
+    #[test]
+    fn title_buttons() {
+        let mut s = screen(Enhancements::ORIGINAL);
+        for (which, up, down) in [
+            (TitleButton::Close, CLOSE, CLOSE_PRESSED),
+            (TitleButton::Minimize, MINIMIZE, MINIMIZE_PRESSED),
+        ] {
+            let image = |s: &Hauptschirm| match which {
+                TitleButton::Close => s.close.pixels[0],
+                TitleButton::Minimize => s.minimize.pixels[0],
+            };
+            let colour = |i: usize| u8::try_from(i + 1).unwrap();
+            assert_eq!(image(&s), colour(up));
+            let out = s.title_button_down(which, 4, 4);
+            assert_eq!(out.sound, Some(Sound::Press));
+            assert!(s.title_button_pressed(which));
+            assert_eq!(image(&s), colour(down));
+            // Let go off it: up again, no click.
+            let out = s.title_button_up(which, 40, 4);
+            assert_eq!((out.sound, out.clicked), (Some(Sound::Release), false));
+            assert_eq!(image(&s), colour(up));
+            // A release without a press does nothing.
+            let out = s.title_button_up(which, 4, 4);
+            assert_eq!(out.sound, None);
+            let _ = s.title_button_down(which, 4, 4);
+            assert!(s.title_button_up(which, 4, 4).clicked);
+        }
+    }
+
+    /// The title bar's drag keeps the form on the screen by its 16-pixel
+    /// title bar; with `form_drags` by its full height, or the title bar's
+    /// after a double click, which leaves it rolled up. 1020:1bd9
+    #[test]
+    fn title_drags() {
+        for fixed in [false, true] {
+            for double in [false, true] {
+                let mut e = Enhancements::ORIGINAL;
+                e.set(Enhancement::FormDrags, fixed);
+                let mut s = screen(e);
+                let shift = if double {
+                    ShiftState::LEFT | ShiftState::DOUBLE
+                } else {
+                    ShiftState::LEFT
+                };
+                s.title_mouse_down(shift, (100, 5));
+                assert_eq!(s.height, TITLE_HEIGHT);
+                assert!(s.title_mouse_move(ShiftState::LEFT, (100, 5000), (800, 600)));
+                let top = if fixed && !double {
+                    600 - HEIGHT
+                } else {
+                    600 - TITLE_HEIGHT
+                };
+                assert_eq!(s.top, top, "fixed {fixed}, double {double}");
+                s.title_mouse_up();
+                assert_eq!(s.height, if double { TITLE_HEIGHT } else { HEIGHT });
+            }
+        }
+    }
+
+    /// The arrow keys don't scroll while `Hauptbild`'s last mouse event
+    /// had a shift state: a mouse button, and in the original Shift, Ctrl
+    /// or Alt too. 1020:2d4c
+    #[test]
+    fn key_scroll_gate() {
+        for fixed in [false, true] {
+            let mut e = Enhancements::ORIGINAL;
+            e.set(Enhancement::ModifierClicks, fixed);
+            let mut s = screen(e);
+            assert!(!s.key_scroll_blocked());
+            s.hauptbild_mouse(ShiftState::LEFT);
+            assert!(s.key_scroll_blocked(), "a road's drag");
+            s.hauptbild_mouse(ShiftState::default());
+            assert!(!s.key_scroll_blocked());
+            for keys in [ShiftState::SHIFT, ShiftState::CTRL, ShiftState::ALT] {
+                s.hauptbild_mouse(keys);
+                assert_eq!(s.key_scroll_blocked(), !fixed, "fixed {fixed}");
+            }
+            s.hauptbild_mouse(ShiftState::CTRL | ShiftState::RIGHT);
+            assert!(s.key_scroll_blocked());
+        }
+    }
 
     #[test]
     fn thumb() {
@@ -1687,6 +1938,8 @@ mod tests {
         let at = |along, whole| part_at(bar, 404, along, whole);
         assert_eq!(at(0, false), Part::BackArrow);
         assert_eq!(at(16, false), Part::BackArrow, "`< 0x11`");
+        assert_eq!(at(15, true), Part::BackArrow);
+        assert_eq!(at(16, true), Part::Thumb, "`scroll_bars`: the arrow is 16 pixels");
         assert_eq!(at(17, false), Part::Thumb);
         assert_eq!(at(31, false), Part::Thumb);
         // BUG(original): the thumb's last four pixels page.

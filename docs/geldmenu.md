@@ -168,4 +168,3 @@ form's page.
 
 - The tooltips' `FUN_10e8_6258` is probably `TCustomForm.Active` (or
   `Focused`).
-- `1070:2653` clears last and this year's kinds; nothing seen calls it.

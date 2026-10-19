@@ -46,7 +46,7 @@ use vcl::form::{Form, Kind};
 use vcl::surface::Surface;
 use vcl::{Palette, Rect};
 
-use super::{Game, dateimenue, load_form, read};
+use super::{Game, load_form, read};
 use crate::stacking::Win;
 
 /// The button bar's buttons whose forms this module opens. // 1010:2c8b
@@ -1609,8 +1609,9 @@ impl Game {
         self.show_tools();
     }
 
-    /// Opens the quit question, unless the game is quitting.
-    /// // 1020:0480, 1020:0577
+    /// Opens the quit question, unless the game is quitting: from the
+    /// keys (1020:2e09) and the main screen's close button (`CloseBild`,
+    /// 1020:0577; 1020:0480 the old `CloseButtonDblClick`).
     pub(crate) fn open_ende(&mut self) {
         if self.forms.ende.open(self.size) {
             self.forms.help.hide();
@@ -1707,12 +1708,7 @@ impl Game {
             Win::Auction => self.auction.contains(x - self.auction.left, y - self.auction.top),
             Win::FileMenu => {
                 let m = &self.file_menu;
-                m.visible
-                    && inside(
-                        Rect::new(m.menu.left, m.menu.top, dateimenue::WIDTH, dateimenue::HEIGHT),
-                        x,
-                        y,
-                    )
+                m.visible && inside(m.menu.bounds(), x, y)
             }
             Win::Help => false,
             Win::Sabowin => self.tools.sabowin.as_ref().is_some_and(|s| {
@@ -1736,10 +1732,7 @@ impl Game {
             Win::Main => Some(self.screen.bounds()),
             Win::Menu => Some(self.tools.menu.bounds()),
             Win::Auction => Some(self.auction.bounds()),
-            Win::FileMenu => {
-                let m = &self.file_menu.menu;
-                Some(Rect::new(m.left, m.top, dateimenue::WIDTH, dateimenue::HEIGHT))
-            }
+            Win::FileMenu => Some(self.file_menu.menu.bounds()),
             Win::Help => Some(self.forms.help.bounds()),
             Win::Sabowin => self.tools.sabowin.as_ref().map(Sabowin::bounds),
             w => grab_of(w).and_then(|g| self.forms.grab_bounds(g, None)),
@@ -2024,7 +2017,7 @@ impl Game {
             (Image::Title, _) => o.title_mouse_move(shift, cursor, self.size),
             (Image::Toggle, Input::MouseDown { .. }) => o.toggle_mouse_down(l),
             (Image::Toggle, Input::MouseUp { .. }) => o.toggle_mouse_up(x, y, l, w),
-            (Image::Scroll, Input::MouseDown { .. }) => o.scroll_mouse_down(y, w),
+            (Image::Scroll, Input::MouseDown { .. }) => o.scroll_mouse_down(y, l, w),
             (Image::Scroll, Input::MouseUp { .. }) => o.scroll_mouse_up(),
             (Image::Scroll, _) => o.scroll_mouse_move(y, shift, w),
             (Image::Menu, Input::MouseDown { .. }) => o.menu_mouse_down(x, y, l, w),

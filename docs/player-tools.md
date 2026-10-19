@@ -205,8 +205,13 @@ build menu is no modal dialog.
 
 ## Open questions
 
-- `1110:7044`..`704c` (saved) are the mouse on `Hauptbild` and the button
-  bar and the one before, which the tooltips (1018:394e) use.
+- `1110:7044`..`704c` (saved) are the mouse on `Hauptbild` and the
+  button bar and the one before. Only the mouse's `x` has an effect
+  (`button_at_mouse`, 1018:394e, for the tooltips). `last_mouse_x/y` are
+  written only by the two `MouseMove` handlers (1020:1952, 1020:1ae6)
+  and read only by `save_mouse`/`load_mouse`; `mouse_shift` is read only
+  by `mouse_moved` (en 1018:369f), whose `ssLeft` with tool 0x10 branch
+  is empty; `1118:6278` is only ever cleared.
 - The pointer's frame `1110:6fd4` and the preview's globals
   (`1110:6ff6`, `6ff8`, `6fce`) are shared with the people code in the
   original; the port's preview keeps its own.

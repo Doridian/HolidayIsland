@@ -263,6 +263,38 @@ description = "Die Bücher rechnen die Summe des Jahres bei jeder Buchung aus, a
 label = "Auktion wartet nicht auf TV"
 description = "Eine Auktion beginnt, ohne auf den Sprecher des Fernsehers zu warten; aus: nur ein Spieler"
 
+[enhance.sale_event_busy]
+label = "Ein Verkauf nach dem anderen"
+description = "Ein Gebäude (oder der Besitz eines Pleitegegangenen) kommt erst unter den Hammer, wenn der letzte Verkauf vorbei ist; sonst überschreibt er ihn"
+
+[enhance.auction_queue]
+label = "Auktionen warten aufeinander"
+description = "Eine Auktion, die beginnt, während eine andere wartet oder läuft, kommt danach dran, statt deren Posten und Preis zu übernehmen"
+
+[enhance.property_unsold]
+label = "Unverkaufter Besitz wird geräumt"
+description = "Den Besitz eines Pleitegegangenen, den kein Computer ersteigert, räumt die Auktion immer ab, nicht nur wenn kein Limit über dem Preis lag"
+
+[enhance.sale_booked]
+label = "Verkaufserlös in den Büchern"
+description = "Der Erlös eines versteigerten Gebäudes steht in den Büchern des Verkäufers unter Sonstiges"
+
+[enhance.soft_soap_active]
+label = "Schmierseife endet wirklich"
+description = "Nur Schmierseife, die noch wirkt, lässt Flugzeuge rutschen, nicht ihr Eintrag, der nach ihrem Ende Art und Feld behält"
+
+[enhance.championship_location]
+label = "Meisterschaft ohne Gebäude endet"
+description = "Verschwindet das Gebäude einer Meisterschaft mittendrin, nimmt sie ihre Aufwertung der Lage zurück und endet"
+
+[enhance.walker_markers]
+label = "Fußgänger löschen nur ihre Marken"
+description = "Ein Fußgänger, der ein Feld verlässt, löscht nur seine eigenen Marken darauf, nicht die eines anderen"
+
+[enhance.bribe_no_effect]
+label = "Bestechen ohne Wirkung kostenlos"
+description = "Bestechen kostet nichts, wenn die Bauarbeiter nicht schneller werden können"
+
 [enhance.window_stacking]
 label = "Fenster stapeln wie unter Windows"
 description = "Fenster stapeln sich wie unter Windows: ein Klick holt eines nach vorn (auch den Hauptschirm), nur modale bleiben oben"
@@ -281,11 +313,11 @@ description = "Textfelder behalten beim Klicken den Fokus, so speichert Speicher
 
 [enhance.modifier_clicks]
 label = "Klicks auch mit Umschalt und Strg"
-description = "Klicks auf Listen, mit den Werkzeugen und auf die Bildlaufleisten wirken auch mit Umschalt oder Strg und beim Doppelklick"
+description = "Klicks auf Listen, mit Werkzeugen und auf Bildlaufleisten wirken auch mit Umschalt, Strg und Doppelklick; Pfeiltasten hält nur eine Maustaste auf"
 
 [enhance.mouse_buttons]
 label = "Nur die linke Maustaste klickt"
-description = "Die rechte Maustaste klickt keine Startmenüknöpfe mehr, hakt keine Optionen an, zieht kein Geldmenü und schließt keine Mitwirkenden"
+description = "Die rechte Maustaste klickt keine Startmenüknöpfe mehr, hakt keine Optionen an, zieht kein Geldmenü, schließt keine Mitwirkenden und rollt nicht die Übersichtskarte"
 
 [enhance.start_menu_scenario]
 label = "Startmenü hakt das Szenario an"
@@ -329,7 +361,7 @@ description = "Die Übersichtskarte hat eine Farbe für niedriges Gras, hohen Sa
 
 [enhance.form_drags]
 label = "Fensterziehen endet beim Loslassen"
-description = "Fensterziehen endet, wenn die Maus losgelassen wird, und bewegt nur das gefasste Fenster; die Abfrage zum Beenden bleibt im Bild"
+description = "Fensterziehen endet, wenn die Maus losgelassen wird, und bewegt nur das gefasste Fenster; Hauptschirm, Baumenü, Dateimenü und die Abfrage zum Beenden bleiben ganz im Bild"
 
 [enhance.infobox_text]
 label = "Infobox: Tausenderpunkte und Meer"
@@ -398,3 +430,11 @@ description = "Das Laden zeigt das Spielende, die Infobox und den Tooltip nicht 
 [enhance.loaded_pause]
 label = "Keine Pause nach dem Laden"
 description = "Ein mit offenem Fernseher gespeichertes Spiel lädt nicht angehalten ohne Fernseher: das Laden beendet dessen Pause"
+
+[enhance.overview_frame]
+label = "Übersichtsrahmen passt gedreht"
+description = "Der Rahmen der Übersichtskarte hat bei um eine Vierteldrehung gedrehter Ansicht deren Form, etwa 50 x 20, statt immer 40 x 25"
+
+[enhance.auction_paddle]
+label = "Kelle löscht die Hand nicht"
+description = "Die Hand des Auktionators wird nach jedem Bild einer Bieterkelle neu gezeichnet, statt unten abgeschnitten zu werden"

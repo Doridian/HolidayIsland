@@ -289,6 +289,34 @@ enhancements! {
     /// (1028:1940). Off is the original, which only one human can play
     /// ([`SINGLE_PLAYER_ONLY`]).
     AuctionSpeaker = "auction_speaker";
+    /// A building is put up for sale (event 9), or a bankrupt computer's
+    /// property for auction (event 10), only while the event's one
+    /// record is free: not waiting, not running and its auction not
+    /// waiting or open (1010:3006, 10a8:2d5a, 1038:24d6, settlement step
+    /// 0x64).
+    SaleEventBusy = "sale_event_busy";
+    /// An auction started while another waits to open or is on waits its
+    /// turn, instead of taking the other's item and price (1028:08ac).
+    AuctionQueue = "auction_queue";
+    /// A bankrupt player's property no computer takes at the auction is
+    /// cleared away, also when some computer's limit was above the price
+    /// (1028:0c82).
+    PropertyUnsold = "property_unsold";
+    /// A human's building sold at auction shows its price in their books,
+    /// under "other" (1028:08e7).
+    SaleBooked = "sale_booked";
+    /// Only soft soap that's on makes planes skid, not the slot's kind and
+    /// square left after it ended (10a0:0ec8, 10a0:0e17).
+    SoftSoapActive = "soft_soap_active";
+    /// A championship whose building goes in the middle of it takes its
+    /// boost of the place back and ends (10a0:117e).
+    ChampionshipLocation = "championship_location";
+    /// A walker leaving a square clears only its own marks on it, not
+    /// another walker's (1088:571e, 1088:5841, 1088:5f3e).
+    WalkerMarkers = "walker_markers";
+    /// Bribing builders who can't go any faster costs nothing
+    /// (1010:19f1).
+    BribeNoEffect = "bribe_no_effect";
 }
 
 enhancements! {
@@ -314,20 +342,24 @@ enhancements! {
     /// counts as a change when the position changed (10c0:0f10,
     /// 10c0:15f7, 10c0:0fe3). The main screen's bars take their thumb by
     /// all of it, keep it under the mouse while it's dragged, and repeat
-    /// only while the mouse stays on the part held, after a short wait
-    /// (1020:0d92, 1020:0fa2, 1020:1e9b).
+    /// only while the mouse stays on the part held, after a short wait;
+    /// their back arrow ends at its 16th pixel (1020:0d92, 1020:0fa2,
+    /// 1020:1e9b, 1020:151a).
     ScrollBars = "scroll_bars";
     /// A click on a focused text field keeps it focused, "Speichern"
     /// saves a name being typed, and a name picked from the file menu's
     /// list puts the cursor after it (10c0:1c1b, 1040:073c, 1040:0192).
     EditField = "edit_field";
     /// Shift, Ctrl and a double click's second press don't stop a click
-    /// on a list, with a tool or on the main screen's scroll bars
-    /// (10c0:0431, 1020:1984, 1020:0d92, 1020:151a).
+    /// on a list, with a tool or on the main screen's scroll bars, and
+    /// only a mouse button held over the island stops the arrow keys'
+    /// scrolling, not Shift or Ctrl held as the mouse last moved there
+    /// (10c0:0431, 1020:1984, 1020:0d92, 1020:151a, 1020:2d4c).
     ModifierClicks = "modifier_clicks";
     /// Only the left button clicks the start menu's buttons, ticks the
-    /// options' boxes, drags the money menu and presses the credits'
-    /// close button (1058:41fb, 1060:2404, 1070:0820, 1030:3ec4).
+    /// options' boxes, drags the money menu, presses the credits' close
+    /// button and scrolls the overview map's vertical bar (1058:41fb,
+    /// 1060:2404, 1070:0820, 1030:3ec4, 10b8:222b).
     MouseButtons = "mouse_buttons";
     /// Switching the start menu to its scenarios ticks the scenario that
     /// starts (1058:02cf).
@@ -366,8 +398,10 @@ enhancements! {
     /// 10b8:0a0a).
     OverviewColours = "overview_colours";
     /// A form's drag only starts on its title bar and ends when the mouse
-    /// comes up, and the quit question stays whole on the screen
-    /// (1038:34fc, 1028:2ecc, 1020:1bd9, 1020:38d4).
+    /// comes up, and the quit question, the main screen, the build menu
+    /// and the file menu stay whole on the screen, not only their title
+    /// bars (1038:34fc, 1028:2ecc, 1020:1bd9, 1020:38d4, 1018:0461,
+    /// 1040:09ca).
     FormDrags = "form_drags";
     /// The info box's and the overview's prices mark the thousands in the
     /// right place, and off the map the box names the sea (1030:108b,
@@ -439,6 +473,14 @@ enhancements! {
     /// a game saved with the TV open no longer loads paused without its
     /// TV, until the TV is opened and closed again (1010:08d7, 1048:077a).
     LoadedPause = "loaded_pause";
+    /// The overview map's frame for the main screen's view turned a
+    /// quarter (rotations 1 and 3) is a box as wide and high as what the
+    /// view shows of the map, about 50 × 20, as `big_map`'s is, not the
+    /// original's 40 × 25 of every rotation (10b8:1349, `1110:3d80`).
+    OverviewFrame = "overview_frame";
+    /// The auctioneer's waving hand is drawn again over each frame of a
+    /// paddle's animation, which wipes its bottom rows (1028:15ef).
+    AuctionPaddle = "auction_paddle";
 }
 
 /// The world fixes that may only be off with one human in the game: off,

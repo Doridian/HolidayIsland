@@ -562,8 +562,11 @@ impl World {
             }
         }
         let pos = p.pos();
-        self.set_marker(pos, FREE);
-        self.set_marker_2(pos, FREE);
+        // BUG(original): both layers of its own square are cleared, another walker's mark there too (fix.walker_markers: only the layer that holds its path).
+        if !self.fixes.has(Fix::WalkerMarkers) {
+            self.set_marker(pos, FREE);
+            self.set_marker_2(pos, FREE);
+        }
         // The original then frees whichever layer holds its path, which
         // it just freed.
         let path = i16::from(self.marker(pos));
@@ -575,7 +578,7 @@ impl World {
     }
 
     /// Walker `n` frees its square: each marker layer that holds its path,
-    /// then both. // 1088:571e
+    /// then both (with `fix.walker_markers` not). // 1088:571e
     fn free_square(&mut self, n: i16) {
         let p = self.person(n);
         let pos = p.pos();
@@ -585,8 +588,11 @@ impl World {
         if i16::from(self.marker_2(pos)) == p.path() {
             self.set_marker_2(pos, FREE);
         }
-        self.set_marker(pos, FREE);
-        self.set_marker_2(pos, FREE);
+        // BUG(original): then both layers anyway, another walker's mark on the square too (fix.walker_markers: only its own).
+        if !self.fixes.has(Fix::WalkerMarkers) {
+            self.set_marker(pos, FREE);
+            self.set_marker_2(pos, FREE);
+        }
     }
 
     /// Walker `n` marks its square with its path, in the first free layer.
@@ -1567,10 +1573,14 @@ impl World {
 
     /// The building on `pos` (or `pos` itself for a palm, beach life or
     /// nothing, `1110:1358`) has sabotage of `kind` on it, in any of the
-    /// slots. // 10a0:0ec8
+    /// slots; with `fix.soft_soap_active` in an active one. // 10a0:0ec8
     fn sabotage_at(&self, kind: u8, pos: Pos) -> bool {
         let at = self.sabotage_square(pos);
-        self.sabotage.iter().any(|s| s.pos == at && s.kind == kind)
+        // BUG(original): the slot's active byte (+9) isn't checked: an ended sabotage keeps its kind and square, so planes landing there skid and crash until the slot is used again, a saved game too (fix.soft_soap_active).
+        let active = self.fixes.has(Fix::SoftSoapActive);
+        self.sabotage
+            .iter()
+            .any(|s| s.pos == at && s.kind == kind && (s.active || !active))
     }
 
     /// The square sabotage on `pos` is kept at.
@@ -1584,10 +1594,17 @@ impl World {
     }
 
     /// The soft soap (sabotage 5) on the building on `pos` ends: its
-    /// countdown goes to 1. // 10a0:0e17
+    /// countdown goes to 1; with `fix.soft_soap_active` an active one's.
+    /// // 10a0:0e17
     fn end_soft_soap(&mut self, pos: Pos) {
         let at = self.sabotage_square(pos);
-        if let Some(s) = self.sabotage.iter_mut().find(|s| s.pos == at && s.kind == 5) {
+        // BUG(original): the first slot of kind 5 on the square, active or not (fix.soft_soap_active: an active one).
+        let active = self.fixes.has(Fix::SoftSoapActive);
+        if let Some(s) = self
+            .sabotage
+            .iter_mut()
+            .find(|s| s.pos == at && s.kind == 5 && (s.active || !active))
+        {
             s.countdown = 1;
         }
     }
@@ -2061,6 +2078,27 @@ mod tests {
         assert_eq!(w.sabotage[2].countdown, 1);
     }
 
+    #[test]
+    fn fix_soft_soap_active() {
+        for fixed in [false, true] {
+            let mut w = world();
+            w.fixes.set(Fix::SoftSoapActive, fixed);
+            // Soap that has ended keeps its kind and square.
+            w.sabotage[1].kind = 5;
+            w.sabotage[1].pos = (12, 13);
+            assert_eq!(w.sabotage_at(5, (12, 13)), !fixed);
+            // A new one on the square: the original ends the old one.
+            w.sabotage[3].kind = 5;
+            w.sabotage[3].pos = (12, 13);
+            w.sabotage[3].countdown = 50;
+            w.sabotage[3].active = true;
+            assert!(w.sabotage_at(5, (12, 13)));
+            w.end_soft_soap((12, 13));
+            assert_eq!(w.sabotage[1].countdown, u16::from(!fixed));
+            assert_eq!(w.sabotage[3].countdown, if fixed { 1 } else { 50 });
+        }
+    }
+
     /// A road along `i` from (20, 30) to (25, 30), and ANIMDAT2 path 2
     /// taking four rows to cross a square going `i + 1`: three plain rows,
     /// then the end of the square.
@@ -2114,6 +2152,40 @@ mod tests {
         w.claim_ahead(0, FIRST);
         assert_eq!(w.island.layer_551c.at((21, 30)), 2);
         assert_eq!(w.island.layer_551c.at((20, 30)), FREE);
+    }
+
+    #[test]
+    fn fix_walker_markers() {
+        for fixed in [false, true] {
+            // Walker FIRST (path 0) shares (20, 30) with another's path 7.
+            let shared = |w: &mut World| {
+                w.island.layer_551c.set((20, 30), 0);
+                w.island.layer_5520.set((20, 30), 7);
+            };
+            let other = |w: &World| w.island.layer_5520.at((20, 30));
+            let mut w = road();
+            w.fixes.set(Fix::WalkerMarkers, fixed);
+            put(&mut w, FIRST, 0x11, (20, 30)).set_path(0);
+            shared(&mut w);
+            w.claim_ahead(0, FIRST);
+            assert_eq!(w.island.layer_551c.at((20, 30)), FREE);
+            assert_eq!(other(&w), if fixed { 7 } else { FREE });
+            shared(&mut w);
+            w.free_square(FIRST);
+            assert_eq!(w.island.layer_551c.at((20, 30)), FREE);
+            assert_eq!(other(&w), if fixed { 7 } else { FREE });
+            // The square its path's step leads to: its own on path 2's
+            // first row.
+            w.edit(FIRST, |p| {
+                p.set_path(2);
+                p.set_step(0);
+            });
+            w.island.layer_551c.set((20, 30), 7);
+            w.island.layer_5520.set((20, 30), 2);
+            w.free_path_square(FIRST);
+            assert_eq!(w.island.layer_5520.at((20, 30)), FREE);
+            assert_eq!(w.island.layer_551c.at((20, 30)), if fixed { 7 } else { FREE });
+        }
     }
 
     #[test]

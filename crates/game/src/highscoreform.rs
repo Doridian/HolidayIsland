@@ -572,6 +572,7 @@ impl Highscoreform {
                 return r;
             }
         }
+        // BUG(original): the check boxes are pressed as radio buttons, so a ticked one ignores a click (1040:31bc); kept as design, one table is shown at a time.
         for i in 0..self.boxes.len() {
             let out = self.boxes[i].radio.mouse_down(x, y);
             if out.handled {

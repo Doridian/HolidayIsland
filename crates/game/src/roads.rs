@@ -289,7 +289,9 @@ impl World {
             tick.sounds.push(ROAD_SOUND); // 10a0:30b6
         }
         self.end_road_drag(player);
-        // BUG(original): turns the "new people" option on whatever the player chose.
+        // Not a bug (docs/original-bugs.md, 1080:3216): `1110:0056` is the
+        // busy flag that keeps people from spawning meanwhile, not a
+        // player's option, and the road sets it back.
         self.options.people_spawn = true;
         result
     }

@@ -780,8 +780,14 @@ impl World {
     /// below 20): event 9 is made certain with the price, twice
     /// `HAUSPREI.DAT` column 2 for a type of price 10 or less, else a
     /// quarter of the price. Otherwise it's demolished. // 10a8:2d5a
+    ///
+    /// With `fix.sale_event_busy` a building isn't put up for sale while
+    /// event 9 or its auction is taken ([`World::sale_event_busy`]): it's
+    /// demolished instead.
     fn get_rid_of(&mut self, p: u8, pos: Pos, tick: &mut Tick) {
-        if self.random.random(100) < 20 {
+        let selling = self.random.random(100) < 20;
+        // BUG(original): event 9 is one record, scheduled again whatever its state: another sale waiting, running or at auction is overwritten, so its building is never sold, or one is auctioned twice and its seller paid twice (fix.sale_event_busy: demolished instead).
+        if selling && !(self.fixes.has(Fix::SaleEventBusy) && self.sale_event_busy(9)) {
             let origin = self.building_origin(pos); // 1030:154c
             let b = self.island.buildings.get(origin).unwrap_or(NO_BUILDING);
             if b != NO_BUILDING {
@@ -2015,6 +2021,35 @@ mod tests {
         w.computer_turn(2, &mut tick);
         w.computer_turn(2, &mut tick);
         assert_eq!(w.computers.state[0], WAITING);
+    }
+
+    #[test]
+    fn fix_sale_event_busy() {
+        // A seed whose first `Random(100)` sells.
+        let seed = (0..1000)
+            .find(|&s| vcl::random::Random::new(s).random(100) < 20)
+            .unwrap();
+        for fixed in [false, true] {
+            let mut w = world();
+            w.init_computers();
+            w.fixes.set(Fix::SaleEventBusy, fixed);
+            w.events = vec![crate::events::Event::default(); 41];
+            // Another sale is on.
+            w.events[9].running = 2;
+            w.events[9].pos = (5, 5);
+            let pos = (20, 20);
+            let mut h = House::new(pos);
+            h.set_building(2);
+            w.houses.push(h);
+            w.island.buildings.set(pos, 2);
+            w.island.owners.set(pos, 2);
+            w.random = vcl::random::Random::new(seed);
+            let mut tick = Tick::default();
+            w.get_rid_of(2, pos, &mut tick);
+            // The original takes the record over; fixed, it's demolished.
+            assert_eq!(w.events[9].pos, if fixed { (5, 5) } else { pos });
+            assert_eq!(w.island.buildings.at(pos) == NO_BUILDING, fixed);
+        }
     }
 
     #[test]

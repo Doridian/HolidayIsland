@@ -106,7 +106,7 @@ use game::dateimenue::{self, Dateimenue};
 use game::endeform;
 use game::enhance::{self, Config, Fix, Fixes};
 use game::enhanceform;
-use game::hauptschirm::{self, Axis, Hauptschirm, InfoTexts, KeyResult};
+use game::hauptschirm::{self, Axis, Hauptschirm, InfoTexts, KeyResult, TitleButton};
 use game::highscoreform::ScoreTable;
 use game::hintergrund::{self, Island};
 use game::ladenform::{self, LadenForm};
@@ -381,6 +381,9 @@ struct Game {
     /// it was after the last tick it ran (no more ticks, no commands),
     /// to be saved.
     net_stopped: NetStopped,
+    /// The minimize widget was clicked: the window minimizes
+    /// (`TApplication.Minimize`, 1020:0595; [`App::take_minimize`]).
+    minimize: bool,
 }
 
 /// A client's network game that ended ([`Game::net_stopped`]).
@@ -713,8 +716,7 @@ impl Game {
             follow(s.bounds(), &mut s.left, &mut s.top);
         }
         let d = &mut self.file_menu.menu;
-        let bounds = Rect::new(d.left, d.top, dateimenue::WIDTH, dateimenue::HEIGHT);
-        follow(bounds, &mut d.left, &mut d.top);
+        follow(d.bounds(), &mut d.left, &mut d.top);
         self.forms.follow(follow);
     }
 
@@ -1246,6 +1248,10 @@ impl Game {
         if target == "ButtonImage" || target == "Hauptbild" {
             self.bar_mouse(x); // 1018:3e46
         }
+        if target == "Hauptbild" {
+            // +0x407, which keeps the arrow keys from scrolling. // 1020:1984, 1020:1ae6, 1020:1b31
+            self.screen.hauptbild_mouse(shift);
+        }
         match input {
             Input::MouseDown { .. } => {
                 self.captured = Some(target);
@@ -1343,14 +1349,30 @@ impl Game {
                 }
                 (true, false)
             }
-            // The close button asks whether to quit (1020:0577).
-            (
-                "CloseBild",
-                Input::MouseUp {
-                    button: Button::Left, ..
-                },
-            ) if (0..bounds.width()).contains(&x) && (0..bounds.height()).contains(&y) => {
-                self.open_ende();
+            // The close and minimize widgets: a press holds one down
+            // (en 1020:31e7, en 1020:325b), a release lets it up (en
+            // 1020:3221, en 1020:3295), and the left button let go over it
+            // is its `OnClick`: the close button asks whether to quit
+            // (1020:0577), the minimize button minimizes the game
+            // (`TApplication.Minimize`, 1020:0595), which comes first, as
+            // the VCL clicks before the mouse up.
+            ("CloseBild" | "Kleinbild", Input::MouseDown { .. }) => {
+                let which = title_button(target);
+                let out = self.screen.title_button_down(which, x, y);
+                self.play(out.sound.map(game::widgets::Sound::number));
+                (out.repaint, false)
+            }
+            ("CloseBild" | "Kleinbild", Input::MouseUp { button, .. }) => {
+                let which = title_button(target);
+                let inside = (0..bounds.width()).contains(&x) && (0..bounds.height()).contains(&y);
+                if button == Button::Left && inside {
+                    match which {
+                        TitleButton::Close => self.open_ende(),
+                        TitleButton::Minimize => self.minimize = true,
+                    }
+                }
+                let out = self.screen.title_button_up(which, x, y);
+                self.play(out.sound.map(game::widgets::Sound::number));
                 (true, false)
             }
             _ => (false, false),
@@ -1487,8 +1509,7 @@ impl Game {
                 }
                 Win::FileMenu => {
                     let m = &mut self.file_menu;
-                    m.form.components[0].bounds =
-                        Rect::new(m.menu.left, m.menu.top, dateimenue::WIDTH, dateimenue::HEIGHT);
+                    m.form.components[0].bounds = m.menu.bounds();
                     m.form.components[0].visible = m.visible;
                     if let Some(c) = m.form.component_mut("Dateimenuebild")
                         && let Kind::Image { picture } = &mut c.kind
@@ -1896,14 +1917,27 @@ impl Holiday {
     /// the player's own files, never the game's `MAPS\`. // en 1040:1198
     fn delete_game(&mut self, name: &[u8]) {
         self.hourglass();
-        match self.saves.delete(name) {
-            Ok(Some(path)) => println!("deleted {}", path.display()),
-            Ok(None) => eprintln!("{}: not one of the player's games", String::from_utf8_lossy(name)),
-            Err(e) => eprintln!("can't delete {}: {e}", String::from_utf8_lossy(name)),
-        }
+        let deleted = match self.saves.delete(name) {
+            Ok(Some(path)) => {
+                println!("deleted {}", path.display());
+                true
+            }
+            Ok(None) => {
+                eprintln!("{}: not one of the player's games", String::from_utf8_lossy(name));
+                false
+            }
+            Err(e) => {
+                eprintln!("can't delete {}: {e}", String::from_utf8_lossy(name));
+                false
+            }
+        };
         let games = self.saves.games(self.enhance.view);
         if let Some(game) = &mut self.game {
             game.file_menu.menu.set_games(games);
+            // en 1040:110c: the name field is emptied after the erase.
+            if deleted {
+                game.file_menu.menu.clear_name();
+            }
         }
     }
 
@@ -2074,9 +2108,7 @@ impl Holiday {
             false
         } else if let Some(game) = &mut self.game {
             if game.file_menu.visible {
-                let m = &game.file_menu.menu;
-                let (x, y) = (at.0 - m.left, at.1 - m.top);
-                let over = (0..dateimenue::WIDTH).contains(&x) && (0..dateimenue::HEIGHT).contains(&y);
+                let over = inside_rect(game.file_menu.menu.bounds(), at);
                 let r = if over {
                     game.file_menu.menu.wheel(dy)
                 } else {
@@ -2288,7 +2320,8 @@ impl Holiday {
             }
             _ => return,
         };
-        let inside = (0..dateimenue::WIDTH).contains(&x) && (0..dateimenue::HEIGHT).contains(&y);
+        let bounds = m.menu.bounds();
+        let inside = (0..bounds.width()).contains(&x) && (0..bounds.height()).contains(&y);
         if !inside && !m.captured {
             return;
         }
@@ -2904,11 +2937,24 @@ impl App for Holiday {
         self.quit
     }
 
+    fn take_minimize(&mut self) -> bool {
+        self.game.as_mut().is_some_and(|g| std::mem::take(&mut g.minimize))
+    }
+
     fn resize(&mut self, width: u32, height: u32) {
         self.layout(
             i32::try_from(width).unwrap_or(i32::MAX),
             i32::try_from(height).unwrap_or(i32::MAX),
         );
+    }
+}
+
+/// The main screen's title bar widget that's `CloseBild` or `Kleinbild`.
+fn title_button(image: &str) -> TitleButton {
+    if image == "CloseBild" {
+        TitleButton::Close
+    } else {
+        TitleButton::Minimize
     }
 }
 
@@ -4600,6 +4646,55 @@ mod tests {
         let w = c.iter().map(|p| p.0).max().unwrap() - c.iter().map(|p| p.0).min().unwrap();
         let h = c.iter().map(|p| p.1).max().unwrap() - c.iter().map(|p| p.1).min().unwrap();
         (w, h)
+    }
+
+    /// The main screen's minimize widget: held down by a press, and the
+    /// left button let go over it minimizes the window; the right one
+    /// doesn't (en 1020:325b, en 1020:3295, 1020:0595).
+    #[test]
+    fn minimize_widget() {
+        let Some(dir) = game_dir() else { return };
+        let mut holiday = holiday_in_a_game(&dir, (800, 600), Config::ORIGINAL);
+        let game = holiday.game.as_mut().unwrap();
+        let main = game.screen.bounds();
+        let (x, y) = (main.left + 630, main.top + 5);
+        for (button, shift) in [(Button::Right, ShiftState::RIGHT), (Button::Left, ShiftState::LEFT)] {
+            let _ = game.main_mouse(Input::MouseDown { x, y, button }, shift, false);
+            assert!(game.screen.title_button_pressed(TitleButton::Minimize));
+            assert!(!game.screen.title_button_pressed(TitleButton::Close));
+            let _ = game.main_mouse(Input::MouseUp { x, y, button }, ShiftState::default(), true);
+            assert!(!game.screen.title_button_pressed(TitleButton::Minimize));
+            assert_eq!(game.minimize, button == Button::Left);
+        }
+        assert!(holiday.take_minimize());
+        assert!(!holiday.take_minimize());
+    }
+
+    /// `overview_frame`: the original's view turned a quarter gets a frame
+    /// of its own on the overview map, about 50 × 20, what its corners
+    /// span; turned 0 or 2, and in the original, the overview's own
+    /// picture.
+    #[test]
+    fn overview_frame() {
+        let Some(dir) = game_dir() else { return };
+        let mut on = Config::ORIGINAL;
+        on.view.set(enhance::Enhancement::OverviewFrame, true);
+        for (config, fixed) in [(Config::ORIGINAL, false), (on, true)] {
+            let mut h = holiday_in_a_game(&dir, (800, 600), config);
+            let g = h.game.as_mut().unwrap();
+            for rotation in 0..4 {
+                g.screen.set_view(rotation, &g.world, &g.tiles);
+                let frame = g.screen.overview_frame(&g.tiles);
+                if fixed && rotation % 2 == 1 {
+                    let frame = frame.unwrap();
+                    let cam = g.screen.camera();
+                    assert_eq!((frame.width(), frame.height()), overview_box(&g.tiles, &cam, 19, 25));
+                    assert_eq!((frame.width(), frame.height()), (50, 20));
+                } else {
+                    assert_eq!(frame, None, "fixed {fixed}, rotation {rotation}");
+                }
+            }
+        }
     }
 
     /// `big_map` on 1024×768 and 1280×1024, on and off: off, the

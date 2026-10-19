@@ -177,7 +177,8 @@ pub struct Baumenue {
     grab: (i32, i32),
     /// Sounds to play, in order (`play_sound`).
     pub sounds: Vec<u8>,
-    /// The player's view enhancements (`build_menu`, `form_positions`).
+    /// The player's view enhancements (`build_menu`, `form_positions`,
+    /// `form_drags`).
     pub enhance: Enhancements,
 }
 
@@ -621,11 +622,20 @@ impl Baumenue {
 
     /// `BaumenuebildMouseMove`: with the title bar held by the left button
     /// the form follows the mouse (`cursor`, on the screen), on the
-    /// `screen`. // 1018:0461
+    /// `screen` by its width and its height then, the title bar's. With
+    /// `form_drags` by the height it's let go with (all of it, but rolled
+    /// up after a double click). // 1018:0461, en 1018:0476
     pub fn mouse_move(&mut self, shift: ShiftState, cursor: (i32, i32), screen: (i32, i32)) {
         if self.pressed == r::TITLE && shift.contains(ShiftState::LEFT) {
             self.left = (cursor.0 - self.grab.0).max(0).min(screen.0 - self.width);
-            self.top = (cursor.1 - self.grab.1).max(0).min(screen.1 - self.height);
+            let top = cursor.1 - self.grab.1;
+            self.top = if self.enhance.has(Enhancement::FormDrags) {
+                let height = if self.double { TITLE_HEIGHT } else { self.full_height() };
+                top.min(screen.1 - height).max(0)
+            } else {
+                // BUG(original): the form is kept on the screen by its 16-pixel title bar, the height it has while dragged, so it can be dropped with all but the title bar off the bottom, where the mouse up gives it its full height back.
+                top.max(0).min(screen.1 - self.height)
+            };
         }
     }
 

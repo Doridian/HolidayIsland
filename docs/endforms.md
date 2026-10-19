@@ -12,8 +12,8 @@ state, so the form keeps the table and the caller writes it.
 Ported in [`game::endeform`](../crates/game/src/endeform.rs).
 
 Opened from the main screen with Escape or `Q` (alone or with Shift) and
-Alt+F4 (1020:2e09), from its close button and `FormClose` (1020:0480,
-1020:0577), and from the file menu's "Beenden" and `Q` (1040:0a4c,
+Alt+F4 (1020:2e09), from its close button (`CloseBild`, 1020:0577;
+1020:0480 is the old `CloseButtonDblClick`, which nothing uses), and from the file menu's "Beenden" and `Q` (1040:0a4c,
 1040:1572). Each caller shows it only if `+0x180` (quitting) is clear.
 
 `FormShow` stops the clock (1020:24a0), disables the other forms

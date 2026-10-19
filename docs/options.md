@@ -163,4 +163,7 @@ default 300, a port extension saved in the port's chunk; labelled
   (1088:7fb1) from the view, which places the people for the view and
   calls `spawn_people` with the world's random numbers. The port runs it
   in the world with `Action::SetOption`, for the view the world last
-  had ([people.md](people.md#after-the-view-moves-10887fb1)).
+  had ([people.md](people.md#after-the-view-moves-10887fb1)). With
+  `fix.view_people` (on by default) the view places and spawns its own
+  people instead, with its own random numbers
+  ([people.md](people.md#who-is-whose-fixview_people)).

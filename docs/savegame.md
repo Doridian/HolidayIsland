@@ -101,7 +101,10 @@ worth news it has had (a bit each for events 12, 16 and 18), and
 reads them, and a file without them has none). Then
 `options.auction_timeout=` the host's auction timeout in ticks
 (`savegame::auction_timeout_in`; a file without it gets 300, or from the
-file menu the running game's).
+file menu the running game's). Then, if any auctions wait their turn
+(`fix.auction_queue`, [auction.md](auction.md)), `auction.queue=` their
+`item,price` pairs, the first next (`auction::queue_lines`,
+`auction::queue_in`; a file without it has none).
 
 A save made by whoever knows every client's view
 (`World::to_map_with_views`) has each one's as `view.<client>.` lines:
@@ -333,7 +336,16 @@ from the background (sound 10) and, still over it:
   menu from the globals.
 - "Beenden": the menu hides and `TEndeform` asks.
 
-The title bar drags the form, kept on the screen (1040:09ca). Any button
+The title bar drags the form: a left press on it shrinks the form to
+its 16-pixel title bar (`ClientHeight := 16`, 1040:073c, en 1040:077e),
+the move keeps it on the screen by its width and that height
+(`screen_height - Height`, 1040:09ca, en 1040:0a45), and the left
+button's release gives it its height back, `rect0.bottom + 1` = 210
+(1040:0a4c, en 1040:0ac7); unlike the main screen's there's no double
+click's roll-up. So it can be dropped with all but its title bar off
+the bottom of the screen ([original-bugs.md](original-bugs.md#ui-quirks));
+with `enhance.form_drags` the move keeps it whole on the screen
+(`Dateimenue::height`, `bounds`). Any button
 offers the press to the list (which also puts the selected name into the
 name field, 1040:0192), the name field and the arrows. A double click on
 the selected game loads it (1040:0180). Enter in the name field is its
@@ -349,7 +361,10 @@ draws `UPGRADE\datwin1d.BMP` with a fifth button on the left,
 moves to 8,136, "Beenden" to 8,158 (two more entries in the table, en
 `1118:1812`). "Löschen" and the key `D` delete the selected game: a
 question (`Wirklich loeschen?`, `Vous êtes sûr?` or `Are you sure?` by
-`land`), then `MAPS\name.map` is erased and the list filled again. The
+`land`), then `MAPS\name.map` is erased, the list filled again, and the
+name field emptied and erased from the background (its length byte
+`+0x191` := 0, en 1040:110c; `Dateimenue::clear_name`; its cursor stays
+where it was). The
 port has that menu with `UPGRADE\` (`Dateimenue::with_upgrade`) and asks
 the question (`MessageDlg(…, mtConfirmation, [mbOK, mbCancel], 0)`,
 en 1040:118b): only OK erases, and only the player's own copy in the

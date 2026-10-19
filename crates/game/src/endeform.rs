@@ -1,9 +1,9 @@
 //! `TEndeform`, "HOLIDAY ISLAND VERLASSEN?" (unit `1020`, with
 //! `THauptschirm`): the question before the game quits. The main screen
-//! opens it with Escape, `Q` or Alt+F4 (1020:2e09), its close button and
-//! `FormClose` (1020:0480, 1020:0577), and the file menu with "Beenden"
-//! or `Q` (1040:0a4c, 1040:1572). It doesn't open again while the game
-//! is already quitting.
+//! opens it with Escape, `Q` or Alt+F4 (1020:2e09) and its close button
+//! (`CloseBild`, 1020:0577; 1020:0480 the old `CloseButtonDblClick`),
+//! and the file menu with "Beenden" or `Q` (1040:0a4c, 1040:1572). It
+//! doesn't open again while the game is already quitting.
 //!
 //! The form is one `TImage`, `EndeImage`, with the background
 //! `Exitform.BMP`; its two buttons, the close button and the title bar are
@@ -198,7 +198,9 @@ impl Endeform {
     }
 
     /// The callers' `if not quitting then Show`: shows the form unless
-    /// the game is already quitting. Whether it did. // 1020:0480, 1020:0577
+    /// the game is already quitting. Whether it did. // 1020:2e09, its
+    /// close button (`CloseBild`, 1020:0577; 1020:0480 the old
+    /// `CloseButtonDblClick`)
     pub fn open(&mut self, screen: (i32, i32)) -> bool {
         if self.quitting {
             return false;

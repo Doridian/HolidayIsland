@@ -172,8 +172,11 @@ pub struct Auktionsform {
     grip: (i32, i32),
     /// A bid's paddle going up and down: its colour and how far it is.
     paddle: Option<(u16, u32)>,
+    /// The hand's frame [`Auktionsform::draw_auctioneer`] last drew, which
+    /// `auction_paddle` draws again under a paddle.
+    hand_frame: u8,
     /// The player's view enhancements (`auction_title`,
-    /// `form_positions`).
+    /// `form_positions`, `auction_paddle`).
     pub enhance: Enhancements,
     /// The seat the form bids for: whose limit the bid button checks.
     /// Single human: player 1 ([`crate::seats::HOST_SEAT`]); with several
@@ -208,6 +211,7 @@ impl Auktionsform {
             rolled_up: false,
             grip: (0, 0),
             paddle: None,
+            hand_frame: 0,
             enhance: Enhancements::ORIGINAL,
             seat: crate::seats::HOST_SEAT,
             status_error: None,
@@ -380,13 +384,15 @@ impl Auktionsform {
             let (sx, sy) = frames.get(usize::from(frame)).copied().unwrap_or(frames[0]);
             self.image.blit(x, y, anim, Rect::new(sx, sy, w, h), Rop::Copy, all);
         }
+        self.hand_frame = f.hand;
     }
 
     /// The paddle's frame for how far it is: the background under it put
     /// back, then the mask and the colour. The background is the bare
     /// one: rows 167 to 234, below the item's picture (rows 42 to 166),
     /// but the bottom of the auctioneer's waving hand (282, 149) for the
-    /// paddles of colours 7 and 8. // 1028:15ef
+    /// paddles of colours 7 and 8. With `auction_paddle` the hand's
+    /// frame goes back there too, under the paddle. // 1028:15ef
     fn draw_paddle(&mut self) {
         let Some((colour, ms)) = self.paddle else {
             return;
@@ -407,6 +413,16 @@ impl Auktionsform {
         let under = Rect::new(x, PADDLE_TOP, w, h);
         self.image
             .blit(x, PADDLE_TOP, &self.bitmaps[BILD], under, Rop::Copy, all);
+        if self.enhance.has(Enhancement::AuctionPaddle) {
+            let ((hx, hy), (hw, hh)) = HAND_AT;
+            let (sx, sy) = HAND_FRAMES
+                .get(usize::from(self.hand_frame))
+                .copied()
+                .unwrap_or(HAND_FRAMES[0]);
+            let clip = under.intersect(&all);
+            self.image
+                .blit(hx, hy, &self.bitmaps[ANIM], Rect::new(sx, sy, hw, hh), Rop::Copy, clip);
+        }
         let hand = &self.bitmaps[HAND];
         self.image.blit(x, y, hand, Rect::new(0, 0, w, h), Rop::And, all);
         self.image.blit(x, y, hand, Rect::new(c * w, 0, w, h), Rop::Invert, all);
@@ -610,6 +626,32 @@ mod tests {
     #[test]
     fn picture_names() {
         assert_eq!(picture_file(b"surfwm  .bmp"), "SURFWM.BMP");
+    }
+
+    /// A paddle of colour 7 puts the bare background back over the
+    /// bottom of the auctioneer's hand (1028:15ef); with `auction_paddle`
+    /// the hand's frame goes back there.
+    #[test]
+    fn paddle_and_hand() {
+        for fixed in [false, true] {
+            let bitmaps = (0..BITMAP_FILES.len())
+                .map(|i| Surface::new(400, 300, u8::try_from(i + 1).unwrap()))
+                .collect();
+            let mut form = Auktionsform::new(bitmaps, Vec::new());
+            form.enhance.set(Enhancement::AuctionPaddle, fixed);
+            let hand = u8::try_from(ANIM + 1).unwrap();
+            form.image.fill_rect(form.image.bounds(), form.image.bounds(), hand);
+            // The first frame: the paddle still below the image.
+            form.paddle = Some((7, 0));
+            form.draw_paddle();
+            let at = |x: usize, y: usize| form.image.pixel(x, y);
+            let bild = u8::try_from(BILD + 1).unwrap();
+            // The hand's bottom left, under the paddle's column (260..284).
+            assert_eq!(at(282, 170), if fixed { hand } else { bild }, "fixed {fixed}");
+            assert_eq!(at(283, 178), if fixed { hand } else { bild });
+            // Left of the hand only the background.
+            assert_eq!(at(270, 170), bild);
+        }
     }
 
     #[test]

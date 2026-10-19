@@ -2002,7 +2002,8 @@ impl World {
 
     /// A walker frees the square its path's step leads to (by the step's
     /// fourth byte: 10 `i + 1`, 11 `i - 1`, 12 `j - 1`, 13 `j + 1`, else
-    /// its own) in both marker layers. // 1088:5841
+    /// its own) in both marker layers; with `fix.walker_markers` in those
+    /// that hold its path. // 1088:5841
     fn free_path_square(&mut self, n: i16) {
         let Some(p) = self.people.get(n) else {
             return;
@@ -2020,6 +2021,17 @@ impl World {
         };
         // The original first clears each layer where it holds the walker's
         // path, then clears both anyway.
+        // BUG(original): both layers are cleared, another walker's claim on the square too (fix.walker_markers: only those that hold its path).
+        if self.fixes.has(Fix::WalkerMarkers) {
+            let path = p.path();
+            if self.island.layer_551c.get(square).is_some_and(|m| i16::from(m) == path) {
+                self.set_marker(square, FREE);
+            }
+            if self.island.layer_5520.get(square).is_some_and(|m| i16::from(m) == path) {
+                self.set_marker_2(square, FREE);
+            }
+            return;
+        }
         self.set_marker(square, FREE);
         self.set_marker_2(square, FREE);
     }

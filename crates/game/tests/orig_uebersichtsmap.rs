@@ -487,7 +487,7 @@ fn the_overview_map() {
     let _ = form.key_down(0x26, ShiftState::default(), &world);
     assert_eq!(form.origin(), (ox, (oy - 20).max(0)));
     let (ox, oy) = form.origin();
-    let r = form.scroll_mouse_down(270, &world);
+    let r = form.scroll_mouse_down(270, true, &world);
     assert_eq!(r.sounds, [9]);
     assert_eq!(
         r.action,
@@ -503,6 +503,28 @@ fn the_overview_map() {
     assert!(!world.options.people_spawn && form.scrolling());
     assert!(form.scroll_timers(&world));
     assert_eq!(form.origin(), (ox, (oy + 10).min(227)));
+    let r = form.scroll_mouse_up();
+    world.apply(Command {
+        player: 1,
+        action: r.action.unwrap(),
+    });
+    assert!(world.options.people_spawn && !form.scrolling());
+    // The right button presses the vertical bar too (10b8:222b); with
+    // `mouse_buttons` only the left one does.
+    let before = (form.origin(), form.enhance);
+    form.enhance.set(Enhancement::MouseButtons, true);
+    let r = form.scroll_mouse_down(270, false, &world);
+    assert!(r.sounds.is_empty() && r.action.is_none() && !form.scrolling());
+    assert_eq!(form.origin(), before.0);
+    form.enhance = before.1;
+    let r = form.scroll_mouse_down(270, false, &world);
+    assert_eq!(r.sounds, [9]);
+    assert!(r.action.is_some() && form.scrolling());
+    assert_eq!(form.origin(), (before.0.0, (before.0.1 + 5).min(227)));
+    world.apply(Command {
+        player: 1,
+        action: r.action.unwrap(),
+    });
     let r = form.scroll_mouse_up();
     world.apply(Command {
         player: 1,

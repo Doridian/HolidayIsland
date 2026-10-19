@@ -819,6 +819,8 @@ impl World {
         state.extend(self.seat_lines());
         state.push((AUCTION_TIMEOUT.to_owned(), self.options.auction_timeout.to_string()));
         state.extend(self.nowhere_lines());
+        // The auctions waiting their turn (`fix.auction_queue`).
+        state.extend(crate::auction::queue_lines(&self.auction));
         if self.fixes.has(Fix::SavedState) {
             state.extend(self.unsaved_state(view));
         }

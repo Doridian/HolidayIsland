@@ -584,6 +584,7 @@ impl GameParts {
             net: None,
             net_over: None,
             net_stopped: NetStopped::No,
+            minimize: false,
             forms,
             // The caller sets the player's (`Setup::assemble`).
             stack: Stack::new(enhance::Enhancements::ORIGINAL),

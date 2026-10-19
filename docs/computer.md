@@ -81,7 +81,7 @@ Nothing for a player who is out. By the turn's state:
 | 2 | `WLTNaechstenSchrittueberlegen` | Loans (10a8:2a60); then, unless the bank said no and it's in the red, `Random(1000)` 0 demolish, else build; otherwise `Random(100)` 0 demolish, else wait |
 | 3 | `WLTGebaeudeverkaufen` | Nothing; never set |
 | 4 | `WLTAbwarten` | After 11 turns, think |
-| 5 | `WLTGebaeudeabreissen` | Every other turn: the worst building (10a8:2ade), and if there is one, `Random(100) < 20` sells it through event 9 (1010:3006) with twice `HAUSPREI.DAT` column 2 for a type of price 10 or less, else a quarter of the price, and the player; otherwise its people leave and it's demolished (1078:280b). Then think; without one, wait |
+| 5 | `WLTGebaeudeabreissen` | Every other turn: the worst building (10a8:2ade), and if there is one, `Random(100) < 20` sells it through event 9 (1010:3006) with twice `HAUSPREI.DAT` column 2 for a type of price 10 or less, else a quarter of the price, and the player (whatever event 9's state: another sale waiting or at auction is overwritten; with `fix.sale_event_busy` it's demolished instead while event 9 is taken, [original-bugs.md](original-bugs.md#simulation-logic)); otherwise its people leave and it's demolished (1078:280b). Then think; without one, wait |
 
 The loans: while it's in the red and the bank hasn't said no, it borrows
 `Kreditgroesse` (1078:05c6: if the loan would pass `MaxSchulden` the bank
