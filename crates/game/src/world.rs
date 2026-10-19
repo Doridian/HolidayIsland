@@ -1552,6 +1552,7 @@ impl World {
                 // The port's chunk's (`fix.auction_queue`); none in an
                 // original file.
                 queue: crate::auction::queue_in(&save.trailing),
+                property_waiting: crate::auction::property_waiting_in(&save.trailing),
                 ..Auction::default()
             },
             options: Options {

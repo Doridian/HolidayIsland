@@ -252,12 +252,21 @@ impl World {
     }
 
     /// Each of `seats` that's bankrupt goes out with its loss, and its
-    /// property is auctioned as a computer's: whether any went out.
+    /// property is auctioned as a computer's: whether any went out. With
+    /// `fix.sale_event_busy`, while event 10 is taken (a computer's
+    /// property, or another seat's of the same day) the seat still goes
+    /// out, and its property waits for step 0x64
+    /// ([`crate::auction::Auction::property_waiting`]).
     fn seats_go_bankrupt(&mut self, seats: &[u8], tick: &mut Tick) -> bool {
         let mut went_out = false;
         for &p in seats {
             if self.bankrupt(p) {
-                self.auction_property(p);
+                // BUG(original): event 10 is one record, so a seat's property takes over another's waiting or at auction (design issue for multiplayer: only computers went bankrupt in the original) (fix.sale_event_busy: it waits its turn).
+                if self.fixes.has(crate::enhance::Fix::SaleEventBusy) && self.sale_event_busy(10) {
+                    self.auction.property_waiting |= crate::auction::seat_bit(p);
+                } else {
+                    self.auction_property(p);
+                }
                 self.set_player_out(p, 1);
                 went_out = true;
                 let r = self.seat_result(p, false);

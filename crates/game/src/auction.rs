@@ -216,18 +216,52 @@ pub struct Auction {
     /// first next. A port extension, kept in a saved game's port chunk
     /// (`auction.queue`, [`queue_lines`], [`queue_in`]).
     pub queue: Vec<(i32, i32)>,
+    /// With `fix.sale_event_busy`: the human seats that went out bankrupt
+    /// on the 2nd of January while event 10 was taken, whose property
+    /// waits for it ([`seat_bit`]); step 0x64 auctions the lowest first
+    /// once it's free. A port extension, kept in a saved game's port
+    /// chunk (`auction.property_waiting`, [`queue_lines`],
+    /// [`property_waiting_in`]).
+    pub property_waiting: u8,
 }
 
 /// The port chunk's line of the auctions waiting their turn
 /// ([`Auction::queue`]): `item,price` pairs; none for an empty queue.
 #[must_use]
 pub fn queue_lines(a: &Auction) -> Vec<(String, String)> {
-    if a.queue.is_empty() {
-        return Vec::new();
+    let mut lines = Vec::new();
+    if !a.queue.is_empty() {
+        let pairs: Vec<String> = a.queue.iter().map(|(item, price)| format!("{item},{price}")).collect();
+        lines.push((QUEUE_KEY.to_owned(), pairs.join(" ")));
     }
-    let pairs: Vec<String> = a.queue.iter().map(|(item, price)| format!("{item},{price}")).collect();
-    vec![(QUEUE_KEY.to_owned(), pairs.join(" "))]
+    if a.property_waiting != 0 {
+        let seats: Vec<String> = (1..=8u8)
+            .filter(|&p| a.property_waiting & seat_bit(p) != 0)
+            .map(|p| p.to_string())
+            .collect();
+        lines.push((PROPERTY_WAITING_KEY.to_owned(), seats.join(" ")));
+    }
+    lines
 }
+
+/// The human seats whose property waits for event 10 that a saved game's
+/// port chunk in `trailing` keeps ([`Auction::property_waiting`]); none
+/// in a file without the line.
+#[must_use]
+pub fn property_waiting_in(trailing: &[u8]) -> u8 {
+    formats::savegame::port_chunk(trailing)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|(k, _)| k == PROPERTY_WAITING_KEY)
+        .map_or(0, |(_, v)| {
+            v.split_whitespace()
+                .filter_map(|p| p.parse().ok())
+                .fold(0, |bits, p| bits | seat_bit(p))
+        })
+}
+
+/// The port chunk's key of [`Auction::property_waiting`].
+const PROPERTY_WAITING_KEY: &str = "auction.property_waiting";
 
 /// The auctions waiting their turn that a saved game's port chunk in
 /// `trailing` keeps ([`queue_lines`]); none in a file without the line.

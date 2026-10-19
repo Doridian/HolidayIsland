@@ -1504,7 +1504,9 @@ impl World {
     /// Step 0x64: a computer player who has gone bankrupt is out, and
     /// its property is auctioned ([`World::auction_property`]); with
     /// `fix.sale_event_busy` only while event 10 is free
-    /// ([`World::sale_event_busy`]), else it stays in until a later month. Unless the
+    /// ([`World::sale_event_busy`]), else it stays in until a later month;
+    /// a human seat's property that waited for event 10
+    /// ([`crate::auction::Auction::property_waiting`]) goes first. Unless the
     /// human cheated or the money is frozen, their net worth passing
     /// 100 000, 1 000 000 or 10 000 000 brings events 12, 16 or 18 (one a
     /// month, the first that hasn't come yet). The events point at the
@@ -1516,6 +1518,15 @@ impl World {
     /// ([`World::worth_news_seats`]).
     fn check_bankruptcies(&mut self, tick: &mut Tick) {
         let here = self.event_square();
+        // A human seat's property that waits for event 10 goes first.
+        if self.fixes.has(Fix::SaleEventBusy) && self.auction.property_waiting != 0 && !self.sale_event_busy(10) {
+            let bits = self.auction.property_waiting;
+            let p = (1..=8u8)
+                .find(|&p| bits & crate::auction::seat_bit(p) != 0)
+                .unwrap_or(1);
+            self.auction.property_waiting &= !crate::auction::seat_bit(p);
+            self.auction_property(p);
+        }
         // Single human: players 2 and up are the computers. A human seat
         // is checked on the 2nd of January instead, as player 1
         // ([`World::january_second`]).
@@ -1566,7 +1577,7 @@ impl World {
     /// humans a human seat's too, as it goes out on the 2nd of January
     /// ([`World::january_second`]).
     pub(crate) fn auction_property(&mut self, p: u8) {
-        // BUG(original): one record for event 10: a second bankruptcy before the first's auction has ended takes it over, so the first one's property is never auctioned (with several humans more players go out, on the 2nd of January too) (fix.sale_event_busy: a computer goes out once it's free; a human seat on the 2nd of January still takes it over).
+        // BUG(original): one record for event 10: a second bankruptcy before the first's auction has ended takes it over, so the first one's property is never auctioned (with several humans more players go out, on the 2nd of January too) (fix.sale_event_busy: a computer goes out once it's free; a human seat's property waits for it).
         let here = self.event_square();
         let amount = div(self.assets(p), 5).wrapping_mul(3).wrapping_add(1000);
         self.schedule_event(10, amount, i32::from(p), here);

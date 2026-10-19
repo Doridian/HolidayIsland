@@ -1000,6 +1000,50 @@ fn a_bankrupt_seats_property_is_auctioned() {
     assert_eq!(w.auction_seats(), 1, "seat 1's form, not the bankrupt seat 2's");
 }
 
+/// A human seat going out bankrupt on the 2nd of January while event 10
+/// holds a computer's property: the original's seat takes the record
+/// over, so the computer's property is never auctioned; with
+/// `fix.sale_event_busy` the seat's property waits (in the saved game
+/// too) and the month's step 0x64 auctions it once event 10 is free.
+#[test]
+fn a_bankrupt_seats_property_waits_for_event_10() {
+    for fixed in [false, true] {
+        let mut peers = small();
+        peers.each(|w| {
+            w.fixes.set(Fix::SaleEventBusy, fixed);
+            w.scenario = 10;
+            w.events = events();
+            // Computer 3's property waits for its auction.
+            w.events[10].chance = 0x3fffc;
+            w.events[10].arg = 3;
+            w.finances.max_debt = 1000;
+            w.finances.money = [0, -5000, 0, 0, 0, 0, 0, 0];
+            w.book_for(2, 0x5e, -1);
+            to_january_second(w, 2003);
+        });
+        peers.step(&[], 1);
+        let w = peers.world();
+        assert_eq!(w.player_out(2), 1, "the seat goes out either way");
+        assert_eq!(w.events[10].arg, if fixed { 3 } else { 2 });
+        assert_eq!(w.auction.property_waiting, if fixed { auction::seat_bit(2) } else { 0 });
+        if !fixed {
+            continue;
+        }
+        let lines = auction::queue_lines(&w.auction);
+        let chunk = formats::savegame::make_port_chunk(lines.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        assert_eq!(auction::property_waiting_in(&chunk), auction::seat_bit(2));
+        // Computer 3's sale is over: the next step 0x64 takes seat 2's.
+        peers.each(|w| {
+            w.events[10].chance = 0;
+            to_step_0x64(w);
+        });
+        peers.step(&[], 1);
+        let w = peers.world();
+        assert_eq!((w.events[10].chance, w.events[10].arg), (0x3fffc, 2));
+        assert_eq!(w.auction.property_waiting, 0);
+    }
+}
+
 /// Monopolus (3) with several humans: a seat wins when every other seat,
 /// human or computer, is out. Its human seats go bankrupt too (the
 /// original's player 1 doesn't there), before the goal is checked: seat

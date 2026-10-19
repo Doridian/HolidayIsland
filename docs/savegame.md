@@ -104,7 +104,9 @@ reads them, and a file without them has none). Then
 file menu the running game's). Then, if any auctions wait their turn
 (`fix.auction_queue`, [auction.md](auction.md)), `auction.queue=` their
 `item,price` pairs, the first next (`auction::queue_lines`,
-`auction::queue_in`; a file without it has none).
+`auction::queue_in`; a file without it has none), and if any bankrupt
+human seats' property waits for event 10 (`fix.sale_event_busy`),
+`auction.property_waiting=` those seats (`auction::property_waiting_in`).
 
 A save made by whoever knows every client's view
 (`World::to_map_with_views`) has each one's as `view.<client>.` lines:
