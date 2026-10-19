@@ -503,11 +503,16 @@ impl Tools {
     /// The original keeps the pictures in the people's records 0 (the
     /// pointer) and 1 on (the squares), which are the world's; the port
     /// keeps them here. The caller runs it only with the animations and
-    /// new people on, as the clock's tick does.
-    pub fn preview(&mut self, world: &World, tiles: &Tiles, cam: &Camera, mouse: (i32, i32)) {
+    /// new people on, as the clock's tick does; between ticks
+    /// (`tool_follows_mouse`) without `animate`, which keeps the
+    /// pointers' frame.
+    pub fn preview(&mut self, world: &World, tiles: &Tiles, cam: &Camera, mouse: (i32, i32), animate: bool) {
         // BUG(original): records past 0x23 belong to real people, and a road drag or building of more than 35 squares overwrites them (their square, offset, picture and kind 6); the port leaves the people alone.
         self.sprites.clear();
         let next_frame = |frame: &mut i16| {
+            if !animate {
+                return *frame;
+            }
             *frame += 1;
             if *frame > 7 {
                 *frame = 0;

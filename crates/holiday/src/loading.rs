@@ -598,6 +598,7 @@ impl GameParts {
             font,
             info,
             since_tick: Duration::ZERO,
+            preview_mouse: (i32::MIN, i32::MIN),
             form,
             auction,
             auction_form,

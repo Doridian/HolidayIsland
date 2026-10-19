@@ -346,6 +346,11 @@ enhancements! {
     /// A dragged road ends where the mouse is let go, also with the
     /// animations or new people off (1090:124f, 1080:31ed).
     RoadDrag = "road_drag";
+    /// The tool's picture over the island (the squares a building, a
+    /// road or the demolish tool would take) follows the mouse as it
+    /// moves, not only in the clock's tick, ten times a second
+    /// (1090:124f). The pointers' animation keeps the tick.
+    ToolFollowsMouse = "tool_follows_mouse";
     /// The build menu's close sound only plays when it's open, and the
     /// keys it doesn't use go on to the main screen (1010:2be1,
     /// 1018:3290).

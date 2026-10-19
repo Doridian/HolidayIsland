@@ -307,6 +307,10 @@ description = "Die Listen der Spielstände sind nach Namen sortiert, nicht rück
 label = "Straße endet beim Loslassen"
 description = "Eine gezogene Straße endet dort, wo die Maus losgelassen wird, auch ohne Animationen"
 
+[enhance.tool_follows_mouse]
+label = "Bauumriss folgt der Maus"
+description = "Der Umriss dessen, was ein Werkzeug baut oder abreißt, folgt der Maus, nicht nur zehnmal pro Sekunde"
+
 [enhance.build_menu]
 label = "Baumenü gibt Tasten weiter"
 description = "Das Baumenü gibt die Tasten weiter, die es nicht braucht, und macht geschlossen kein Schließgeräusch"

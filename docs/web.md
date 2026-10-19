@@ -158,6 +158,10 @@ Right clicks go to the game, not to a context menu.
 - The clock is `web-time`'s (`performance.now()`, `Date.now()`), which
   is `std::time` natively.
 - Nothing is remembered about the window (the page has none to place).
+- The page has nothing to quit to: Escape on the start menu does
+  nothing, and quitting a game (its end film included) goes back to
+  the start menu. Anything else that ends the game says so on the
+  status line, and a reload starts again.
 - The world doesn't notice any of this: it never reads the clock or the
   files, and its hash and the wire format are the same on 32-bit wasm
   as natively ([networking.md](networking.md#the-protocol)).

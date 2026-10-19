@@ -435,7 +435,7 @@ fn the_sabotage_tool_and_window() {
         .into_iter()
         .find(|&(p, _)| world.building_origin(p) == target)
         .expect("the building isn't in view");
-    tools.preview(&world, &tiles, &cam, mouse);
+    tools.preview(&world, &tiles, &cam, mouse, true);
     let pointer = tools.sprites.last().unwrap();
     assert!(pointer.pointer && (0x44..0x4c).contains(&pointer.sprite));
     let squares = &tools.sprites[..tools.sprites.len() - 1];

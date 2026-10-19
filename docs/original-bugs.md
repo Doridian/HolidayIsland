@@ -288,6 +288,7 @@ The widgets' are described in
 | 1040:0192 | A name picked from the file menu's list goes into the field without moving its cursor | `edit_field`: the cursor goes after it |
 | 1028:1ce0 | After a click on the title bar the title is drawn one row higher than the form opened with | `auction_title` |
 | 1090:124f, 1080:31ed | The road drag's end only follows the mouse in the clock's tick with the animations and new people on: otherwise the road is one square, and it always ends where the mouse was at the last tick ([player-tools.md](player-tools.md)) | `road_drag`: the road ends where the mouse is let go (the picture still needs the animations) |
+| 1090:124f | The tool's picture over the island (its squares and pointer) moves only in the clock's tick, ten times a second, so it trails the mouse | `tool_follows_mouse`: the squares follow every move of the mouse between ticks (the pointers still animate in the tick); with the animations and new people on, as the picture needs |
 | 1090:0014 | For a square without a building the demolish tool's picture shows the area of the building it or the people code (`1110:6ff2`) last found | partly: the port's picture remembers its own |
 | 1020:1984 | The tools only act on exactly `[ssLeft]`: with Shift or Ctrl held, or on the second press of a double click, a click does nothing | `modifier_clicks` |
 | 1010:2be1 | Picking any tool closes the build menu, with its sound, even when it's closed (its `Visible` is always set) | `build_menu`: only when it's shown |

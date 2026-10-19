@@ -312,7 +312,17 @@ impl<A: App> Runner<A> {
         event_loop.exit();
     }
 
-    /// In the browser: takes the display once its GPU is set up.
+    /// Ends the event loop as the game finished; in the browser, whose
+    /// canvas would just stop, the page says so.
+    fn exit(event_loop: &ActiveEventLoop) {
+        #[cfg(target_arch = "wasm32")]
+        if !event_loop.exiting() {
+            web::show_status("The game has ended. Reload the page to play again.", false);
+        }
+        event_loop.exit();
+    }
+
+        /// In the browser: takes the display once its GPU is set up.
     #[cfg(target_arch = "wasm32")]
     fn take_display(&mut self, event_loop: &ActiveEventLoop) {
         let Some((_, slot)) = &self.pending else { return };
@@ -388,7 +398,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
             }
         }
         if self.app.finished() {
-            event_loop.exit();
+            Self::exit(event_loop);
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(self.last + FRAME));
     }
@@ -554,7 +564,7 @@ impl<A: App> Runner<A> {
             _ => {}
         }
         if self.app.finished() {
-            event_loop.exit();
+            Self::exit(event_loop);
         }
     }
 }

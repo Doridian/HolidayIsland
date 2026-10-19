@@ -297,7 +297,7 @@ impl Scene {
     /// `mouse`.
     fn show_preview(&mut self, mouse: (i32, i32)) {
         let cam = self.screen.camera();
-        self.tools.preview(&self.world, &self.tiles, &cam, mouse);
+        self.tools.preview(&self.world, &self.tiles, &cam, mouse, true);
         self.screen
             .show_people(&self.world, &self.tiles, &self.font, &self.info);
         self.tools

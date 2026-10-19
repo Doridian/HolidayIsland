@@ -324,6 +324,9 @@ struct Game {
     info: InfoTexts,
     /// Time since the last tick of the clock.
     since_tick: Duration,
+    /// Where in `Hauptbild` the tool's picture was last placed for
+    /// (`tool_follows_mouse`).
+    preview_mouse: (i32, i32),
     /// `THauptschirm`'s VCL form, whose images show `screen`'s.
     form: Form,
     /// `TAuktionsform`, and its VCL form.
@@ -449,10 +452,29 @@ impl Game {
             if self.world.options.animations && self.world.options.people_spawn {
                 let cam = self.screen.drawn_camera();
                 let mouse = self.hauptbild_mouse();
-                self.tools.preview(&self.world, &self.tiles, &cam, mouse);
+                self.tools.preview(&self.world, &self.tiles, &cam, mouse, true);
                 self.tools
                     .draw_preview(&mut self.screen.map, &self.world, &self.tiles, &cam);
+                self.preview_mouse = mouse;
             }
+            changed = true;
+        } else if self.screen.enhance.has(enhance::Enhancement::ToolFollowsMouse)
+            && self.world.options.animations
+            && self.world.options.people_spawn
+            && !self.tools.sprites.is_empty()
+            && self.hauptbild_mouse() != self.preview_mouse
+        {
+            // Between ticks the picture moves with the mouse: the island
+            // and the people as the last tick left them, the tool's
+            // squares where the mouse is now.
+            let cam = self.screen.drawn_camera();
+            let mouse = self.hauptbild_mouse();
+            self.screen
+                .show_people(&self.world, &self.tiles, &self.font, &self.info);
+            self.tools.preview(&self.world, &self.tiles, &cam, mouse, false);
+            self.tools
+                .draw_preview(&mut self.screen.map, &self.world, &self.tiles, &cam);
+            self.preview_mouse = mouse;
             changed = true;
         }
         let info = ticked && self.screen.show_info(&self.world, &self.font, &self.info);
@@ -2097,6 +2119,11 @@ impl Holiday {
                     let r = game.forms.schluss.open_quit(game.size);
                     game.schluss_response(r);
                 }
+                // The browser's page goes back to the start menu instead.
+                Request::Exit if cfg!(target_arch = "wasm32") => {
+                    self.back_to_start_menu();
+                    return;
+                }
                 Request::Exit => {
                     self.quit = true;
                     return;
@@ -2805,9 +2832,10 @@ impl App for Holiday {
         }
         match input {
             Input::Close => self.quit = true,
-            // In a game, Escape asks first (`TEndeform`).
+            // In a game, Escape asks first (`TEndeform`). The browser's
+            // page has nothing to quit to: there it stays.
             Input::KeyDown(VK_ESCAPE) if self.load.is_none() && self.game.is_none() => {
-                self.quit = true;
+                self.quit = !cfg!(target_arch = "wasm32");
             }
             Input::KeyDown(key) | Input::KeyUp(key) => {
                 let down = matches!(input, Input::KeyDown(_));

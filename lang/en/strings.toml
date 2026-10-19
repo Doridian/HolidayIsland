@@ -300,6 +300,10 @@ description = "The lists of saved games are sorted by name, not backwards"
 label = "Road ends where you let go"
 description = "A dragged road ends where the mouse is let go, also with the animations off"
 
+[enhance.tool_follows_mouse]
+label = "Building outline follows the mouse"
+description = "The outline of what a tool would build or demolish moves with the mouse, not ten times a second"
+
 [enhance.build_menu]
 label = "Build menu passes on keys"
 description = "The build menu passes on the keys it doesn't use and makes no closing sound when it's closed"
