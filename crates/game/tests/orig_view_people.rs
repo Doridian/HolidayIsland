@@ -260,8 +260,10 @@ fn fix_off_is_the_original() {
         for _ in 0..600 {
             step(&mut a);
             step(&mut b);
+            // Every step's: they come and go, and at the end there may
+            // be none on the CD's islands alone (without `orig-en/`'s save).
+            seen += a.people.records.iter().filter(|p| is_view_kind(p.kind())).count();
         }
-        seen += a.people.records.iter().filter(|p| is_view_kind(p.kind())).count();
         // A view that changes is a world that changes.
         assert_ne!(hash(&a), hash(&b), "{name}");
         // And a view's people are none.
