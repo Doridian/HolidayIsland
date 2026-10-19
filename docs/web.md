@@ -9,13 +9,13 @@ files and the clock differ ([port-architecture.md](port-architecture.md#stack)).
 ## Building
 
 Needs the `wasm32-unknown-unknown` target and the `wasm-bindgen` CLI in
-the version the crates pin (`wasm-bindgen = "=0.2.128"` in
+the version the crates pin (`wasm-bindgen = "=0.2.129"` in
 `crates/holiday/Cargo.toml` and `crates/platform/Cargo.toml`; the CLI
 refuses a module from another version):
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.128
+cargo install wasm-bindgen-cli --version 0.2.129
 tools/build-web.sh            # release build into web/
 tools/build-web.sh --debug    # quicker to build, slow to play
 ```
@@ -29,6 +29,17 @@ There's no Trunk setup; the script is all it takes.
 
 Upgrading wasm-bindgen means changing the pin in both crates and
 installing the matching CLI.
+
+## GitHub Pages
+
+`.github/workflows/pages.yml` publishes the build on every push to
+`main` at <https://doridian.github.io/HolidayIsland/>, without game data
+(the workflow fails if anything but the page, the glue and the module is
+in the build). `crates/holiday/web/front.html` is the site's front page:
+where to get the CD image and a SoundFont, and links to the game,
+`holiday.html` (the build's `index.html`), with `?lang=en` or `?lang=de`.
+The workflow installs the wasm-bindgen CLI in the version the crates
+pin.
 
 ## Serving and playing
 

@@ -1,0 +1,89 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- The front page of the published browser build (GitHub Pages, see
+     .github/workflows/pages.yml). The game itself is holiday.html next to it
+     (index.html here, copied by tools/build-web.sh). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Holiday Island</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #0a2a3a; --fg: #e6eef2; --muted: #9fb6c2; --accent: #7fd4ff; --card: #123c52; --line: #23566f; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --bg: #f2f7f9; --fg: #1d2a30; --muted: #4c6470; --accent: #0b6fa4; --card: #fff; --line: #c6d8e0; }
+  }
+  :root[data-theme="light"] { --bg: #f2f7f9; --fg: #1d2a30; --muted: #4c6470; --accent: #0b6fa4; --card: #fff; --line: #c6d8e0; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 42em; margin: 0 auto; padding: 32px 16px 48px; box-sizing: border-box; }
+  h1 { margin: 0 0 4px; font-size: 2.2em; }
+  h2 { font-size: 1.2em; margin: 0 0 8px; }
+  p { margin: 8px 0; }
+  .lead { color: var(--muted); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; margin: 20px 0; }
+  a { color: var(--accent); }
+  .button { display: inline-block; margin: 6px 6px 6px 0; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent);
+            color: var(--accent); text-decoration: none; font-weight: 600; }
+  .button.primary { background: var(--accent); color: var(--bg); }
+  code { font-size: 0.92em; overflow-wrap: anywhere; }
+  ol { padding-left: 1.3em; }
+  li { margin: 6px 0; }
+  footer { color: var(--muted); font-size: 0.9em; margin-top: 32px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Holiday Island</h1>
+  <p class="lead">A native port of the Sunflowers island resort game <em>Holiday Island</em> (1996), running in your browser.</p>
+
+  <section>
+    <h2>1. Get the CD</h2>
+    <p>This site carries no game data. You need your own copy of the CD image, which the Internet Archive has:</p>
+    <p>
+      <a class="button" href="https://archive.org/details/Holiday_Island_1996_Bomico_DE" target="_blank" rel="noopener">Holiday Island on archive.org</a>
+      <a class="button" href="https://archive.org/download/Holiday_Island_1996_Bomico_DE/Holiday%20Island%20(1996)(Bomico)(DE).iso" rel="noopener">Download the CD (.iso, 210 MB)</a>
+    </p>
+    <p>It's the German CD, but every text comes from the port itself, so it plays fully in English too. Only the speech
+      and the films' sound stay German.</p>
+  </section>
+
+  <section>
+    <h2>2. Get a SoundFont (optional)</h2>
+    <p>The music is MIDI and needs a SoundFont, which the game doesn't ship. Without one the music is silent.
+      <a href="https://github.com/mrbumpy409/GeneralUser-GS" target="_blank" rel="noopener">GeneralUser GS</a> sounds
+      close to the Roland Sound Canvas the music was written on:</p>
+    <p><a class="button" href="https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/684543d5e5efaef08d02be50dcda8d552478fa60/GeneralUser-GS.sf2" rel="noopener">Download GeneralUser GS (.sf2)</a></p>
+  </section>
+
+  <section>
+    <h2>3. Play</h2>
+    <ol>
+      <li>Open the game and choose the <code>.iso</code> (and the <code>.sf2</code>, if you have one).</li>
+      <li>Press <strong>Start</strong>. The game reads the files in your browser; nothing is uploaded anywhere.</li>
+    </ol>
+    <p>The browser keeps the files, so you only do this once per browser.</p>
+    <p>
+      <a class="button primary" href="holiday.html?lang=en">Play in English</a>
+      <a class="button primary" href="holiday.html?lang=de" lang="de">Auf Deutsch spielen</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>About</h2>
+    <p>
+      Holiday Island is a decompilation and native port to Rust, for Linux, macOS and the web.
+      The source is on <a href="https://github.com/Doridian/HolidayIsland" rel="noopener">GitHub</a>; its
+      <a href="https://github.com/Doridian/HolidayIsland/blob/main/docs/web.md" rel="noopener">browser notes</a>
+      list the page's options, such as network games.
+    </p>
+    <p>Saved games and settings stay in this browser's storage.</p>
+  </section>
+
+  <footer>
+    An unofficial port of the 1996 Sunflowers game. The game data is not included.
+  </footer>
+</main>
+</body>
+</html>

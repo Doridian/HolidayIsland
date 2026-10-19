@@ -3,6 +3,9 @@
 A decompilation and native port of **Holiday Island** (Sunflowers, 1996) to
 Rust, for Linux, macOS and WebAssembly.
 
+**Play it in your browser:** <https://doridian.github.io/HolidayIsland/> (the page
+asks for the CD image, [docs/web.md](docs/web.md)).
+
 Status: **early.** The Cargo workspace exists with a `formats` crate that
 parses all the text tables in `DATA\` and `TEXTE\` the way the original's
 loaders read them, and splits maps, scenarios and saved games into their
