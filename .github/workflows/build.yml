@@ -65,7 +65,7 @@ jobs:
           # (it starts: the libraries are all there)
           { ./$out --help 2>&1 || true; } | grep "usage:"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: holiday-island-linux-${{ matrix.arch }}
           path: holiday-island-linux-${{ matrix.arch }}.AppImage
@@ -94,7 +94,7 @@ jobs:
           # (it starts)
           { ./holiday-island-windows-x86_64.exe --help 2>&1 || true; } | grep "usage:"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: holiday-island-windows-x86_64
           path: holiday-island-windows-x86_64.exe
@@ -146,7 +146,7 @@ jobs:
           ln -s /Applications dmg/Applications
           hdiutil create -volname "Holiday Island" -srcfolder dmg -ov -format UDZO holiday-island-macos.dmg
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: holiday-island-macos
           path: holiday-island-macos.dmg
@@ -191,7 +191,7 @@ jobs:
           cp LICENSE README.md $d/
           zip -r $d.zip $d
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: holiday-island-web
           path: holiday-island-web.zip
@@ -228,7 +228,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
