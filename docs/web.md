@@ -32,7 +32,7 @@ installing the matching CLI.
 
 ## GitHub Pages
 
-`.github/workflows/pages.yml` publishes the build on every push to
+`.github/workflows/build.yml` publishes the build on every push to
 `main` at <https://doridian.github.io/HolidayIsland/>, without game data
 (the workflow fails if anything but the page, the glue and the module is
 in the build). `crates/holiday/web/front.html` is the site's front page:

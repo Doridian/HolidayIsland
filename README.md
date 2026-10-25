@@ -1,10 +1,12 @@
 # Holiday Island
 
 A decompilation and native port of **Holiday Island** (Sunflowers, 1996) to
-Rust, for Linux, macOS and WebAssembly.
+Rust, for Linux, Windows, macOS and WebAssembly.
 
 **Play it in your browser:** <https://doridian.github.io/HolidayIsland/> (the page
-asks for the CD image, [docs/web.md](docs/web.md)).
+asks for the CD image, [docs/web.md](docs/web.md)), or download it for Linux,
+Windows or macOS from the [releases](https://github.com/Doridian/HolidayIsland/releases)
+([Packages](#packages)).
 
 Status: **playable.** The whole game is ported: the start menu, a
 random island or any of the 13 scenarios (the six of the expanded
@@ -85,6 +87,30 @@ picks, so either folder plays fully in either language (the expanded
 edition's texts in German are the port's translation). The speech is the
 folder's ([docs/language.md](docs/language.md)).
 [docs/versions.md](docs/versions.md) has the differences.
+
+## Packages
+
+Every push builds the port as one file per platform
+(`.github/workflows/build.yml`); a `v*` tag publishes them on its release:
+
+- `holiday-island-linux-x86_64.AppImage`, `holiday-island-linux-arm64.AppImage`
+- `holiday-island-windows-x86_64.exe` (the C runtime linked in)
+- `holiday-island-macos.dmg`: `Holiday Island.app`, for Apple silicon and
+  Intel (signed ad hoc only: the first start needs a right click, Open)
+- `holiday-island-web.zip`: the browser build, as on the Pages site
+
+None of them carries game data. Started without the game's folder (from
+its icon) and with no `orig` in the working directory, the port asks for
+the game with the system's file dialog: the CD image (`.iso`, `.bin`) or
+`HOLIDAY.EXE` in the game's folder (the German CD's files, the English
+release's). If the music has no SoundFont yet ([Music](#music)), it then
+asks for one too, which it copies to its data directory; cancelled, the
+music is silent. It keeps the game's path in its data directory
+(`game-path.txt` in `~/.local/share/holiday-island`,
+`%APPDATA%\Holiday Island`, `~/Library/Application Support/Holiday Island`)
+and doesn't ask again while it's there; deleting the file asks again. On
+Linux the dialog is the desktop's (xdg-desktop-portal, else zenity).
+The icon is the port's own (`tools/make-icon.py`).
 
 ## Running
 

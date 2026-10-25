@@ -2,7 +2,7 @@
 
 ## Approach: non-matching, port-as-you-go
 
-The goal is a native port to Rust (Linux, macOS, WebAssembly), not a
+The goal is a native port to Rust (Linux, Windows, macOS, WebAssembly), not a
 byte-identical rebuild. The stack and structure are in
 [port-architecture.md](port-architecture.md).
 

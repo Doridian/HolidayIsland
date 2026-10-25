@@ -1,3 +1,6 @@
+// A window, not a console, on Windows (the release build).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 //! Holiday Island. This plays the intro's film (`sunflow.avi`), shows the
 //! main form with the title picture and then the background, like the
 //! intro (`docs/startup.md`, states 400–450), and then the start menu on
@@ -35,7 +38,8 @@
 //! [--ui-scale=N] [--lang=auto|de|en] [--original] [--enhance=KEY=on|off]
 //! [--enhancements] [--host=ROOM|--join=ROOM ...] [--help] [GAME_DIR]`
 //! ([`USAGE`]; the network game's options are `network`'s), where `GAME_DIR` holds `HOLIDAY.EXE`,
-//! `GRAFIK`, `DATA` and the films and sounds (default `orig`); the texts
+//! `GRAFIK`, `DATA` and the films and sounds (default `orig`, else the one
+//! the player picked before, else a file dialog asks: `pick`); the texts
 //! are the port's own (`game::lang`, `lang/`). Saved games go to `DIR`
 //! (default `MAPS` in the platform's data directory,
 //! `platform::storage::save_dir`); the lists show those and the game's own
@@ -75,6 +79,8 @@ mod film;
 mod forms;
 mod loading;
 mod network;
+#[cfg(not(target_arch = "wasm32"))]
+mod pick;
 mod sound;
 mod stacking;
 mod upgrade;
@@ -3333,8 +3339,8 @@ const USAGE: &str = "\
 usage: holiday [OPTIONS] [GAME_DIR]
 
 GAME_DIR holds HOLIDAY.EXE, GRAFIK, DATA, the films and sounds (default:
-orig), or is the game's CD image (.iso). The texts are the port's own, in
-German or English.
+orig, else the one picked before, else it asks), or is the game's CD image
+(.iso). The texts are the port's own, in German or English.
 
   --lang=auto|de|en      the language of every text (default auto: the game
                          folder's; settings.ini language=); the speech stays
@@ -3465,6 +3471,7 @@ fn exit(code: i32) -> ! {
 #[allow(clippy::too_many_lines)] // One option after the other.
 fn args(given: impl IntoIterator<Item = std::ffi::OsString>) -> Args {
     let mut dir = PathBuf::from(DEFAULT_DIR);
+    let mut dir_given = false;
     let mut save_dir = None;
     let mut soundfont = None;
     let mut quality = None;
@@ -3480,9 +3487,13 @@ fn args(given: impl IntoIterator<Item = std::ffi::OsString>) -> Args {
     };
     let mut net = network::Options::default();
     let fail = |message: &str| -> ! {
-        eprintln!("{message}");
+        #[cfg(not(target_arch = "wasm32"))]
+        pick::fatal(message);
         #[cfg(target_arch = "wasm32")]
-        platform::web::show_error(message);
+        {
+            eprintln!("{message}");
+            platform::web::show_error(message);
+        }
         exit(2);
     };
     for arg in given {
@@ -3549,8 +3560,19 @@ fn args(given: impl IntoIterator<Item = std::ffi::OsString>) -> Args {
             overrides.push((key.to_owned(), on));
         } else {
             dir = PathBuf::from(arg);
+            dir_given = true;
         }
     }
+    // Started without the game's folder (from the icon), and it isn't in
+    // `orig`: the one picked before, or the player picks it (`pick`).
+    #[cfg(not(target_arch = "wasm32"))]
+    if !dir_given && !list {
+        dir = pick::game(&dir).unwrap_or_else(|| {
+            fail("no game: start it with the game's folder or CD image as its argument, or pick it when it asks")
+        });
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = dir_given;
     // The game's CD image instead of its folder: the image's files, with
     // the installer's archive unpacked, are the folder.
     #[cfg(not(target_arch = "wasm32"))]
@@ -3589,8 +3611,16 @@ fn args(given: impl IntoIterator<Item = std::ffi::OsString>) -> Args {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
+    // A panic's message in a box too when started from the icon.
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        report(info);
+        if !std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+            pick::error_box(&format!("Holiday Island stopped: {info}"));
+        }
+    }));
     if let Err(e) = start(args(std::env::args_os().skip(1))) {
-        eprintln!("{e}");
+        pick::fatal(&e.to_string());
         exit(1);
     }
 }
