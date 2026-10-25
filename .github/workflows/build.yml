@@ -20,6 +20,8 @@ permissions:
 
 jobs:
   linux:
+    # The AppImages are built on the oldest Ubuntu the runners have: they
+    # run where the system's glibc is as new as the build's or newer.
     strategy:
       fail-fast: false
       matrix:
@@ -100,7 +102,7 @@ jobs:
           path: holiday-island-windows-x86_64.exe
 
   macos:
-    runs-on: macos-15
+    runs-on: macos-26
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     steps:
@@ -155,7 +157,7 @@ jobs:
   # player for their CD image. crates/holiday/web/front.html is the front
   # page, holiday.html the game next to it.
   web:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -207,7 +209,7 @@ jobs:
   pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: web
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       pages: write
       id-token: write
@@ -224,7 +226,7 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [linux, windows, macos, web]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
