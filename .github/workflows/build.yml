@@ -155,7 +155,7 @@ jobs:
   # player for their CD image. crates/holiday/web/front.html is the front
   # page, holiday.html the game next to it.
   web:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
@@ -207,7 +207,7 @@ jobs:
   pages:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: web
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       pages: write
       id-token: write
@@ -224,7 +224,7 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [linux, windows, macos, web]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
