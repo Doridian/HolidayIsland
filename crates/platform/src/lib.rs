@@ -198,6 +198,11 @@ pub trait App {
     fn take_minimize(&mut self) -> bool {
         false
     }
+    /// A file called `name` with `data` was dropped onto the window. The
+    /// browser's page hands its drops to the game itself.
+    fn dropped(&mut self, name: &str, data: Vec<u8>) {
+        let _ = (name, data);
+    }
     /// The desktop the game lays out for is now `width` × `height`: the
     /// window's client area divided by the UI scale. Called once before
     /// the first frame and after every change. It may be smaller than
@@ -508,6 +513,16 @@ impl<A: App> Runner<A> {
         };
         match event {
             WindowEvent::CloseRequested => self.app.input(Input::Close),
+            WindowEvent::DroppedFile(path) => match std::fs::read(&path) {
+                Ok(data) => {
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    self.app.dropped(&name, data);
+                }
+                Err(e) => eprintln!("{}: {e}", path.display()),
+            },
             WindowEvent::Resized(size) => {
                 if let Some((w, d)) = &mut self.window {
                     d.resize(size);

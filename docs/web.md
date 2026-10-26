@@ -132,6 +132,30 @@ image and the small files. The page asks for persistent storage
 (`navigator.storage.persist()`) so the browser doesn't clear it when
 space runs low; clearing the site's data forgets the CD and the saves.
 
+## Saved games as files
+
+The saves in the browser's storage stay in that browser; these take them
+in and out as files:
+
+- **Drag and drop**: a saved game (`.map`, from the browser build's
+  Download, a native game's save folder or the game's `MAPS\`) dropped
+  onto the page loads. On the start menu (or its load form) the game
+  starts with it as with "Altes Spiel fortsetzen"; in a game a question
+  comes first (the game in progress is lost unless it was saved), then
+  it loads as the file menu's "Laden" does. A drop during the intro, a
+  film or another message box waits until they're over; a file that
+  isn't a saved game gets an error. The page reads the file
+  (`web.js`'s `watchDrops`) and the game takes it the next frame
+  (`Holiday::take_dropped`). The native build does the same with files
+  dropped onto its window (winit's `DroppedFile`).
+- **Download** in the file menu, a button of the port's own in the gap
+  below "Beenden" (`Dateimenue::with_download`), saves the game under the
+  name in the name field (`HOLIDAY` if it's empty; the same rule as
+  "Speichern": a letter, then up to seven letters, digits or `_`) as
+  `NAME.map`, which the browser downloads. Nothing is written to the
+  browser's storage. The later build's form (`UPGRADE\`) has no room for
+  it, and the German CD the browser build plays has none.
+
 ## Browser support
 
 The renderer asks for WebGPU first and falls back to WebGL2 where the

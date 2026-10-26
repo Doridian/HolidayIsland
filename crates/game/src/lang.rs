@@ -364,6 +364,13 @@ texts! {
     /// come back.
     NetWaitingHost = "port.net_waiting_host",
     NetHostDropped = "port.net_host_dropped",
+    /// The browser build's file menu button that saves the game as a
+    /// download (`crate::dateimenue`), and a saved game dropped onto the
+    /// window: the question before it replaces the game in progress, and
+    /// what a file that isn't one gets.
+    Download = "port.download",
+    DropLoadQuestion = "port.drop_load_question",
+    DropNotAGame = "port.drop_not_a_game",
 }
 
 impl Text {

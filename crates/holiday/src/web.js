@@ -11,6 +11,10 @@
 //   too (soundfont/NAME.sf2), where the game looks for one.
 //
 // Nothing is fetched or sent anywhere: the files come from the player.
+//
+// Saved games also go in and out as files: one dropped onto the page
+// waits in `dropped` until the game takes it (takeDropped), and
+// downloadFile hands one to the browser as a download.
 
 const DB = "holiday-island";
 let opened = null;
@@ -166,4 +170,48 @@ export async function chooseCd(error) {
       resolve(blob);
     };
   });
+}
+
+// Files dropped onto the page once the game runs, read, oldest first:
+// [name, Uint8Array].
+const dropped = [];
+
+// Takes drops on the whole page from now on (the start form's file
+// inputs have theirs before the game starts): the browser would open the
+// file instead.
+export function watchDrops() {
+  const files = (e) => e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
+  window.addEventListener("dragover", (e) => {
+    if (!files(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  window.addEventListener("drop", (e) => {
+    if (!files(e)) return;
+    e.preventDefault();
+    for (const file of e.dataTransfer.files) {
+      file.arrayBuffer().then(
+        (data) => dropped.push([file.name, new Uint8Array(data)]),
+        (err) => console.error("drop:", file.name, err),
+      );
+    }
+  });
+}
+
+// The oldest drop not taken yet, or undefined.
+export function takeDropped() {
+  return dropped.shift();
+}
+
+// Hands `data` to the browser as a download called `name`.
+export function downloadFile(name, data) {
+  const url = URL.createObjectURL(new Blob([new Uint8Array(data)], { type: "application/octet-stream" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }

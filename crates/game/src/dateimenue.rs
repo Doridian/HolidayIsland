@@ -17,6 +17,11 @@
 //! button on the left, "Löschen" (`UPGRADE\SONSTIGE.TXT`'s 25th text),
 //! above "Neues Spiel", "Beenden" moves down one, and the table of
 //! rectangles has two more (en `1118:1812`, [`RECTS_UPGRADE`]).
+//!
+//! The browser build has a button of the port's own in v1.0's form,
+//! "Download" ([`Dateimenue::with_download`]), in the gap the later
+//! build's "Beenden" moved into: it saves the game as a file the browser
+//! downloads ([`Action::Download`]) instead of into its storage.
 
 use vcl::Rect;
 use vcl::surface::{Rop, Surface};
@@ -105,6 +110,35 @@ pub const RECTS_UPGRADE: [(i32, i32, i32, i32); 23] = [
     (106, 186, 183, 204),
 ];
 
+/// The browser build's parts ([`Dateimenue::with_download`]): as
+/// [`RECTS`], then "Download" (21, 22) where the later build's "Beenden"
+/// is ([`RECTS_UPGRADE`]'s 17).
+pub const RECTS_DOWNLOAD: [(i32, i32, i32, i32); 23] = [
+    RECTS[0],
+    RECTS[1],
+    RECTS[2],
+    RECTS[3],
+    RECTS[4],
+    RECTS[5],
+    RECTS[6],
+    RECTS[7],
+    RECTS[8],
+    RECTS[9],
+    RECTS[10],
+    RECTS[11],
+    RECTS[12],
+    RECTS[13],
+    RECTS[14],
+    RECTS[15],
+    RECTS[16],
+    RECTS[17],
+    RECTS[18],
+    RECTS[19],
+    RECTS[20],
+    (8, 158, 85, 176),
+    (8, 158, 85, 176),
+];
+
 /// The form's size: entry 0 of [`RECTS`] (1040:12be).
 pub const WIDTH: i32 = 202;
 pub const HEIGHT: i32 = 210;
@@ -128,6 +162,8 @@ enum Kind {
     Quit,
     Cancel,
     Ok,
+    /// The browser build's "Download".
+    Download,
 }
 
 /// A form's buttons: the part to hit (the one before is drawn), what
@@ -160,7 +196,19 @@ const BUTTONS_UPGRADE: Buttons = &[
     (0x10, Kind::NewGame, Some(9)),
 ];
 
-/// `VK_*` codes the form reads.
+/// The browser build's: v1.0's and "Download", whose text is the port's
+/// ([`Dateimenue::with_download`]).
+const BUTTONS_DOWNLOAD: Buttons = &[
+    (CLOSE, Kind::Close, None),
+    (0x12, Kind::Cancel, Some(4)),
+    (0x14, Kind::Ok, Some(3)),
+    (0x10, Kind::Quit, Some(10)),
+    (LOAD, Kind::Load, Some(7)),
+    (SAVE, Kind::Save, Some(8)),
+    (0xe, Kind::NewGame, Some(9)),
+    (0x16, Kind::Download, None),
+];
+
 /// The message for a name that isn't one ([`Action::InvalidName`]):
 /// v1.0 has only the German (CS:0df0, 1040:0e03); the later build picks
 /// it by `land` (en 1040:0eef): German for `D` (en 1040:0eb0), French
@@ -181,6 +229,7 @@ pub fn delete_question(language: Language) -> &'static [u8] {
     language.bytes(Text::DeleteQuestion)
 }
 
+/// `VK_*` codes the form reads.
 const VK_RETURN: u16 = 0x0d;
 const VK_ESCAPE: u16 = 0x1b;
 const VK_SPACE: u16 = 0x20;
@@ -219,6 +268,10 @@ pub enum Action {
     /// `MAPS\` and the list filled again ([`Dateimenue::set_games`]).
     /// // en 1040:110c
     Delete(Vec<u8>),
+    /// The browser build's "Download": the game is saved under the name
+    /// in the field (`HOLIDAY` if it's empty), with `.map`, as a file the
+    /// browser downloads. Nothing goes into `MAPS\`.
+    Download(Vec<u8>),
 }
 
 /// What an event did.
@@ -283,6 +336,8 @@ pub struct Dateimenue {
     /// `UPGRADE\` ([`Dateimenue::with_upgrade`]).
     rects: &'static [(i32, i32, i32, i32)],
     buttons: Buttons,
+    /// "Download"'s text, in `texts` ([`Dateimenue::with_download`]).
+    download_text: Option<usize>,
 }
 
 impl Dateimenue {
@@ -310,6 +365,7 @@ impl Dateimenue {
             enhance: Enhancements::ORIGINAL,
             rects: &RECTS,
             buttons: BUTTONS,
+            download_text: None,
         }
     }
 
@@ -323,6 +379,26 @@ impl Dateimenue {
         self
     }
 
+    /// The browser build's form: v1.0's with "Download" (`label`) in the
+    /// gap below "Beenden", its face copied from "Beenden"'s into the
+    /// background. Not with [`Dateimenue::with_upgrade`], whose form has
+    /// no gap.
+    #[must_use]
+    pub fn with_download(mut self, label: Vec<u8>) -> Self {
+        self.rects = &RECTS_DOWNLOAD;
+        self.buttons = BUTTONS_DOWNLOAD;
+        self.texts.push(label);
+        self.download_text = Some(self.texts.len() - 1);
+        let (l, t, r, b) = RECTS[0xf];
+        let (_, to, _, _) = RECTS_DOWNLOAD[0x15];
+        if let Some(background) = self.bitmaps.get_mut(BACKGROUND.0) {
+            let face = background.clone();
+            let clip = face.bounds();
+            background.blit(l, to, &face, Rect::new(l, t, r - l + 1, b - t + 1), Rop::Copy, clip);
+        }
+        self
+    }
+
     /// What button `id` does.
     fn kind(&self, id: u8) -> Option<Kind> {
         self.buttons.iter().find(|b| b.0 == id).map(|b| b.1)
@@ -330,7 +406,10 @@ impl Dateimenue {
 
     /// Button `id`'s text.
     fn button_text(&self, id: u8) -> Option<usize> {
-        self.buttons.iter().find(|b| b.0 == id).and_then(|b| b.2)
+        match self.buttons.iter().find(|b| b.0 == id)? {
+            (_, Kind::Download, _) => self.download_text,
+            b => b.2,
+        }
     }
 
     /// `FormShow`: the background with the title and the buttons' texts,
@@ -423,8 +502,8 @@ impl Dateimenue {
 
     /// The title and the buttons' texts, up. // 1040:11f2, en 1040:14bc
     fn draw_texts(&mut self) {
-        for &(id, _, text) in self.buttons {
-            if let Some(n) = text {
+        for &(id, _, _) in self.buttons {
+            if let Some(n) = self.button_text(id) {
                 self.draw_text(id - 1, n, false);
             }
         }
@@ -609,6 +688,7 @@ impl Dateimenue {
                     Some(Kind::Quit) if on => Some(Action::Quit),
                     Some(Kind::NewGame) if on => Some(Action::NewGame),
                     Some(Kind::Delete) if on => self.delete(),
+                    Some(Kind::Download) if on => Some(self.download()),
                     Some(Kind::Load) => {
                         self.mode = 0;
                         if on { self.load() } else { None }
@@ -707,6 +787,22 @@ impl Dateimenue {
             Action::Load(name) => Some(Action::Delete(name)),
             _ => None,
         }
+    }
+
+    /// "Download": the name in the field, or `HOLIDAY` without one, if
+    /// it's valid.
+    fn download(&self) -> Action {
+        let name = if self.edit.text.is_empty() {
+            &b"HOLIDAY"[..]
+        } else {
+            &self.edit.text
+        };
+        if !valid_name(name) {
+            return Action::InvalidName;
+        }
+        let mut name = name.to_vec();
+        name.extend_from_slice(b".map");
+        Action::Download(name)
     }
 
     /// "Laden": the selected game, if one is. // 1040:0f27
@@ -1004,6 +1100,38 @@ mod tests {
         assert_eq!((m.left, m.top), (295, 134));
         let _ = m.mouse_move(-2000, -2000, ShiftState::LEFT, (800, 600));
         assert_eq!((m.left, m.top), (0, 0));
+    }
+
+    /// The browser build's "Download": the name in the field, `HOLIDAY`
+    /// without one, a message for a bad one; its face is "Beenden"'s.
+    #[test]
+    fn downloads_in_the_browser_build() {
+        let bitmaps = (0..BITMAP_FILES.len())
+            .map(|i| Surface::new(210, 220, u8::try_from(i + 1).unwrap()))
+            .collect();
+        let texts = (0..24).map(|i| format!("t{i}").into_bytes()).collect();
+        let mut bitmaps: Vec<Surface> = bitmaps;
+        bitmaps[BACKGROUND.0].pixels[140 * 210 + 20] = 0x77;
+        let mut m = Dateimenue::new(font(), bitmaps, texts, 305, 139).with_download(b"Download".to_vec());
+        m.show(vec![b"SPIEL0".to_vec()]);
+        assert_eq!(m.bitmaps[BACKGROUND.0].pixel(20, 162), 0x77, "the face copied");
+        let download = (20, 165);
+        assert_eq!(
+            click(&mut m, download.0, download.1).action,
+            Some(Action::Download(b"HOLIDAY.map".to_vec()))
+        );
+        let _ = m.mouse_down(130, 0x2e + 2, true, ShiftState::LEFT);
+        assert_eq!(
+            click(&mut m, download.0, download.1).action,
+            Some(Action::Download(b"SPIEL0.map".to_vec()))
+        );
+        m.edit.text = b"1x".to_vec();
+        assert_eq!(click(&mut m, download.0, download.1).action, Some(Action::InvalidName));
+        // v1.0's buttons are where they were.
+        assert_eq!(click(&mut m, 20, 140).action, Some(Action::Quit));
+        // Without it the gap is no button.
+        let mut m = menu(0);
+        assert_eq!(click(&mut m, download.0, download.1).action, None);
     }
 
     #[test]

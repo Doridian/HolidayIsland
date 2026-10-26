@@ -111,6 +111,11 @@ net_ended = "Das Netzwerkspiel ist beendet."
 net_save_question = "Möchten Sie das Spiel speichern, wie es jetzt steht? Jeder kann es später als Gastgeber wieder starten."
 net_waiting_host = "Warte auf das Spiel des Gastgebers ..."
 net_host_dropped = "Die Verbindung zum Gastgeber ist unterbrochen. Warte auf ihn ..."
+# Saved games as files (docs/web.md): the file menu's button that saves
+# the game as a download, and a game dropped onto the window.
+download = "Download"
+drop_load_question = "Das auf das Fenster gezogene Spiel laden? Das laufende Spiel geht verloren, wenn Sie es nicht gespeichert haben."
+drop_not_a_game = "Diese Datei ist kein gespeichertes Holiday-Island-Spiel:"
 
 # The enhancements' short names and one-line descriptions, by their keys
 # (crate::enhance).

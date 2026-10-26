@@ -104,6 +104,11 @@ net_ended = "The network game has ended."
 net_save_question = "Do you want to save the game as it stands? Anyone can host the saved game again."
 net_waiting_host = "Waiting for the host's game ..."
 net_host_dropped = "The connection to the host dropped. Waiting for it to come back ..."
+# Saved games as files (docs/web.md): the file menu's button that saves
+# the game as a download, and a game dropped onto the window.
+download = "Download"
+drop_load_question = "Load the game dropped onto the window? The game in progress is lost unless you saved it."
+drop_not_a_game = "That file isn't a saved game of Holiday Island:"
 
 # The enhancements' short names and one-line descriptions, by their keys
 # (crate::enhance).

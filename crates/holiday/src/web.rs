@@ -8,7 +8,8 @@
 //!
 //! The page (`web/index.html`, written by `tools/build-web.sh`) has the
 //! form that picks the files and the canvas; `web.js` beside this keeps
-//! the files in the browser's `IndexedDB`.
+//! the files in the browser's `IndexedDB`, and takes saved games dropped
+//! onto the page and hands them out as downloads.
 
 use std::ffi::OsString;
 use std::sync::Arc;
@@ -44,6 +45,25 @@ extern "C" {
     /// Removes the stored file `path`.
     #[wasm_bindgen(js_name = deleteFile)]
     fn delete_file(path: &str);
+    /// From now on files dropped onto the page wait for [`take_dropped`].
+    #[wasm_bindgen(js_name = watchDrops)]
+    fn watch_drops();
+    /// The oldest file dropped onto the page, `[name, Uint8Array]`, or
+    /// `undefined`.
+    #[wasm_bindgen(js_name = takeDropped)]
+    fn take_dropped_js() -> JsValue;
+    /// Hands `data` to the browser as a download called `name`.
+    #[wasm_bindgen(js_name = downloadFile)]
+    pub(crate) fn download_file(name: &str, data: &[u8]);
+}
+
+/// The oldest file dropped onto the page that the game hasn't taken: its
+/// name and its bytes.
+pub(crate) fn take_dropped() -> Option<(String, Vec<u8>)> {
+    let entry: js_sys::Array = take_dropped_js().dyn_into().ok()?;
+    let name = entry.get(0).as_string()?;
+    let data: js_sys::Uint8Array = entry.get(1).dyn_into().ok()?;
+    Some((name, data.to_vec()))
 }
 
 /// The module's start: shows a panic on the page and starts [`run`].
@@ -144,6 +164,7 @@ async fn run() -> Result<(), String> {
         Arc::new(MemoryFiles::new(files, Some(persist))),
     );
     platform::web::show_status("", false);
+    watch_drops();
     let args = crate::args(query_args());
     crate::start(args).map_err(|e| e.to_string())
 }

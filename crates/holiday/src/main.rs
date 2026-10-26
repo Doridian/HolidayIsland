@@ -30,6 +30,11 @@
 //! `game::msgdlg`) open over everything and take the input until they
 //! answer.
 //!
+//! A saved game dropped onto the window loads, from the start menu as
+//! the load form's would and in a game after a question
+//! ([`Holiday::take_dropped`]); the browser build's file menu also saves
+//! the game as a download (`docs/web.md`).
+//!
 //! The window's client area, divided by the UI scale, is the desktop the
 //! game lays out for, again whenever it changes (`docs/layout.md`).
 //!
@@ -1585,6 +1590,17 @@ enum AfterMessage {
     /// The host turned a waiting client away, or the connection ended:
     /// OK quits.
     JoinFailed,
+    /// A saved game was dropped onto the window in a game (the port's):
+    /// Yes loads it in place of the game ([`Holiday::take_dropped`]).
+    LoadDropped,
+}
+
+/// A file dropped onto the window (the port's), until the game takes it
+/// ([`Holiday::take_dropped`]).
+enum Dropped {
+    Game(Box<SaveGame>),
+    /// Not a saved game: its name.
+    NotAGame(String),
 }
 
 /// What `backgroundimage` shows.
@@ -1671,6 +1687,8 @@ struct Holiday {
     /// The game being set up is the one the client joins: it takes the
     /// session.
     join_loading: bool,
+    /// A file dropped onto the window that waits for the game to take it.
+    dropped: Option<Dropped>,
 }
 
 impl Holiday {
@@ -1882,6 +1900,13 @@ impl Holiday {
                     game.open_file_menu(games);
                 } else {
                     self.back_to_start_menu();
+                }
+            }
+            AfterMessage::LoadDropped => {
+                if let Some(Dropped::Game(map)) = self.dropped.take()
+                    && r == ModalResult::Yes
+                {
+                    self.load_in_game(*map);
                 }
             }
             AfterMessage::JoinWaiting | AfterMessage::JoinFailed => {
@@ -2359,20 +2384,7 @@ impl Holiday {
             // A network game that ended is only saved.
             Some(dateimenue::Action::Load(_)) if game.net_stopped == NetStopped::Saving => {}
             Some(dateimenue::Action::Load(name)) => match self.saves.read(&name) {
-                // 1040:0f27: load_map in the middle of the game, a command
-                // to the world, under the hourglass (en 1040:1069).
-                Ok(map) => {
-                    self.cursor = Cursor::HourGlass;
-                    self.cursor_updates = 2;
-                    if World::from_map(&map).is_ok() {
-                        game.view_rest = MapView::from_map(&map).unported;
-                        game.forms.loading_settings = Some(game.forms.settings.with_map(&map));
-                    }
-                    game.commands.push(Command {
-                        player: 1,
-                        action: command::Action::Load(Arc::new(map)),
-                    });
-                }
+                Ok(map) => self.load_in_game(map),
                 Err(e) => eprintln!("{e}"),
             },
             Some(dateimenue::Action::Save(name)) => {
@@ -2410,6 +2422,21 @@ impl Holiday {
                     AfterMessage::Delete(name),
                 );
             }
+            // The browser build's "Download": the game as a file the
+            // browser downloads, under the hourglass as a save.
+            Some(dateimenue::Action::Download(name)) => {
+                self.cursor = Cursor::HourGlass;
+                self.cursor_updates = 2;
+                let name = String::from_utf8_lossy(&name).into_owned();
+                #[cfg(target_arch = "wasm32")]
+                web::download_file(&name, &game.map().to_bytes());
+                println!("downloaded {name}");
+                // A network game that ended: saved, the menu goes and with
+                // it the game.
+                if game.net_stopped == NetStopped::Saving {
+                    game.file_menu.visible = false;
+                }
+            }
             Some(dateimenue::Action::NewGame) => self.back_to_start_menu(),
             Some(dateimenue::Action::Quit) => {
                 // 1040:0a4c: the menu hides and `TEndeform` asks.
@@ -2420,6 +2447,83 @@ impl Holiday {
         }
         if refresh {
             self.repaint();
+        }
+    }
+
+    /// `map` replaces the game in progress: the file menu's "Laden"
+    /// (1040:0f27), `load_map` in the middle of the game, a command to
+    /// the world, under the hourglass (en 1040:1069).
+    fn load_in_game(&mut self, map: SaveGame) {
+        let Some(game) = &mut self.game else { return };
+        self.cursor = Cursor::HourGlass;
+        self.cursor_updates = 2;
+        if World::from_map(&map).is_ok() {
+            game.view_rest = MapView::from_map(&map).unported;
+            game.forms.loading_settings = Some(game.forms.settings.with_map(&map));
+        }
+        game.commands.push(Command {
+            player: 1,
+            action: command::Action::Load(Arc::new(map)),
+        });
+        self.repaint();
+    }
+
+    /// A file called `name` with `data` was dropped onto the window (the
+    /// port's): it waits, parsed, until [`Holiday::take_dropped`] can
+    /// take it. A later drop replaces it.
+    fn dropped(&mut self, name: &str, data: &[u8]) {
+        self.dropped = Some(match SaveGame::parse(data) {
+            Ok(map) => Dropped::Game(Box::new(map)),
+            Err(e) => {
+                eprintln!("{name}: {e}");
+                Dropped::NotAGame(name.to_owned())
+            }
+        });
+    }
+
+    /// The dropped file once the intro is over and no message box, film
+    /// or set-up is on: on the start menu (or its load form) a saved game
+    /// starts as the load form's would; in a game a question comes first
+    /// ([`AfterMessage::LoadDropped`]); a file that isn't one gets a
+    /// message. A client's network game that ended takes none.
+    fn take_dropped(&mut self) {
+        if self.dropped.is_none()
+            || self.message.is_some()
+            || self.loading.is_some()
+            || self.pending.is_some()
+            || self.joining.is_some()
+            || self.intro != Intro::Done
+            || (self.game.is_none() && !self.start.visible())
+        {
+            return;
+        }
+        match self.dropped.take() {
+            Some(Dropped::NotAGame(name)) => {
+                let mut text = lang::Text::DropNotAGame.bytes(self.language());
+                text.push(b'\n');
+                text.extend(lang::encode(&name));
+                self.open_message(&text, DlgType::Error, &[Btn::Ok], AfterMessage::Nothing);
+            }
+            Some(Dropped::Game(map)) => match &self.game {
+                Some(game) if game.net_stopped != NetStopped::No => {}
+                Some(_) => {
+                    self.dropped = Some(Dropped::Game(map));
+                    let text = lang::Text::DropLoadQuestion.bytes(self.language());
+                    self.open_message(
+                        &text,
+                        DlgType::Confirmation,
+                        &[Btn::Yes, Btn::No],
+                        AfterMessage::LoadDropped,
+                    );
+                }
+                None => {
+                    self.load = None;
+                    self.start.hide();
+                    self.play_start_film(Pending::Load(*map));
+                    self.repaint();
+                }
+            },
+            None => {}
         }
     }
 
@@ -2795,6 +2899,10 @@ impl Holiday {
 }
 
 impl App for Holiday {
+    fn dropped(&mut self, name: &str, data: Vec<u8>) {
+        Holiday::dropped(self, name, &data);
+    }
+
     fn update(&mut self, elapsed: Duration) {
         let ms = u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX);
         self.sound.borrow_mut().advance(ms);
@@ -2815,6 +2923,11 @@ impl App for Holiday {
             }
         }
         self.poll_joining();
+        #[cfg(target_arch = "wasm32")]
+        while let Some((name, data)) = web::take_dropped() {
+            self.dropped(&name, &data);
+        }
+        self.take_dropped();
         if let Some(game) = &mut self.game
             && game.update(elapsed)
         {
@@ -3123,6 +3236,10 @@ fn file_menu(dir: &Path, exe: &[u8], language: lang::Language) -> FileMenu {
     let mut menu = Dateimenue::new(font(dir), images, texts.texts, at.left, at.top);
     if upgrade {
         menu = menu.with_upgrade();
+    } else if cfg!(target_arch = "wasm32") {
+        // The browser build's "Download" (`docs/web.md`), where the later
+        // build's form has no room.
+        menu = menu.with_download(lang::Text::Download.bytes(language));
     }
     FileMenu {
         menu,
@@ -3744,6 +3861,7 @@ impl Holiday {
             net_args: None,
             joining: None,
             join_loading: false,
+            dropped: None,
         };
         holiday.start.menu.enhance = enhance.view;
         holiday.sound.borrow_mut().set_view_enhancements(enhance.view);
@@ -5941,6 +6059,53 @@ mod tests {
     fn key(h: &mut Holiday, key: u16) {
         h.input(Input::KeyDown(key));
         h.input(Input::KeyUp(key));
+    }
+
+    /// Files dropped onto the window: one that isn't a saved game gets an
+    /// error; a saved game in a game asks first and loads only on Yes;
+    /// on the start menu it starts as the load form's would.
+    #[test]
+    fn dropped_files() {
+        let Some((dir, setting, _)) = folders().into_iter().next() else {
+            return;
+        };
+        let mut h = quiet_game(&dir, setting, "dropped");
+        h.dropped("notes.txt", b"not a map");
+        h.take_dropped();
+        let m = h.message.as_ref().expect("the error");
+        assert_eq!(m.then, AfterMessage::Nothing);
+        assert_eq!(m.dlg.buttons(), [Btn::Ok]);
+        key(&mut h, 0x0d);
+        assert!(h.message.is_none() && h.dropped.is_none());
+        let map = h.game.as_ref().unwrap().map().to_bytes();
+        let loads = |h: &Holiday| {
+            h.game
+                .as_ref()
+                .unwrap()
+                .commands
+                .iter()
+                .filter(|c| matches!(c.action, command::Action::Load(_)))
+                .count()
+        };
+        for (answer, loaded) in [(ModalResult::No, 0), (ModalResult::Yes, 1)] {
+            h.dropped("GAME.map", &map);
+            h.take_dropped();
+            let m = h.message.as_ref().expect("the question");
+            assert_eq!(m.then, AfterMessage::LoadDropped);
+            assert_eq!(m.dlg.buttons(), [Btn::Yes, Btn::No]);
+            h.take_dropped();
+            assert!(h.dropped.is_some(), "waits for the answer");
+            h.message_answered(answer);
+            assert!(h.dropped.is_none());
+            assert_eq!(loads(&h), loaded, "{answer:?}");
+        }
+        h.back_to_start_menu();
+        assert!(h.start.visible());
+        h.dropped("GAME.map", &map);
+        h.take_dropped();
+        assert!(h.message.is_none() && !h.start.visible());
+        assert!(matches!(h.pending, Some(Pending::Load(_))) || h.loading.is_some());
+        let _ = std::fs::remove_dir_all(&h.saves.dir);
     }
 
     /// The file menu's message boxes: an invalid name's error, and the
