@@ -15,7 +15,7 @@ matchbox = ["dep:matchbox_socket", "dep:tokio", "dep:wasm-bindgen-futures"]
 [dependencies]
 formats = { path = "../formats" }
 game = { path = "../game" }
-matchbox_socket = { version = "0.14", optional = true }
+matchbox_socket = { version = "0.15", optional = true }
 # The clock of the host's grace period (`std::time` natively,
 # `performance.now()` in the browser).
 web-time = "1.1"
