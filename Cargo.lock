@@ -1615,6 +1615,7 @@ dependencies = [
  "formats",
  "game",
  "js-sys",
+ "log",
  "net",
  "platform",
  "rfd",

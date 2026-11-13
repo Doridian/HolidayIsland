@@ -28,6 +28,8 @@ macro_rules! eprintln {
     };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+mod ask;
 pub mod audio;
 pub mod data;
 mod display;
@@ -50,6 +52,8 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Fullscreen, Window, WindowId};
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use ask::ask_drop;
 pub use display::Error;
 use settings::WindowSettings;
 
@@ -602,7 +606,15 @@ impl<A: App> Runner<A> {
 /// # Errors
 /// If no window or GPU device can be set up.
 pub fn run<A: App + 'static>(title: &str, options: WindowOptions, app: A) -> Result<(), Error> {
-    let event_loop = EventLoop::new().map_err(|e| Error::Window(e.to_string()))?;
+    // The one [`ask_drop`] ran on, if it did: there's one per process.
+    #[cfg(not(target_arch = "wasm32"))]
+    let asked = ask::take_event_loop();
+    #[cfg(target_arch = "wasm32")]
+    let asked = None;
+    let (event_loop, asked) = match asked {
+        Some(l) => (l, true),
+        None => (EventLoop::new().map_err(|e| Error::Window(e.to_string()))?, false),
+    };
     let runner = Runner {
         app,
         title: title.to_owned(),
@@ -626,18 +638,25 @@ pub fn run<A: App + 'static>(title: &str, options: WindowOptions, app: A) -> Res
     #[cfg(target_arch = "wasm32")]
     {
         use winit::platform::web::EventLoopExtWebSys;
+        let _ = asked;
         event_loop.spawn_app(runner);
         Ok(())
     }
     #[cfg(not(target_arch = "wasm32"))]
-    run_native(event_loop, runner)
+    run_native(event_loop, runner, asked)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn run_native<A: App>(event_loop: EventLoop<()>, mut runner: Runner<A>) -> Result<(), Error> {
-    event_loop
-        .run_app(&mut runner)
-        .map_err(|e| Error::Window(e.to_string()))?;
+fn run_native<A: App>(mut event_loop: EventLoop<()>, mut runner: Runner<A>, asked: bool) -> Result<(), Error> {
+    // A loop that ran before ends at once unless run again on demand,
+    // which clears its exit.
+    let ran = if asked {
+        use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
+        event_loop.run_app_on_demand(&mut runner)
+    } else {
+        event_loop.run_app(&mut runner)
+    };
+    ran.map_err(|e| Error::Window(e.to_string()))?;
     if let Some(path) = &runner.options.settings_file
         && runner.remembered.size.is_some()
         && let Err(e) = runner.remembered.save(path)

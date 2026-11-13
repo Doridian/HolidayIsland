@@ -110,7 +110,10 @@ music is silent. It keeps the game's path in its data directory
 (`game-path.txt` in `~/.local/share/holiday-island`,
 `%APPDATA%\Holiday Island`, `~/Library/Application Support/Holiday Island`)
 and doesn't ask again while it's there; deleting the file asks again. On
-Linux the dialog is the desktop's (xdg-desktop-portal, else zenity).
+Linux the dialog is the desktop's (xdg-desktop-portal, else zenity);
+where there is neither (a minimal system, a sandbox), a window of the
+port's own asks for the game to be dropped on it or its path typed, and
+nothing asks for a SoundFont.
 The icon is the port's own (`tools/make-icon.py`).
 
 ## Running
