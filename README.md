@@ -93,7 +93,8 @@ folder's ([docs/language.md](docs/language.md)).
 Every push builds the port as one file per platform
 (`.github/workflows/build.yml`); a `v*` tag publishes them on its release:
 
-- `holiday-island-linux-x86_64.AppImage`, `holiday-island-linux-arm64.AppImage`
+- `holiday-island-x86_64.AppImage`, `holiday-island-aarch64.AppImage` (built
+  on Ubuntu 22.04: they run with its glibc, 2.35, or newer)
 - `holiday-island-windows-x86_64.exe` (the C runtime linked in)
 - `holiday-island-macos.dmg`: `Holiday Island.app`, for Apple silicon and
   Intel (signed ad hoc only: the first start needs a right click, Open)
